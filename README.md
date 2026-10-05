@@ -63,6 +63,9 @@ copy off the site goes (Q-53), and the certificate's domain and CA
   [docs/operations/03-install-guide.md](docs/operations/03-install-guide.md).
 - **The JDK, Maven, MySQL and nginx** the repository carries, and how to move
   their versions: [vendor/README.md](vendor/README.md).
+- **Cryptography**: what Java 21 and BouncyCastle give, the rules, and tested
+  examples of signing, encryption, hashing, X.509 and TLS:
+  [docs/development/04-crypto.md](docs/development/04-crypto.md).
 
 ## Developer quickstart
 

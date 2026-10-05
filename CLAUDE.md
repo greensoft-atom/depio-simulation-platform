@@ -149,6 +149,10 @@ MVN="/opt/maven/bin/mvn -Daether.enhancedLocalRepository.trackingFilename=_none"
 # Client core tests (look for "Total tests:")
 cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test --logger "console;verbosity=normal"
 
+# Crypto examples (from backend/), then their probe on a release's runtime (docs/development/04 §5)
+/opt/maven/bin/mvn -o -q -pl crypto-examples test
+target/release/backend-*/runtime/bin/java -cp crypto-examples/target/classes com.backend.examples.crypto.RuntimeProbe
+
 # The Unity package: the core built into it, then its scripts compiled against stubs (nothing run)
 client/unity-package.sh && client/unity-check.sh
 

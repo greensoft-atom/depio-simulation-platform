@@ -22,6 +22,7 @@
     <module>worker</module>
     <module>gateway</module>
     <module>tools</module>
+    <module>crypto-examples</module>
   </modules>
 
   <properties>
@@ -59,6 +60,7 @@
 
       <!-- Argon2id only. Bouncy Castle is pure Java, so it needs nothing installed on the host. -->
       <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk18on</artifactId><version>${bouncycastle.version}</version></dependency>
+      <dependency><groupId>org.bouncycastle</groupId><artifactId>bcpkix-jdk18on</artifactId><version>${bouncycastle.version}</version></dependency>
 
       <!-- j-redis publishes against Netty 4.1; the pin above puts it on 4.2 with everything
            else, which the platform tests exercise by running a real server and client. -->

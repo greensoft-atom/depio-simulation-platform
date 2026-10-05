@@ -91,6 +91,11 @@ image, which is RHEL 9's own userspace (plan item 80).
   from the repository it is using. `make-release.sh` therefore runs as
   `MVN="/opt/maven/bin/mvn -Daether.enhancedLocalRepository.trackingFilename=_none" scripts/make-release.sh`.
   `build-offline.sh` keeps clear of it with a local repository of its own.
+- **A library in the bundle but new to the backend** is not in `~/.m2`, and the
+  offline commands of `CLAUDE.md` fail on it ("has not been downloaded from it
+  before"): copy its directory from `java21-offline/repository` into
+  `~/.m2/repository` first (`bcpkix` and `bcutil`, 2026-10-05). `build-offline.sh`
+  reads the bundle and needs nothing.
 - **Maven's `-o` also blocks `file://` repositories**: building from
   `java21-offline` uses its `settings-offline.xml` as a mirror, without `-o`
   ([its README](../../java21-offline/README.md)).

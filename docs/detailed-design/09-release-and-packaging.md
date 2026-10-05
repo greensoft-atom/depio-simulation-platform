@@ -89,6 +89,13 @@ own jars instead, and a module they use outside the list stops the release
 (mutation-checked: without `jdk.httpserver`, refused). Linked with `--strip-java-debug-attributes --no-man-pages --no-header-files --compress zip-6` (not `--strip-debug`, which also strips native symbols with `objcopy`: a minimal RHEL 9 has no binutils, and the build failed there, found by the install guide's check; the JDK's native libraries come stripped already, so the runtime is the same size): 63 MB, 31 modules. Every
 unit's `ExecStart` is `/opt/backend/runtime/bin/java`, the stores' too.
 
+What the list leaves out, a process can still need: a provider found by name
+(`jdk.crypto.cryptoki`, PKCS#11, keys in a hardware module) is seen by no static
+reading, and the tests pass on the full JDK. `crypto-examples`' `RuntimeProbe`
+runs on the release's runtime: on 2026-10-05, every algorithm the backend may use
+held there, and PKCS#11 was absent
+([development/04 §5](../development/04-crypto.md#5-running-them)).
+
 ### 4.2 What the host still provides
 
 The binaries need only glibc, `libstdc++` and `ncurses-libs` (the `mysql`

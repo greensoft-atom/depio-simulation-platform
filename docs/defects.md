@@ -774,7 +774,7 @@ application does; on this machine, two hours off UTC, the drill's case of a
 moment before the dump now fails if the comparison is put back.
 
 
-**O-15 to O-31, found and fixed 2026-10-04 (the review, plan item 79); O-32 to O-34, 2026-10-05 (plan item 81).**
+**O-15 to O-31, found and fixed 2026-10-04 (the review, plan item 79); O-32 to O-34, 2026-10-05 (plan item 81); O-35, 2026-10-05 (plan item 82).**
 
 - **O-15 (H). The restore proof could record nothing.** In `restore-proof.sh`'s trap, a
   `grep` that matched nothing ended the trap under `errexit`, so a failed proof left no
@@ -848,6 +848,16 @@ moment before the dump now fails if the comparison is put back.
   `CacheDirectory`), and the placeholder comes before the unit's first start (01
   §11 too). **Fixed:** the script's own test makes the two directories first.
   Reproduced and fixed in UBI 9; a mutant making only the first fails on the second.
+- **O-35 (M), found and fixed 2026-10-05 (the owner's question, plan item 82). The install
+  guide stopped on a server that had the operating system's own MySQL.** RHEL 9's MySQL 8.0
+  or MariaDB holds port 3306, and the backend's MySQL could not start there: run as written in
+  Rocky Linux 9 with its Java 8 and MySQL 8.0 installed and running, the guide failed at
+  `systemctl enable --now backend-mysql`. The other Java was no trouble: the build and the
+  release came out with `JAVA_HOME` pointing at Java 8. **Fixed:** the guide's §1 says what to
+  do with each. The system's MySQL is stopped when nothing else uses it; otherwise the
+  backend's goes on another port (`MYSQL_PORT`). Run again, the guide passed with both
+  servers running (ours on 3307, the system's on 3306) and passed on a fresh server as
+  before.
 
 ---
 

@@ -2058,3 +2058,41 @@ is [09](../detailed-design/09-release-and-packaging.md).
   version in `vendor/` and a release; the runbook's routine says when to look.
 - A build machine needs Docker only to compile nginx again, not to build the
   backend.
+
+### D-78 — Cryptography: Java's first, BouncyCastle for what Java lacks, examples proved and kept apart
+
+**Decided 2026-10-05**, on the owner's question whether the backend can sign, verify, encrypt,
+decrypt, hash and handle X.509, and their request for examples of each
+([development/04](../development/04-crypto.md), plan item 82).
+
+**Decision.**
+- **Java 21's providers first**: hashing, HMAC, AES-GCM and ChaCha20-Poly1305, RSA, ECDSA,
+  Ed25519, ECDH and X25519, KEM, X.509 reading and validation, PKCS#12, TLS. They are in the
+  release's runtime and need nothing added.
+- **BouncyCastle for what Java 21 lacks**, at the version the parent pins (1.86):
+  - `bcprov`, already in the platform for Argon2id: HKDF, and the algorithms Java does not have.
+  - `bcpkix`, new: making certificates and requests, every PEM form, CMS.
+  - Its provider is handed to the calls that need it, never registered for the whole process.
+- **The examples are a module of their own, `crypto-examples`**, built and tested with the
+  backend and never in the release:
+  - its classes are copied into the module that needs one;
+  - its tests check each scenario against published vectors and against the `openssl` command
+    line both ways.
+- **A probe runs the Java examples on the release's runtime**, because that runtime holds only
+  the modules `make-release.sh` names.
+
+**Why.**
+- Java's providers are maintained with the runtime we already ship and update, and every extra
+  library is one more to watch for fixes (D-77's cost).
+- The traps in this field are interop and parameters, which a test against our own code cannot
+  see:
+  - RSA-OAEP's MGF1;
+  - PSS's salt;
+  - ECDSA's two encodings.
+  A file from another tool can, and the mutation check showed it: the PSS mutant survived until
+  an OpenSSL signature was added.
+- Examples in a module are compiled and tested at every build; examples in a document are not,
+  and drift.
+
+**Cost.** `bcpkix` and `bcutil` (2.1 MB) in the build, though not yet in any process. The
+probe has to be run by hand when a process takes up an algorithm.

@@ -36,6 +36,7 @@ Each module has its own README with its classes, configuration and tests.
 | [worker](worker/README.md) | results into MySQL, and the scheduled jobs | `WorkerMain`, `MatchResultConsumer`, `RewardRules`, `EloRating`, `AccountLevels`, `TournamentScheduler`, `SeasonKeeper`, `Retention`, `LedgerCheck`, `LeaderboardRebuild` |
 | [gateway](gateway/README.md) | the client's lobby connection, JSON over WebSocket | `GatewayMain`, `GatewayServer`, `LobbyHandler`, `ConnectionRegistry`, `PlatformClient`, `Pushes`, `FrameLimit`, `EdgeCertificate` |
 | [tools](tools/README.md) | benchmarks, bots and the soak's judge | `TickBenchmark`, `BotClient`, `LobbyClient`, `ApplyBenchmark`, `PurgeBenchmark`, `RankBenchmark`, `SoakJudge` |
+| [crypto-examples](crypto-examples/README.md) | examples of signing, encryption, hashing, X.509 and TLS, each tested; for copying, never in the release | `Aead`, `Signatures`, `RsaEncryption`, `SharedSecrets`, `Pem`, `AnyPem`, `Certificates`, `CertificateAuthority`, `KeyStores`, `Tls`, `RuntimeProbe` |
 | [scripts](scripts/README.md) | the release and its check, backups, restores and promotions | `make-release.sh`, `check-release-el9.sh`, `backup-*.sh`, `restore-*.sh`, `promote-store.sh`, `promote-mysql.sh` |
 | [deploy](deploy/README.md) | what a machine is given | systemd units, env examples, nginx, MySQL configuration |
 

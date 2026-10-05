@@ -2978,6 +2978,38 @@ real RHEL host, so `LoadCredential` for a non-root service stays unverified ther
 (the check gives the Java units their secrets by a drop-in, as
 `check-units-el9.sh` does).
 
+#### 82. ~~A server with Java and MySQL already installed; cryptography, with examples (D-78).~~ — **done 2026-10-05**
+
+**The owner, 2026-10-05:** what to do when the server already has an old Java and
+MySQL from its packages; whether the backend can do RSA, ECDSA, hashing,
+encryption, signatures and X.509, and what it would need; then: update the
+documents, with enough example code and usage for each scenario.
+
+- **The server's own Java and MySQL** ([install guide §1](operations/03-install-guide.md#a-java-or-a-mysql-already-on-the-server)):
+  - Java is never used: the units run the release's runtime.
+  - MySQL's port is the one conflict. Stop the system's MySQL, or give ours another port
+    (`MYSQL_PORT`, new in the guide).
+  - Proved first by the failure (O-35): `check-install-guide-el9.sh` in Rocky Linux 9 with
+    Java 8 and MySQL 8.0 installed and running stopped at our MySQL. Then it passed with
+    `MYSQL_PORT=3307`: every unit `active`, a registration `201`, the system's MySQL still
+    `active` on 3306.
+  - Then the fresh UBI 9.5 run passed again with the default.
+  - The check takes extra values (`GUIDE_VALUES`), and its header holds the image's recipe.
+- **Cryptography** ([development/04](development/04-crypto.md), D-78): `backend/crypto-examples`.
+  - 15 classes: hashing, HMAC, signed tokens, random tokens, AEAD, signatures, RSA-OAEP,
+    key agreement with HKDF and KEM, PEM with Java and with `bcpkix`, certificates, a private CA,
+    PKCS#12, TLS, and a probe for the release's runtime.
+  - 35 tests, against FIPS 180-4, RFC 4231 and RFC 5869, and against `openssl` 3.0.13 both ways.
+  - Mutation-checked over 14 broken rules. 13 were caught. The PSS-parameter mutant survived
+    until an OpenSSL signature was added. The constant-time comparison cannot be seen by a test.
+  - Found on the way: BouncyCastle's encrypted PKCS#8 needs its own provider (handed to the call,
+    not registered).
+  - The probe on the release's runtime: every check holds; PKCS#11 absent (09 §4.1).
+- **Not verified:**
+  - stopping the system's MySQL (the guide's `console` line), and MariaDB instead of MySQL;
+  - a real RHEL host;
+  - a hardware module, CMS, OCSP.
+
 ---
 
 ### Completed 2026-09-23

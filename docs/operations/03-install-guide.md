@@ -10,10 +10,12 @@ here; the reasons are in [01 — Deployment](01-deploy.md) and
 `bash` block of the steps below, in order, in Red Hat's UBI 9.5 image with
 systemd and **no network**, on a plain copy of the repository; it ends with a
 registration through nginx. Last run 2026-10-05, in UBI 9.5: every unit
-`active`, the registration `201`, about twenty-five minutes. Running it found
-three faults, fixed before this text (O-32 to O-34 in the
-[defect register](../defects.md)). The blocks marked `console` are not run by
-it (the clone, the firewall).
+`active`, the registration `201`, about twenty-five minutes. Also run the same day
+in Rocky Linux 9 with the system's own Java 8 and MySQL 8.0 installed and running
+(`MYSQL_PORT=3307`, §1): the same result, the system's MySQL still running beside
+ours. Running it found four faults, fixed before this text (O-32 to O-35 in the
+[defect register](../defects.md)). The blocks marked `console` are not run by it
+(the clone, stopping the system's MySQL, the firewall).
 
 The steps install **one machine with every role**: a trial, or the first of the
 three. [Three machines](#three-machines) says what differs.
@@ -28,6 +30,33 @@ three. [Three machines](#three-machines) says what differs.
 - Memory: the units' heaps and MySQL's buffer pool are sized for the production
   machines (64 GB). On a smaller machine, step 8 gives them smaller ones by itself.
 - Disk: about 2 GB for the repository and the build, and what the data takes.
+
+### A Java or a MySQL already on the server
+
+Neither is used, and neither is in the way, except MySQL's port.
+
+- **Java**, any version, from the operating system's packages: nothing to do. The
+  units run the release's own runtime (`/opt/backend/runtime/bin/java`) and the
+  build the committed JDK; `alternatives`, the `PATH` and a `JAVA_HOME` reach
+  neither. By hand, `java` or `jcmd` is still the old one: type
+  `/opt/backend/runtime/bin/jcmd`.
+- **MySQL or MariaDB**, from the operating system's packages (RHEL 9 has MySQL
+  8.0 and MariaDB): it holds port 3306, which the backend's MySQL would take.
+  Everything else is apart already: the unit (`mysqld` or `mariadb`, ours
+  `backend-mysql`), the data (`/var/lib/mysql`, ours `/var/lib/backend-mysql`),
+  the socket and the configuration (ours reads only `/etc/backend/mysql/`); the
+  `mysql` user is shared, which step 5 allows for. Then either:
+  - **nothing else uses it**: stop it before step 6; its data is kept.
+    ```console
+    systemctl disable --now mysqld          # or mariadb
+    ```
+  - **another application uses it**: leave it, and give the backend's MySQL
+    another port, `MYSQL_PORT` below (3307, say).
+
+  Never the backend on that server: it runs on MySQL 8.4 alone (Q-56), and 8.0
+  is out of support since April 2026. The `mysql` on the `PATH` is that
+  package's client: ours is `/opt/backend/mysql/bin/mysql`, which the scripts
+  use.
 
 ## 2. The repository
 
@@ -44,6 +73,7 @@ Your values, set once in the shell every later step runs in:
 export SRC=/srv/depio-simulation-platform   # where the repository is
 export NAME=a.example.com                # the name players' devices reach this machine by
 export MYSQL_BUFFER_POOL=14G             # MySQL's buffer pool: 14G of 20 GB on a production machine
+export MYSQL_PORT=3306                   # another if the server's own MySQL keeps 3306 (§1)
 ```
 
 ## 3. Build
@@ -89,6 +119,7 @@ network, so TLS is not required here; on three, it is (01 §9).
 
 ```bash
 sed -e "s/^bind-address .*/bind-address               = 127.0.0.1/" \
+    -e "/^\[mysqld\]/a port                       = $MYSQL_PORT" \
     -e "s/^innodb_buffer_pool_size .*/innodb_buffer_pool_size    = $MYSQL_BUFFER_POOL/" \
     -e "/^ssl_/d" -e "s/^require_secure_transport .*/require_secure_transport   = OFF/" \
     /opt/backend/mysql-conf/backend.cnf.example > /etc/backend/mysql/backend.cnf
@@ -129,7 +160,7 @@ cp /opt/backend/env/store.env.example /etc/backend/store-session.env
 From the release's examples (`env/`), pointed at this machine.
 
 ```bash
-local_db="jdbc:mysql://127.0.0.1:3306/backend?sslMode=REQUIRED"
+local_db="jdbc:mysql://127.0.0.1:$MYSQL_PORT/backend?sslMode=REQUIRED"
 for p in platform gateway worker; do
     sed -e "s/^STORE_HOST=.*/STORE_HOST=127.0.0.1/" -e "s#^BACKEND_DB_URL=.*#BACKEND_DB_URL=$local_db#" \
         "/opt/backend/env/$p.env.example" > "/etc/backend/$p.env"
