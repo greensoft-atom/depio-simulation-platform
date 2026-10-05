@@ -1,0 +1,44 @@
+# The database server (docs/operations/01-deploy.md §9): the release's MySQL 8.4, /opt/backend/mysql
+# (docs/detailed-design/09 §6), on machine A, and its replica on C. Not the distribution's package.
+#
+# Install: the system user (useradd --system --home-dir /var/lib/backend-mysql --shell
+# /usr/sbin/nologin mysql), /etc/backend/mysql/backend.cnf (deploy/mysql/backend.cnf.example, whose
+# header initialises the data directory), then systemctl enable --now backend-mysql.
+[Unit]
+Description=backend: the MySQL server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# notify: the release's mysqld tells systemd when it accepts connections (checked 2026-10-05).
+Type=notify
+User=mysql
+Group=mysql
+# The data directory, made at install with --initialize; the socket's and the pid file's directory,
+# which /run loses at every boot; the error log's.
+StateDirectory=backend-mysql
+StateDirectoryMode=0750
+RuntimeDirectory=backend-mysql
+RuntimeDirectoryMode=0755
+LogsDirectory=backend-mysql
+ExecStart=/opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/mysql/backend.cnf
+# Crash recovery of a large buffer pool takes as long as it takes; a stop flushes it.
+TimeoutStartSec=infinity
+TimeoutStopSec=15min
+Restart=on-failure
+# 1: mysqld refused its configuration or could not start its data; restarting cannot fix it.
+RestartPreventExitStatus=1
+LimitNOFILE=10000
+UMask=0027
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

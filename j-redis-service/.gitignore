@@ -1,0 +1,13 @@
+# build output (the distribution is assembled in target/dist)
+target/
+# IDE files
+*.iml
+.idea/
+.vscode/
+.classpath
+.project
+.settings/
+# data directories of servers started from the project directory
+data/
+# The distribution's own files, which the repository's "dist/" rule would leave out: make-dist.sh copies them
+!/dist/

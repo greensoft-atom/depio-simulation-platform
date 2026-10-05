@@ -1,0 +1,46 @@
+# The weekly proof that the backups restore (06 §10, D-71): the newest dump and the binlog copies,
+# restored onto this machine's scratch server while the primary keeps writing, checked, and the
+# outcome recorded in backup_run, which every worker reports. The copy off the site has its own,
+# monthly: backend-restore-proof-offsite.service.
+# Needs, in /etc/backend/credentials/: mysql-backup.cnf (the primary, the backup account) and
+# mysql-scratch.cnf (the scratch server: [client] host=127.0.0.1 port=3309 user=root ...).
+[Unit]
+Description=backend: the weekly proof that the backups restore
+After=network-online.target backend-scratch-mysql.service
+Wants=network-online.target
+Requires=backend-scratch-mysql.service
+
+[Service]
+Type=oneshot
+User=backend-backup
+Group=backend-backup
+LoadCredential=mysql-backup.cnf:/etc/backend/credentials/mysql-backup.cnf
+LoadCredential=mysql-scratch.cnf:/etc/backend/credentials/mysql-scratch.cnf
+Environment=SOURCE_CNF=%d/mysql-backup.cnf
+Environment=SCRATCH_CNF=%d/mysql-scratch.cnf
+StateDirectory=backend/mysql-dumps backend/binlog backend/proof
+StateDirectoryMode=0700
+# One proof at a time (O-18): the weekly and the monthly share the scratch server, and either one's
+# restore starts by dropping its database; flock waits for the other to finish.
+ExecStart=/usr/bin/flock %S/backend/proof/lock /opt/backend/scripts/restore-proof.sh %S/backend/mysql-dumps %S/backend/binlog backend backend_proof
+TimeoutStartSec=6h
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=

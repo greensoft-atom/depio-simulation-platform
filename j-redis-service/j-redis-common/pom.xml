@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>com.jredis</groupId><artifactId>j-redis-parent</artifactId><version>2.2.1</version></parent>
+  <artifactId>j-redis-common</artifactId>
+  <name>j-redis-common</name>
+  <description>RESP2 codec, replies, strict number and glob handling shared by server and client</description>
+
+  <dependencies>
+    <dependency><groupId>io.netty</groupId><artifactId>netty-buffer</artifactId></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><scope>test</scope></dependency>
+  </dependencies>
+
+  <build>
+    <resources>
+      <!-- version.properties receives ${project.version}, so the version lives only in the POMs -->
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+      </resource>
+    </resources>
+  </build>
+</project>

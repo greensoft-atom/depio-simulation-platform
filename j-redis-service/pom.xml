@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.jredis</groupId>
+  <artifactId>j-redis-parent</artifactId>
+  <version>2.2.1</version>
+  <packaging>pom</packaging>
+  <name>j-redis-service</name>
+  <description>Self-hosted, Redis-compatible in-memory data store for the platform backend (Java 21, RESP2)</description>
+
+  <modules>
+    <module>j-redis-common</module>
+    <module>j-redis-server</module>
+    <module>j-redis-client</module>
+    <module>j-redis-embedded</module>
+    <module>j-redis-cli</module>
+    <module>j-redis-tools</module>
+    <module>j-redis-examples</module>
+    <module>j-redis-tests</module>
+  </modules>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <!-- Java 21: "release" checks against the real Java 21 API, unlike source/target -->
+    <maven.compiler.release>21</maven.compiler.release>
+
+    <netty.version>4.1.122.Final</netty.version>
+    <slf4j.version>2.0.17</slf4j.version>
+    <logback.version>1.3.15</logback.version>
+    <jctools.version>3.3.0</jctools.version>
+    <hdrhistogram.version>2.2.2</hdrhistogram.version>
+    <junit.version>5.14.4</junit.version>
+    <junit.platform.version>1.14.4</junit.platform.version>
+    <assertj.version>3.27.7</assertj.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency><groupId>com.jredis</groupId><artifactId>j-redis-common</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.jredis</groupId><artifactId>j-redis-server</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.jredis</groupId><artifactId>j-redis-client</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.jredis</groupId><artifactId>j-redis-embedded</artifactId><version>${project.version}</version></dependency>
+
+      <dependency><groupId>io.netty</groupId><artifactId>netty-common</artifactId><version>${netty.version}</version></dependency>
+      <dependency><groupId>io.netty</groupId><artifactId>netty-buffer</artifactId><version>${netty.version}</version></dependency>
+      <dependency><groupId>io.netty</groupId><artifactId>netty-transport</artifactId><version>${netty.version}</version></dependency>
+      <dependency><groupId>io.netty</groupId><artifactId>netty-codec</artifactId><version>${netty.version}</version></dependency>
+      <dependency><groupId>io.netty</groupId><artifactId>netty-transport-classes-epoll</artifactId><version>${netty.version}</version></dependency>
+      <dependency><groupId>io.netty</groupId><artifactId>netty-transport-native-unix-common</artifactId><version>${netty.version}</version></dependency>
+      <dependency>
+        <groupId>io.netty</groupId><artifactId>netty-transport-native-epoll</artifactId><version>${netty.version}</version>
+        <classifier>linux-x86_64</classifier>
+      </dependency>
+
+      <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId><version>${slf4j.version}</version></dependency>
+      <dependency><groupId>ch.qos.logback</groupId><artifactId>logback-classic</artifactId><version>${logback.version}</version></dependency>
+      <dependency><groupId>org.jctools</groupId><artifactId>jctools-core</artifactId><version>${jctools.version}</version></dependency>
+      <dependency><groupId>org.hdrhistogram</groupId><artifactId>HdrHistogram</artifactId><version>${hdrhistogram.version}</version></dependency>
+
+      <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>${junit.version}</version></dependency>
+      <dependency><groupId>org.junit.platform</groupId><artifactId>junit-platform-launcher</artifactId><version>${junit.platform.version}</version></dependency>
+      <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>${assertj.version}</version></dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <!-- Every plugin pinned: an unpinned plugin makes Maven pick its own default
+           version, which may not exist in the offline bundle. -->
+      <plugins>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-clean-plugin</artifactId><version>3.2.0</version></plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-resources-plugin</artifactId><version>3.3.1</version></plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version>
+          <configuration>
+            <showWarnings>true</showWarnings>
+            <compilerArgs><arg>-Xlint:all,-options,-serial,-processing</arg></compilerArgs>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.2.5</version>
+          <configuration>
+            <trimStackTrace>false</trimStackTrace>
+            <redirectTestOutputToFile>true</redirectTestOutputToFile>
+          </configuration>
+        </plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId><version>3.4.1</version></plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-install-plugin</artifactId><version>3.1.2</version></plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-deploy-plugin</artifactId><version>3.1.2</version></plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.5.1</version></plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

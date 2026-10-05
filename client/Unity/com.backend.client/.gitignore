@@ -1,0 +1,3 @@
+Runtime/Plugins/
+# The package manifest, which the repository's "*.json" rule would leave out: Unity cannot import the package without it
+!package.json

@@ -1,0 +1,41 @@
+# Puts the leaderboards back from MySQL (05 §8), with the worker's settings and credentials:
+#   systemctl start backend-leaderboard-rebuild
+# after the store's disk is lost, or after an outage in which results were applied but not
+# ranked (backend_worker_unranked_total rose). Safe on a healthy store: every write only
+# raises, and a live board keeps its own expiry. Run it on one worker machine; not enabled.
+[Unit]
+Description=backend: rebuild the leaderboards from MySQL
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=backend
+Group=backend
+EnvironmentFile=/etc/backend/worker.env
+LoadCredential=db-password:/etc/backend/credentials/db-password
+LoadCredential=store-password:/etc/backend/credentials/store-password
+Environment=BACKEND_DB_PASSWORD_FILE=%d/db-password
+Environment=BACKEND_STORE_PASSWORD_FILE=%d/store-password
+ExecStart=/opt/backend/runtime/bin/java -Xmx512m --add-opens java.base/java.nio=ALL-UNNAMED \
+    -cp /opt/backend/lib/worker/* com.backend.worker.LeaderboardRebuild ${STORE_HOST} ${STORE_PORT}
+
+# Sandboxing, as the worker's.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=

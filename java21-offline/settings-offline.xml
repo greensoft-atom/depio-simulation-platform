@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  java21-offline bundle - read-only mirror settings.
+
+  CHANGE THE THREE URLs BELOW to where you extracted the bundle.
+    Linux:   file:///opt/java21-offline/repository
+    Windows: file:///C:/java21-offline/repository   (forward slashes, three after "file:")
+
+  Use with:  mvn -s /path/to/settings-offline.xml clean install
+  Do NOT add -o : Maven's offline mode blocks file:// repositories too.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <mirrors>
+    <mirror>
+      <id>java21-offline</id>
+      <name>java21-offline bundle</name>
+      <url>file:///opt/java21-offline/repository</url>
+      <mirrorOf>*</mirrorOf>
+    </mirror>
+  </mirrors>
+  <profiles>
+    <profile>
+      <id>offline-bundle</id>
+      <repositories>
+        <repository>
+          <id>java21-offline</id>
+          <url>file:///opt/java21-offline/repository</url>
+          <releases><enabled>true</enabled><checksumPolicy>ignore</checksumPolicy></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+      </repositories>
+      <pluginRepositories>
+        <pluginRepository>
+          <id>java21-offline</id>
+          <url>file:///opt/java21-offline/repository</url>
+          <releases><enabled>true</enabled><checksumPolicy>ignore</checksumPolicy></releases>
+          <snapshots><enabled>false</enabled></snapshots>
+        </pluginRepository>
+      </pluginRepositories>
+    </profile>
+  </profiles>
+  <activeProfiles><activeProfile>offline-bundle</activeProfile></activeProfiles>
+</settings>

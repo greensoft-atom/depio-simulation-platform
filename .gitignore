@@ -1,0 +1,4 @@
+# Built by `javac -d java`, as the README runs it; never tracked.
+*.class
+# Maven's build output, the release and its .tar.gz among it (backend/target/release/); never tracked.
+target/

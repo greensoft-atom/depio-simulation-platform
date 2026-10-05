@@ -1,0 +1,41 @@
+# nginx, the TLS edge for the lobby and the API on every machine (docs/operations/01-deploy.md §4):
+# the release's own, /opt/backend/nginx, built for RHEL 9 (docs/detailed-design/09 §5). Not the
+# distribution's package. Its configuration is /etc/backend/nginx/ (the release's nginx-conf/).
+#
+# Install: the system user (useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin
+# nginx), /etc/backend/nginx/{nginx.conf,backend.conf,backend-platform.conf}, then
+# systemctl enable --now backend-nginx.
+[Unit]
+Description=backend: nginx, the TLS edge for the lobby and the API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# The master runs as root to bind 80 and 443; its workers run as nginx (nginx.conf's user).
+Type=forking
+PIDFile=/run/backend-nginx/nginx.pid
+RuntimeDirectory=backend-nginx
+LogsDirectory=backend-nginx
+CacheDirectory=backend-nginx
+ExecStartPre=/opt/backend/nginx/sbin/nginx -t -q
+ExecStart=/opt/backend/nginx/sbin/nginx
+# A reload checks the configuration first, and drops no connection.
+ExecReload=/opt/backend/nginx/sbin/nginx -t -q
+ExecReload=/bin/kill -s HUP $MAINPID
+# QUIT: the workers finish what they serve; a lobby socket is closed and the client reconnects.
+KillSignal=SIGQUIT
+TimeoutStopSec=30
+Restart=on-failure
+LimitNOFILE=65536
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

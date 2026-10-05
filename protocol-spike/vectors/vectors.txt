@@ -1,0 +1,79 @@
+# Golden vectors for the match snapshot codec.
+# docs/detailed-design/02-networking.md §4
+# The C# client decoder must produce exactly these decoded values.
+# Format: name, byte length, hex, then the decoded summary.
+
+case minimal
+bytes 9
+hex 020101000000000000
+tickDelta 1
+inputSeqDelta 1
+viewOrigin 0 0
+removes []
+
+case join_burst
+bytes 56
+hex 020000807dff7c00030100c0e0401ffaff040211034164610200ff1f00e000010000010ac3a9c3a0e4b8ade6968703020c00f4ff02c80000
+tickDelta 0
+inputSeqDelta 0
+viewOrigin 8000 -8000
+removes []
+create tank h=1 x=-8000 y=8000 angle=250 hp=255 cls=4 team=2 lvl=17 name=Ada
+create tank h=2 x=8191 y=-8192 angle=0 hp=1 cls=0 team=0 lvl=1 name=éà中文
+create static h=3 x=12 y=-12 subtype=2 rot=200
+
+case realistic_mobile
+bytes 122
+hex 020203215803393a3b033c01b004acfed0841d024b0b083d01b0ff840328231d014b0e083e012800290048ee3d005a0c080c0a07060300c80b030401150c0302002a0d0300023f0e07010454c40f03030369100305017e110306009312070402a8c013030204bd14030003d215030101e7010106de0203416461
+tickDelta 2
+inputSeqDelta 3
+viewOrigin -17 44
+removes [57, 58, 59]
+create predicted h=60 x=1200 y=-340 heading=34000 speed=29 spawnOff=2 life=75 owner=11 radius=8
+create predicted h=61 x=-80 y=900 heading=9000 speed=29 spawnOff=1 life=75 owner=14 radius=8
+create predicted h=62 x=40 y=41 heading=61000 speed=61 spawnOff=0 life=90 owner=12 radius=8
+update h=10 mask=7 dx=3 dy=-2 angle=0 hp=200
+update h=11 mask=3 dx=2 dy=-1 angle=21 hp=0
+update h=12 mask=3 dx=1 dy=0 angle=42 hp=0
+update h=13 mask=3 dx=0 dy=1 angle=63 hp=0
+update h=14 mask=7 dx=-1 dy=2 angle=84 hp=196
+update h=15 mask=3 dx=-2 dy=-2 angle=105 hp=0
+update h=16 mask=3 dx=-3 dy=-1 angle=126 hp=0
+update h=17 mask=3 dx=3 dy=0 angle=147 hp=0
+update h=18 mask=7 dx=2 dy=1 angle=168 hp=192
+update h=19 mask=3 dx=1 dy=2 angle=189 hp=0
+update h=20 mask=3 dx=0 dy=-2 angle=210 hp=0
+update h=21 mask=3 dx=-1 dy=-1 angle=231 hp=0
+event death score=350 killer=Ada
+
+case progression
+bytes 33
+hex 020104060300000002020e11d809ac0c0302000100040703000106d80903416461
+tickDelta 1
+inputSeqDelta 4
+viewOrigin 3 -2
+removes []
+event stats level=17 xp=1240 next=1580 unspent=3 points=[2,0,1,0,4,7,3,0]
+event death score=1240 killer=Ada
+
+case second_tier
+bytes 52
+hex 0201010000000346012c01ecff00800e004b01104703c4ff5a000cff0101010c480390019001c8b40202050a0149072423405a00
+tickDelta 1
+inputSeqDelta 1
+viewOrigin 0 0
+removes []
+create predicted h=70 x=300 y=-20 heading=32768 speed=14 spawnOff=0 life=75 owner=1 radius=16
+create unit h=71 x=-60 y=90 angle=12 hp=255 subtype=1 team=1 owner=1 radius=12
+create unit h=72 x=400 y=400 angle=200 hp=180 subtype=2 team=2 owner=5 radius=10
+update h=73 mask=7 dx=18 dy=-18 angle=64 hp=90
+
+case motion
+bytes 25
+hex 0202010c010000000206083e23d70a41f0000005040380067f
+tickDelta 2
+inputSeqDelta 1
+viewOrigin 6 -1
+removes []
+event motion_rule accel=3e23d70a radius=41f00000
+event motion inputTicks=3 vx=384 vy=-64

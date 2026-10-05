@@ -1,0 +1,14 @@
+[
+  { "sku": "treads_light", "itemId": "treads_light", "price": 1200 },
+  { "sku": "barrel_steel", "itemId": "barrel_steel", "price": 1500 },
+  { "sku": "armor_plate", "itemId": "armor_plate", "price": 1500 },
+  { "sku": "barrel_rifled", "itemId": "barrel_rifled", "price": 2000, "requiresLevel": 5 },
+  { "sku": "core_capacitor", "itemId": "core_capacitor", "price": 2000, "requiresLevel": 5 },
+  { "sku": "boost_xp_hour", "itemId": "boost_xp_hour", "price": 20, "currency": "gems" },
+  { "sku": "boost_coins_hour", "itemId": "boost_coins_hour", "price": 20, "currency": "gems" },
+  { "sku": "skin_crimson", "itemId": "skin_crimson", "price": 150, "currency": "gems" },
+  { "sku": "skin_azure", "itemId": "skin_azure", "price": 150, "currency": "gems" },
+  { "sku": "skin_jade", "itemId": "skin_jade", "price": 150, "currency": "gems" },
+  { "sku": "skin_gold", "itemId": "skin_gold", "price": 400, "currency": "gems" },
+  { "sku": "skin_carbon", "itemId": "skin_carbon", "price": 400, "currency": "gems" }
+]

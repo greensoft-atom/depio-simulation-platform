@@ -1,0 +1,49 @@
+# Copies the MySQL binlogs off the database's machine as they are written (06 §10), so that a
+# point-in-time restore survives losing that machine. Install it on the machine that takes the
+# dumps, never on the database's own (docs/operations/01-deploy.md §10). It needs the MySQL
+# client tools there, and /etc/backend/credentials/mysql-binlog.cnf:
+#   [client]  host=10.0.0.1  user=binlog  password=...
+#             ssl-mode=VERIFY_IDENTITY  ssl-ca=/etc/backend/tls/mysql-ca.pem
+[Unit]
+Description=backend: stream the MySQL binlogs off the database's machine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Not backend: the copies are every change to every row, and the processes have no business
+# reading them.
+User=backend-backup
+Group=backend-backup
+LoadCredential=mysql-binlog.cnf:/etc/backend/credentials/mysql-binlog.cnf
+Environment=BINLOG_CNF=%d/mysql-binlog.cnf
+StateDirectory=backend/binlog
+StateDirectoryMode=0700
+ExecStart=/opt/backend/scripts/binlog-stream.sh %S/backend/binlog
+# Always, not on-failure: a database shutting down ends the stream with status 0 (measured),
+# and it must resume when the database is back.
+Restart=always
+RestartSec=10
+
+# Sandboxing, as the other units. MemoryDenyWriteExecute holds here: bash and mysqlbinlog, no JIT.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+# Runs backend-backup-offsite.service every hour: the copy off the site is at most an hour behind.
+[Unit]
+Description=backend: the backups copied off the site, hourly
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

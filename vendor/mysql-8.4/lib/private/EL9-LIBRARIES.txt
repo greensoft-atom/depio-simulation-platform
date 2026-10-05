@@ -1,0 +1,2 @@
+libaio-0.3.111-13.el9.x86_64
+numactl-libs-2.0.19-3.el9.x86_64

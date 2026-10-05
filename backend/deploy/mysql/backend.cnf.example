@@ -1,0 +1,33 @@
+# /etc/backend/mysql/backend.cnf - the database server, read by backend-mysql.service on machine A
+# (and on C, its replica, with the replica's lines of docs/operations/01-deploy.md §9). The release's
+# MySQL 8.4, /opt/backend/mysql (docs/detailed-design/09 §6), run as the system user mysql.
+#
+# Initialise once, as root:
+#   install -d -o mysql -g mysql -m 0750 /var/lib/backend-mysql /var/log/backend-mysql
+#   (the log's directory too: systemd makes it at the unit's start, which is after this)
+#   /opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/mysql/backend.cnf --initialize-insecure --user=mysql
+# then start backend-mysql.service and set root's password through the socket:
+#   /opt/backend/mysql/bin/mysql -S /run/backend-mysql/mysqld.sock -u root -e "ALTER USER root@localhost IDENTIFIED BY '...'"
+[mysqld]
+datadir                    = /var/lib/backend-mysql
+socket                     = /run/backend-mysql/mysqld.sock
+pid-file                   = /run/backend-mysql/mysqld.pid
+log-error                  = /var/log/backend-mysql/error.log
+bind-address               = 10.0.0.1         # the private network, never a public interface
+mysqlx                     = OFF              # the X Protocol, unused: on, it listens on 33060
+                                              # on every interface whatever bind-address says
+require_secure_transport   = ON               # TCP without TLS is refused; the socket still works
+tls_version                = TLSv1.2,TLSv1.3
+ssl_ca                     = /etc/mysql-tls/ca.pem
+ssl_cert                   = /etc/mysql-tls/server-cert.pem
+ssl_key                    = /etc/mysql-tls/server-key.pem
+log_bin                    = binlog           # the default; point-in-time recovery needs it
+binlog_format              = ROW
+binlog_expire_logs_seconds = 604800           # 7 days (06 §10): as far back as a restore can reach
+default-time-zone          = '+00:00'         # UTC, as the processes write (06 §2): CURRENT_TIMESTAMP too
+innodb_buffer_pool_size    = 14G              # of MySQL's 20 GB (architecture/01 §2)
+max_connections            = 151              # pools are 16 per platform and 8 per worker, plus
+                                              # the backup and whoever is investigating
+
+[client]
+socket                     = /run/backend-mysql/mysqld.sock

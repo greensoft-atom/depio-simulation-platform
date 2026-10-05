@@ -1,0 +1,19 @@
+[
+  { "id": "barrel_steel", "type": "EQUIPMENT", "slot": "barrel",
+    "modifiers": [ { "stat": "bullet_damage", "percent": 8 } ] },
+  { "id": "barrel_rifled", "type": "EQUIPMENT", "slot": "barrel",
+    "modifiers": [ { "stat": "bullet_speed", "percent": 10 }, { "stat": "bullet_penetration", "percent": 5 } ] },
+  { "id": "armor_plate", "type": "EQUIPMENT", "slot": "armor",
+    "modifiers": [ { "stat": "max_health", "percent": 10 } ] },
+  { "id": "core_capacitor", "type": "EQUIPMENT", "slot": "core",
+    "modifiers": [ { "stat": "reload", "percent": 8 } ] },
+  { "id": "treads_light", "type": "EQUIPMENT", "slot": "treads",
+    "modifiers": [ { "stat": "movement_speed", "percent": 8 } ] },
+  { "id": "boost_xp_hour", "type": "BOOST", "kind": "xp", "percent": 100, "minutes": 60 },
+  { "id": "boost_coins_hour", "type": "BOOST", "kind": "coins", "percent": 100, "minutes": 60 },
+  { "id": "skin_crimson", "type": "SKIN", "skin": 1 },
+  { "id": "skin_azure", "type": "SKIN", "skin": 2 },
+  { "id": "skin_jade", "type": "SKIN", "skin": 3 },
+  { "id": "skin_gold", "type": "SKIN", "skin": 4 },
+  { "id": "skin_carbon", "type": "SKIN", "skin": 5 }
+]

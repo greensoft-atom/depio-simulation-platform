@@ -1,0 +1,40 @@
+# Install: copy the distribution to /opt/j-redis, create the user (useradd --system jredis),
+# copy conf/j-redis.conf to /etc/j-redis/j-redis.conf (set requirepass), then
+#   cp systemd/j-redis.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now j-redis
+#
+# Requires Java 21 or newer. On RHEL 9:  dnf install java-21-openjdk-devel
+# Check the ExecStart path matches your JDK:  readlink -f $(which java)
+[Unit]
+Description=j-redis-service
+After=network.target
+
+[Service]
+User=jredis
+# creates /var/lib/j-redis (data) and /var/log/j-redis (GC log, heap dumps) owned by User.
+# Both private, and every file the server writes: the data holds every live session token, and a
+# heap dump holds the data. With systemd's defaults (0755, umask 0022) the AOF was world-readable.
+# On an existing install, also: chmod -R go= /var/lib/j-redis /var/log/j-redis
+StateDirectory=j-redis
+StateDirectoryMode=0700
+LogsDirectory=j-redis
+LogsDirectoryMode=0700
+UMask=0077
+ExecStart=/usr/bin/taskset -c 0-1 /usr/lib/jvm/java-21-openjdk/bin/java \
+    -server -Xms8g -Xmx8g \
+    -XX:+UseZGC -XX:+ZGenerational -XX:+AlwaysPreTouch \
+    --add-opens java.base/java.nio=ALL-UNNAMED \
+    -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/j-redis \
+    -Xlog:gc*:file=/var/log/j-redis/gc.log:time,uptime:filecount=5,filesize=20M \
+    -Djava.net.preferIPv4Stack=true -Dio.netty.leakDetection.level=disabled \
+    -jar /opt/j-redis/lib/j-redis-server.jar /etc/j-redis/j-redis.conf
+# exit 4 (fail-stop) restarts; 1 (config), 2 (data dir locked), 3 (data not loadable) need a human
+Restart=on-failure
+# the JVM exits with 143 after a SIGTERM-initiated clean shutdown
+SuccessExitStatus=143
+RestartSec=2
+RestartPreventExitStatus=1 2 3
+LimitNOFILE=65536
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

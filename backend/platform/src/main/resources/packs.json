@@ -1,0 +1,7 @@
+[
+  { "productId": "gems_80", "gems": 80, "priceCents": 99 },
+  { "productId": "gems_500", "gems": 500, "priceCents": 499 },
+  { "productId": "gems_1100", "gems": 1100, "priceCents": 999 },
+  { "productId": "gems_2400", "gems": 2400, "priceCents": 1999 },
+  { "productId": "gems_6500", "gems": 6500, "priceCents": 4999 }
+]

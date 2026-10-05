@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.codehaus.mojo</groupId>
+    <artifactId>mojo-parent</artifactId>
+    <version>97</version>
+  </parent>
+
+  <artifactId>extra-enforcer-rules</artifactId>
+  <version>1.12.1</version>
+
+  <name>Extra Enforcer Rules</name>
+
+  <description>Extra Enforcer Rules. These are extra rules for Apache Maven's Enforcer Plugin.</description>
+  <url>https://www.mojohaus.org/extra-enforcer-rules/</url>
+
+  <inceptionYear>2011</inceptionYear>
+
+  <licenses>
+    <license>
+      <name>The Apache Software License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <name>Stephen Connolly</name>
+      <email>stephen.alan.connolly@gmail.com</email>
+      <roles>
+        <role>Lead Developer</role>
+      </roles>
+      <timezone>0</timezone>
+    </developer>
+    <developer>
+      <name>Baptiste Mathus</name>
+      <email>baptiste@codehaus.org</email>
+      <roles>
+        <role>Developer</role>
+      </roles>
+      <timezone>Europe/Paris</timezone>
+    </developer>
+    <developer>
+      <name>Slawomir Jaranowski</name>
+      <email>sjaranowski@apache.org</email>
+      <timezone>Europe/Warsaw</timezone>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/mojohaus/extra-enforcer-rules.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/mojohaus/extra-enforcer-rules.git</developerConnection>
+    <tag>1.12.1</tag>
+    <url>https://github.com/mojohaus/extra-enforcer-rules/tree/master</url>
+  </scm>
+
+  <properties>
+    <!-- override from parent pom, here we need more control -->
+    <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
+    <!-- we need dot less properties for .vm -->
+    <enforcerPluginVersion>${maven-enforcer-plugin.version}</enforcerPluginVersion>
+    <project.build.outputTimestamp>2026-09-11T21:03:23Z</project.build.outputTimestamp>
+  </properties>
+
+  <dependencies>
+    <!-- enforcer API -->
+    <dependency>
+      <groupId>org.apache.maven.enforcer</groupId>
+      <artifactId>enforcer-api</artifactId>
+      <version>${maven-enforcer-plugin.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Maven core -->
+    <dependency>
+      <groupId>org.apache.maven</groupId>
+      <artifactId>maven-core</artifactId>
+      <version>${mavenVersion}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Maven shared -->
+    <dependency>
+      <groupId>org.apache.maven.shared</groupId>
+      <artifactId>maven-common-artifact-filters</artifactId>
+      <version>3.4.0</version>
+    </dependency>
+
+    <!-- other commons -->
+    <dependency>
+      <groupId>commons-codec</groupId>
+      <artifactId>commons-codec</artifactId>
+      <version>1.22.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-params</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>4.11.0</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-junit-jupiter</artifactId>
+      <version>4.11.0</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>enforce-banned-dependencies</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <bannedDependencies>
+                  <excludes>
+                    <exclude>org.apache.maven.enforcer:enforcer-rules</exclude>
+                  </excludes>
+                  <message>Don't depend on the standard Enforcer Rules, only on the API. See MOJO-1949</message>
+                </bannedDependencies>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.eclipse.sisu</groupId>
+        <artifactId>sisu-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+  <reporting>
+    <plugins>
+      <plugin>
+        <!-- disable as it is not a Maven plugin project -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-plugin-report-plugin</artifactId>
+        <reportSets>
+          <reportSet>
+            <reports />
+          </reportSet>
+        </reportSets>
+      </plugin>
+    </plugins>
+  </reporting>
+
+  <profiles>
+    <profile>
+      <id>run-its</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-invoker-plugin</artifactId>
+            <configuration>
+              <streamLogs>false</streamLogs>
+              <debug>true</debug>
+              <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
+              <showErrors>true</showErrors>
+              <settingsFile>src/it/settings.xml</settingsFile>
+              <preBuildHookScript>setup</preBuildHookScript>
+              <postBuildHookScript>verify</postBuildHookScript>
+              <addTestClassPath>true</addTestClassPath>
+              <localRepositoryPath>${project.build.directory}/local-repo</localRepositoryPath>
+              <mavenOpts>-Djava.io.tmpdir=${project.build.directory}</mavenOpts>
+              <properties>
+                <maven.compiler.source>${maven.compiler.source}</maven.compiler.source>
+                <maven.compiler.target>${maven.compiler.target}</maven.compiler.target>
+              </properties>
+              <filterProperties>
+                <enforcerPluginVersion>${maven-enforcer-plugin.version}</enforcerPluginVersion>
+              </filterProperties>
+              <goals>
+                <goal>enforcer:enforce</goal>
+              </goals>
+            </configuration>
+            <executions>
+              <execution>
+                <id>integration-test</id>
+                <goals>
+                  <goal>install</goal>
+                  <goal>run</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

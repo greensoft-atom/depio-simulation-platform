@@ -1,0 +1,13 @@
+# Keep launcher line endings correct on every platform.
+*.sh            text eol=lf
+*.cmd           text eol=crlf
+*.ps1           text eol=crlf
+dist/bin/j-redis-server    text eol=lf
+dist/bin/j-redis-cli       text eol=lf
+dist/bin/j-redis-tools     text eol=lf
+dist/bin/j-redis-examples  text eol=lf
+*.java          text
+*.md            text
+*.xml           text
+*.conf          text eol=lf
+*.jar           binary

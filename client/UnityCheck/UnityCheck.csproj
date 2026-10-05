@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Compiles the Unity package's scripts on a machine without Unity (docs 08 §8, D-73): against stubs of only the
+       Unity API they use, written to Unity's own signatures, and the core. It catches the scripts' own mistakes and
+       the core misused; it cannot catch a wrong belief about Unity's API, which only Unity can. Build it with
+       UnityDefines of UNITY_EDITOR, UNITY_IOS and UNITY_ANDROID, and none, so every branch compiles: unity-check.sh.
+       CS0649, a field never assigned, is what an inspector-assigned [SerializeField] is, and not an error. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS0649</NoWarn>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);$(UnityDefines)</DefineConstants>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Stubs/**/*.cs" />
+    <Compile Include="../Unity/com.backend.client/Runtime/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Core/Backend.Client.Core.csproj" />
+  </ItemGroup>
+</Project>

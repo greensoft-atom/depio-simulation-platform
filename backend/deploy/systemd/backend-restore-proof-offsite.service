@@ -1,0 +1,51 @@
+# The monthly proof that the copy off the site restores (06 §10, D-71): fetched back, decrypted, and
+# restored onto the scratch server as the weekly proof does, replayed to the end of its closed
+# binlogs. Recorded as a proof, "from off the site". Enabled with backend-backup-offsite (Q-53).
+[Unit]
+Description=backend: the monthly proof that the copy off the site restores
+After=network-online.target backend-scratch-mysql.service
+Wants=network-online.target
+Requires=backend-scratch-mysql.service
+
+[Service]
+Type=oneshot
+User=backend-backup
+Group=backend-backup
+LoadCredential=mysql-backup.cnf:/etc/backend/credentials/mysql-backup.cnf
+LoadCredential=mysql-scratch.cnf:/etc/backend/credentials/mysql-scratch.cnf
+LoadCredential=offsite.key:/etc/backend/credentials/offsite.key
+LoadCredential=offsite-ssh:/etc/backend/credentials/offsite-ssh
+Environment=SOURCE_CNF=%d/mysql-backup.cnf
+Environment=SCRATCH_CNF=%d/mysql-scratch.cnf
+Environment=OFFSITE_KEY=%d/offsite.key
+Environment="OFFSITE_SSH=ssh -i %d/offsite-ssh -o UserKnownHostsFile=/etc/backend/offsite-known-hosts -o BatchMode=yes"
+Environment=FROM_OFFSITE=1
+EnvironmentFile=/etc/backend/offsite.env
+# The copy is fetched onto the backup volume, not into /tmp, which is the root filesystem (O-21).
+StateDirectory=backend/proof backend/offsite-fetch
+Environment=TMPDIR=%S/backend/offsite-fetch
+StateDirectoryMode=0700
+# One proof at a time, and a database of its own on the scratch server (O-18): the weekly proof's
+# backend_proof is kept when it fails, for the operator to look at.
+ExecStart=/usr/bin/flock %S/backend/proof/lock /opt/backend/scripts/restore-proof.sh /nonexistent /nonexistent backend backend_proof_offsite
+TimeoutStartSec=8h
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=

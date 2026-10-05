@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.backend</groupId>
+  <artifactId>backend-parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>backend</name>
+  <description>Realtime multiplayer arena backend (Java 21)</description>
+
+  <modules>
+    <module>common</module>
+    <module>protocol</module>
+    <module>sim</module>
+    <module>arena</module>
+    <module>handoff</module>
+    <module>persistence</module>
+    <module>platform</module>
+    <module>worker</module>
+    <module>gateway</module>
+    <module>tools</module>
+  </modules>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>21</maven.compiler.release>
+
+    <netty.version>4.2.18.Final</netty.version>
+    <jredis.version>2.2.1</jredis.version>
+    <bouncycastle.version>1.86</bouncycastle.version>
+    <jackson.version>2.22.3</jackson.version>
+    <mysql.version>26.7.0</mysql.version>
+    <hikari.version>7.1.0</hikari.version>
+    <flyway.version>13.7.0</flyway.version>
+    <hdrhistogram.version>2.2.2</hdrhistogram.version>
+    <jctools.version>4.0.7</jctools.version>
+    <slf4j.version>2.0.20</slf4j.version>
+    <logback.version>1.6.3</logback.version>
+    <junit.version>6.1.3</junit.version>
+    <assertj.version>3.27.7</assertj.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency><groupId>com.backend</groupId><artifactId>common</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.backend</groupId><artifactId>sim</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.backend</groupId><artifactId>protocol</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.backend</groupId><artifactId>arena</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.backend</groupId><artifactId>platform</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.backend</groupId><artifactId>handoff</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.backend</groupId><artifactId>persistence</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.backend</groupId><artifactId>worker</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>com.backend</groupId><artifactId>gateway</artifactId><version>${project.version}</version></dependency>
+
+      <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>${jackson.version}</version></dependency>
+
+      <!-- Argon2id only. Bouncy Castle is pure Java, so it needs nothing installed on the host. -->
+      <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk18on</artifactId><version>${bouncycastle.version}</version></dependency>
+
+      <!-- j-redis publishes against Netty 4.1; the pin above puts it on 4.2 with everything
+           else, which the platform tests exercise by running a real server and client. -->
+      <dependency><groupId>com.jredis</groupId><artifactId>j-redis-client</artifactId><version>${jredis.version}</version></dependency>
+      <dependency><groupId>com.jredis</groupId><artifactId>j-redis-common</artifactId><version>${jredis.version}</version></dependency>
+      <dependency><groupId>com.jredis</groupId><artifactId>j-redis-embedded</artifactId><version>${jredis.version}</version></dependency>
+      <dependency><groupId>com.jredis</groupId><artifactId>j-redis-server</artifactId><version>${jredis.version}</version></dependency>
+
+      <dependency><groupId>io.netty</groupId><artifactId>netty-buffer</artifactId><version>${netty.version}</version></dependency>
+      <dependency><groupId>io.netty</groupId><artifactId>netty-codec</artifactId><version>${netty.version}</version></dependency>
+      <dependency><groupId>io.netty</groupId><artifactId>netty-codec-http</artifactId><version>${netty.version}</version></dependency>
+      <dependency><groupId>io.netty</groupId><artifactId>netty-common</artifactId><version>${netty.version}</version></dependency>
+      <dependency><groupId>io.netty</groupId><artifactId>netty-handler</artifactId><version>${netty.version}</version></dependency>
+      <dependency><groupId>io.netty</groupId><artifactId>netty-transport</artifactId><version>${netty.version}</version></dependency>
+      <dependency><groupId>io.netty</groupId><artifactId>netty-transport-classes-epoll</artifactId><version>${netty.version}</version></dependency>
+      <dependency>
+        <groupId>io.netty</groupId><artifactId>netty-transport-native-epoll</artifactId><version>${netty.version}</version>
+        <classifier>linux-x86_64</classifier>
+      </dependency>
+      <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId><version>${mysql.version}</version></dependency>
+      <dependency><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId><version>${hikari.version}</version></dependency>
+      <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId><version>${flyway.version}</version></dependency>
+      <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-mysql</artifactId><version>${flyway.version}</version></dependency>
+      <dependency><groupId>org.hdrhistogram</groupId><artifactId>HdrHistogram</artifactId><version>${hdrhistogram.version}</version></dependency>
+      <dependency><groupId>org.jctools</groupId><artifactId>jctools-core</artifactId><version>${jctools.version}</version></dependency>
+      <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId><version>${slf4j.version}</version></dependency>
+      <dependency><groupId>ch.qos.logback</groupId><artifactId>logback-classic</artifactId><version>${logback.version}</version></dependency>
+
+      <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>${junit.version}</version><scope>test</scope></dependency>
+      <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>${assertj.version}</version><scope>test</scope></dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <!-- Every plugin pinned: an unpinned plugin lets Maven pick a version that
+           may not be in the offline bundle. -->
+      <plugins>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-clean-plugin</artifactId><version>3.5.0</version></plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-resources-plugin</artifactId><version>3.5.0</version></plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.16.0</version>
+          <configuration>
+            <showWarnings>true</showWarnings>
+            <compilerArgs><arg>-Xlint:all,-processing</arg></compilerArgs>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.6.0</version>
+          <configuration><trimStackTrace>false</trimStackTrace></configuration>
+        </plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId><version>3.5.1</version></plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-install-plugin</artifactId><version>3.2.0</version></plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-deploy-plugin</artifactId><version>3.2.0</version></plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.6.2</version></plugin>
+        <!-- scripts/make-release.sh runs dependency:copy-dependencies. -->
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><version>3.11.0</version></plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+</project>

@@ -1,0 +1,68 @@
+# The platform API (docs/operations/01-deploy.md). One per machine, behind that machine's nginx.
+#
+# Install: see docs/operations/01-deploy.md §7. Settings in /etc/backend/platform.env
+# (deploy/env/platform.env.example); credentials in /etc/backend/credentials/.
+# Java is the release's own runtime, /opt/backend/runtime (docs/detailed-design/09 §4.1).
+[Unit]
+Description=backend platform API
+# The database is the release's MySQL, backend-mysql.service, on machine A (and C, its replica);
+# elsewhere an After= on a unit that does not exist orders nothing.
+After=network-online.target backend-mysql.service
+Wants=network-online.target
+
+[Service]
+User=backend
+Group=backend
+EnvironmentFile=/etc/backend/platform.env
+LoadCredential=db-password:/etc/backend/credentials/db-password
+LoadCredential=store-password:/etc/backend/credentials/store-password
+Environment=BACKEND_DB_PASSWORD_FILE=%d/db-password
+Environment=BACKEND_STORE_PASSWORD_FILE=%d/store-password
+LogsDirectory=backend
+# 2c / 4G in the capacity model (architecture/01 §3). Argon2's 8 x 19 MiB is inside the heap
+# (Bouncy Castle's blocks are Java arrays); what is left outside is for thread stacks, the
+# JIT's code and direct buffers.
+# maxIdleConnections sits above nginx's upstream keepalive pool: with the JDK default of
+# 200, idle connections the client was about to reuse were closed under it (measured: 63
+# failed requests in a 3 000-login storm at 200, none at 5 000).
+ExecStart=/opt/backend/runtime/bin/java -server -Xms3g -Xmx3g \
+    -XX:+UseZGC -XX:+ZGenerational -XX:+AlwaysPreTouch \
+    --add-opens java.base/java.nio=ALL-UNNAMED \
+    -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/backend \
+    -Xlog:gc*:file=/var/log/backend/platform-gc.log:time,uptime:filecount=5,filesize=20M \
+    -Dsun.net.httpserver.maxIdleConnections=1000 \
+    -cp /opt/backend/lib/platform/* com.backend.platform.PlatformMain \
+    ${PLATFORM_BIND} ${PLATFORM_PORT} ${STORE_HOST} ${STORE_PORT}
+Restart=on-failure
+RestartSec=2
+# 2: the configuration was refused; restarting cannot fix it (01 §2). 143: SIGTERM, clean.
+# 243: systemd could not load a credential - a missing file, which restarting cannot fix either.
+RestartPreventExitStatus=2 243
+SuccessExitStatus=143
+LimitNOFILE=65536
+TimeoutStopSec=30
+
+# Sandboxing: nothing here needs more than its own state and log directories and the network.
+# Not MemoryDenyWriteExecute: the JIT writes code and then runs it, by design. PrivateTmp: a
+# /tmp of its own. Nothing here extracts a native library into it; only the arena carries Netty's.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

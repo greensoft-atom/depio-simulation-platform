@@ -1,0 +1,13 @@
+# The admin API (operations/02 §3a, 04 §10): on loopback, behind a shared secret, reached over SSH.
+# A drop-in, not a unit: install it as /etc/systemd/system/backend-platform.service.d/admin.conf,
+# then `systemctl daemon-reload`, and name the address in /etc/backend/platform.env:
+#   BACKEND_ADMIN_ADDR=127.0.0.1:9120
+#
+# Make the secret first: LoadCredential refuses to start a unit whose file is missing.
+#   install -d -m 0700 /etc/backend/credentials
+#   head -c 32 /dev/urandom | base64 > /etc/backend/credentials/admin-token
+#   chmod 0600 /etc/backend/credentials/admin-token
+# An address named with no secret refuses to start (exit 2); so does one that is not loopback.
+[Service]
+LoadCredential=admin-token:/etc/backend/credentials/admin-token
+Environment=BACKEND_ADMIN_TOKEN_FILE=%d/admin-token

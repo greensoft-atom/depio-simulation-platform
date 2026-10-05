@@ -1,0 +1,12 @@
+#!/bin/sh
+# Starts j-redis-server:  bin/j-redis-server [config-file] [--directive value ...]
+# JAVA_HOME selects the JDK (Java 21 or newer); JREDIS_JAVA_OPTS replaces the default JVM options.
+BASE=$(cd "$(dirname "$0")/.." && pwd)
+if [ -n "${JAVA_HOME:-}" ]; then JAVA="$JAVA_HOME/bin/java"; else JAVA=java; fi
+# ZGC in development too, so the memory estimate behaves as it does in production:
+# ZGC turns compressed oops off, which changes every object size (see docs/06).
+: "${JREDIS_JAVA_OPTS:=-Xms1g -Xmx1g -XX:+UseZGC -XX:+ZGenerational}"
+# --add-opens is structural, not tunable: without it Netty loses its direct-buffer fast path.
+# shellcheck disable=SC2086  # the options are meant to be split into words
+exec "$JAVA" --add-opens java.base/java.nio=ALL-UNNAMED $JREDIS_JAVA_OPTS \
+     -jar "$BASE/lib/j-redis-server.jar" "$@"

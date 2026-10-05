@@ -1,0 +1,42 @@
+# The nightly MySQL dump (06 §10), taken over TLS from this machine rather than the database's:
+# a dump on the disk it protects is lost with it. Afterwards it prunes dumps older than
+# KEEP_DAYS and the binlog copies no remaining dump needs (docs/operations/01-deploy.md §10).
+# Needs /etc/backend/credentials/mysql-backup.cnf:
+#   [client]  host=10.0.0.1  user=backup  password=...
+#             ssl-mode=VERIFY_IDENTITY  ssl-ca=/etc/backend/tls/mysql-ca.pem
+[Unit]
+Description=backend: MySQL dump, taken off the database's machine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=backend-backup
+Group=backend-backup
+LoadCredential=mysql-backup.cnf:/etc/backend/credentials/mysql-backup.cnf
+Environment=MYSQL_CNF=%d/mysql-backup.cnf
+Environment=BINLOG_DIR=%S/backend/binlog
+Environment=KEEP_DAYS=8
+StateDirectory=backend/mysql-dumps backend/binlog
+StateDirectoryMode=0700
+ExecStart=/opt/backend/scripts/backup-mysql.sh backend %S/backend/mysql-dumps
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=

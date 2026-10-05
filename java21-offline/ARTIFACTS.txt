@@ -1,0 +1,278 @@
+Every jar below was verified to contain only Java 21 or older bytecode
+(class-file major <= 65), checked by maven-enforcer + extra-enforcer-rules
+during a real build on Temurin 21, and re-checked directly here.
+
+245 jars.  'rt' = also in lib/ (runtime), 'test' = also in lib-test/.
+'mr' = multi-release jar (has JDK-specific overlays).
+
+
+=== Apache Commons (16) ===
+  commons-beanutils:commons-beanutils                      1.9.4                  Java 6       241 KB  
+  commons-codec:commons-codec                              1.19.0                 Java 8       365 KB  mr
+  commons-codec:commons-codec                              1.22.0                 Java 8       410 KB  mr
+  commons-codec:commons-codec                              1.22.1                 Java 8       412 KB  rt mr
+  commons-collections:commons-collections                  3.2.2                  Java 1.3     574 KB  
+  commons-io:commons-io                                    2.16.1                 Java 8       496 KB  mr
+  commons-io:commons-io                                    2.21.0                 Java 8       571 KB  mr
+  commons-io:commons-io                                    2.22.0                 Java 8       594 KB  rt mr
+  commons-io:commons-io                                    2.6                    Java 7       209 KB  
+  commons-logging:commons-logging                          1.2                    Java 1.2      60 KB  
+  org.apache.commons:commons-compress                      1.28.0                 Java 8      1091 KB  mr
+  org.apache.commons:commons-digester3                     3.2                    Java 5       235 KB  
+  org.apache.commons:commons-lang3                         3.18.0                 Java 8       686 KB  mr
+  org.apache.commons:commons-lang3                         3.20.0                 Java 8       697 KB  rt mr
+  org.apache.commons:commons-math3                         3.6.1                  Java 5      2161 KB  test
+  org.apache.commons:commons-text                          1.12.0                 Java 8       245 KB  mr
+
+=== Cluster membership / coordination (1) ===
+  org.jgroups:jgroups                                      5.5.7.Final            Java 17     2431 KB  rt
+
+=== Collections / caching / concurrency (7) ===
+  com.github.ben-manes.caffeine:caffeine                   3.3.0                  Java 11     1039 KB  rt
+  com.lmax:disruptor                                       4.0.0                  Java 11       83 KB  rt
+  it.unimi.dsi:fastutil                                    8.5.19                 Java 8     23415 KB  rt
+  org.agrona:agrona                                        2.6.1                  Java 17      480 KB  rt
+  org.hdrhistogram:HdrHistogram                            2.2.2                  Java 8       173 KB  rt
+  org.jctools:jctools-core                                 3.3.0                  Java 6       328 KB  rt
+  org.jctools:jctools-core                                 4.0.7                  Java 9       488 KB  rt
+
+=== Compression (7) ===
+  com.github.luben:zstd-jni                                1.5.5-11               Java 9      6617 KB  
+  com.github.luben:zstd-jni                                1.5.7-6                Java 9      7230 KB  
+  com.github.luben:zstd-jni                                1.5.7-9                Java 9      7392 KB  
+  org.lz4:lz4-java                                         1.8.0                  Java 7       666 KB  
+  org.tukaani:xz                                           1.10                   Java 8       164 KB  mr
+  org.tukaani:xz                                           1.11                   Java 8       164 KB  mr
+  org.tukaani:xz                                           1.12                   Java 8       164 KB  rt mr
+
+=== Crypto (7) ===
+  org.bouncycastle:bcpkix-jdk15on                          1.69                   Java 5       887 KB  mr
+  org.bouncycastle:bcpkix-jdk18on                          1.86                   Java 8      1310 KB  rt mr
+  org.bouncycastle:bcprov-jdk15on                          1.69                   Java 5      5609 KB  mr
+  org.bouncycastle:bcprov-jdk18on                          1.86                   Java 8      7054 KB  rt mr
+  org.bouncycastle:bctls-jdk15on                           1.69                   Java 5      1398 KB  mr
+  org.bouncycastle:bcutil-jdk15on                          1.69                   Java 5       351 KB  mr
+  org.bouncycastle:bcutil-jdk18on                          1.86                   Java 8       770 KB  rt mr
+
+=== Database (MySQL, pool, migrations) (4) ===
+  com.mysql:mysql-connector-j                              26.7.0                 Java 8      2551 KB  rt
+  com.zaxxer:HikariCP                                      7.1.0                  Java 11      168 KB  rt
+  org.flywaydb:flyway-core                                 13.7.0                 Java 17      791 KB  rt
+  org.flywaydb:flyway-mysql                                13.7.0                 Java 17       30 KB  rt
+
+=== JSON / serialization (6) ===
+  com.fasterxml.jackson.core:jackson-annotations           2.22                   Java 9        82 KB  rt
+  com.fasterxml.jackson.core:jackson-core                  2.22.3                 Java 8       580 KB  rt mr
+  com.fasterxml.jackson.core:jackson-databind              2.22.3                 Java 8      1669 KB  rt mr
+  com.fasterxml.jackson.dataformat:jackson-dataformat-yaml 2.22.3                 Java 8        61 KB  rt mr
+  com.google.code.gson:gson                                2.14.0                 Java 8       306 KB  rt mr
+  org.yaml:snakeyaml                                       2.5                    Java 8       332 KB  rt mr
+
+=== Logging (9) ===
+  ch.qos.logback:logback-classic                           1.3.15                 Java 8       268 KB  rt mr
+  ch.qos.logback:logback-classic                           1.6.3                  Java 11      286 KB  rt
+  ch.qos.logback:logback-core                              1.3.15                 Java 8       558 KB  rt mr
+  ch.qos.logback:logback-core                              1.6.3                  Java 11      634 KB  rt
+  org.slf4j:slf4j-api                                      1.7.30                 Java 5        40 KB  
+  org.slf4j:slf4j-api                                      1.7.36                 Java 5        40 KB  
+  org.slf4j:slf4j-api                                      2.0.17                 Java 8        68 KB  rt mr
+  org.slf4j:slf4j-api                                      2.0.20                 Java 8        68 KB  rt mr
+  org.slf4j:slf4j-api                                      2.0.7                  Java 8        62 KB  mr
+
+=== Maven build plugins and their dependencies (90) ===
+  javax.inject:javax.inject                                1                      Java 5         2 KB  
+  org.apache-extras.beanshell:bsh                          2.0b6                  Java 5       379 KB  
+  org.apache.maven:maven-archiver                          3.6.2                  Java 8        26 KB  
+  org.apache.maven:maven-archiver                          3.6.5                  Java 8        27 KB  
+  org.apache.maven:maven-archiver                          3.6.6                  Java 8        27 KB  
+  org.apache.maven.doxia:doxia-core                        2.0.0                  Java 8       164 KB  
+  org.apache.maven.doxia:doxia-integration-tools           2.0.0                  Java 8        48 KB  
+  org.apache.maven.doxia:doxia-module-apt                  2.0.0                  Java 8        52 KB  
+  org.apache.maven.doxia:doxia-module-xdoc                 2.0.0                  Java 8        34 KB  
+  org.apache.maven.doxia:doxia-module-xhtml5               2.0.0                  Java 8        16 KB  
+  org.apache.maven.doxia:doxia-sink-api                    2.1.0                  Java 8        11 KB  
+  org.apache.maven.doxia:doxia-site-model                  2.0.0                  Java 8        83 KB  
+  org.apache.maven.doxia:doxia-site-renderer               2.0.0                  Java 8        42 KB  
+  org.apache.maven.doxia:doxia-skin-model                  2.0.0                  Java 8        16 KB  
+  org.apache.maven.enforcer:enforcer-api                   3.6.3                  Java 8        14 KB  
+  org.apache.maven.enforcer:enforcer-rules                 3.6.3                  Java 8       159 KB  
+  org.apache.maven.plugins:maven-assembly-plugin           3.8.0                  Java 8       234 KB  
+  org.apache.maven.plugins:maven-clean-plugin              3.2.0                  Java 8        34 KB  
+  org.apache.maven.plugins:maven-clean-plugin              3.5.0                  Java 8        36 KB  
+  org.apache.maven.plugins:maven-compiler-plugin           3.16.0                 Java 8        96 KB  
+  org.apache.maven.plugins:maven-dependency-plugin         3.11.0                 Java 8       255 KB  
+  org.apache.maven.plugins:maven-enforcer-plugin           3.6.3                  Java 8        39 KB  
+  org.apache.maven.plugins:maven-failsafe-plugin           3.6.0                  Java 8        58 KB  
+  org.apache.maven.plugins:maven-install-plugin            3.2.0                  Java 8        36 KB  
+  org.apache.maven.plugins:maven-jar-plugin                3.5.1                  Java 8        34 KB  
+  org.apache.maven.plugins:maven-resources-plugin          3.4.0                  Java 8        30 KB  
+  org.apache.maven.plugins:maven-resources-plugin          3.5.0                  Java 8        31 KB  
+  org.apache.maven.plugins:maven-shade-plugin              3.6.2                  Java 8       146 KB  
+  org.apache.maven.plugins:maven-source-plugin             3.4.0                  Java 8        32 KB  
+  org.apache.maven.plugins:maven-surefire-plugin           3.6.0                  Java 8        47 KB  
+  org.apache.maven.reporting:maven-reporting-api           4.0.0                  Java 8         9 KB  
+  org.apache.maven.reporting:maven-reporting-impl          4.0.0                  Java 8        20 KB  
+  org.apache.maven.resolver:maven-resolver-api             1.4.1                  Java 7       145 KB  
+  org.apache.maven.resolver:maven-resolver-api             1.9.27                 Java 8       154 KB  
+  org.apache.maven.resolver:maven-resolver-util            1.4.1                  Java 7       163 KB  
+  org.apache.maven.resolver:maven-resolver-util            1.9.25                 Java 8       192 KB  
+  org.apache.maven.resolver:maven-resolver-util            1.9.27                 Java 8       192 KB  
+  org.apache.maven.shared:file-management                  3.2.0                  Java 8        25 KB  
+  org.apache.maven.shared:maven-artifact-transfer          0.13.1                 Java 7       155 KB  
+  org.apache.maven.shared:maven-common-artifact-filters    3.4.0                  Java 8        57 KB  
+  org.apache.maven.shared:maven-dependency-analyzer        1.17.1                 Java 8        53 KB  
+  org.apache.maven.shared:maven-dependency-tree            3.3.0                  Java 8        41 KB  
+  org.apache.maven.shared:maven-filtering                  3.4.0                  Java 8        54 KB  
+  org.apache.maven.shared:maven-filtering                  3.5.0                  Java 8        59 KB  
+  org.apache.maven.shared:maven-shared-incremental         1.1                    Java 5        13 KB  
+  org.apache.maven.shared:maven-shared-utils               3.3.4                  Java 7       149 KB  
+  org.apache.maven.shared:maven-shared-utils               3.4.2                  Java 8       147 KB  
+  org.apache.maven.surefire:common-java5                   3.6.0                  Java 8        15 KB  
+  org.apache.maven.surefire:maven-surefire-common          3.6.0                  Java 8       323 KB  
+  org.apache.maven.surefire:surefire-api                   3.6.0                  Java 8       173 KB  
+  org.apache.maven.surefire:surefire-booter                3.6.0                  Java 8       118 KB  
+  org.apache.maven.surefire:surefire-extensions-api        3.6.0                  Java 8        26 KB  
+  org.apache.maven.surefire:surefire-extensions-spi        3.6.0                  Java 8         8 KB  
+  org.apache.maven.surefire:surefire-junit-platform        3.6.0                  Java 8        55 KB  
+  org.apache.maven.surefire:surefire-logger-api            3.6.0                  Java 8        13 KB  
+  org.apache.maven.surefire:surefire-shared-utils          3.6.0                  Java 8      2922 KB  
+  org.codehaus.janino:commons-compiler                     3.1.8                  Java 7       168 KB  
+  org.codehaus.janino:janino                               3.1.8                  Java 7       927 KB  
+  org.codehaus.mojo:extra-enforcer-rules                   1.12.1                 Java 8        56 KB  
+  org.codehaus.plexus:plexus-archiver                      4.10.4                 Java 8       221 KB  
+  org.codehaus.plexus:plexus-archiver                      4.11.0                 Java 8       221 KB  
+  org.codehaus.plexus:plexus-archiver                      4.12.0                 Java 8       222 KB  
+  org.codehaus.plexus:plexus-build-api                     1.2.0                  Java 8         6 KB  
+  org.codehaus.plexus:plexus-classworlds                   2.9.0                  Java 8        52 KB  
+  org.codehaus.plexus:plexus-compiler-api                  2.17.0                 Java 8        28 KB  
+  org.codehaus.plexus:plexus-compiler-javac                2.17.0                 Java 8        30 KB  
+  org.codehaus.plexus:plexus-compiler-manager              2.17.0                 Java 8         5 KB  
+  org.codehaus.plexus:plexus-component-annotations         2.0.0                  Java 6         4 KB  
+  org.codehaus.plexus:plexus-i18n                          1.1.0                  Java 8         9 KB  
+  org.codehaus.plexus:plexus-interpolation                 1.27                   Java 8        83 KB  
+  org.codehaus.plexus:plexus-interpolation                 1.28                   Java 8        85 KB  
+  org.codehaus.plexus:plexus-interpolation                 1.29                   Java 8        86 KB  mr
+  org.codehaus.plexus:plexus-io                            3.6.0                  Java 8        78 KB  
+  org.codehaus.plexus:plexus-java                          1.6.0                  Java 8        56 KB  mr
+  org.codehaus.plexus:plexus-utils                         3.6.0                  Java 8       265 KB  mr
+  org.codehaus.plexus:plexus-utils                         4.0.2                  Java 8       188 KB  mr
+  org.codehaus.plexus:plexus-utils                         4.0.3                  Java 8       188 KB  mr
+  org.codehaus.plexus:plexus-velocity                      2.2.0                  Java 8         5 KB  
+  org.codehaus.plexus:plexus-xml                           3.0.1                  Java 8        92 KB  
+  org.eclipse.sisu:org.eclipse.sisu.inject                 1.0.0                  Java 8       297 KB  
+  org.eclipse.sisu:org.eclipse.sisu.plexus                 0.9.0.M4               Java 8       210 KB  
+  org.eclipse.sisu:org.eclipse.sisu.plexus                 1.0.0                  Java 8       210 KB  
+  org.jdom:jdom2                                           2.0.6.1                Java 5       320 KB  
+  org.ow2.asm:asm                                          9.10                   Java 9       123 KB  
+  org.ow2.asm:asm                                          9.10.1                 Java 9       123 KB  
+  org.ow2.asm:asm                                          9.9.1                  Java 9       123 KB  
+  org.ow2.asm:asm-commons                                  9.9.1                  Java 9        73 KB  
+  org.ow2.asm:asm-tree                                     9.9.1                  Java 9        50 KB  
+  org.sonatype.plexus:plexus-build-api                     0.0.7                  Java 1.4       8 KB  
+  org.vafer:jdependency                                    2.15                   Java 8       476 KB  mr
+
+=== Metrics (10) ===
+  io.micrometer:micrometer-commons                         1.17.1                 Java 8        50 KB  rt
+  io.micrometer:micrometer-core                            1.17.1                 Java 8       893 KB  rt
+  io.micrometer:micrometer-observation                     1.17.1                 Java 8        82 KB  rt
+  io.micrometer:micrometer-registry-prometheus             1.17.1                 Java 8        42 KB  rt
+  io.prometheus:prometheus-metrics-config                  1.7.0                  Java 8        48 KB  rt
+  io.prometheus:prometheus-metrics-core                    1.7.0                  Java 8        97 KB  rt
+  io.prometheus:prometheus-metrics-exposition-formats      1.7.0                  Java 8      2021 KB  rt
+  io.prometheus:prometheus-metrics-exposition-textformats  1.7.0                  Java 8        41 KB  rt
+  io.prometheus:prometheus-metrics-model                   1.7.0                  Java 8       131 KB  rt
+  io.prometheus:prometheus-metrics-tracer-common           1.7.0                  Java 8         3 KB  rt
+
+=== Networking (Netty) (30) ===
+  io.netty:netty-buffer                                    4.1.122.Final          Java 6       331 KB  rt
+  io.netty:netty-buffer                                    4.2.18.Final           Java 8       369 KB  rt mr
+  io.netty:netty-codec                                     4.1.122.Final          Java 6       347 KB  rt
+  io.netty:netty-codec                                     4.2.18.Final           Java n/a       3 KB  rt mr
+  io.netty:netty-codec-base                                4.2.18.Final           Java 8       151 KB  rt mr
+  io.netty:netty-codec-compression                         4.2.18.Final           Java 8       231 KB  rt mr
+  io.netty:netty-codec-http                                4.2.18.Final           Java 8       668 KB  rt mr
+  io.netty:netty-codec-marshalling                         4.2.18.Final           Java 8        19 KB  rt mr
+  io.netty:netty-codec-protobuf                            4.2.18.Final           Java 8        14 KB  rt mr
+  io.netty:netty-common                                    4.1.122.Final          Java 6       703 KB  rt
+  io.netty:netty-common                                    4.2.18.Final           Java 11      882 KB  rt mr
+  io.netty:netty-handler                                   4.1.122.Final          Java 6       567 KB  rt
+  io.netty:netty-handler                                   4.2.18.Final           Java 8       574 KB  rt mr
+  io.netty:netty-resolver                                  4.1.122.Final          Java 6        37 KB  rt
+  io.netty:netty-resolver                                  4.2.18.Final           Java 8        32 KB  rt mr
+  io.netty:netty-tcnative-boringssl-static:windows-x86_64  2.0.84.Final           Java n/a    1131 KB  rt mr
+  io.netty:netty-tcnative-boringssl-static                 2.0.84.Final           Java n/a       3 KB  rt mr
+  io.netty:netty-tcnative-boringssl-static:linux-aarch_64  2.0.84.Final           Java n/a    1274 KB  rt mr
+  io.netty:netty-tcnative-boringssl-static:osx-aarch_64    2.0.84.Final           Java n/a    1121 KB  rt mr
+  io.netty:netty-tcnative-boringssl-static:osx-x86_64      2.0.84.Final           Java n/a    1226 KB  rt mr
+  io.netty:netty-tcnative-boringssl-static:linux-x86_64    2.0.84.Final           Java n/a    1368 KB  rt mr
+  io.netty:netty-tcnative-classes                          2.0.72.Final           Java 8        35 KB  mr
+  io.netty:netty-tcnative-classes                          2.0.84.Final           Java 8        36 KB  rt mr
+  io.netty:netty-transport                                 4.1.122.Final          Java 6       509 KB  rt
+  io.netty:netty-transport                                 4.2.18.Final           Java 8       537 KB  rt mr
+  io.netty:netty-transport-classes-epoll                   4.1.122.Final          Java 6       144 KB  rt
+  io.netty:netty-transport-classes-epoll                   4.2.18.Final           Java 8       156 KB  rt mr
+  io.netty:netty-transport-native-epoll:linux-x86_64       4.1.122.Final          Java n/a      39 KB  rt
+  io.netty:netty-transport-native-epoll:linux-x86_64       4.2.18.Final           Java n/a      41 KB  rt mr
+  io.netty:netty-transport-native-unix-common              4.1.122.Final          Java 6        43 KB  rt
+  io.netty:netty-transport-native-unix-common              4.2.18.Final           Java 8        45 KB  rt mr
+
+=== Other transitive dependencies (31) ===
+  at.yawk.lz4:lz4-java                                     1.8.1                  Java 7       667 KB  rt
+  com.aayushatharva.brotli4j:brotli4j                      1.16.0                 Java 8        44 KB  mr
+  com.aayushatharva.brotli4j:native-linux-aarch64          1.16.0                 Java 8       414 KB  mr
+  com.aayushatharva.brotli4j:native-linux-riscv64          1.16.0                 Java 8       440 KB  mr
+  com.aayushatharva.brotli4j:native-linux-x86_64           1.16.0                 Java 8       416 KB  mr
+  com.aayushatharva.brotli4j:native-osx-aarch64            1.16.0                 Java 8       415 KB  mr
+  com.aayushatharva.brotli4j:native-osx-x86_64             1.16.0                 Java 8       431 KB  mr
+  com.aayushatharva.brotli4j:native-windows-x86_64         1.16.0                 Java 8      1901 KB  mr
+  com.aayushatharva.brotli4j:service                       1.16.0                 Java 8         3 KB  mr
+  com.github.cliftonlabs:json-simple                       3.0.2                  Java 7        34 KB  
+  com.github.javaparser:javaparser-core                    3.28.2                 Java 8      1458 KB  
+  com.github.jponge:lzma-java                              1.3                    Java 6        49 KB  
+  com.google.errorprone:error_prone_annotations            2.50.0                 Java 8        19 KB  rt mr
+  com.google.protobuf:protobuf-java                        2.6.1                  Java 5       582 KB  
+  com.google.protobuf:protobuf-java                        4.31.1                 Java 8      1829 KB  rt
+  com.google.protobuf.nano:protobuf-javanano               3.0.0-alpha-5          Java 5        49 KB  
+  com.jcraft:jzlib                                         1.1.3                  Java 5        70 KB  
+  com.ning:compress-lzf                                    1.0.3                  Java 6        77 KB  
+  eu.maveniverse.maven.domtrip:domtrip-core                1.5.1                  Java 9       149 KB  
+  eu.maveniverse.maven.domtrip:domtrip-maven               1.5.1                  Java 9        73 KB  
+  io.airlift:aircompressor                                 0.27                   Java 8       248 KB  
+  io.projectreactor.tools:blockhound                       1.0.11.RELEASE         Java 8      4555 KB  
+  javax.mail:javax.mail-api                                1.6.2                  Java 7       214 KB  
+  org.apache.logging.log4j:log4j-1.2-api                   2.17.2                 Java 8       296 KB  
+  org.apache.logging.log4j:log4j-api                       2.17.2                 Java 8       295 KB  mr
+  org.apache.velocity:velocity-engine-core                 2.4.1                  Java 8       503 KB  
+  org.apache.velocity.tools:velocity-tools-generic         3.1                    Java 8       211 KB  
+  org.conscrypt:conscrypt-openjdk-uber                     2.5.2                  Java 7      4427 KB  
+  org.jboss.marshalling:jboss-marshalling                  2.0.5.Final            Java 8       216 KB  mr
+  org.jspecify:jspecify                                    1.0.0                  Java 8         3 KB  mr
+  org.jspecify:jspecify                                    1.0.1                  Java 9         2 KB  rt
+
+=== Testing / benchmarking (26) ===
+  net.bytebuddy:byte-buddy                                 1.18.3                 Java 5      9007 KB  test mr
+  net.bytebuddy:byte-buddy-agent                           1.17.7                 Java 5       357 KB  test mr
+  net.sf.jopt-simple:jopt-simple                           5.0.4                  Java 7        76 KB  test
+  org.apiguardian:apiguardian-api                          1.1.2                  Java 9         6 KB  test
+  org.assertj:assertj-core                                 3.27.7                 Java 8      1366 KB  test mr
+  org.awaitility:awaitility                                4.3.0                  Java 8        95 KB  test
+  org.hamcrest:hamcrest                                    2.1                    Java 7       120 KB  test
+  org.junit.jupiter:junit-jupiter                          5.14.4                 Java 9         6 KB  test
+  org.junit.jupiter:junit-jupiter                          6.1.3                  Java 17        6 KB  test
+  org.junit.jupiter:junit-jupiter-api                      5.14.4                 Java 9       236 KB  test
+  org.junit.jupiter:junit-jupiter-api                      6.1.3                  Java 17      305 KB  test
+  org.junit.jupiter:junit-jupiter-engine                   5.14.4                 Java 9       335 KB  test
+  org.junit.jupiter:junit-jupiter-engine                   6.1.3                  Java 17      344 KB  test
+  org.junit.jupiter:junit-jupiter-params                   5.14.4                 Java 9       647 KB  test
+  org.junit.jupiter:junit-jupiter-params                   6.1.3                  Java 17      296 KB  test
+  org.junit.platform:junit-platform-commons                1.14.4                 Java 9       160 KB  test mr
+  org.junit.platform:junit-platform-commons                6.1.3                  Java 17      171 KB  test
+  org.junit.platform:junit-platform-engine                 1.14.4                 Java 9       265 KB  test
+  org.junit.platform:junit-platform-engine                 6.1.3                  Java 17      317 KB  test
+  org.junit.platform:junit-platform-launcher               1.14.4                 Java 9       217 KB  test
+  org.junit.platform:junit-platform-launcher               6.1.3                  Java 17      246 KB  test
+  org.mockito:mockito-core                                 5.23.0                 Java 11      703 KB  test
+  org.objenesis:objenesis                                  3.3                    Java 8        48 KB  test
+  org.openjdk.jmh:jmh-core                                 1.37                   Java 8       540 KB  test
+  org.openjdk.jmh:jmh-generator-annprocess                 1.37                   Java 8        30 KB  test
+  org.opentest4j:opentest4j                                1.3.0                  Java 9        13 KB  test

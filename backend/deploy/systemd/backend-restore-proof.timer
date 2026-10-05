@@ -1,0 +1,11 @@
+# Runs backend-restore-proof.service every Sunday at 04:00 UTC, after the night's dump; Persistent
+# catches up a run missed while the machine was down.
+[Unit]
+Description=backend: the weekly proof that the backups restore
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

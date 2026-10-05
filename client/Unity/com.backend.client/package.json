@@ -1,0 +1,8 @@
+{
+  "name": "com.backend.client",
+  "version": "0.1.0",
+  "displayName": "Backend client",
+  "description": "The Unity layer over Backend.Client.Core (docs 08 §8): the scene drawn, touches to inputs, the app's lifecycle, the account kept. Compiled against stubs of the Unity API only: see README.md.",
+  "unity": "2022.3",
+  "dependencies": {}
+}

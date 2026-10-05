@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runnable client examples:  bin/j-redis-examples [--list] [-h host] [-p port] [-a password] [name ...]
+# Without -h/-p they run against an in-process server, so nothing else needs to be started.
+BASE=$(cd "$(dirname "$0")/.." && pwd)
+if [ -n "${JAVA_HOME:-}" ]; then JAVA="$JAVA_HOME/bin/java"; else JAVA=java; fi
+exec "$JAVA" --add-opens java.base/java.nio=ALL-UNNAMED -Xmx512m -jar "$BASE/lib/j-redis-examples.jar" "$@"

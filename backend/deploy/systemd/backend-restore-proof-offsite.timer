@@ -1,0 +1,11 @@
+# Runs backend-restore-proof-offsite.service on the first Sunday of each month at 05:00 UTC, an hour
+# after the weekly proof; Persistent catches up a run missed while the machine was down.
+[Unit]
+Description=backend: the monthly proof that the copy off the site restores
+
+[Timer]
+OnCalendar=Sun *-*-01..07 05:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>com.backend</groupId><artifactId>backend-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+  <artifactId>platform</artifactId>
+  <dependencies>
+    <dependency><groupId>com.backend</groupId><artifactId>handoff</artifactId></dependency>
+    <dependency><groupId>com.backend</groupId><artifactId>persistence</artifactId></dependency>
+    <dependency><groupId>com.backend</groupId><artifactId>sim</artifactId></dependency>
+    <dependency><groupId>com.jredis</groupId><artifactId>j-redis-client</artifactId></dependency>
+    <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId></dependency>
+    <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk18on</artifactId></dependency>
+    <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId></dependency>
+    <dependency><groupId>com.jredis</groupId><artifactId>j-redis-embedded</artifactId><scope>test</scope></dependency>
+    <!-- Test scope only, and not transitive: it lets one test drive a real arena end to end
+         without arena ever appearing on platform's runtime classpath. -->
+    <dependency><groupId>com.backend</groupId><artifactId>arena</artifactId><scope>test</scope></dependency>
+    <!-- Runtime, not test: as a test dependency it was missing from the release, and the
+         platform logged nothing at all in production. -->
+    <dependency><groupId>ch.qos.logback</groupId><artifactId>logback-classic</artifactId><scope>runtime</scope></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId></dependency>
+    <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId></dependency>
+  </dependencies>
+</project>

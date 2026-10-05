@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- C# 9, as the core: Unity's test runner runs NUnit, so these can run there unchanged. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Core/Backend.Client.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The contract between the Java encoder and this decoder: the same file the server's
+         tests read, never a copy. -->
+    <None Include="../../protocol-spike/vectors/vectors.txt" Link="vectors.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The maze's walls for one seed, as the server's generator wrote them (D-48). -->
+    <None Include="../../backend/sim/src/test/resources/maze-2026.txt" Link="maze-2026.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../backend/arena/src/test/resources/motion-2026.txt" Link="motion-2026.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

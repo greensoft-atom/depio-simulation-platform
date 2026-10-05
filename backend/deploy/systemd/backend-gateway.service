@@ -1,0 +1,54 @@
+# The lobby gateway. One per machine, behind that machine's nginx; its id is the host name,
+# which is what a push is routed by.
+[Unit]
+Description=backend lobby gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=backend
+Group=backend
+EnvironmentFile=/etc/backend/gateway.env
+LoadCredential=store-password:/etc/backend/credentials/store-password
+Environment=BACKEND_STORE_PASSWORD_FILE=%d/store-password
+LogsDirectory=backend
+# 2c / 4G (architecture/01 §3): ~17 000 connections at 8 KB each is ~140 MB of heap.
+ExecStart=/opt/backend/runtime/bin/java -server -Xms3g -Xmx3g \
+    -XX:+UseZGC -XX:+ZGenerational -XX:+AlwaysPreTouch \
+    --add-opens java.base/java.nio=ALL-UNNAMED \
+    -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/backend \
+    -Xlog:gc*:file=/var/log/backend/gateway-gc.log:time,uptime:filecount=5,filesize=20M \
+    -cp /opt/backend/lib/gateway/* com.backend.gateway.GatewayMain \
+    ${GATEWAY_BIND} ${GATEWAY_PORT} ${PLATFORM_URL} ${STORE_HOST} ${STORE_PORT} %H
+Restart=on-failure
+RestartSec=2
+# 2: the configuration was refused. 243: a credential file is missing. Neither is fixed by a restart.
+RestartPreventExitStatus=2 243
+SuccessExitStatus=143
+LimitNOFILE=65536
+TimeoutStopSec=30
+
+# Sandboxing: nothing here needs more than its own state and log directories and the network.
+# Not MemoryDenyWriteExecute: the JIT writes code and then runs it, by design. PrivateTmp: a
+# /tmp of its own. Nothing here extracts a native library into it; only the arena carries Netty's.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,4 @@
+# The repository's root rules are a Python project's: lib/, *.so, *.tar.gz, *.json and
+# others would drop parts of these binaries. Everything here is kept (D-77).
+!*
+!*/

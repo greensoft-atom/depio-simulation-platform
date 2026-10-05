@@ -1,0 +1,5 @@
+#!/bin/sh
+# Interactive shell or one-shot command:  bin/j-redis-cli [-h host] [-p port] [-a password] [command ...]
+BASE=$(cd "$(dirname "$0")/.." && pwd)
+if [ -n "${JAVA_HOME:-}" ]; then JAVA="$JAVA_HOME/bin/java"; else JAVA=java; fi
+exec "$JAVA" --add-opens java.base/java.nio=ALL-UNNAMED -Xmx256m -XX:+UseSerialGC -jar "$BASE/lib/j-redis-cli.jar" "$@"

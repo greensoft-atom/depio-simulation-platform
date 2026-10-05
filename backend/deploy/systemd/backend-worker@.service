@@ -1,0 +1,62 @@
+# A result worker. The instance is its worker id: stable across restarts, so a restart finds
+# what it had in flight, and unique across the fleet, or two workers re-drive each other's
+# entries. backend-worker@c1.service, backend-worker@c2.service on machine C.
+[Unit]
+Description=backend worker %i
+# The database is the release's MySQL, backend-mysql.service, on machine A (and C, its replica);
+# elsewhere an After= on a unit that does not exist orders nothing.
+After=network-online.target backend-mysql.service
+Wants=network-online.target
+
+[Service]
+User=backend
+Group=backend
+EnvironmentFile=/etc/backend/worker.env
+# Then this instance's own, which wins where both set a variable: its metrics port. A drop-in's
+# Environment= cannot do it, since a file's settings override Environment= wherever it is
+# written, and the second worker on a machine exited 2 on the first one's port.
+EnvironmentFile=-/etc/backend/worker-%i.env
+LoadCredential=db-password:/etc/backend/credentials/db-password
+LoadCredential=store-password:/etc/backend/credentials/store-password
+Environment=BACKEND_DB_PASSWORD_FILE=%d/db-password
+Environment=BACKEND_STORE_PASSWORD_FILE=%d/store-password
+LogsDirectory=backend
+# Two workers share 4c / 4G (architecture/01 §3).
+ExecStart=/opt/backend/runtime/bin/java -server -Xms1536m -Xmx1536m \
+    -XX:+UseZGC -XX:+ZGenerational -XX:+AlwaysPreTouch \
+    --add-opens java.base/java.nio=ALL-UNNAMED \
+    -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/backend \
+    -Xlog:gc*:file=/var/log/backend/worker-%i-gc.log:time,uptime:filecount=5,filesize=20M \
+    -cp /opt/backend/lib/worker/* com.backend.worker.WorkerMain \
+    ${STORE_HOST} ${STORE_PORT} worker-%i
+Restart=on-failure
+RestartSec=2
+# 2: the configuration was refused. 243: a credential file is missing. Neither is fixed by a restart.
+RestartPreventExitStatus=2 243
+SuccessExitStatus=143
+TimeoutStopSec=30
+
+# Sandboxing: nothing here needs more than its own state and log directories and the network.
+# Not MemoryDenyWriteExecute: the JIT writes code and then runs it, by design. PrivateTmp: a
+# /tmp of its own. Nothing here extracts a native library into it; only the arena carries Netty's.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

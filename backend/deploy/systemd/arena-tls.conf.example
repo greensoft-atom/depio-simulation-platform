@@ -1,0 +1,13 @@
+# TLS for the arenas' match traffic (operations/01 §8, S-6). A drop-in, not a unit: install it
+# as /etc/systemd/system/backend-arena@.service.d/tls.conf for every arena on the machine, or
+# under backend-arena@<name>.service.d/ for one, then `systemctl daemon-reload`.
+#
+# scripts/install-certificate.sh makes both files, from the same certificate nginx serves. Install
+# this only once they exist: LoadCredential refuses to start a unit whose file is missing.
+# Nothing falls back to plaintext either way - an arena told to use a keystore it cannot read
+# refuses to start (exit 2), and systemd does not restart it for that.
+[Service]
+LoadCredential=arena-tls.p12:/etc/backend/credentials/arena-tls.p12
+LoadCredential=arena-tls-password:/etc/backend/credentials/arena-tls-password
+Environment=BACKEND_ARENA_TLS_KEYSTORE=%d/arena-tls.p12
+Environment=BACKEND_ARENA_TLS_PASSWORD_FILE=%d/arena-tls-password

@@ -1,0 +1,64 @@
+# An arena process. The instance is its name, and its settings are in
+# /etc/backend/arena-%i.env (deploy/env/arena.env.example): each instance on a machine needs
+# its own port. Pin each to its own cores with a drop-in, since the core ranges are the
+# machine's (architecture/01 §3):
+#   systemctl edit backend-arena@a1   ->   [Service]  CPUAffinity=2-5
+[Unit]
+Description=backend arena %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=backend
+Group=backend
+EnvironmentFile=/etc/backend/arena-%i.env
+LoadCredential=store-password:/etc/backend/credentials/store-password
+Environment=BACKEND_STORE_PASSWORD_FILE=%d/store-password
+# The result spool: results live here until the store has them, so it must survive restarts.
+StateDirectory=backend/arena-%i
+LogsDirectory=backend
+# 4c / 8G per instance (architecture/01 §3); the heap leaves room for Netty's direct buffers.
+ExecStart=/opt/backend/runtime/bin/java -server -Xms6g -Xmx6g \
+    -XX:+UseZGC -XX:+ZGenerational -XX:+AlwaysPreTouch \
+    --add-opens java.base/java.nio=ALL-UNNAMED \
+    -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/backend \
+    -Xlog:gc*:file=/var/log/backend/arena-%i-gc.log:time,uptime:filecount=5,filesize=20M \
+    -Dio.netty.leakDetection.level=disabled \
+    -cp /opt/backend/lib/arena/* com.backend.arena.ArenaMain \
+    ${ARENA_PORT} ${MAP_SIZE} ${MAX_PLAYERS} ${SHAPES} ${MAX_ROOMS} \
+    ${STORE_HOST} ${STORE_PORT} %i ${MATCH_SECONDS} %S/backend/arena-%i/spool \
+    ${ARENA_BIND} ${ADVERTISE_HOST}
+Restart=on-failure
+RestartSec=2
+# 2: the configuration was refused. 243: a credential file is missing. Neither is fixed by a restart.
+RestartPreventExitStatus=2 243
+SuccessExitStatus=143
+LimitNOFILE=65536
+# Stopping drains (01 §8.6): public rooms' players back to the lobby, made matches played to
+# their ends for up to eleven minutes; then every result published and the spool flushed.
+TimeoutStopSec=12min
+
+# Sandboxing: nothing here needs more than its own state and log directories and the network.
+# Not MemoryDenyWriteExecute: the JIT writes code and then runs it, by design. PrivateTmp is
+# where Netty extracts its native transport, and it must allow execution, which it does.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

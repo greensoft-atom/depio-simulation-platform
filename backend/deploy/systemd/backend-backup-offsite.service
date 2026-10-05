@@ -1,0 +1,46 @@
+# The copy off the site (06 §10, D-71): the dumps and every closed binlog copy, encrypted, pushed
+# by rsync over SSH to OFFSITE_TARGET. Enabled once the owner names the host (Q-53).
+# Needs /etc/backend/offsite.env (OFFSITE_TARGET=user@host:dir); the key in
+# /etc/backend/credentials/offsite.key, kept off the machines too, as without it the copy cannot be
+# read; an SSH key for the host in /etc/backend/credentials/offsite-ssh; and the host's own key in
+# /etc/backend/offsite-known-hosts.
+[Unit]
+Description=backend: the backups copied off the site
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=backend-backup
+Group=backend-backup
+LoadCredential=mysql-backup.cnf:/etc/backend/credentials/mysql-backup.cnf
+LoadCredential=offsite.key:/etc/backend/credentials/offsite.key
+LoadCredential=offsite-ssh:/etc/backend/credentials/offsite-ssh
+Environment=MYSQL_CNF=%d/mysql-backup.cnf
+Environment=OFFSITE_KEY=%d/offsite.key
+Environment="OFFSITE_SSH=ssh -i %d/offsite-ssh -o UserKnownHostsFile=/etc/backend/offsite-known-hosts -o BatchMode=yes"
+EnvironmentFile=/etc/backend/offsite.env
+StateDirectory=backend/mysql-dumps backend/binlog backend/offsite-mirror
+StateDirectoryMode=0700
+ExecStart=/opt/backend/scripts/backup-offsite.sh %S/backend/mysql-dumps %S/backend/binlog %S/backend/offsite-mirror
+TimeoutStartSec=2h
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=

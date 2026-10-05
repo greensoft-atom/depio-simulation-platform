@@ -1,0 +1,6 @@
+<configuration>
+  <appender name="OUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder><pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger{20} - %msg%n</pattern></encoder>
+  </appender>
+  <root level="${JREDIS_TEST_LOG_LEVEL:-WARN}"><appender-ref ref="OUT"/></root>
+</configuration>

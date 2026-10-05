@@ -1,0 +1,20 @@
+# /etc/backend/scratch-my.cnf - the backup machine's scratch MySQL server, read by
+# backend-scratch-mysql.service (06 §10, D-71): what the weekly proof restores onto. A server of its
+# own, on loopback, holding nothing but the proof's copy, so the replica is never touched.
+[mysqld]
+datadir=/var/lib/backend-scratch-mysql
+socket=/run/backend-scratch-mysql/mysqld.sock
+pid-file=/run/backend-scratch-mysql/mysqld.pid
+port=3309
+bind-address=127.0.0.1
+mysqlx=OFF
+# A restore here is never logged, so never replicated: no binary log at all.
+skip-log-bin
+# The proof's copy is the whole database: as large a buffer as the machine spares on a Sunday.
+innodb_buffer_pool_size=4G
+# The release's MySQL, /opt/backend/mysql (docs/detailed-design/09 §6).
+# Initialise once: /opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/scratch-my.cnf --initialize-insecure --user=mysql,
+# start backend-scratch-mysql.service, then set the root password through its socket
+#   /opt/backend/mysql/bin/mysql -S /run/backend-scratch-mysql/mysqld.sock -u root -e "ALTER USER root@localhost IDENTIFIED BY '...'"
+# and put it in /etc/backend/credentials/mysql-scratch.cnf, mode 0600:
+#   [client]  host=127.0.0.1  port=3309  user=root  password=...

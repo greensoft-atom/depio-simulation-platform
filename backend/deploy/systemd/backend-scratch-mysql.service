@@ -1,0 +1,25 @@
+# The backup machine's scratch MySQL server (06 §10, D-71): what the weekly proof restores onto, a
+# server of its own, port 3309, holding nothing else, so a proof never touches the replica. Its
+# configuration is /etc/backend/scratch-my.cnf (datadir=/var/lib/backend-scratch-mysql, port=3309,
+# bind-address=127.0.0.1, skip-log-bin: a restore here is never replicated or logged).
+[Unit]
+Description=backend: the scratch MySQL server the restore proof uses
+After=network-online.target
+
+[Service]
+# notify: the release's mysqld tells systemd when it is ready (checked 2026-10-05), so the proofs'
+# After= waits for a server that answers, not one still starting.
+Type=notify
+User=mysql
+Group=mysql
+# /run/backend-scratch-mysql, for the socket and the pid file: /run is emptied at every boot and
+# mysqld makes no parent directory, so without this it never started (O-16).
+RuntimeDirectory=backend-scratch-mysql
+RuntimeDirectoryMode=0750
+ExecStart=/opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/scratch-my.cnf
+Restart=on-failure
+TimeoutStartSec=10min
+TimeoutStopSec=10min
+
+[Install]
+WantedBy=multi-user.target

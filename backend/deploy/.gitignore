@@ -1,0 +1,3 @@
+# The repository's top-level ignore file skips any env/ (a Python virtualenv); this one is
+# the example settings the release ships (make-release.sh, operations/01 §7).
+!env/
