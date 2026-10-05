@@ -55,7 +55,7 @@ frame it hands over (`FrameReader`).
 
 Namespaces follow the system's name ([README](../README.md#naming)):
 `Backend.Client.Core`, `Backend.Client.Unity`. The code lives in
-[`background/client/`](../../client/README.md).
+[`client/`](../../client/README.md).
 
 ## 2. Threads
 

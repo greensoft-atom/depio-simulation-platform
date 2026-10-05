@@ -33,7 +33,7 @@ three. [Three machines](#three-machines) says what differs.
 
 ```console
 dnf install -y git                       # only to clone; or copy a tarball of the repository instead
-git clone https://github.com/Jsoft871222/polyterm.git /srv/polyterm   # private: a token or a deploy key
+git clone https://github.com/greensoft-atom/depio-simulation-platform.git /srv/depio-simulation-platform   # private: a token or a deploy key
 ```
 
 <!-- guide-steps -->
@@ -41,7 +41,7 @@ git clone https://github.com/Jsoft871222/polyterm.git /srv/polyterm   # private:
 Your values, set once in the shell every later step runs in:
 
 ```bash
-export SRC=/srv/polyterm                 # where the repository is
+export SRC=/srv/depio-simulation-platform   # where the repository is
 export NAME=a.example.com                # the name players' devices reach this machine by
 export MYSQL_BUFFER_POOL=14G             # MySQL's buffer pool: 14G of 20 GB on a production machine
 ```
@@ -53,14 +53,14 @@ The committed JDK and Maven, the committed libraries, no network
 backend's tests need a MySQL of their own ([build and run](../development/03-build-and-run.md#3-the-tests)).
 
 ```bash
-cd "$SRC/background"
+cd "$SRC"
 SKIP_TESTS=1 WORK=/var/tmp/backend-build ./build-offline.sh
 ```
 
 ## 4. The release in /opt
 
 ```bash
-tar -xzf "$SRC"/background/backend/target/release/backend-*.tar.gz -C /opt
+tar -xzf "$SRC"/backend/target/release/backend-*.tar.gz -C /opt
 ln -sfn "$(ls -d /opt/backend-*/ | sort | tail -1 | sed 's:/$::')" /opt/backend
 tail -3 /opt/backend/VERSIONS.md
 ```

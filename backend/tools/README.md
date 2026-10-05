@@ -152,7 +152,7 @@ How fast retention deletes match history (06 §9, plan item 76 (b)). It drops an
 migrates the database, fills `matches` and `match_player` with matches that
 ended 100 days ago, past the 90 days kept, then runs the worker's own purge,
 `MatchResultRepository.purgeMatchesEndedBefore` in batches of 1 000, and prints
-matches and players' rows deleted a second. background/CLAUDE.md runs it with
+matches and players' rows deleted a second. The repository's CLAUDE.md runs it with
 one player a match.
 
 ## RankBenchmark

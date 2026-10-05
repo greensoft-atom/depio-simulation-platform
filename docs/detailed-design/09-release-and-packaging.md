@@ -51,7 +51,7 @@ history.
 
 ## 3. The build, from the repository alone
 
-`background/build-offline.sh`: the committed JDK and Maven, `java21-offline` as
+`build-offline.sh`, at the repository's root: the committed JDK and Maven, `java21-offline` as
 Maven's only repository (a mirror, without `-o`) and a local repository of its
 own, so nothing comes from `~/.m2`; it builds `j-redis-service`, then the backend
 with its tests (or without, `SKIP_TESTS=1`), then the release. It needs bash,

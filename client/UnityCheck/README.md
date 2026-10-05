@@ -7,7 +7,7 @@ the Unity API it uses, and the Android plugin's Java against stubs of only the
 Android API it uses. Nothing is run.
 
 ```bash
-cd background/client
+cd client
 ./unity-check.sh          # DOTNET and JAVAC may be set; the defaults are on the PATH, then /opt
 ```
 

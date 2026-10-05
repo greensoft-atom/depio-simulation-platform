@@ -1992,7 +1992,8 @@ thirty-four steps.
   history says V1 to V34, and Flyway refuses a history that differs from the
   files. The drills' data in `backend_dev` goes with it.
 - The steps' reasons, each table's history, are in git (`git log` of the old
-  files, to commit ce30aa7) and in the design docs, not in the tree.
+  files, to commit ce30aa7 of the previous repository, [working here](../development/02-working-here.md))
+  and in the design docs, not in the tree.
 - A test that migrated to V15 to check V16's backfill is removed with it.
 
 ### D-76 — A result under five seconds counts for nothing but its row and a rated match's rating; a walkover is no win

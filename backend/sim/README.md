@@ -125,7 +125,7 @@ fraction of the maximum.
 
 ## Build and test
 
-From `backend/` (background/CLAUDE.md):
+From `backend/` (the repository's CLAUDE.md):
 
 ```bash
 export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH

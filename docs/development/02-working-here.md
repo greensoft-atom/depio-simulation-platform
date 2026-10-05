@@ -3,9 +3,15 @@
 What a person or an agent picking this work up needs before the first change: how
 each unit of work is done, what the owner has decided that is not a design
 choice, and the development machine's facts and traps. Written 2026-10-05 from
-notes kept outside the repository until then. `background/CLAUDE.md` carries the
-same rules for Claude, but the repository's `.gitignore` leaves every `CLAUDE.md`
-out, so this page is the copy that travels with a clone.
+notes kept outside the repository until then. `CLAUDE.md` carries the same rules
+for Claude.
+
+Until 2026-10-05 this was the `background/` folder of a larger repository,
+https://github.com/Jsoft871222/polyterm; this one,
+https://github.com/greensoft-atom/depio-simulation-platform, starts from a copy of
+that folder, without its history. The history, and the commits the documents
+cite from before then (ce30aa7, 04847d8), are in the previous one,
+under `background/`.
 
 ## 1. How a unit of work is done
 

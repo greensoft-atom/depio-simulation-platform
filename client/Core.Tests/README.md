@@ -6,7 +6,7 @@ unchanged. Packages: NUnit 3.14.0, NUnit3TestAdapter 4.6.0,
 Microsoft.NET.Test.Sdk 17.11.1; a project reference to `Core`.
 
 ```bash
-cd background/client
+cd client
 DOTNET_NOLOGO=1 /opt/dotnet/dotnet test --logger "console;verbosity=normal"   # read "Total tests:"
 ```
 

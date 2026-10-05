@@ -210,7 +210,8 @@ The full 21.34 artifact closure (123 jars, all dependencies, sources jars,
 verified against Maven Central) was bundled in the repository until
 2026-09-26. It was removed then: nothing builds against it, and its Maven
 coordinates carry the word the project does not use, which a bundle cannot
-rename. It is in the history: `git ls-tree 04847d8 background/` shows its directory,
+rename. It is in the previous repository's history ([working here](../development/02-working-here.md)):
+`git ls-tree 04847d8 background/` shows its directory,
 and `git checkout 04847d8 -- <that directory>` restores it if the framework is
 ever reconsidered. It requires JDK 21.
 

@@ -1,4 +1,4 @@
-# CLAUDE.md — background/
+# CLAUDE.md
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
@@ -71,9 +71,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 # Background project
 
-How work is done in this folder. The repository's own [CLAUDE.md](../CLAUDE.md) applies
-too (think first, simplest change, surgical edits, verifiable goals); this file adds the
-standing instructions for the backend, its docs and its client.
+How work is done in this repository. The guidelines above apply (think first, simplest
+change, surgical edits, verifiable goals); what follows adds the standing instructions
+for the backend, its docs and its client.
 
 ## How to work
 
@@ -104,7 +104,7 @@ standing instructions for the backend, its docs and its client.
 
 - **The owner's standing decisions, the machine and its traps** are in
   [docs/development/02-working-here.md](docs/development/02-working-here.md), the copy
-  that travels with the repository (this file is not committed). Keep both current: a
+  for people (this file is Claude's; both are committed). Keep both current: a
   new standing rule goes in both, and anything important learned goes into a tracked
   document, not only into Claude's memory.
 - **Balance is Claude's** (Q-48): item levels, gems, shop prices, rewards, each number
@@ -185,7 +185,7 @@ MySQL for tests and drills: `backend` / `backend-dev-password` on 127.0.0.1:3306
 message, and blocks the commit on any hit (`g[a]me` so this file passes its own check):
 
 ```bash
-git add background/ && hits=$( { git diff --cached -- . ':(exclude)background/docs/README.md' | grep '^+' ; \
+git add -A && hits=$( { git diff --cached -- . ':(exclude)docs/README.md' | grep '^+' ; \
   git diff --cached --name-only ; cat "$MSG" ; } | grep -i -c "g[a]me" ); \
 if [ "$hits" != "0" ]; then echo "WORD CHECK FAILED"; else \
   git -c user.name=dev -c user.email=redcarrot0803@gmail.com commit -q -F "$MSG" && git push -q origin main; fi

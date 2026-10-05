@@ -71,7 +71,7 @@ release
 ([09 §3](../docs/detailed-design/09-release-and-packaging.md#3-the-build-from-the-repository-alone)):
 
 ```bash
-./build-offline.sh                  # from the repository's background/; SKIP_TESTS=1 skips the tests
+./build-offline.sh                  # from the repository's root; SKIP_TESTS=1 skips the tests
 ```
 
 A release, in `target/release/backend-<version>/` and a `.tar.gz`: one `lib/` a process type, the
@@ -93,7 +93,7 @@ headless driver through named scenarios: by default `play`, `resume`, `badticket
 name (`client/Headless/Program.cs` has every one):
 
 ```bash
-TMPDIR=<scratch> client/headless-drill.sh [scenario ...]        # from the repository's background/
+TMPDIR=<scratch> client/headless-drill.sh [scenario ...]        # from the repository's root
 TLS=1 TMPDIR=<scratch> client/headless-drill.sh play untrusted  # the arena over TLS
 TMPDIR=<scratch> backend/scripts/backup-drill.sh                # the backups' own drill; RELEASE=<release> on its MySQL 8.4
 ```

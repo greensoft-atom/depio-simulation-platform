@@ -83,7 +83,7 @@ scripts/make-release.sh    ->  target/release/backend-<version>/  and  target/re
 |---|---|
 | Arguments | none. The version is the first `<version>` in `backend/pom.xml` (`0.1.0-SNAPSHOT`) |
 | Environment | `MVN`, the Maven command (default `mvn`). A local repository filled from more than one source needs `MVN="mvn -Daether.enhancedLocalRepository.trackingFilename=_none"`. `JDK`, the JDK 21 whose `jdeps` checks the jars and whose `jmods/` the runtime is linked from (default `vendor/jdk-21`) |
-| Needs | JDK 21 and Maven to run the build; a local repository holding every dependency of the backend and of j-redis (the `java21-offline` bundle); `../j-redis-service` and `../vendor` beside `backend/`; tar; git for `COMMIT` (optional). `build-offline.sh`, at `background/`, runs it on the committed JDK and Maven with no network ([09 §3](../../docs/detailed-design/09-release-and-packaging.md#3-the-build-from-the-repository-alone)) |
+| Needs | JDK 21 and Maven to run the build; a local repository holding every dependency of the backend and of j-redis (the `java21-offline` bundle); `../j-redis-service` and `../vendor` beside `backend/`; tar; git for `COMMIT` (optional). `build-offline.sh`, at the repository's root, runs it on the committed JDK and Maven with no network ([09 §3](../../docs/detailed-design/09-release-and-packaging.md#3-the-build-from-the-repository-alone)) |
 | Runs | on the build machine, from anywhere: it changes to `backend/` itself |
 
 ### check-release-el9.sh

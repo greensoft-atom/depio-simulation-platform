@@ -56,7 +56,7 @@ property, and opens no port.
 
 ## Build and test
 
-From `backend/`, with the offline repository (background/CLAUDE.md):
+From `backend/`, with the offline repository (the repository's CLAUDE.md):
 
 ```bash
 export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH

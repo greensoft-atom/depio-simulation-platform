@@ -267,7 +267,7 @@ class before their experience, so their points follow the boss caps.
 
 ## Build, run and test
 
-From `backend/` (background/CLAUDE.md):
+From `backend/` (the repository's CLAUDE.md):
 
 ```bash
 export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
@@ -287,7 +287,7 @@ BOTS=300:120 TMPDIR=<scratchpad> client/headless-drill.sh            # the load 
 ```
 
 The drill runs the arena on 9011 with its metrics on 9197, against j-redis on
-6390. Its scenarios are listed in background/CLAUDE.md. What a change costs the
+6390. Its scenarios are listed in the repository's CLAUDE.md. What a change costs the
 tick or the payload is measured with `tools/TickBenchmark`
 ([tools](../tools/README.md#tickbenchmark)).
 

@@ -13,10 +13,10 @@
 set -u
 if [ "${1:-}" != --inside ]; then
     HERE=$(cd "$(dirname "$0")" && pwd)
-    REPO=$(cd "$HERE/../../.." && pwd)
+    REPO=$(cd "$HERE/../.." && pwd)
     WORK=$(mktemp -d "${TMPDIR:-/tmp}/check-install-guide.XXXXXX")
     trap 'rm -rf "$WORK"' EXIT
-    (cd "$REPO" && git ls-files --cached --others --exclude-standard -- background \
+    (cd "$REPO" && git ls-files --cached --others --exclude-standard \
         | tar -czf "$WORK/repository.tar.gz" -T -) || exit 1
     IMAGE=${IMAGE:-registry.access.redhat.com/ubi9/ubi-init:9.5}
     NAME="backend-check-guide-$$"
@@ -30,9 +30,9 @@ if [ "${1:-}" != --inside ]; then
 fi
 
 echo "--- $(cat /etc/redhat-release); network interfaces besides loopback: $(ls /sys/class/net | grep -vc '^lo$')"
-mkdir -p /srv/polyterm
-tar -xzf /check/repository.tar.gz -C /srv/polyterm
-GUIDE=/srv/polyterm/background/docs/operations/03-install-guide.md
+mkdir -p /srv/depio-simulation-platform
+tar -xzf /check/repository.tar.gz -C /srv/depio-simulation-platform
+GUIDE=/srv/depio-simulation-platform/docs/operations/03-install-guide.md
 
 # The guide's steps as one script: its bash blocks in order. After the first (the values), this
 # check's own: a test name, a small buffer pool. After the one that installs the units, the container's

@@ -75,7 +75,7 @@ The schema is the baseline's `V1__schema.sql` (§8), and every table below is sh
 it makes it, column for column, key for key; `V2__seed.sql` writes the rows a first
 launch needs: the failover epoch (§10), the replica heartbeat (§10) and season 1. The
 `V`-numbers in the notes are the steps each table grew by, kept in git to commit
-ce30aa7 ([D-75](../architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)).
+ce30aa7 of the previous repository ([working here](../development/02-working-here.md), [D-75](../architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)).
 The [persistence README](../../backend/persistence/README.md) lists which class writes
 and reads each table, and [diagrams/05](../diagrams/05-data-and-worker.md) draws them.
 
@@ -1227,7 +1227,8 @@ Flyway, versioned SQL under `src/main/resources/db/migration`.
   the rows a first launch needs: the failover epoch (§10), the replica
   heartbeat and season 1 (§3, seasons). They replaced V1 to V34, the steps by
   which the schema grew, before any database that matters held them; those
-  steps are in git, to commit ce30aa7. The `V`-numbers the sections below name
+  steps are in git, to commit ce30aa7 of the previous repository
+  ([working here](../development/02-working-here.md)). The `V`-numbers the sections below name
   are those steps', kept as the history of each table.
 - **Forward-only.** An applied migration is never edited; a mistake is fixed by
   a new migration, from V3 on. Flyway's checksum will refuse the edit anyway,

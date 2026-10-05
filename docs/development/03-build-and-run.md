@@ -11,8 +11,7 @@ Every command here was run as written on 2026-10-05 (Ubuntu 24.04; the build
 also in Rocky Linux 9 and in UBI 9.5, with no network), but one:
 `./build-offline.sh` with every test, an hour, was not run in one go. The
 backend's tests last ran whole on 2026-10-04, and its database tests again on
-MySQL 8.4 on 2026-10-05. Commands run from `background/`, the backend's part of
-the repository.
+MySQL 8.4 on 2026-10-05. Commands run from the repository's root.
 
 ## 1. What you need
 

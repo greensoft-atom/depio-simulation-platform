@@ -1,7 +1,6 @@
 # backend
 
-A self-hosted backend for a real-time multiplayer tank arena in the style of
-diep.io, played from a Unity app on iOS and Android, and the client's
+A self-hosted backend for simulation engine, played from a Unity app on iOS and Android, and the client's
 engine-free core that speaks to it. Java 21 and MySQL on the server, its own
 Redis-compatible store ([j-redis](j-redis-service/README.md)), C# on the
 client. Sized for 50 000 concurrent players on three machines; the launch
@@ -11,19 +10,19 @@ The design documents start at [docs/README.md](docs/README.md).
 
 ## Components
 
-| Component | What it is | Speaks |
-|---|---|---|
-| `arena` | Runs the match simulation, several rooms a process, each on its own thread at 25 ticks a second, and sends each player snapshots at 15 a second. Never touches MySQL. | Raw TCP with TLS to clients, port 9001 in the example settings; the `session` store for tickets and its directory entry; the `events` store for results |
-| `gateway` | Holds each player's lobby connection and forwards to `platform`; delivers pushes. Makes no product decisions. | WebSocket at `/lobby` behind nginx (8090 on loopback); HTTP to `platform`; the store's pub/sub |
-| `platform` | Everything between matches: accounts and guests, sessions, tickets, the matcher, parties, teams, tournaments, boards and seasons, the shop, items, payments, the social layer, and the operator's admin API. | HTTPS `/v1/` behind nginx (8080 on loopback); the admin API on its own loopback listener (9120); MySQL; the `session` store |
-| `worker` | Applies match results to MySQL exactly once and pays them, runs the tournament clock, closes seasons, keeps retention, reconciles the ledger, watches the replicas and the backups. | The `events` store's result stream, MySQL, the `session` store |
-| j-redis `session` | Sessions, tickets, the arena directory, queues, parties, leases, the score boards, pub/sub. | RESP2, 6379; a replica on another machine |
-| j-redis `events` | The result stream `s:match-result`, read by the group `rewards`. | RESP2, 6380 in the example settings; a replica on another machine |
-| MySQL 8.4 LTS | The system of record: accounts, progression, economy and its ledger, teams, tournaments, history. | 3306, TLS; a GTID replica on another machine |
-| nginx | TLS for the lobby and the API. Never carries match traffic. | 443; 80 only for the CA's challenge |
-| Client core | `Backend.Client.Core`, .NET Standard 2.1: the wire, the world, the match connection, the lobby, the API, the own tank's prediction, what a frame draws. | All of the above, as a player does |
-| Headless driver | The core driven without Unity: the live drill's player. | Against a running stack |
-| Unity package | `com.backend.client`: thin scripts over the core. Compiled against stubs of the Unity API; not yet run in Unity. | Through the core |
+| Component         | What it is                                                                                                                                                                                                   | Speaks                                                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `arena`           | Runs the match simulation, several rooms a process, each on its own thread at 25 ticks a second, and sends each player snapshots at 15 a second. Never touches MySQL.                                        | Raw TCP with TLS to clients, port 9001 in the example settings; the `session` store for tickets and its directory entry; the `events` store for results |
+| `gateway`         | Holds each player's lobby connection and forwards to `platform`; delivers pushes. Makes no product decisions.                                                                                                | WebSocket at `/lobby` behind nginx (8090 on loopback); HTTP to `platform`; the store's pub/sub                                                          |
+| `platform`        | Everything between matches: accounts and guests, sessions, tickets, the matcher, parties, teams, tournaments, boards and seasons, the shop, items, payments, the social layer, and the operator's admin API. | HTTPS `/v1/` behind nginx (8080 on loopback); the admin API on its own loopback listener (9120); MySQL; the `session` store                             |
+| `worker`          | Applies match results to MySQL exactly once and pays them, runs the tournament clock, closes seasons, keeps retention, reconciles the ledger, watches the replicas and the backups.                          | The `events` store's result stream, MySQL, the `session` store                                                                                          |
+| j-redis `session` | Sessions, tickets, the arena directory, queues, parties, leases, the score boards, pub/sub.                                                                                                                  | RESP2, 6379; a replica on another machine                                                                                                               |
+| j-redis `events`  | The result stream `s:match-result`, read by the group `rewards`.                                                                                                                                             | RESP2, 6380 in the example settings; a replica on another machine                                                                                       |
+| MySQL 8.4 LTS     | The system of record: accounts, progression, economy and its ledger, teams, tournaments, history.                                                                                                            | 3306, TLS; a GTID replica on another machine                                                                                                            |
+| nginx             | TLS for the lobby and the API. Never carries match traffic.                                                                                                                                                  | 443; 80 only for the CA's challenge                                                                                                                     |
+| Client core       | `Backend.Client.Core`, .NET Standard 2.1: the wire, the world, the match connection, the lobby, the API, the own tank's prediction, what a frame draws.                                                      | All of the above, as a player does                                                                                                                      |
+| Headless driver   | The core driven without Unity: the live drill's player.                                                                                                                                                      | Against a running stack                                                                                                                                 |
+| Unity package     | `com.backend.client`: thin scripts over the core. Compiled against stubs of the Unity API; not yet run in Unity.                                                                                             | Through the core                                                                                                                                        |
 
 Every port above is a setting; the examples are in `backend/deploy/env/`. Each
 process serves Prometheus metrics on a loopback address of its own. The
@@ -32,18 +31,18 @@ machine layout, the protocols and the failover paths are drawn in
 
 ## Repository layout
 
-| Path | What it holds |
-|---|---|
-| [`backend/`](backend/README.md) | The server: a Maven build of ten modules (`common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`), the release script, the operations scripts (`scripts/`) and the systemd units, nginx configuration and example settings (`deploy/`) |
-| [`client/`](client/README.md) | The client: the core (`Core/`), its tests (`Core.Tests/`), the headless driver (`Headless/`), the Unity package (`Unity/com.backend.client/`), the stubs that compile it (`UnityCheck/`), and the live drill (`headless-drill.sh`) |
-| [`docs/`](docs/README.md) | Requirements, architecture and the decision log, detailed designs, operations, the plan, the defect register, the glossary, research |
-| [`j-redis-service/`](j-redis-service/README.md) | The data store: server, client library, CLI and tools, a project of its own with its own documents |
-| [`protocol-spike/`](protocol-spike/README.md) | The golden vectors, written by an independent codec, that bind the server's wire to the client's |
-| [`java21-offline/`](java21-offline/README.md) | Every third-party library the build needs, for a machine with no network |
-| [`vendor/`](vendor/VERSIONS.md) | What the backend is built with and runs on, committed ready to use: the JDK (Temurin 21), Maven 3.9, MySQL 8.4 LTS, nginx 1.30 compiled for RHEL 9 and the sources it is compiled from, and the scripts that refresh them (D-77) |
-| [`build-offline.sh`](build-offline.sh) | Builds j-redis, the backend and the release from the repository alone, with no network: `vendor/`'s JDK and Maven, `java21-offline` as the only repository |
-| `*.tar.gz` | Not in the repository (ignored): packed copies made by hand on this machine, for carrying a directory elsewhere |
-| [`CLAUDE.md`](CLAUDE.md) | The standing instructions for work in this folder, with every command |
+| Path                                            | What it holds                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`backend/`](backend/README.md)                 | The server: a Maven build of ten modules (`common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`), the release script, the operations scripts (`scripts/`) and the systemd units, nginx configuration and example settings (`deploy/`) |
+| [`client/`](client/README.md)                   | The client: the core (`Core/`), its tests (`Core.Tests/`), the headless driver (`Headless/`), the Unity package (`Unity/com.backend.client/`), the stubs that compile it (`UnityCheck/`), and the live drill (`headless-drill.sh`)                                                       |
+| [`docs/`](docs/README.md)                       | Requirements, architecture and the decision log, detailed designs, operations, the plan, the defect register, the glossary, research                                                                                                                                                     |
+| [`j-redis-service/`](j-redis-service/README.md) | The data store: server, client library, CLI and tools, a project of its own with its own documents                                                                                                                                                                                       |
+| [`protocol-spike/`](protocol-spike/README.md)   | The golden vectors, written by an independent codec, that bind the server's wire to the client's                                                                                                                                                                                         |
+| [`java21-offline/`](java21-offline/README.md)   | Every third-party library the build needs, for a machine with no network                                                                                                                                                                                                                 |
+| [`vendor/`](vendor/VERSIONS.md)                 | What the backend is built with and runs on, committed ready to use: the JDK (Temurin 21), Maven 3.9, MySQL 8.4 LTS, nginx 1.30 compiled for RHEL 9 and the sources it is compiled from, and the scripts that refresh them (D-77)                                                         |
+| [`build-offline.sh`](build-offline.sh)          | Builds j-redis, the backend and the release from the repository alone, with no network: `vendor/`'s JDK and Maven, `java21-offline` as the only repository                                                                                                                               |
+| `*.tar.gz`                                      | Not in the repository (ignored): packed copies made by hand on this machine, for carrying a directory elsewhere                                                                                                                                                                          |
+| [`CLAUDE.md`](CLAUDE.md)                        | The standing instructions for work in this folder, with every command                                                                                                                                                                                                                    |
 
 ## Status
 
@@ -69,12 +68,12 @@ copy off the site goes (Q-53), and the certificate's domain and CA
 
 What the development machine has, none of it on the `PATH`:
 
-| Tool | Where |
-|---|---|
-| JDK 21 (Temurin 21.0.12.1) | `/opt/jdk21` |
-| Maven 3.9.16, offline | `/opt/maven`; the local repository holds the bundle in [`java21-offline`](java21-offline/README.md) |
-| MySQL 8.0 | `127.0.0.1:3306`, user `backend`, password `backend-dev-password`, databases `backend_dev` and `backend_test` |
-| .NET 8 SDK | `/opt/dotnet` |
+| Tool                       | Where                                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| JDK 21 (Temurin 21.0.12.1) | `/opt/jdk21`                                                                                                  |
+| Maven 3.9.16, offline      | `/opt/maven`; the local repository holds the bundle in [`java21-offline`](java21-offline/README.md)           |
+| MySQL 8.0                  | `127.0.0.1:3306`, user `backend`, password `backend-dev-password`, databases `backend_dev` and `backend_test` |
+| .NET 8 SDK                 | `/opt/dotnet`                                                                                                 |
 
 The same JDK and Maven versions are committed in `vendor/jdk-21` and `vendor/maven-3.9`:
 `build-offline.sh` builds with them and nothing else from the machine.

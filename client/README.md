@@ -55,7 +55,7 @@ the JDK. The test project downloads NUnit from nuget.org the first time; the
 core itself has no dependencies.
 
 ```bash
-cd background/client
+cd client
 export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 /opt/dotnet/dotnet build                                          # the four projects, Debug
 /opt/dotnet/dotnet test --logger "console;verbosity=normal"       # the core's tests: read "Total tests:"
