@@ -71,6 +71,15 @@ Then the detailed design of whatever you are working on.
 | [03 — Build and run](development/03-build-and-run.md) | A guide: build, test and run the backend from a clone with what the repository carries (the JDK, Maven, MySQL), the drills and the RHEL 9 checks | tested as written, 2026-10-05                                           |
 | [04 — Cryptography](development/04-crypto.md)         | What Java 21 and BouncyCastle give, the rules and traps, and the tested examples in `backend/crypto-examples`                                     | 35 tests, checked against `openssl` both ways, 2026-10-05               |
 
+### API
+
+| Document | Content | State |
+| --- | --- | --- |
+| [API — index](api/README.md) | The four interfaces, the Postman collection and how to run it, how the examples were made | run 2026-10-06 |
+| [01 — The player API](api/01-http-api.md) | Every `/v1/` route: body, answer, errors, a real example of each | run 2026-10-06 |
+| [02 — The lobby WebSocket](api/02-lobby-websocket.md) | Frames, authentication, messages, pushes, errors, limits, a whole session | run 2026-10-06 |
+| [03 — The admin API](api/03-admin-api.md) | Every `/admin/` call, with real examples | run 2026-10-06 |
+
 ### Operations
 
 | Document                                             | Content                                                                                                                                                                                                               |

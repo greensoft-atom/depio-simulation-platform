@@ -2482,7 +2482,8 @@ process's start (exit 2), and both listeners' settings, the metrics' and this
 one's, are checked before the public API binds. **Every call is audited in MySQL**,
 `admin_audit` (V7): when, the call, its target (cut to 128 characters), what it
 asked (cut to 1 024), and what it did, refusals included, since a refused call is
-one worth knowing about. The stream
+one worth knowing about (not an unknown path, a wrong method, a bad `days`, nor a 500
+or 503: found in writing the API reference, 2026-10-06, DOC-22). The stream
 the design names needs j-redis streams (Phase 4); MySQL is here, durable, and
 queryable by the same operator
 ([D-30](../architecture/03-decision-log.md#d-30--admin-calls-are-audited-in-mysql-until-there-are-streams)).
@@ -2599,7 +2600,8 @@ What each figure counts, and how, is [05 §11](05-worker-and-events.md#11-analyt
 token, checked less than the player API. Now:
 
 - **Every body is read up to 4 KB**, a tournament's too; past that it is not
-  read, and the call is refused as one without a reason.
+  read, and the call is refused as one without a reason (a notice as one without a
+  text, since its text is checked first: `invalid_text`).
 - **A tournament's name and a notice's text, shown to every client as they are,
   hold no control, format or line separator character** (Unicode's Cc, Cf, Zl
   and Zp: the direction marks and overrides are format characters): 400

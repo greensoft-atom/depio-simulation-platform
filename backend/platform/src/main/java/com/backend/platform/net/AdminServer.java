@@ -379,8 +379,9 @@ public final class AdminServer implements AutoCloseable {
 
     /**
      * {@code POST /admin/tournaments}: a tournament (04 §6, Q-15), {@code {"reason", "name", "maxEntries",
-     * "registrationEnds", "startsAt", "roundMinutes", "prizes": [first, second, third], "mode"}}, the mode
-     * {@code duel}, the default, or {@code teams} (Q-19).
+     * "registrationEnds", "startsAt", "roundMinutes", "prizes": [first, second, third], "mode", "format"}},
+     * the mode {@code duel}, the default, or {@code teams} (Q-19), the format {@code elimination}, the
+     * default, or {@code round_robin}.
      */
     private void createTournament(HttpExchange ex) throws IOException, SQLException {
         if (!"POST".equals(ex.getRequestMethod())) {

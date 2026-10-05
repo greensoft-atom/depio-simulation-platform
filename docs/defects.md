@@ -146,8 +146,15 @@ below was confirmed by watching the test fail first.
 | **P-52** | L | **FOUND AND FIXED 2026-10-04 (the review, plan item 79). The gateway's flood refusal went out past the WebSocket handler.** `FrameLimit` wrote its refusal and Close from its own place in the pipeline, below the protocol handler, which therefore never recorded the Close: replies and pushes still went out after it, and a later close sent a second (RFC 6455 §5.5.1). **Fixed:** written from the channel's tail. Not separately tested; the flood test still passes. | read |
 | **P-53** | M | **FOUND AND FIXED 2026-10-04 (the review's drill of every scenario, plan item 79). P-39's fix took a dead player for a lost one.** The arena sends a player whose tank is dead no frames, by design, only the answers to its pings; P-39's rule, no frame for 3 s is a loss, then fired while a player waited to respawn or, in co-op, for the next wave, and the resume that followed spawned the tank. The `coop` scenario's three players were lost and resumed over and over, two of them mid-resume when the match ended, told "no such stay" and not that it was over. **Fixed:** dead, from the Death event until a frame moves the tick again, the limit is a ping's period and its answer, 13 s. Tests `ADeadPlayerSentNoFramesIsNotLostWhileItsPingsAreAnswered` and `ARespawnedPlayerIsHeldToTheFramesAgain`, failing first; four ways of breaking the rule caught. Its first fix keyed on the own tank's removal, which the arena never sends (P-54): the drill's second run showed it. | drill, tested |
 | **P-54** | H | **FOUND AND FIXED 2026-10-04 (the review, fixing P-53). The client took a dead player for a live one.** The arena tells a death by the Death event alone and sends the dead no remove of their tank, so `MatchConnection.Alive`, read from the own entity, stayed true until a respawn. The Unity layer's HUD offers Respawn only when not alive: a player of the Unity build could not respawn. And inputs went on to a dead tank, and it was predicted. **Fixed:** `Alive` is false from the Death until the world's ticks come again. Test `ADeadPlayerIsNotAliveThoughItsTankIsNeverRemoved`, failing first. Not run in Unity. | tested |
+| **P-55** | L | **FOUND 2026-10-06, OPEN (the API reference's run, plan item 83). An order's `createdAt` differs by a millisecond between its creation and every read after.** `POST /v1/payments` answered `2026-10-05T22:29:54.500Z`; `GET /v1/payments/{orderId}` and the simulate call, for the same order, `…54.501Z`. The answer is made from the time in Java, truncated to the millisecond; MySQL's `DATETIME(3)` stored it rounded. A client that compares the two sees two orders' worth of times for one. | measured |
+| **P-56** | L | **FOUND 2026-10-06, OPEN (the same work, from reading the code).** A team application refused by its hourly limit (20) answers 429 `too_soon` with the invitations' message, `twenty invitations an hour at most`: `TeamService` has one outcome for both throttles. | read |
+| **P-57** | L | **FOUND 2026-10-06, OPEN (the same).** `DELETE /v1/tournaments/{id}/entries` for a tournament that does not exist answers 409 `not_registered`; `POST` to the same path answers 404 `no_such_tournament`. | read |
+| **P-58** | L | **FOUND 2026-10-06, OPEN (the same).** `GET /v1/teams/mine/applications` from a player in no team answers 403 `not_allowed`, where every other `/mine` route answers 404 `no_team`. | read |
+| **P-59** | L | **FOUND 2026-10-06, OPEN (the same).** A duel registration checks that the tournament is full before that the player is entered: a player already in a full tournament is told `full`, not `already`. | read |
 
-**None is open in this section**: P-38 to P-54 were found and fixed by the review of 2026-10-04 (plan item 79); P-35 and P-36 were found and fixed 2026-10-01; P-32, seen once, was fixed 2026-09-30; P-34 was found and fixed 2026-09-30; P-31 was fixed 2026-09-29 and is watched; P-33 was found and fixed building phrases in the client. P-6 and P-13 were fixed on 2026-09-25; P-9,
+**Open in this section: P-55 to P-59**, five small inconsistencies found in writing the API
+reference (2026-10-06), none of them a fault a client cannot handle; the reference documents
+each as it behaves. P-38 to P-54 were found and fixed by the review of 2026-10-04 (plan item 79); P-35 and P-36 were found and fixed 2026-10-01; P-32, seen once, was fixed 2026-09-30; P-34 was found and fixed 2026-09-30; P-31 was fixed 2026-09-29 and is watched; P-33 was found and fixed building phrases in the client. P-6 and P-13 were fixed on 2026-09-25; P-9,
 P-11 and P-14 on 2026-09-26, when the rest of P-12 was closed as not a defect.
 P-15 to P-22 were found and fixed the same day by an audit of the designs
 against the code, P-23 while building resume, and P-24 to P-26 by the review.
@@ -858,6 +865,13 @@ moment before the dump now fails if the comparison is put back.
   backend's goes on another port (`MYSQL_PORT`). Run again, the guide passed with both
   servers running (ours on 3307, the system's on 3306) and passed on a fresh server as
   before.
+- **O-36 (L), found 2026-10-06, OPEN (the API reference, plan item 83, from reading the code).
+  An admin call whose store (j-redis) fails answers 500 `internal` with the exception's text**,
+  where a database failure is a 503 that says nothing was done. A ban whose arena kick fails
+  this way answers 500 though the ban and the end of the sessions are done, so the operator
+  cannot tell it worked; a ban whose sessions cannot be ended (503 `sessions_not_ended`) skips
+  the push and the kick until it is called again. Documented as it is (platform's README,
+  docs/api/03); a 503 naming what was done is the likely fix.
 
 ---
 
@@ -1053,6 +1067,19 @@ API documentation that named the wrong error codes or slots (`ApiClient`,
 `PlatformHttpServer`), and design-doc sentences the review's fixes changed (06's
 rated goal, 08's predicted bullets). Each module gained a README, and
 [diagrams/](diagrams/README.md) the drawings.
+
+**DOC-22, found and fixed 2026-10-06** (the API reference, plan item 83). Reading the
+gateway's and the admin API's code against their documents, and running both:
+- the gateway's own closes carry the reason `Bye`, not none (seen on the wire);
+- JSON that is not an object is `no_type`, not `bad_json`;
+- a forwarded refusal's message is always `platform refused the request`;
+- an `id` is read leniently;
+- the admin API audits neither an unknown path, a wrong method, a bad `days`, nor a 500 or 503;
+- an oversized notice is refused as `invalid_text`;
+- a store failure there is a 500 (O-36).
+
+Fixed in the gateway's README, 03 §6, the platform's README, 04 §10, and the Javadoc on
+`AdminServer.createTournament`, which omitted `format`.
 
 ---
 

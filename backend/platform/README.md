@@ -408,7 +408,12 @@ On `BACKEND_ADMIN_ADDR`, every path under `/admin/`. Every call needs `Authoriza
 <secret>`: without it, or with another, 401 `unauthorised`, and the attempt is audited.
 
 - **Audited** in MySQL (`admin_audit`): the call, its target (cut to 128 characters), what it asked
-  (cut to 1 024) and what it did, refusals included.
+  (cut to 1 024) and what it did, refusals included. Not audited: an unknown path (404
+  `not_found`), a wrong method (405), a bad `days` (400 `invalid_days`), and a 500 or 503.
+- **A store failure** (j-redis) is a 500 `internal`, as anything unexpected is: in the arenas, the
+  rooms, a close, a kick, a notice's broadcast, and a ban's arena kick, which then answers 500
+  though the ban and the sessions' end are done. A ban whose sessions cannot be ended (503
+  `sessions_not_ended`) skips the push and the kick until it is called again.
 - **A reason** is required on every call that changes something: `{"reason"}`, 1 to 200
   characters, else 400 `no_reason`.
 - **Bodies** are read up to 4 096 bytes.

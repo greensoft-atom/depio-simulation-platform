@@ -66,6 +66,9 @@ copy off the site goes (Q-53), and the certificate's domain and CA
 - **Cryptography**: what Java 21 and BouncyCastle give, the rules, and tested
   examples of signing, encryption, hashing, X.509 and TLS:
   [docs/development/04-crypto.md](docs/development/04-crypto.md).
+- **The APIs**: every HTTP route, the lobby WebSocket and the admin API, with
+  real examples, and a Postman collection that runs them all:
+  [docs/api/](docs/api/README.md).
 
 ## Developer quickstart
 

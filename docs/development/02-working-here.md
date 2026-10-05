@@ -106,7 +106,10 @@ image, which is RHEL 9's own userspace (plan item 80).
   `backend/scripts/check-release-el9.sh`
   ([09 §7](../detailed-design/09-release-and-packaging.md#7-how-it-is-verified)).
 - **`pkill -f` / `pgrep -f` match the shell running them** when the pattern is in
-  the command line: use the bracket trick, `pkill -f "[A]renaMain"`.
+  the command line: use the bracket trick, `pkill -f "[A]renaMain"`. And match a
+  class's **full name**: `WorkerMain` alone also matches VS Code's own worker
+  processes (`...WorkerMain --node-ipc`), which a stop of the stack once killed
+  (2026-10-06). `pkill -f "[c]om.backend.worker.WorkerMain"`.
 - **`dotnet test` prints "Passed!" when its test host dies part-way**, counting
   only the tests that ran: read `Total tests:` at
   `--logger "console;verbosity=normal"` (`Unknown` after a crash).

@@ -261,7 +261,7 @@ WebSocket client a bare end of stream is an error: one dropped the messages it
 had not handed on, the refusal among them. The gateway's other closes (the
 authentication deadline, an invalid session, a replaced or revoked one, a 401
 from `platform`) pass through Netty's WebSocket protocol handler, which writes a
-Close frame of its own, 1000 with no reason, before it ends the socket (its
+Close frame of its own, 1000 with the reason `Bye`, before it ends the socket (its
 default, `sendCloseFrame`); none of them follows a flood, and none has been seen
 to lose its message. It is per gateway, and deliberately
 **not** shared state: a distributed rate limiter would add a round trip to every

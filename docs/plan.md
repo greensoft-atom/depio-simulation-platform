@@ -3010,6 +3010,37 @@ documents, with enough example code and usage for each scenario.
   - a real RHEL host;
   - a hardware module, CMS, OCSP.
 
+#### 83. ~~The API reference: HTTP, the lobby WebSocket, the admin API; a Postman collection.~~ — **done 2026-10-06**
+
+**The owner, 2026-10-06:** full documents for the backend's HTTP and WebSocket endpoints,
+with paths, parameters, examples and responses, and a Postman collection to test them.
+
+- **[docs/api/](api/README.md)**:
+  - [01](api/01-http-api.md), the player API: every `/v1/` route, in eleven sections.
+  - [02](api/02-lobby-websocket.md), the lobby: frames, authentication, the 12 messages, the
+    16 pushes, the errors, the limits, a whole session.
+  - [03](api/03-admin-api.md), the admin API: 16 calls.
+  - Each route with its body, its answer and its errors; the examples are real requests and
+    answers.
+- **[backend.postman_collection.json](api/backend.postman_collection.json)**: 131 requests in
+  13 folders, one scenario with three players and a guest, each request testing its status
+  and keeping what the next needs.
+- **[lobby-example.mjs](api/lobby-example.mjs)**: the lobby with two players, a whole duel
+  included, every answer checked. Postman's file format cannot hold WebSocket requests.
+- **Verified** against a stack from the release (MySQL 8.4 from `vendor/`, empty; admin API
+  on; payments simulated):
+  - newman 6.2.2: 131 of 131 checks.
+  - The walkthrough: every answer as expected.
+  - The first newman run failed 5, all the collection's own: a request to the wrong listener,
+    and a duel polled over HTTP, which the matcher never makes for players without a lobby
+    connection (now in 01 §6).
+- **The contracts were read from the code by three agents**, then held against the runs.
+  - Found: DOC-22 (fixed); P-55 to P-59 and O-36, small and open.
+  - P-55 was seen live: an order's `createdAt` is a millisecond apart between its creation
+    and its reads.
+- **Not verified:** anything through nginx; the match protocol (its own drills); the pushes
+  no request of the runs triggered (given from the code).
+
 ---
 
 ### Completed 2026-09-23

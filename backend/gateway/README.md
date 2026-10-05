@@ -130,7 +130,8 @@ The gateway does not read `BACKEND_EVENTS_STORE`: it has no use for the result q
 
 **Frames.** Text frames, each one JSON object: `{"t": type, "id": n, "d": {…}}`.
 - `id` is a whole number that the reply echoes. A request with no `id`, or with 0, gets a reply
-  without one.
+  without one. It is read leniently: a numeric string counts as its number, any other string as
+  none.
 - A message from the gateway without an `id` is a push.
 - Binary frames are refused. A message sent in fragments is read whole.
 
@@ -156,7 +157,8 @@ The gateway does not read `BACKEND_EVENTS_STORE`: it has no use for the result q
 **What `platform` answers is passed through.** Every forwarded call carries
 `Authorization: Bearer <the connection's token>` and only the one field shown.
 - **2xx:** `<t>.ok`, with `platform`'s body as `d` (`{}` when the body is empty or not JSON).
-- **Any other status:** `error`, with `platform`'s own `code` (`upstream_error` if its body has none).
+- **Any other status:** `error`, with `platform`'s own `code` (`upstream_error` if its body has none)
+  and the message `platform refused the request`: `platform`'s own message is not passed on.
   A 401 also closes the connection: the session died under it.
 - **No answer at all** (unreachable, or 5 s gone): `error` `internal`, not a refusal.
 
@@ -171,7 +173,7 @@ passes through here.
 |---|---|---|
 | `text_only` | A binary frame | The connection stays |
 | `bad_json` | A text frame that is not JSON (no `id` in the reply) | Stays |
-| `no_type` | No `t` | Stays |
+| `no_type` | No `t`, which includes JSON that is not an object (`[]`, `5`) and an empty frame | Stays |
 | `not_authenticated` | Anything but `auth` before authentication | Stays |
 | `already_authenticated` | `auth` again, once the session was found | Stays |
 | `auth_in_progress` | `auth` while the first one's lookup is still running | Stays |
@@ -238,8 +240,9 @@ A push is a prompt, not the truth: what must not be missed can be fetched
 | 30 s unable to take more | — | Ended |
 | A message over 16 KiB, or a protocol error | — | Ended |
 
-The Close 1000 with no reason is written by Netty's WebSocket protocol handler: it writes one on
-every close that passes through it (its default `sendCloseFrame`). The `idle` close and the
+The Close 1000 is written by Netty's WebSocket protocol handler, with Netty's reason text for it,
+`Bye` (seen on the wire, 2026-10-06): it writes one on every close that passes through it (its
+default `sendCloseFrame`). The `idle` close and the
 rate-limit refusal write their own.
 
 **One connection per player.** This holds within one gateway. A second login through another
