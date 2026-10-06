@@ -53,7 +53,8 @@ public final class PaymentRepository {
 
     /** An order for a pack, pending; the same one for the same client key. */
     public Placed place(long player, String clientKey, String product, int gems, int priceCents, String currency,
-                        String provider, Instant now) throws SQLException {
+                        String provider, Instant at) throws SQLException {
+        Instant now = at.truncatedTo(java.time.temporal.ChronoUnit.MILLIS);       // as the column holds it (P-55)
         return tx.execute(c -> {
             lockPlayer(c, player);
             try (PreparedStatement ps = c.prepareStatement("SELECT " + COLUMNS + " FROM payment_order"
@@ -83,8 +84,8 @@ public final class PaymentRepository {
                 ps.setTimestamp(10, Timestamp.from(now));
                 ps.executeUpdate();
             }
-            return new Placed(new Order(id, player, product, gems, priceCents, currency, provider, PENDING, 0, 0,
-                    now.truncatedTo(java.time.temporal.ChronoUnit.MILLIS)), false);
+            return new Placed(new Order(id, player, product, gems, priceCents, currency, provider, PENDING, 0, 0, now),
+                    false);
         });
     }
 

@@ -23,7 +23,7 @@ public final class TeamService {
     public enum Result {
         OK, NO_SESSION, INVALID_NAME, INVALID_ROLE, NAME_TAKEN, IN_TEAM, COOLING_DOWN, NO_TEAM, NOT_ALLOWED,
         NO_SUCH_PLAYER, NO_INVITE, TEAM_FULL, LEADER_WITH_MEMBERS, NOT_A_MEMBER, TOO_MANY_VICES, TOO_MANY_INVITED,
-        TOO_SOON, RENAMED_RECENTLY, NO_SUCH_TEAM, ALREADY, TOO_MANY_APPLIED, NO_APPLICATION
+        TOO_SOON, RENAMED_RECENTLY, NO_SUCH_TEAM, ALREADY, TOO_MANY_APPLIED, NO_APPLICATION, APPLIED_TOO_SOON
     }
 
     /** Teams found, or why none were looked for. */
@@ -200,7 +200,7 @@ public final class TeamService {
             return Answer.of(Result.NO_SESSION);
         }
         if (!throttle.allow(AskThrottle.Kind.TEAM_APPLICATION, p)) {
-            return Answer.of(Result.TOO_SOON);
+            return Answer.of(Result.APPLIED_TOO_SOON);          // its own limit, its own message (P-56)
         }
         TeamRepository.Applied applied = teams.apply(p, teamId, clock.instant());
         for (long answerer : applied.told()) {
@@ -230,7 +230,11 @@ public final class TeamService {
             return new Applications(Result.NO_SESSION, List.of());
         }
         List<TeamRepository.Application> listed = teams.applicationsTo(p, clock.instant());
-        return listed == null ? new Applications(Result.NOT_ALLOWED, List.of()) : new Applications(Result.OK, listed);
+        if (listed == null) {
+            // In no team is no_team, as every other /mine route answers (P-58); a member, not allowed.
+            return new Applications(teams.teamOf(p) == null ? Result.NO_TEAM : Result.NOT_ALLOWED, List.of());
+        }
+        return new Applications(Result.OK, listed);
     }
 
     /** The leader or a vice leader answers an application; accepted, every member is told. */

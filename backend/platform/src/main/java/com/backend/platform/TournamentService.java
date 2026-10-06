@@ -129,7 +129,10 @@ public final class TournamentService {
             return Answer.of(Result.NO_SESSION);
         }
         TournamentRepository.Tournament t = tournaments.get(id);
-        if (t != null && t.mode() == MatchResultRepository.MODE_TEAMS) {
+        if (t == null) {
+            return Answer.of(Result.NO_SUCH_TOURNAMENT);             // as registering is (P-57)
+        }
+        if (t.mode() == MatchResultRepository.MODE_TEAMS) {
             TeamRepository.Team team = teams.teamOf(p);
             if (team == null) {
                 return Answer.of(Result.NOT_REGISTERED);

@@ -40,10 +40,15 @@ POST /admin/players/3/kick
 
 - **Audited**: the call, its body and its outcome are written to `admin_audit` in MySQL,
   refusals included. Not written: an unknown path (404 `not_found`), a wrong method (405), a
-  bad `days` (400), and the 500 and 503 below.
+  bad `days` (400), a 500, and a 503 for a call that did nothing. A ban's 503s are written with
+  the ban, and a notice is written `sent` before it goes, so one the store then failed is there
+  too.
 - Errors are `{"code","message"}`. 404 `not_found` `no such call`; 405 `method_not_allowed`
   with `Allow`; 503 `storage_unavailable` (`the database did not answer; nothing was done`);
-  500 `internal`, also when the store does not answer.
+  503 `storage_unavailable` with `the store did not answer: call again` when the store (j-redis)
+  fails: every call is safe to make again, and only a notice the store took without answering
+  goes out twice (until 2026-10-06 this was 500 `internal`, O-36); 500 `internal` for anything
+  else unexpected.
 
 ## 3. Reading
 
@@ -200,6 +205,7 @@ POST /admin/players/3/unban
 | 400 | `bad_until` | `until is an ISO-8601 instant in the future, as 2026-10-01T00:00:00Z` |
 | 404 | `no_such_player` | `no account <id>` |
 | 503 | `sessions_not_ended` | the ban is recorded but the store did not answer: call again to end the sessions |
+| 503 | `not_taken_out` | the ban is recorded and the sessions ended, but the arenas could not be told: the player may play on in a match; call again (O-36) |
 
 ### `POST /admin/payments/{orderId}/refund`, `POST /admin/players/{id}/refund-debt`
 

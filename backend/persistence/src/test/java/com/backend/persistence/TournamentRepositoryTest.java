@@ -96,6 +96,7 @@ class TournamentRepositoryTest {
         assertThat(tournaments.register(cup, ada, T)).isEqualTo(Registration.ALREADY);
         assertThat(tournaments.register(cup, bob, T)).isEqualTo(Registration.OK);
         assertThat(tournaments.register(cup, cy, T)).isEqualTo(Registration.FULL);
+        assertThat(tournaments.register(cup, ada, T)).as("in a full one, still told already (P-59)").isEqualTo(Registration.ALREADY);
         assertThat(tournaments.withdraw(cup, bob, T)).isTrue();
         assertThat(tournaments.register(cup, cy, T.plus(Duration.ofHours(1)))).as("the deadline").isEqualTo(Registration.CLOSED);
         assertThat(tournaments.withdraw(cup, ada, T.plus(Duration.ofHours(1)))).isFalse();
@@ -477,6 +478,8 @@ class TournamentRepositoryTest {
                 .containsExactly(ta);
         assertThat(tournaments.registerTeam(cup, tb, list(b), T)).isEqualTo(Registration.OK);
         assertThat(tournaments.registerTeam(cup, tc, list(c), T)).isEqualTo(Registration.FULL);
+        assertThat(tournaments.registerTeam(cup, ta, list(a), T)).as("in a full one, still told already (P-59)")
+                .isEqualTo(Registration.ALREADY);
         assertThat(tournaments.teamEntries(cup)).extracting(TournamentRepository.TeamEntry::teamId).containsExactly(ta, tb);
         assertThat(tournaments.teamEntries(cup).get(0).name()).isEqualTo("TeamA");
         assertThat(tournaments.rosterOf(cup, tb)).extracting(TournamentRepository.Rostered::playerId)

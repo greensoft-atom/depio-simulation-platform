@@ -377,10 +377,10 @@ with a search.
 |---|---|
 | `GET /v1/teams?name=<start>` | up to 20 teams whose name starts so, by the name's collation (case and accents ignored), by name → 200 `{"teams": [{"id", "name", "members", "rating"}]}`; 400 `invalid_name` for an empty start or one over 16 characters |
 | `GET /v1/teams/{id}` | the same for one → 200; 404 `no_such_team` |
-| `POST /v1/teams/{id}/applications` | by a player in no team and past the cooldown → 200; 404 `no_such_team`; 409 `in_team`, `cooling_down`, `already` (one a team, a declined one until it lapses), `team_full`, `too_many_applied` (5 out); 429 `too_soon` (20 an hour, counted apart from invitations and friend requests) |
+| `POST /v1/teams/{id}/applications` | by a player in no team and past the cooldown → 200; 404 `no_such_team`; 409 `in_team`, `cooling_down`, `already` (one a team, a declined one until it lapses), `team_full`, `too_many_applied` (5 out); 429 `too_soon` (20 an hour, counted apart from invitations and friend requests, `twenty applications an hour at most`: until 2026-10-06 it gave the invitations' message, P-56) |
 | `DELETE /v1/teams/{id}/applications` | the applicant withdraws → 200; 404 `no_application` |
 | `GET /v1/team-applications` | the player's own, unlapsed → 200 `{"applications": [{"teamId", "teamName", "expiresAt"}]}` |
-| `GET /v1/teams/mine/applications` | by the leader or a vice leader: the 50 newest unlapsed and undeclined → 200 `{"applications": [{"playerId", "name", "expiresAt"}]}`; 403 `not_allowed` |
+| `GET /v1/teams/mine/applications` | by the leader or a vice leader: the 50 newest unlapsed and undeclined → 200 `{"applications": [{"playerId", "name", "expiresAt"}]}`; 403 `not_allowed` for a member; 404 `no_team` for a player in none, as every other `/mine` route (P-58) |
 | `POST /v1/teams/mine/applications/{playerId}` `{"accept"}` | by the leader or a vice leader → 200, the team; 403 `not_allowed`; 404 `no_application`; 409 `in_team`, `cooling_down`, `team_full` |
 
 An application lasts **seven days**, as an invitation does. The leader and each
@@ -1430,8 +1430,8 @@ The public API's routes, each needing a session but the first two:
 |---|---|
 | `GET /v1/tournaments` | `{"tournaments":[…]}`, those registering, seeded or running, each with its entries → 200 |
 | `GET /v1/tournaments/{id}` | the tournament: `state`, `maxEntries`, `registrationEnds`, `startsAt`, `roundMinutes`, `currentRound`, `prizes`, `entries` (`playerId`, `name`, `seed`) and `matches` (`round`, `slot`, `state`, `playerA`, `playerB`, `winner`) → 200; 404 `no_such_tournament` |
-| `POST /v1/tournaments/{id}/entries` | registers → 200, the tournament; 401; 404 `no_such_tournament`; 409 `closed`, `too_few_rated`, `full`, `already` |
-| `DELETE /v1/tournaments/{id}/entries` | withdraws → 200, the tournament; 401; 409 `not_registered` |
+| `POST /v1/tournaments/{id}/entries` | registers → 200, the tournament; 401; 404 `no_such_tournament`; 409 `closed`, `too_few_rated`, `already`, `full`: a player or team already entered is told `already` before `full` (P-59) |
+| `DELETE /v1/tournaments/{id}/entries` | withdraws → 200, the tournament; 401; 404 `no_such_tournament`, as the `POST` (P-57); 409 `not_registered` |
 | `GET /v1/tournaments/{id}/match` | the player's grant for their match: `tournamentId`, `round`, `arenaHost`, `arenaPort`, `ticketId`, `tls`, `mode` → 200; 401; 404 `no_match` before there is one and after it expires |
 
 **What the ticket does not carry:** the equipment bonus. Tournament duels are
@@ -2232,7 +2232,10 @@ field or a product listed twice stops the start.
 Every payment route answers 503 `payments_off` while no provider is named. An
 **order** is `{"orderId","productId","gems","bonus","priceCents","currency",
 "state","createdAt"}`, its state `pending`, `paid`, `declined`, `refunded` or
-`expired`, and `bonus` the first purchase's gems.
+`expired`, and `bonus` the first purchase's gems. `createdAt` is the time to the millisecond,
+cut there before it is written, so that MySQL's `DATETIME(3)` keeps it as answered: written
+whole, MySQL rounded it, and the order's creation and its reads differed by a millisecond
+(P-55, as `SeasonRepository.endNow` already did).
 
 **(b) The season pass** (designed 2026-10-04,
 [D-69](../architecture/03-decision-log.md#d-69--a-season-pass-pays-each-tier-as-its-points-cross-it-each-track-to-its-own-mark-and-its-premium-never-pays-coins)).
@@ -2509,6 +2512,16 @@ wait for these endpoints. The first slice is what `platform` can do alone:
 | `POST /admin/players/{id}/ban` `{"until", "reason"}` | suspends until `until` (ISO-8601, in the future, else 400 `bad_until`), or bans for good without it; ends every session the player has, and their lobby connection with `evt.session.revoked`. If the sessions cannot be ended (the store failing), 503 `sessions_not_ended`: the ban is recorded, and calling again ends them |
 | `POST /admin/players/{id}/unban` `{"reason"}` | lifts it |
 
+**A store that fails** (designed 2026-10-06, plan item 86, [O-36](../defects.md#6-operations)).
+A call that needs the `session` store and does not get it is 503 `storage_unavailable`, `the
+store did not answer: call again`, as the database failing is and as the player API does (§1):
+the listings, a room's close, a kick, a notice. Each is safe to make again: a kick or a close
+twice is one, and only a notice the store took without answering goes out twice. Until then it
+was 500 `internal`, with the exception's text. **A ban whose sessions are ended but whose
+players cannot then be taken out of the arenas** is 503 `not_taken_out`, saying the ban is
+recorded and the sessions ended, and that the call made again takes the player out; it was 500,
+so an operator could not tell the ban had worked.
+
 **Its own listener**, `BACKEND_ADMIN_ADDR` (host:port, loopback), as the metrics
 are, and only when named: a process given none takes no port. **A shared
 secret**, `BACKEND_ADMIN_TOKEN_FILE`, delivered as the database password is
@@ -2518,8 +2531,9 @@ process's start (exit 2), and both listeners' settings, the metrics' and this
 one's, are checked before the public API binds. **Every call is audited in MySQL**,
 `admin_audit` (V7): when, the call, its target (cut to 128 characters), what it
 asked (cut to 1 024), and what it did, refusals included, since a refused call is
-one worth knowing about (not an unknown path, a wrong method, a bad `days`, nor a 500
-or 503: found in writing the API reference, 2026-10-06, DOC-22). The stream
+one worth knowing about (not an unknown path, a wrong method, a bad `days`, a 500, nor a
+503 for a call that did nothing: found in writing the API reference, 2026-10-06, DOC-22; a
+ban's 503s are audited with the ban, and a notice is audited `sent` before it goes). The stream
 the design names needs j-redis streams (Phase 4); MySQL is here, durable, and
 queryable by the same operator
 ([D-30](../architecture/03-decision-log.md#d-30--admin-calls-are-audited-in-mysql-until-there-are-streams)).

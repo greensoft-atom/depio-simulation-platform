@@ -4,10 +4,8 @@ Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
 re-ordered around it rather than the other way round. **Open as of 2026-10-06:**
-M-6's three latent leftovers (L, none reachable in play); P-55 to P-59 and O-36
-(L, found writing the API reference, plan item 83); O-37 (M, the `events`
-store's memory past ~19 000 players, plan item 84); DOC-24 (a compiler warning).
-Every other entry is fixed,
+M-6's three latent leftovers (L, none reachable in play) and O-37 (M, the
+`events` store's memory past ~19 000 players, plan item 84). Every other entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
 **Ids.** P protocol (§2), D data and the result pipeline (§3), M simulation
@@ -148,15 +146,14 @@ below was confirmed by watching the test fail first.
 | **P-52** | L | **FOUND AND FIXED 2026-10-04 (the review, plan item 79). The gateway's flood refusal went out past the WebSocket handler.** `FrameLimit` wrote its refusal and Close from its own place in the pipeline, below the protocol handler, which therefore never recorded the Close: replies and pushes still went out after it, and a later close sent a second (RFC 6455 §5.5.1). **Fixed:** written from the channel's tail. Not separately tested; the flood test still passes. | read |
 | **P-53** | M | **FOUND AND FIXED 2026-10-04 (the review's drill of every scenario, plan item 79). P-39's fix took a dead player for a lost one.** The arena sends a player whose tank is dead no frames, by design, only the answers to its pings; P-39's rule, no frame for 3 s is a loss, then fired while a player waited to respawn or, in co-op, for the next wave, and the resume that followed spawned the tank. The `coop` scenario's three players were lost and resumed over and over, two of them mid-resume when the match ended, told "no such stay" and not that it was over. **Fixed:** dead, from the Death event until a frame moves the tick again, the limit is a ping's period and its answer, 13 s. Tests `ADeadPlayerSentNoFramesIsNotLostWhileItsPingsAreAnswered` and `ARespawnedPlayerIsHeldToTheFramesAgain`, failing first; four ways of breaking the rule caught. Its first fix keyed on the own tank's removal, which the arena never sends (P-54): the drill's second run showed it. | drill, tested |
 | **P-54** | H | **FOUND AND FIXED 2026-10-04 (the review, fixing P-53). The client took a dead player for a live one.** The arena tells a death by the Death event alone and sends the dead no remove of their tank, so `MatchConnection.Alive`, read from the own entity, stayed true until a respawn. The Unity layer's HUD offers Respawn only when not alive: a player of the Unity build could not respawn. And inputs went on to a dead tank, and it was predicted. **Fixed:** `Alive` is false from the Death until the world's ticks come again. Test `ADeadPlayerIsNotAliveThoughItsTankIsNeverRemoved`, failing first. Not run in Unity. | tested |
-| **P-55** | L | **FOUND 2026-10-06, OPEN (the API reference's run, plan item 83). An order's `createdAt` differs by a millisecond between its creation and every read after.** `POST /v1/payments` answered `2026-10-05T22:29:54.500Z`; `GET /v1/payments/{orderId}` and the simulate call, for the same order, `…54.501Z`. The answer is made from the time in Java, truncated to the millisecond; MySQL's `DATETIME(3)` stored it rounded. A client that compares the two sees two orders' worth of times for one. | measured |
-| **P-56** | L | **FOUND 2026-10-06, OPEN (the same work, from reading the code).** A team application refused by its hourly limit (20) answers 429 `too_soon` with the invitations' message, `twenty invitations an hour at most`: `TeamService` has one outcome for both throttles. | read |
-| **P-57** | L | **FOUND 2026-10-06, OPEN (the same).** `DELETE /v1/tournaments/{id}/entries` for a tournament that does not exist answers 409 `not_registered`; `POST` to the same path answers 404 `no_such_tournament`. | read |
-| **P-58** | L | **FOUND 2026-10-06, OPEN (the same).** `GET /v1/teams/mine/applications` from a player in no team answers 403 `not_allowed`, where every other `/mine` route answers 404 `no_team`. | read |
-| **P-59** | L | **FOUND 2026-10-06, OPEN (the same).** A duel registration checks that the tournament is full before that the player is entered: a player already in a full tournament is told `full`, not `already`. | read |
+| **P-55** | L | **FOUND 2026-10-06 (the API reference's run, plan item 83), FIXED 2026-10-06 (plan item 86). An order's `createdAt` differs by a millisecond between its creation and every read after.** `POST /v1/payments` answered `2026-10-05T22:29:54.500Z`; `GET /v1/payments/{orderId}` and the simulate call, for the same order, `…54.501Z`. The answer is made from the time in Java, truncated to the millisecond; MySQL's `DATETIME(3)` stored it rounded. A client that compares the two sees two orders' worth of times for one. **Fixed:** the time is cut to the millisecond before it is written, as `SeasonRepository.endNow` already did. Test `anOrdersTimeIsAsStored` (.500600 placed: .501 read before, .500 after); on the release, placed, read and paid alike. | measured, tested, drilled |
+| **P-56** | L | **FOUND 2026-10-06 (the same work, from reading the code), FIXED 2026-10-06 (plan item 86).** A team application refused by its hourly limit (20) answers 429 `too_soon` with the invitations' message, `twenty invitations an hour at most`: `TeamService` has one outcome for both throttles. **Fixed:** its own outcome, `APPLIED_TOO_SOON`: `twenty applications an hour at most`. Tested; on the release, the 21st application answered so. | tested, drilled |
+| **P-57** | L | **FOUND 2026-10-06 (the same), FIXED 2026-10-06 (plan item 86).** `DELETE /v1/tournaments/{id}/entries` for a tournament that does not exist answers 409 `not_registered`; `POST` to the same path answers 404 `no_such_tournament`. **Fixed:** 404 `no_such_tournament`, as the `POST`. Tested; drilled. | tested, drilled |
+| **P-58** | L | **FOUND 2026-10-06 (the same), FIXED 2026-10-06 (plan item 86).** `GET /v1/teams/mine/applications` from a player in no team answers 403 `not_allowed`, where every other `/mine` route answers 404 `no_team`. **Fixed:** 404 `no_team` for a player in none; a member is still 403 `not_allowed`. Tested both; drilled. | tested, drilled |
+| **P-59** | L | **FOUND 2026-10-06 (the same), FIXED 2026-10-06 (plan item 86).** A duel registration checks that the tournament is full before that the player is entered: a player already in a full tournament is told `full`, not `already`. **Fixed:** `already` is checked before `full`, for a player and, found with it, for a team, which had the same order. Tested both. | tested |
 
-**Open in this section: P-55 to P-59**, five small inconsistencies found in writing the API
-reference (2026-10-06), none of them a fault a client cannot handle; the reference documents
-each as it behaves. P-38 to P-54 were found and fixed by the review of 2026-10-04 (plan item 79); P-35 and P-36 were found and fixed 2026-10-01; P-32, seen once, was fixed 2026-09-30; P-34 was found and fixed 2026-09-30; P-31 was fixed 2026-09-29 and is watched; P-33 was found and fixed building phrases in the client. P-6 and P-13 were fixed on 2026-09-25; P-9,
+**Nothing is open in this section.** P-55 to P-59, five small inconsistencies found in writing
+the API reference (2026-10-06), were fixed the same day (plan item 86). P-38 to P-54 were found and fixed by the review of 2026-10-04 (plan item 79); P-35 and P-36 were found and fixed 2026-10-01; P-32, seen once, was fixed 2026-09-30; P-34 was found and fixed 2026-09-30; P-31 was fixed 2026-09-29 and is watched; P-33 was found and fixed building phrases in the client. P-6 and P-13 were fixed on 2026-09-25; P-9,
 P-11 and P-14 on 2026-09-26, when the rest of P-12 was closed as not a defect.
 P-15 to P-22 were found and fixed the same day by an audit of the designs
 against the code, P-23 while building resume, and P-24 to P-26 by the review.
@@ -868,13 +865,20 @@ moment before the dump now fails if the comparison is put back.
   backend's goes on another port (`MYSQL_PORT`). Run again, the guide passed with both
   servers running (ours on 3307, the system's on 3306) and passed on a fresh server as
   before.
-- **O-36 (L), found 2026-10-06, OPEN (the API reference, plan item 83, from reading the code).
+- **O-36 (L), found 2026-10-06 (the API reference, plan item 83, from reading the code), FIXED
+  2026-10-06 (plan item 86).
   An admin call whose store (j-redis) fails answers 500 `internal` with the exception's text**,
   where a database failure is a 503 that says nothing was done. A ban whose arena kick fails
   this way answers 500 though the ban and the end of the sessions are done, so the operator
   cannot tell it worked; a ban whose sessions cannot be ended (503 `sessions_not_ended`) skips
   the push and the kick until it is called again. Documented as it is (platform's README,
-  docs/api/03); a 503 naming what was done is the likely fix.
+  docs/api/03); a 503 naming what was done is the likely fix. **Fixed:** a store failure, by the
+  directory's own wait or a call joined in the handler, is 503 `storage_unavailable`, `the store
+  did not answer: call again` (`AdminServer.storeDown`, as the player API judges one); a ban whose
+  sessions ended but whose arena kick failed is 503 `not_taken_out`, saying what was done. Two
+  tests, four mutants caught; on the release, with j-redis killed, the listing and a notice
+  answered 503 so. The `sessions_not_ended` path is as it was: the push and the kick need the
+  store that has just failed.
 - **O-37 (M), found 2026-10-06, OPEN (scaling, plan item 84, from documented numbers). The
   `events` store's `maxmemory` holds a day of results only to about 19 000 players.** The
   result stream keeps 24 hours (D-26), ~530 bytes a result: 1.6 GB at 10 000 players, 7.8 GB at
@@ -1109,10 +1113,11 @@ gives each figure with its date:
 - 07 §6's `nofile 262144` against the units' 65 536;
 - the core budget's table itself (architecture/01 §3).
 
-**DOC-24, found 2026-10-06, OPEN** (plan item 85's full build). The plan's status table says
+**DOC-24, found 2026-10-06, FIXED the same day** (plan item 85's full build; fixed in item 86). The plan's status table says
 "0 compiler warnings"; the full build has one: `worker/SeasonKeeper.LockLost`, a serializable
 exception with no `serialVersionUID`. It came with the repository's first commit here, so its
-start is not in this history.
+start is not in this history. **Fixed:** `serialVersionUID` declared, as the other exceptions do;
+item 86's full build, 0 warnings.
 
 ---
 

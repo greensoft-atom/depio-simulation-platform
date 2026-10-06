@@ -186,6 +186,11 @@ public final class TournamentRepository {
                             playerId) == 0) {
                         return Registration.TOO_FEW_RATED;
                     }
+                    // Before full: a player entered in a full one was told it was full (P-59).
+                    if (count(c, "SELECT COUNT(*) FROM tournament_entry WHERE tournament_id = ? AND player_id = ?", id,
+                            playerId) > 0) {
+                        return Registration.ALREADY;
+                    }
                     if (count(c, "SELECT COUNT(*) FROM tournament_entry WHERE tournament_id = ?", id) >= rs.getInt(3)) {
                         return Registration.FULL;
                     }
@@ -243,6 +248,10 @@ public final class TournamentRepository {
                     if (count(c, "SELECT COUNT(*) FROM team WHERE id = ? AND rated_matches >= " + RatingBoards.MIN_RATED,
                             teamId) == 0) {
                         return Registration.TOO_FEW_RATED;
+                    }
+                    if (count(c, "SELECT COUNT(*) FROM tournament_team_entry WHERE tournament_id = ? AND team_id = ?",
+                            id, teamId) > 0) {
+                        return Registration.ALREADY;                        // before full, as a player's (P-59)
                     }
                     if (count(c, "SELECT COUNT(*) FROM tournament_team_entry WHERE tournament_id = ?", id)
                             >= rs.getInt(3)) {
@@ -773,9 +782,11 @@ public final class TournamentRepository {
         }
     }
 
-    private static int count(Connection c, String sql, long id) throws SQLException {
+    private static int count(Connection c, String sql, long... ids) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setLong(1, id);
+            for (int i = 0; i < ids.length; i++) {
+                ps.setLong(i + 1, ids[i]);
+            }
             try (ResultSet rs = ps.executeQuery()) {
                 rs.next();
                 return rs.getInt(1);

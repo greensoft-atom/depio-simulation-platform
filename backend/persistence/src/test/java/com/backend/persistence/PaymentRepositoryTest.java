@@ -85,6 +85,16 @@ class PaymentRepositoryTest {
     }
 
     @Test
+    @DisplayName("an order's time is the same when placed as in every read after: cut to the millisecond before MySQL rounds it (P-55)")
+    void anOrdersTimeIsAsStored() throws SQLException {
+        long ada = player("ada");
+        Instant at = Instant.parse("2026-10-05T22:29:54.500600Z");          // MySQL's DATETIME(3) rounds it to .501
+        PaymentRepository.Order placed = order(ada, "00000000-0000-0000-0000-0000000000b5", 80, at);
+        assertThat(payments.get(placed.id()).createdAt()).isEqualTo(placed.createdAt())
+                .isEqualTo(Instant.parse("2026-10-05T22:29:54.500Z"));
+    }
+
+    @Test
     @DisplayName("an order: pending, the same order for a retried ask; paid once, its gems through the ledger, the first order's twice; declined grants nothing")
     void ordersPaidOnce() throws SQLException {
         long ada = player("ada");

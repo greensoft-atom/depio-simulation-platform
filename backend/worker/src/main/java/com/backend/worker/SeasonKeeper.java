@@ -144,6 +144,8 @@ final class SeasonKeeper implements AutoCloseable {
 
     /** This run's lock has passed to another worker: it stops where it is. */
     private static final class LockLost extends Exception {
+        private static final long serialVersionUID = 1L;
+
         LockLost() {
             super("the season job's lock passed to another worker", null, false, false);
         }

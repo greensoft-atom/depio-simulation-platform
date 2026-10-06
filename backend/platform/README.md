@@ -303,7 +303,8 @@ is 1 when a party is made and one more on each change of its members or leader (
 
 - Every payment route answers 503 `payments_off` unless `BACKEND_PAYMENT_PROVIDER=simulated`. An
   `orderId` is 36 characters of `[0-9a-f-]`.
-- **An order** is `{orderId, productId, gems, bonus, priceCents, currency, state, createdAt}`;
+- **An order** is `{orderId, productId, gems, bonus, priceCents, currency, state, createdAt}`,
+  `createdAt` to the millisecond and the same in every answer;
   `state` is `pending`, `paid`, `declined`, `refunded` or `expired`; `bonus` is the first paid
   order's extra gems, as many again, once per player.
 - **The pass** is `{season, endsAt, points, tier, premium, premiumGems: 500, tierPoints: 250, tiers:
@@ -335,7 +336,7 @@ losses, draws}`, `role` `leader`, `vice_leader` or `member`.
 | GET | `/v1/teams?name=` | none | 200 `{teams: [{id, name, members, rating}]}`, up to 20 whose name starts so | 400 `invalid_name` (empty, or over 16 characters) |
 | POST | `/v1/teams` | `{name}` | 200 the team | 400 `invalid_name`; 409 `name_taken`, `in_team`, `cooling_down` (24 h after leaving one) |
 | GET | `/v1/teams/{id}` | none | 200 `{id, name, members, rating}` | 404 `no_such_team` |
-| POST | `/v1/teams/{id}/applications` | none | 200 `{}` | 404 `no_such_team`; 409 `in_team`, `cooling_down`, `already`, `team_full`, `too_many_applied` (5 out); 429 `too_soon` (20 an hour) |
+| POST | `/v1/teams/{id}/applications` | none | 200 `{}` | 404 `no_such_team`; 409 `in_team`, `cooling_down`, `already`, `team_full`, `too_many_applied` (5 out); 429 `too_soon` (20 an hour, `twenty applications an hour at most`) |
 | DELETE | `/v1/teams/{id}/applications` | none | 200 `{}` | 404 `no_application` |
 | GET | `/v1/teams/mine` | none | 200 the team | 404 `no_team` |
 | DELETE | `/v1/teams/mine` | none | 200 `{}`: disbanded | 403 `not_allowed`; 404 `no_team` |
@@ -343,7 +344,7 @@ losses, draws}`, `role` `leader`, `vice_leader` or `member`.
 | POST | `/v1/teams/mine/invites` | `{playerId}` | 200 the team | 400 `invalid_body`; 403 `not_allowed`; 404 `no_such_player`; 409 `in_team`, `too_many_invited` (20 out); 429 `too_soon` (20 an hour) |
 | POST | `/v1/teams/mine/leader` | `{playerId}` | 200 the team | 400 `invalid_body`; 403 `not_allowed`; 404 `not_a_member` |
 | PUT | `/v1/teams/mine/name` | `{name}` | 200 the team | 400 `invalid_name`; 403 `not_allowed`; 409 `name_taken`; 429 `too_soon` (once in 30 days) |
-| GET | `/v1/teams/mine/applications` | none | 200 `{applications: [{playerId, name, expiresAt}]}` | 403 `not_allowed` |
+| GET | `/v1/teams/mine/applications` | none | 200 `{applications: [{playerId, name, expiresAt}]}` | 403 `not_allowed` (a member); 404 `no_team` |
 | POST | `/v1/teams/mine/applications/{playerId}` | `{accept}` | 200 the team | 400 `invalid_body`; 403 `not_allowed`; 404 `no_application`; 409 `in_team`, `cooling_down`, `team_full` |
 | DELETE | `/v1/teams/mine/members/{playerId}` | none | 200 the team | 403 `not_allowed`; 404 `not_a_member` |
 | POST | `/v1/teams/mine/members/{playerId}/role` | `{role: "vice_leader" or "member"}` | 200 the team | 400 `invalid_body`, `invalid_role`; 403 `not_allowed`; 404 `not_a_member`; 409 `too_many_vices` (2) |
@@ -360,8 +361,8 @@ or in which role, is pushed to its members as `evt.team.update`.
 |---|---|---|---|---|
 | GET | `/v1/tournaments` | none | 200 `{tournaments: [view]}`, those registering, seeded or running, with their entries | — |
 | GET | `/v1/tournaments/{id}` | none | 200 the view, with its bracket | 404 `no_such_tournament` |
-| POST | `/v1/tournaments/{id}/entries` | session | 200 the view | 400 `party_too_small`; 401; 403 `not_allowed`; 404 `no_such_tournament`; 409 `closed`, `too_few_rated` (ten rated matches in its mode), `full`, `already`, `in_party`, `not_one_team` |
-| DELETE | `/v1/tournaments/{id}/entries` | session | 200 the view | 401; 403 `not_allowed`; 409 `not_registered` |
+| POST | `/v1/tournaments/{id}/entries` | session | 200 the view | 400 `party_too_small`; 401; 403 `not_allowed`; 404 `no_such_tournament`; 409 `closed`, `too_few_rated` (ten rated matches in its mode), `already` (said before `full`), `full`, `in_party`, `not_one_team` |
+| DELETE | `/v1/tournaments/{id}/entries` | session | 200 the view | 401; 403 `not_allowed`; 404 `no_such_tournament`; 409 `not_registered` |
 | GET | `/v1/tournaments/{id}/match` | session | 200 `{tournamentId, round, arenaHost, arenaPort, ticketId, tls, mode}`, the grant `worker` kept, for its 60 s | 401; 404 `no_match` |
 
 **The view** is `{id, name, mode: "duel" or "teams", format: "elimination" or "round_robin", state,
@@ -409,11 +410,16 @@ On `BACKEND_ADMIN_ADDR`, every path under `/admin/`. Every call needs `Authoriza
 
 - **Audited** in MySQL (`admin_audit`): the call, its target (cut to 128 characters), what it asked
   (cut to 1 024) and what it did, refusals included. Not audited: an unknown path (404
-  `not_found`), a wrong method (405), a bad `days` (400 `invalid_days`), and a 500 or 503.
-- **A store failure** (j-redis) is a 500 `internal`, as anything unexpected is: in the arenas, the
-  rooms, a close, a kick, a notice's broadcast, and a ban's arena kick, which then answers 500
-  though the ban and the sessions' end are done. A ban whose sessions cannot be ended (503
-  `sessions_not_ended`) skips the push and the kick until it is called again.
+  `not_found`), a wrong method (405), a bad `days` (400 `invalid_days`), a 500, and a 503 for a
+  call that did nothing. A ban's 503s are audited with the ban; a notice is audited `sent` before
+  it goes.
+- **A store failure** (j-redis) is 503 `storage_unavailable`, `the store did not answer: call
+  again`, by whichever path it came (`AdminServer.storeDown`, as the player API judges one): in
+  the arenas, the rooms, a close, a kick, a notice's broadcast. Each is safe to make again; only
+  a notice the store took without answering goes out twice. A ban whose sessions cannot be ended
+  is 503 `sessions_not_ended`, and skips the push and the kick until it is called again; one
+  whose sessions ended but whose arena kick failed is 503 `not_taken_out`. Until 2026-10-06 these
+  were 500 `internal` with the exception's text (O-36).
 - **A reason** is required on every call that changes something: `{"reason"}`, 1 to 200
   characters, else 400 `no_reason`.
 - **Bodies** are read up to 4 096 bytes.
@@ -426,7 +432,7 @@ On `BACKEND_ADMIN_ADDR`, every path under `/admin/`. Every call needs `Authoriza
 | GET | `/admin/arenas` | none | 200 `[{name, host, port, players, maxPlayers, tls, rooms, maxRooms}]` | 405 |
 | GET | `/admin/rooms` | none | 200 `[{arena, …each room as its arena announced it}]` | 405 |
 | POST | `/admin/rooms/{arena}/{room}/close` | `{reason}` | 202 `{heard}`, the arenas that heard | 400 `no_reason`; 404 `not_found`, `no_such_arena`; 405 |
-| POST | `/admin/players/{id}/ban` | `{reason, until?}` | 200 `{playerId, status: "banned" or "suspended", sessionsEnded, until?}` | 400 `no_reason`, `bad_until` (not an ISO-8601 instant, or not in the future); 404 `no_such_player`, `not_found`; 405; 503 `sessions_not_ended` |
+| POST | `/admin/players/{id}/ban` | `{reason, until?}` | 200 `{playerId, status: "banned" or "suspended", sessionsEnded, until?}` | 400 `no_reason`, `bad_until` (not an ISO-8601 instant, or not in the future); 404 `no_such_player`, `not_found`; 405; 503 `sessions_not_ended`, `not_taken_out` |
 | POST | `/admin/players/{id}/unban` | `{reason}` | 200 `{playerId, status: "active", sessionsEnded: 0}` | 400 `no_reason`; 404 `no_such_player`; 405 |
 | POST | `/admin/players/{id}/kick` | `{reason}` | 202 `{playerId, arenas}`, the arenas that heard | 400 `no_reason`; 404 `not_found`; 405 |
 | POST | `/admin/players/{id}/refund-debt` | `{reason}` | 200 `{playerId, cleared}`, the gems of debt cleared | 400 `no_reason`; 405 |

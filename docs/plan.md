@@ -61,7 +61,7 @@ and fixed-phrase chat
 | `worker` / events design | **[Written](detailed-design/05-worker-and-events.md)** — streams, consumer loop, dead-lettering, result pipeline, scheduled jobs, analytics and the funnel. The worker reads the result stream (item 10). |
 | MySQL persistence design | **[Written](detailed-design/06-persistence-mysql.md)** — schema, transaction patterns, idempotency via natural keys, pooling, retention and growth, backups proved weekly. The schema is one baseline since 2026-10-04, `V1__schema.sql` and `V2__seed.sql` (D-75). |
 | Operations docs | [Mostly written](operations/01-deploy.md) — install, TLS, MySQL, backups and the certificate run for real; the stores' promotion scripted and drilled ([runbook §2](operations/02-runbook.md#2-stateful-primary-failure)), MySQL's too (2026-09-29, rehearsed under load 2026-09-30); backups proved by a weekly restore (item 76). What is left is the alert thresholds, which wait on Q-3's hardware ([runbook](operations/02-runbook.md)). |
-| Application code | **[backend/](../backend/README.md)**: `common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`. 994 tests, 0 compiler warnings (item 78, 2026-10-04). Multi-room arena, largest clean run 1 200 bots, every one sent every snapshot (item 14), and 600 through a failover (item 23); MySQL transactions tested for idempotency and double-spend under concurrency; single-use join tickets; Argon2id login and sessions; register → login → lobby → ticket → play → result persisted → **leaderboard updated**, verified end to end across four processes against real MySQL and real j-redis. |
+| Application code | **[backend/](../backend/README.md)**: `common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`, `crypto-examples`. 1 064 tests, 0 compiler warnings (item 86, 2026-10-06). Multi-room arena, largest clean run 1 200 bots, every one sent every snapshot (item 14), and 600 through a failover (item 23); MySQL transactions tested for idempotency and double-spend under concurrency; single-use join tickets; Argon2id login and sessions; register → login → lobby → ticket → play → result persisted → **leaderboard updated**, verified end to end across four processes against real MySQL and real j-redis. |
 | Unity client | **Claude writes it** ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer), 2026-09-27): the engine-free core and a headless driver in [client/](../client/README.md), 148 tests (2026-10-04), driven against the real stack by the live drills. The Unity layer is written as scripts over the core, compiled against stubs and not yet run in Unity (item 77, the owner's Q-51); own-tank prediction, deferred with it on 2026-09-27, was brought back on 2026-10-03 and built (item 70). |
 
 ### Build checklist
@@ -3101,6 +3101,35 @@ documents on scaling the service and on its performance.
   arena; the request's latency by route is still unmeasured, item 84).
 - **Next, in order:** the small open items P-55 to P-59 and O-36, with DOC-24 (a compiler
   warning the plan's status says is not there).
+
+---
+
+#### 86. ~~The small open items: P-55 to P-59, O-36, DOC-24.~~ — **done 2026-10-06**
+
+**The owner, 2026-10-06:** go ahead (after T-59).
+
+- **Design**: each rule in its place in [04](detailed-design/04-platform-services.md): an order's
+  time (§8), the team routes (§2), the tournament entries (§6), the admin API's store failures
+  (§10).
+- **Fixed**:
+  - **P-55**: an order's `createdAt` is cut to the millisecond before it is written, so every
+    answer gives the same time (MySQL rounded `.5006` to `.501`).
+  - **P-56**: the application limit's own answer, `twenty applications an hour at most`.
+  - **P-57**: withdrawing from a tournament that does not exist is 404 `no_such_tournament`.
+  - **P-58**: the applications to one's team, from a player in none, are 404 `no_team`.
+  - **P-59**: `already` before `full`, for a player and for a team (the team's had the same order).
+  - **O-36**: a store failure under the admin API is 503 `storage_unavailable`, `call again`; a
+    ban whose sessions ended but whose arena kick failed is 503 `not_taken_out`.
+  - **DOC-24**: the compiler warning; the build has none again.
+- **Tests first**, each seen failing for its reason; **11 mutants, all caught**.
+- **Full build**: 1 064 tests, none failing, 0 warnings.
+- **On the release**: the Postman collection, 131 requests and 131 checks, none failing; each fixed
+  answer asked for over HTTP; j-redis killed under the admin API, which answered 503 so.
+- **The register**: open now are M-6's latent leftovers and O-37 alone.
+- **Next:** the list is empty again. O-37 (the `events` store's memory) is needed before ~19 000
+  players, past the launch's 10 000, and its size waits on the production machines (Q-3). The
+  owner's questions stand: Q-1 to Q-4 (their machines and players), Q-53 (where the backups'
+  copies go).
 
 ---
 

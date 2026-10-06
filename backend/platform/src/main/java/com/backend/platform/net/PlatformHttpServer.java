@@ -1478,6 +1478,7 @@ public final class PlatformHttpServer implements AutoCloseable {
             case ALREADY -> error(exchange, 409, "already", "one application a team, a declined one until it lapses");
             case TOO_MANY_APPLIED -> error(exchange, 409, "too_many_applied", "five applications out at once");
             case NO_APPLICATION -> error(exchange, 404, "no_application", "no such application, or it has lapsed");
+            case APPLIED_TOO_SOON -> error(exchange, 429, "too_soon", "twenty applications an hour at most");
         }
     }
 

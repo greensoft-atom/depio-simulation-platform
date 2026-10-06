@@ -2173,10 +2173,11 @@ class PlatformHttpServerTest {
             expectError(post(applications, null, bob), 409, "already");
             assertThat(body(get("/v1/team-applications", bob)).at("/applications/0/teamName").asText()).isEqualTo("ApTanks");
             assertThat(body(get("/v1/teams/mine/applications", ada)).at("/applications/0/playerId").asLong()).isEqualTo(bobId);
-            expectError(get("/v1/teams/mine/applications", bob), 403, "not_allowed");
+            expectError(get("/v1/teams/mine/applications", bob), 404, "no_team");      // in none yet, as every /mine (P-58)
             HttpResponse<String> accepted = post("/v1/teams/mine/applications/" + bobId, "{\"accept\":true}", ada);
             assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(200);
             assertThat(body(accepted).get("members")).hasSize(2);
+            expectError(get("/v1/teams/mine/applications", bob), 403, "not_allowed");      // a member now
             assertThat(teamPushes(pushed, 2)).containsOnlyKeys(adaId, bobId);
             expectError(post("/v1/teams/mine/applications/" + bobId, "{\"accept\":true}", ada), 404, "no_application");
 
@@ -2188,7 +2189,10 @@ class PlatformHttpServerTest {
                 post(applications, null, cy);
                 delete(applications, cy);
             }
-            expectError(post(applications, null, cy), 429, "too_soon");
+            HttpResponse<String> soon = post(applications, null, cy);
+            expectError(soon, 429, "too_soon");
+            assertThat(body(soon).get("message").asText()).as("its own, not the invitations' (P-56)")
+                    .isEqualTo("twenty applications an hour at most");
         } finally {
             gateway.close();
         }
@@ -2622,6 +2626,8 @@ class PlatformHttpServerTest {
         expectError(post("/v1/tournaments/" + cup + "/entries", null, dee), 409, "too_few_rated");   // Q-43
         assertThat(delete("/v1/tournaments/" + cup + "/entries", bob).statusCode()).isEqualTo(200);
         expectError(delete("/v1/tournaments/" + cup + "/entries", bob), 409, "not_registered");
+        expectError(delete("/v1/tournaments/999999/entries", bob), 404, "no_such_tournament");          // as the POST (P-57)
+        expectError(post("/v1/tournaments/999999/entries", null, bob), 404, "no_such_tournament");
         JsonNode one = body(get("/v1/tournaments/" + cup, null));
         assertThat(one.get("entries")).hasSize(1);
         assertThat(one.get("prizes").get(0).asLong()).isEqualTo(1_000);

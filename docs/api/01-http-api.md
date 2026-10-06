@@ -433,8 +433,11 @@ POST /v1/payments/2a0a6b2f-5ad7-47d5-8077-a72b03621e1c/simulate
 ```
 ```json
 200 {"order":{"orderId":"2a0a6b2f-...","productId":"gems_500","gems":500,"bonus":500,"priceCents":499,
- "currency":"USD","state":"paid","createdAt":"2026-10-05T22:29:54.501Z"},"confirmed":true,"gems":1000}
+ "currency":"USD","state":"paid","createdAt":"2026-10-05T22:29:54.500Z"},"confirmed":true,"gems":1000}
 ```
+
+`createdAt` is the same in every answer about an order. Until 2026-10-06 the reads after the
+order's creation could differ from it by a millisecond, `.501` here (P-55).
 
 A player's first paid order is doubled (`bonus`). `confirmed` is false when the order was no
 longer pending, and then nothing changes:
@@ -820,13 +823,13 @@ Authorization: Bearer <A's token, A leading Bob and Cy>
 | 400 | `invalid_body` | `playerId is required`, `accept is required: true or false`, `role is required: vice_leader or member` |
 | 400 | `invalid_role` | `vice_leader or member` |
 | 403 | `not_allowed` | `not for this role` |
-| 404 | `no_team`, `no_such_team`, `no_such_player`, `not_a_member`, `no_invite`, `no_application` | |
+| 404 | `no_team`, `no_such_team`, `no_such_player`, `not_a_member`, `no_invite`, `no_application` | `no_team` from every `/mine` route to a player in none, `GET /v1/teams/mine/applications` too since 2026-10-06 (it was 403, P-58) |
 | 409 | `in_team` | `one team a player` |
 | 409 | `cooling_down` | `a day after leaving a team before another` |
 | 409 | `name_taken` | `however it is cased or accented` |
 | 409 | `team_full`, `too_many_vices`, `too_many_invited`, `too_many_applied`, `already` | the limits above |
 | 409 | `leader_with_members` | `hand the team over first` |
-| 429 | `too_soon` | 20 invitations or applications an hour; a rename within 30 days |
+| 429 | `too_soon` | `twenty invitations an hour at most`; `twenty applications an hour at most` (counted apart; until 2026-10-06 it gave the invitations' message, P-56); `a team's name changes once in 30 days` |
 
 ## 10. Tournaments
 
@@ -866,8 +869,10 @@ A player with 10 rated duels (given in the test database): `200` the tournament 
 Withdrawing: `200` the tournament without them; not registered:
 `409 {"code":"not_registered","message":"not registered, or registration is over"}`.
 
-Other errors: 404 `no_such_tournament`; 409 `closed` (`registration is over`), `full`;
-teams: 409 `in_party`, 400 `party_too_small`, 409 `not_one_team`, 403 `not_allowed`.
+Other errors: 404 `no_such_tournament`, to a withdrawal as to a registration (the `DELETE` answered
+409 `not_registered` until 2026-10-06, P-57); 409 `closed` (`registration is over`), `full`;
+teams: 409 `in_party`, 400 `party_too_small`, 409 `not_one_team`, 403 `not_allowed`. A player or
+team already entered is told `already`, even when the tournament is full (P-59).
 
 ### `GET /v1/tournaments/{id}/match`
 

@@ -19,6 +19,7 @@ import com.backend.common.Secrets;
 import com.backend.handoff.ArenaDirectory;
 import com.backend.handoff.LobbyPush;
 import com.backend.handoff.SessionStore;
+import com.backend.handoff.StoreUnavailableException;
 import com.backend.persistence.AccountRepository;
 import com.backend.persistence.AdminRepository;
 import com.backend.persistence.TournamentRepository;
@@ -171,9 +172,22 @@ public final class AdminServer implements AutoCloseable {
             log.error("admin call {} failed: {}", path, e.toString());
             answer(ex, 503, error("storage_unavailable", "the database did not answer; nothing was done"));
         } catch (RuntimeException e) {
+            if (storeDown(e)) {
+                // As the database's, and as the player API answers it (04 §10, O-36): each call is safe to make again.
+                log.error("admin call {}: the store did not answer: {}", path, e.toString());
+                answer(ex, 503, error("storage_unavailable", "the store did not answer: call again"));
+                return;
+            }
             log.error("admin call {} failed", path, e);
             answer(ex, 500, error("internal", e.toString()));
         }
+    }
+
+    /** The store not answering (O-36), by the directory's own wait or by a call joined here, as the player API judges it. */
+    static boolean storeDown(RuntimeException e) {
+        RuntimeException cause = e instanceof java.util.concurrent.CompletionException
+                && e.getCause() instanceof RuntimeException joined ? joined : e;
+        return cause instanceof StoreUnavailableException || PlatformHttpServer.storeUnavailable(cause);
     }
 
     private boolean authorised(HttpExchange ex) {
@@ -654,7 +668,19 @@ public final class AdminServer implements AutoCloseable {
             }
             push.send(id, "evt.session.revoked", JSON.createObjectNode().put("reason",
                     status == AccountRepository.Status.BANNED ? "banned" : "suspended"));
-            kickEverywhere(id, true);            // and out of any match, rather than playing it out
+            try {
+                kickEverywhere(id, true);            // and out of any match, rather than playing it out
+            } catch (RuntimeException e) {
+                if (!storeDown(e)) {
+                    throw e;
+                }
+                // Done but this: said so, where a 500 left the operator unsure the ban had worked (O-36).
+                log.warn("admin {} player {}: recorded, sessions ended, but not taken out of the arenas: {}", action, id,
+                        e.toString());
+                answer(ex, 503, error("not_taken_out", "the " + outcome + " is recorded and " + ended + " sessions ended,"
+                        + " but the store did not answer: the player may play on in a match; call again"));
+                return;
+            }
         }
         log.info("admin {} player {}: {} ({})", action, id, outcome, reason);
         ObjectNode out = JSON.createObjectNode().put("playerId", id).put("status", outcome)

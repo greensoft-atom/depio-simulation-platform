@@ -184,6 +184,68 @@ class AdminServerTest {
         assertThat(audited(Long.toString(id))).as("the ban recorded").containsExactly("ban banned");
     }
 
+    /** An admin listener whose arenas, and sessions unless given others, are in a store that has gone. */
+    private static AdminServer withStoreGone(JRedisClient dead, SessionStore sessionStore, String file) throws Exception {
+        Path secret = Files.writeString(dir.resolve(file), SECRET + "\n");
+        return AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", "127.0.0.1:0",
+                        "BACKEND_ADMIN_TOKEN_FILE", secret.toString()),
+                new ArenaDirectory(dead), new AdminRepository(db.dataSource()), sessionStore, new LobbyPush(dead),
+                new com.backend.persistence.TournamentRepository(db.dataSource()),
+                new com.backend.persistence.StatsRepository(db.dataSource()),
+                new com.backend.persistence.SeasonRepository(db.dataSource()), java.time.Clock.systemUTC());
+    }
+
+    private static HttpResponse<String> callOn(AdminServer server, String method, String path, String body) throws Exception {
+        return HTTP.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + path))
+                .header("Authorization", "Bearer " + SECRET)
+                .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body))
+                .build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    @DisplayName("a call whose store does not answer is 503 storage_unavailable, to be made again; not 500 with the exception's text (O-36)")
+    void aStoreThatFailsIs503() throws Exception {
+        long id = register("adm-store-gone");
+        JRedisEmbedded gone = JRedisEmbedded.start();
+        JRedisClient dead = gone.newClient();
+        gone.close();
+        try (AdminServer down = withStoreGone(dead, new SessionStore(dead), "admin-token-store")) {
+            for (String[] c : new String[][] {
+                    {"GET", "/admin/arenas", null},
+                    {"GET", "/admin/rooms", null},
+                    {"POST", "/admin/players/" + id + "/kick", "{\"reason\":\"test\"}"},
+                    {"POST", "/admin/notice", "{\"text\":\"hello\",\"reason\":\"test\"}"},
+                    {"POST", "/admin/rooms/arena-1/room-1/close", "{\"reason\":\"test\"}"}}) {
+                HttpResponse<String> answer = callOn(down, c[0], c[1], c[2]);
+                assertThat(answer.statusCode()).as(c[1] + ": " + answer.body()).isEqualTo(503);
+                assertThat(JSON.readTree(answer.body()).get("code").asText()).isEqualTo("storage_unavailable");
+                assertThat(JSON.readTree(answer.body()).get("message").asText())
+                        .isEqualTo("the store did not answer: call again");
+            }
+        } finally {
+            dead.close();
+        }
+    }
+
+    @Test
+    @DisplayName("a ban whose sessions are ended but whose player cannot be taken out of the arenas says what was done, 503 not_taken_out (O-36)")
+    void aBanNotTakenOutSaysWhatWasDone() throws Exception {
+        long id = register("adm-not-out");
+        String token = auth.login("adm-not-out", "hunter2-hunter2".toCharArray()).token();
+        JRedisEmbedded gone = JRedisEmbedded.start();
+        JRedisClient dead = gone.newClient();
+        gone.close();
+        try (AdminServer down = withStoreGone(dead, sessions, "admin-token-not-out")) {      // the sessions' store is up
+            HttpResponse<String> answer = callOn(down, "POST", "/admin/players/" + id + "/ban", "{\"reason\":\"cheating\"}");
+            assertThat(answer.statusCode()).as(answer.body()).isEqualTo(503);
+            assertThat(JSON.readTree(answer.body()).get("code").asText()).isEqualTo("not_taken_out");
+        } finally {
+            dead.close();
+        }
+        assertThat(auth.playerIdOf(token)).as("the sessions ended").isNegative();
+        assertThat(audited(Long.toString(id))).as("the ban recorded").containsExactly("ban banned");
+    }
+
     @Test
     @DisplayName("an operator ends the current season now, for a drill or to bring the calendar into line; the call audited (04 §7)")
     void endsTheSeason() throws Exception {
