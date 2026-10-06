@@ -565,13 +565,15 @@ below give the same answers, and `GET /v1/queue` the grant to a client that miss
 
 ### `POST /v1/match-requests`: a seat in the public arena
 
-Bearer, no body. The live arena with the most free places.
+Bearer, no body. The live arena with the most free places, less those promised to players sent
+there in the last minute and not yet counted by it (D-79).
 
 ```json
 200 {"arenaHost":"127.0.0.1","arenaPort":9021,"ticketId":"1bvMvhOfHVcHga1gZV0yuA","tls":false}
 ```
 
-503 `no_arena` when no arena has room.
+503 `no_arena` when no arena has room: each ticket given holds its place for up to a minute,
+until its player is counted by the arena or the ticket lapses.
 
 ### `POST /v1/queue`: join a queue
 

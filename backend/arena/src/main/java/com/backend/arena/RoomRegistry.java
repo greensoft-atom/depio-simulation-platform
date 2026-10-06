@@ -290,6 +290,35 @@ public final class RoomRegistry implements AutoCloseable {
         return n;
     }
 
+    /**
+     * Players for whom a place was sought since the last announcement, placed or refused: the
+     * platform promised each a seat here, which the announcement drops (D-79).
+     */
+    private final java.util.concurrent.ConcurrentLinkedQueue<Long> seated = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    /** Notes a player once a place has been sought for them, so a placed one's reservation is counted with it. */
+    public void seated(long playerId) {
+        seated.add(playerId);
+    }
+
+    /** The players noted since the last call. */
+    public List<Long> takeSeated() {
+        List<Long> taken = new java.util.ArrayList<>();
+        for (Long player; (player = seated.poll()) != null; ) {
+            taken.add(player);
+        }
+        return taken;
+    }
+
+    /** Players and the places reserved for joins not yet in their rooms: what an announcement counts (D-79). */
+    public int committedPlayers() {
+        int n = 0;
+        for (RoomThread r : rooms) {
+            n += r.committedCount();
+        }
+        return n;
+    }
+
     private int roomsCreated;                   // guarded by this
 
     /**

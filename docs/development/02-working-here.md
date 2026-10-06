@@ -110,6 +110,10 @@ image, which is RHEL 9's own userspace (plan item 80).
   class's **full name**: `WorkerMain` alone also matches VS Code's own worker
   processes (`...WorkerMain --node-ipc`), which a stop of the stack once killed
   (2026-10-06). `pkill -f "[c]om.backend.worker.WorkerMain"`.
+- **A mutation check leaves the mutant compiled**: the source put back is older than
+  the mutant's class in `target/`, so Maven's incremental build keeps the class.
+  Build `clean` after a mutation run, before any test, release or drill
+  (2026-10-06).
 - **`dotnet test` prints "Passed!" when its test host dies part-way**, counting
   only the tests that ran: read `Total tests:` at
   `--logger "console;verbosity=normal"` (`Unknown` after a crash).

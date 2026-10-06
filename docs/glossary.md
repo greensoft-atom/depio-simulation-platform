@@ -265,6 +265,7 @@ instance when `BACKEND_EVENTS_STORE` names one; every other key on
 | `sbx:{playerId}` | The sandbox a player holds: taken with `NX` for a ticket's life when one is opened, then kept by the arena for the room's life and a minute (21 min), deleted when the player leaves or the room ends (D-54). | `platform`, then `arena` |
 | `tgrant:{tournamentId}:{playerId}` | A tournament match's grant for a player: arena, ticket, round. 60 s, as the ticket. | `worker`, read by `platform` (`GET /v1/tournaments/{id}/match`) |
 | `rooms:promised:{arena}` | Rooms promised to matches on that arena, by match id, scored by when each promise lapses: 60 s, as the ticket. Counted against the arena's free rooms until the arena drops it, in the announcement that first counts the match's room ([D-42](architecture/03-decision-log.md#d-42--a-matchs-room-is-promised-in-the-store-when-its-arena-is-chosen)). | `platform` and `worker`; dropped by `arena` |
+| `seats:promised:{arena}` | Public seats given out on that arena, by player id, scored by when each promise lapses: 60 s, as the ticket. Counted against the arena's free places until the arena drops it, in the announcement that first counts the player ([D-79](architecture/03-decision-log.md#d-79--a-public-seat-is-promised-in-the-store-when-its-arena-is-chosen)). | `platform`; dropped by `arena` |
 
 ## 8. Words we do not use
 

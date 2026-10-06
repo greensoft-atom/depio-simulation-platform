@@ -2096,3 +2096,48 @@ decrypt, hash and handle X.509, and their request for examples of each
 
 **Cost.** `bcpkix` and `bcutil` (2.1 MB) in the build, though not yet in any process. The
 probe has to be run by hand when a process takes up an algorithm.
+
+### D-79 — A public seat is promised in the store when its arena is chosen
+
+**Decided 2026-10-06** (plan item 85, [T-59](../defects.md#4-concurrency)), as
+[D-42](#d-42--a-matchs-room-is-promised-in-the-store-when-its-arena-is-chosen) does for a
+match's room.
+
+**Decision.**
+- **Choosing an arena for a public seat** (`ArenaDirectory.pick`) counts each arena's free
+  places less the seats promised to it and still running.
+- **A promise** is the player's id in `seats:promised:{arena}`, a sorted set scored by when it
+  lapses: the ticket's 60 s. The join service writes it (`promiseSeat`) as soon as the arena is
+  chosen, before the ticket.
+- **The arena drops it**, in the same write as the first announcement whose player count
+  includes that player:
+  - it notes each player it claims a ticket for once it has sought them a place: reserved,
+    or none to be had, when they hold nothing there;
+  - an announcement takes those notes first, then counts;
+  - it counts places reserved and not yet taken, as well as players.
+- **A player turned away before a place is sought** (taken out by an operator a moment ago, or
+  gone while the claim ran) holds theirs until the promise lapses.
+- **No transaction guards an arena's last place**: two requests at once can both be sent to
+  it, and one of the two players is refused at the door, as before. A room is a match's only
+  chance (D-42); a refused seat is asked for again.
+
+**Why.** The arenas announce every 3 s, and a ticket counted only once its player had joined
+and the arena had announced again. Meanwhile every request saw the same counts and went to the
+same arena. In the drill of 2026-10-06 (plan item 84), 400 bots took their tickets in 20 s:
+**all 400 went to one arena of 300 places, and 100 were refused at the door while a second
+arena stood empty.** A login burst after a deploy, or at an event's start, does the same.
+
+**Cost.**
+- **A place promised to a player who never comes** is held for 60 s. A burst of unused tickets can make an arena look full for a minute. When every arena
+  looks full, a request is refused at once (503 `no_arena`); before, it was sent on and refused
+  at the door.
+- **One more store call per arena** for each request.
+- **Releases mixed during an upgrade:**
+  - an arena older than this does not drop promises, so it looks fuller than it is by each
+    ticket for 60 s, and is sent fewer players;
+  - a platform older than this writes none.
+  Upgrade the arenas first.
+
+**Kept by player, not by ticket.** A player who asks twice before joining is counted once on
+each arena chosen, not once per ticket. The ticket's id is a bearer credential, and is not
+copied into a second key.

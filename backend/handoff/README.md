@@ -75,6 +75,7 @@ With `BACKEND_EVENTS_STORE` unset, one instance holds both.
 | `arena:{name}` | hash `host`, `port`, `players`, `maxPlayers`, `tls` (`1`/`0`), `rooms`, `maxRooms`, `roomList` (JSON) | 10 s; announced every 3 s | arena (`ArenaAnnouncer`) | platform, worker | A live arena and its capacity |
 | `arenas` | set of names | none | arena (`SADD` at each announce, `SREM` at withdraw) | platform, worker; a name whose entry is gone is removed by the reader | The directory's index |
 | `rooms:promised:{arena}` | sorted set, `matchUid` scored by its deadline (ms) | 60 s from the last promise | platform, worker (`reserveForMatch`, `release`); arena `ZREM` in the announce that first counts the match's room | platform, worker | Rooms promised to made matches the arena has not announced yet ([D-42](../../docs/architecture/03-decision-log.md#d-42--a-matchs-room-is-promised-in-the-store-when-its-arena-is-chosen)) |
+| `seats:promised:{arena}` | sorted set, player id scored by its deadline (ms) | 60 s from the last promise | platform (`promiseSeat`); arena `ZREM` in the announce that first counts the player | platform (`pick`) | Public seats given out that the arena has not counted yet ([D-79](../../docs/architecture/03-decision-log.md#d-79--a-public-seat-is-promised-in-the-store-when-its-arena-is-chosen)) |
 | `arena-admin:{name}` | pub/sub channel | — | platform admin (`command`) | that arena (`listen`) | An operator's close and kick |
 | `lb:score:alltime` | sorted set, member the player id | none | worker (`record`, `raise`) | platform | The best score in one match, ever |
 | `lb:score:day:{yyyy-MM-dd}` | sorted set | 3 days after its last write | worker | platform | The best that UTC day |
@@ -132,7 +133,10 @@ here: see [04 §4](../../docs/detailed-design/04-platform-services.md#4-matchmak
   - An arena writes its hash, its 10 s expiry and its index entry in one `MULTI` every 3 s. Liveness
     is that expiry, not a health check
     ([04 §3](../../docs/detailed-design/04-platform-services.md#3-arena-registry-rooms-and-tickets)).
-  - `pick` takes the arena with the most free places.
+  - `pick` takes the arena with the most free places less its seats promised and still running;
+    `promiseSeat` promises one, by player id
+    ([D-79](../../docs/architecture/03-decision-log.md#d-79--a-public-seat-is-promised-in-the-store-when-its-arena-is-chosen)).
+    The arena drops it in the announcement that first counts that player.
   - `reserveForMatch` counts each arena's free rooms less its live promises and takes the most free
     rooms, then the most free places. It reads that arena's promises and writes its own under `WATCH`,
     as one change: a chooser whose write another overtook counts again, five times at most. When no
@@ -261,7 +265,7 @@ Each test class runs an embedded j-redis; nothing outside the JVM is needed.
 | Class | Tests | What it covers |
 |---|---|---|
 | `LeaderboardStoreTest` | 17 | `GT` under redelivery and reordering; the day and week a result belongs to; expiry, and a late result that does not revive a board; a refused write reported; top, ties, around-me, missing names, renames, board names |
-| `ArenaDirectoryTest` | 11 | Announce, list, pick, full arenas, expired entries pruned, malformed entries ignored, withdraw, TLS. A made match's arena by free rooms; the promise held until announced; eight choosers racing for one last room never given it twice |
+| `ArenaDirectoryTest` | 13 | Announce, list, pick, full arenas, expired entries pruned, malformed entries ignored, withdraw, TLS. A made match's arena by free rooms; the promise held until announced; eight choosers racing for one last room never given it twice. A burst of 600 seats spread 300 and 300 over two arenas by their promises; a seat's promise one a player, dropped by the announcement that counts them, lapsing with the ticket (T-59, D-79) |
 | `StoreClientsTest` | 13 | The password sent; none for a store that wants one refused, with one address or both, naming the right store's setting; the events store shared or its own; a malformed address refused, spaces around a comma read; following a promotion; an unreachable store not refused; `INFO replication` parsed and measured against a real replica |
 | `TicketStoreTest` | 9 | Issue and claim with every field; bonus and skin rules; single use, sixteen racing claims with one winner; unknown, expired and half-written tickets |
 | `SessionStoreTest` | 8 | Create and resolve; unknown, empty and corrupt; revoke and `revokeAll`; a token not as minted names no key (S-20); token uniqueness; spread lifetimes |

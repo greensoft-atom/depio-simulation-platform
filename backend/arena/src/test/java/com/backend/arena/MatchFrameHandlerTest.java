@@ -65,6 +65,40 @@ class MatchFrameHandlerTest {
 
     @Test
     @Timeout(30)
+    @DisplayName("a player is noted for the announcement once a place is sought for them, placed or refused for want of one (D-79)")
+    void aPlacedPlayerIsNoted() throws Exception {
+        JRedisEmbedded store = JRedisEmbedded.start();
+        RoomRegistry registry = new RoomRegistry(1_000f, 2_048, 1, 0, 1);      // one room of one place
+        try {
+            JRedisClient client = store.newClient();
+            TicketStore tickets = new TicketStore(client);
+            Ticket first = Ticket.forPlayer(42, "ada", 0);
+            Ticket second = Ticket.forPlayer(43, "bob", 0);
+            tickets.issue(first).get(5, TimeUnit.SECONDS);
+            tickets.issue(second).get(5, TimeUnit.SECONDS);
+
+            EmbeddedChannel a = new EmbeddedChannel(new MatchFrameHandler(registry, tickets));
+            a.writeInbound(Unpooled.wrappedBuffer(join(first.id())));
+            waitUntil(() -> {
+                a.runPendingTasks();
+                return registry.takeSeated().contains(42L);
+            });
+            EmbeddedChannel b = new EmbeddedChannel(new MatchFrameHandler(registry, tickets));
+            b.writeInbound(Unpooled.wrappedBuffer(join(second.id())));
+            waitUntil(() -> {
+                b.runPendingTasks();
+                return !b.isActive();
+            });
+            // Not noted, his promise held a place on this arena for its 60 s, though he holds none here.
+            assertThat(registry.takeSeated()).as("refused: nothing to hold for him").containsExactly(43L);
+        } finally {
+            registry.close();
+            store.close();
+        }
+    }
+
+    @Test
+    @Timeout(30)
     @DisplayName("a claim the store could not answer is refused as the arena's fault, and counted apart (04 §11)")
     void aFailedClaimIsCounted() throws Exception {
         JRedisEmbedded store = JRedisEmbedded.start();

@@ -162,6 +162,46 @@ class ArenaDirectoryTest {
     }
 
     @Test
+    @DisplayName("a burst of seats is spread by their promises, before any arena announces again (T-59, D-79)")
+    void aBurstIsSpread() throws Exception {
+        announce("arena-1", 9001, 0, 300);
+        announce("arena-2", 9002, 0, 300);
+        java.util.Map<String, Integer> sent = new java.util.HashMap<>();
+        for (long player = 1; player <= 600; player++) {
+            ArenaDirectory.Endpoint arena = directory.pick();
+            directory.promiseSeat(arena.name(), player);
+            sent.merge(arena.name(), 1, Integer::sum);
+        }
+        // Counted only as announced, all 600 went to one arena, half of them past its places.
+        assertThat(sent).containsEntry("arena-1", 300).containsEntry("arena-2", 300);
+        assertThat(directory.pick()).as("every place promised").isNull();
+    }
+
+    @Test
+    @DisplayName("a seat's promise is one a player, dropped by the announcement that counts them, and lapses with the ticket")
+    void seatPromisesEnd() throws Exception {
+        announce("arena-1", 9001, 0, 2);
+        directory.promiseSeat("arena-1", 7);
+        directory.promiseSeat("arena-1", 7);
+        assertThat(client.sync().zcard("seats:promised:arena-1")).as("asked twice, one place").isEqualTo(1L);
+        directory.promiseSeat("arena-1", 8);
+        assertThat(directory.pick()).as("both places promised").isNull();
+
+        directory.announce(new ArenaDirectory.Endpoint("arena-1", "127.0.0.1", 9001, 1, 2), "[]",
+                java.util.List.of(), java.util.List.of(7L)).get(5, TimeUnit.SECONDS);
+        assertThat(client.sync().zscore("seats:promised:arena-1", "7")).as("counted by the arena now").isNull();
+        assertThat(client.sync().zscore("seats:promised:arena-1", "8")).as("not there yet").isNotNull();
+        assertThat(directory.pick()).as("one player there, one on the way: full").isNull();
+
+        client.sync().send("ZADD", "seats:promised:arena-1", "1", "8");      // 8's ticket lapsed
+        assertThat(directory.pick()).as("a lapsed promise holds nothing").isNotNull();
+        directory.promiseSeat("arena-1", 9);
+        assertThat(client.sync().zscore("seats:promised:arena-1", "8")).as("and is dropped").isNull();
+        assertThat(client.sync().pttl("seats:promised:arena-1")).as("the promises lapse with their ticket")
+                .isBetween(1L, TimeUnit.SECONDS.toMillis(TicketStore.TTL_SECONDS));
+    }
+
+    @Test
     @DisplayName("a full arena is not offered, and neither is a set of full arenas")
     void fullArenasAreSkipped() throws Exception {
         announce("arena-1", 9001, 150, 150);

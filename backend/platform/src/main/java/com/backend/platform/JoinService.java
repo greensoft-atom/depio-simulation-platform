@@ -76,6 +76,8 @@ public final class JoinService {
         if (arena == null) {
             return Grant.failed(Outcome.NO_ARENA);
         }
+        // At once, so the next request counts it: counted only by the arena, every 3 s, a burst all went to one (D-79).
+        arenas.promiseSeat(arena.name(), playerId);
 
         // Team 0 until there are modes that have sides; free-for-all is the only one the
         // simulation implements, and a team the simulation ignores would be a field that

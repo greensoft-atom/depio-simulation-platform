@@ -130,6 +130,50 @@ class PlatformToArenaTest {
 
     @Test
     @Timeout(60)
+    @DisplayName("a seat is promised when its ticket is given, and the promise dropped when the arena counts its player (D-79)")
+    void aSeatIsPromisedUntilCounted() throws Exception {
+        try (ArenaServer server = new ArenaServer(tickets, 3000f, 4096, 50, 200, 2, 4)) {
+            int port = server.start(0);
+            try (ArenaAnnouncer announcer = new ArenaAnnouncer(
+                    directory, "arena-test", "127.0.0.1", port, server.registry())) {
+                announcer.start();
+                long playerId = auth.register("ada", "Ada", "hunter2-hunter2".toCharArray()).playerId();
+                String token = auth.login("ada", "hunter2-hunter2".toCharArray()).token();
+
+                JoinService.Grant grant = joins.requestJoin(token);
+                assertThat(client.sync().zscore("seats:promised:arena-test", Long.toString(playerId)))
+                        .as("promised with the ticket").isNotNull();
+
+                try (TestClient c = new TestClient(grant.arenaPort())) {
+                    c.join(grant.ticketId());
+                    assertThat(c.readFrame()[0] & 0xFF).isEqualTo(Wire.MSG_WELCOME);
+                    waitUntil(() -> client.sync().zscore("seats:promised:arena-test", Long.toString(playerId)) == null);
+                    assertThat(directory.live()).singleElement().satisfies(e -> assertThat(e.players())
+                            .as("in the same write that dropped the promise").isEqualTo(1));
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a burst of requests is spread over the arenas before either announces again (T-59)")
+    void aBurstIsSpread() throws Exception {
+        directory.announce(new ArenaDirectory.Endpoint("arena-a", "10.0.0.1", 9001, 0, 3)).get();
+        directory.announce(new ArenaDirectory.Endpoint("arena-b", "10.0.0.2", 9002, 0, 3)).get();
+        java.util.Map<Integer, Integer> sent = new java.util.HashMap<>();
+        for (int i = 0; i < 6; i++) {
+            auth.register("burst" + i, "Burst" + i, "hunter2-hunter2".toCharArray());
+            JoinService.Grant grant = joins.requestJoin(auth.login("burst" + i, "hunter2-hunter2".toCharArray()).token());
+            sent.merge(grant.arenaPort(), 1, Integer::sum);
+        }
+        assertThat(sent).containsEntry(9001, 3).containsEntry(9002, 3);
+        auth.register("burst6", "Burst6", "hunter2-hunter2".toCharArray());
+        assertThat(joins.requestJoin(auth.login("burst6", "hunter2-hunter2".toCharArray()).token()).outcome())
+                .as("every place promised").isEqualTo(JoinService.Outcome.NO_ARENA);
+    }
+
+    @Test
+    @Timeout(60)
     @DisplayName("the ticket platform issued cannot be used twice")
     void grantedTicketIsSingleUse() throws Exception {
         try (ArenaServer server = new ArenaServer(tickets, 3000f, 4096, 50, 200, 2, 4)) {

@@ -103,8 +103,9 @@ sequenceDiagram
     participant S as session store
     participant A as arena
     C->>P: POST /v1/match-requests, or match.request through the lobby
-    P->>S: SMEMBERS arenas, then HGETALL arena:{name} for each
-    Note over P: the live arena with the most free places
+    P->>S: SMEMBERS arenas, then HGETALL arena:{name} and ZCOUNT seats:promised:{name} now +inf for each
+    Note over P: the live arena with the most free places less its seats promised (D-79)
+    P->>S: MULTI ZREMRANGEBYSCORE seats:promised:{name} -inf now, ZADD now+60s playerId, PEXPIRE 60 s, EXEC
     P->>S: MULTI HSET ticket:{id} playerId name team bonus skin, EXPIRE 60, EXEC
     P-->>C: arenaHost, arenaPort, ticketId, tls
     C->>A: Join with ticketId, over TLS when the grant says
@@ -112,6 +113,7 @@ sequenceDiagram
     alt fields came back
         S-->>A: the fields, and the ticket is gone
         A-->>C: Welcome
+        Note over A: the player noted; the next announcement counts them and ZREMs seats:promised:{name} playerId in the same MULTI
     else nothing, or malformed
         S-->>A: empty
         A-->>C: Kick, bad ticket
@@ -262,7 +264,7 @@ flowchart LR
     subgraph session["session store"]
         K4["ticket:{id}"]
         K5["arena:{name} hash, arenas set"]
-        K6["rooms:promised:{arena}"]
+        K6["rooms:promised:{arena}, seats:promised:{arena}"]
         K8["lb:score:* boards, lb:name"]
         K9["marr:{matchUid}"]
         K10["sbx:{playerId}"]
@@ -301,5 +303,6 @@ flowchart LR
 ```
 
 Two arrows need a word:
-- **`rooms:promised:{arena}`:** the arena only removes promises, in its announcement.
+- **`rooms:promised:{arena}`, `seats:promised:{arena}`:** the arena only removes promises, in its
+  announcement; only `platform` promises seats.
 - **`s:match-result`:** a worker writes to it only when it moves the old list inbox into it.

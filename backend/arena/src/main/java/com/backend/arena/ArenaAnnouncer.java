@@ -76,7 +76,10 @@ public final class ArenaAnnouncer implements AutoCloseable {
         try {
             // Rooms too: a made match needs a room of its own (04 §4). The rooms are listed before
             // they are counted: one made in between is then counted and still promised, a room's
-            // place held twice for a few seconds, never counted by neither (D-42).
+            // place held twice for a few seconds, never counted by neither (D-42). Players likewise (D-79): each
+            // is noted once a place is reserved, the notes taken here before the count, and the count takes in places
+            // reserved. Notes lost with a failed announcement leave their promises to lapse: the safe way.
+            List<Long> seated = registry.takeSeated();
             List<RoomThread.RoomView> views = registry.views();
             List<String> open = new ArrayList<>();
             for (RoomThread.RoomView v : views) {
@@ -84,8 +87,8 @@ public final class ArenaAnnouncer implements AutoCloseable {
                     open.add(v.matchUid());
                 }
             }
-            directory.announce(new ArenaDirectory.Endpoint(name, host, port, registry.totalPlayers(),
-                    registry.capacity(), tls, registry.roomCount(), registry.maxRooms()), roomList(views), open).join();
+            directory.announce(new ArenaDirectory.Endpoint(name, host, port, registry.committedPlayers(),
+                    registry.capacity(), tls, registry.roomCount(), registry.maxRooms()), roomList(views), open, seated).join();
         } catch (RuntimeException e) {
             log.warn("could not announce: {}", e.toString());
         }

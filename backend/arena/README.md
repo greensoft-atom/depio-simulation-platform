@@ -111,6 +111,7 @@ arrivals, operators' channel) and the events store (the result stream).
 | `ticket:<id>` | a join ticket, written by platform, claimed (read and deleted at once) on `Join`; lives 60 s |
 | `arena:<name>`, set `arenas` | the directory entry: address, players, capacity, `tls`, rooms and room list; refreshed every 3 s, expires after 10 s |
 | `rooms:promised:<name>` | platform's promises of a room; the announcement settles them |
+| `seats:promised:<name>` | platform's promises of a public seat, by player; the announcement that first counts the player drops theirs (D-79) |
 | channel `arena-admin:<name>` | operators' commands: `{"cmd":"close","room":…}` and `{"cmd":"kick","player":…,"ban":…}` ([04 §10](../../docs/detailed-design/04-platform-services.md#10-admin-api)) |
 | `sbx:…`, `marr:…` | a sandbox player's hold, and a made match's first arrival |
 | stream `s:match-result` | results, field `e`, for the workers' group `rewards` |

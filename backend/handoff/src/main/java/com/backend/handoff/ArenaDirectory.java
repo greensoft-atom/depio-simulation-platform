@@ -37,7 +37,8 @@ public final class ArenaDirectory {
     private static final String KEY_PREFIX = "arena:";
     private static final String INDEX_KEY = "arenas";
     private static final String PROMISED_PREFIX = "rooms:promised:";
-    /** A promise lasts as long as the tickets naming its match: the room is made at the first claim. */
+    private static final String SEATS_PREFIX = "seats:promised:";
+    /** A promise lasts as long as the tickets naming its match, or its seat: the room is made at the first claim. */
     private static final long PROMISE_MILLIS = java.util.concurrent.TimeUnit.SECONDS.toMillis(TicketStore.TTL_SECONDS);
 
     /**
@@ -86,6 +87,12 @@ public final class ArenaDirectory {
      * the same write, since each room counts itself from then on (D-42).
      */
     public CompletableFuture<Void> announce(Endpoint endpoint, String roomList, java.util.Collection<String> openMatches) {
+        return announce(endpoint, roomList, openMatches, List.of());
+    }
+
+    /** The same, with the players counted in it whose seats were promised: dropped in the same write (D-79). */
+    public CompletableFuture<Void> announce(Endpoint endpoint, String roomList, java.util.Collection<String> openMatches,
+                                            java.util.Collection<Long> seated) {
         String key = KEY_PREFIX + endpoint.name();
         java.util.List<Object> fields = new java.util.ArrayList<>(java.util.List.of("HSET", key,
                 "host", endpoint.host(),
@@ -105,6 +112,13 @@ public final class ArenaDirectory {
         if (!openMatches.isEmpty()) {
             List<Object> zrem = new ArrayList<>(List.of("ZREM", PROMISED_PREFIX + endpoint.name()));
             zrem.addAll(openMatches);
+            write.send(zrem.toArray());
+        }
+        if (!seated.isEmpty()) {
+            List<Object> zrem = new ArrayList<>(List.of("ZREM", SEATS_PREFIX + endpoint.name()));
+            for (long player : seated) {
+                zrem.add(Long.toString(player));
+            }
             write.send(zrem.toArray());
         }
         return write.exec().thenAccept(replies -> { });
@@ -179,16 +193,37 @@ public final class ArenaDirectory {
      * @return the arena with the most free capacity, or null if none has any.
      *
      * Free capacity rather than lowest ratio: the arenas are identical, so absolute room is
-     * what decides whether the next hundred players fit.
+     * what decides whether the next hundred players fit. Less the seats promised and not yet
+     * counted by the arena (D-79): counted only as announced, every 3 s, a burst of requests all
+     * went to one arena (T-59).
      */
     public Endpoint pick() {
+        long now = System.currentTimeMillis();
         Endpoint best = null;
+        int bestFree = 0;
         for (Endpoint e : live()) {
-            if (e.free() > 0 && (best == null || e.free() > best.free())) {
+            int free = e.free() - (int) (long) await(client.zcount(SEATS_PREFIX + e.name(), Long.toString(now), "+inf"));
+            if (free > 0 && (best == null || free > bestFree)) {
                 best = e;
+                bestFree = free;
             }
         }
         return best;
+    }
+
+    /**
+     * Promises a place on an arena to a player sent there (D-79), until the arena announces them
+     * or the ticket lapses. By player, not ticket: a ticket's id is a credential, and a player
+     * who asks twice holds one place.
+     */
+    public void promiseSeat(String arena, long playerId) {
+        long now = System.currentTimeMillis();
+        String key = SEATS_PREFIX + arena;
+        await(client.multi()
+                .send("ZREMRANGEBYSCORE", key, "-inf", Long.toString(now))
+                .send("ZADD", key, Long.toString(now + PROMISE_MILLIS), Long.toString(playerId))
+                .send("PEXPIRE", key, Long.toString(PROMISE_MILLIS))
+                .exec());
     }
 
     /**

@@ -37,8 +37,11 @@ a client connects straight to the arena its grant names.
   `host:port` clients dial, its players and free places, its rooms and free rooms; an entry
   not renewed for 10 seconds lapses ([04 §3](../detailed-design/04-platform-services.md#3-arena-registry-rooms-and-tickets)).
 - **A seat in the public arena** (`POST /v1/match-requests`): `platform` picks the live arena
-  with the **most free places** (`MAX_ROOMS × MAX_PLAYERS − players`), writes a ticket and
-  answers that arena's address.
+  with the **most free places** (`MAX_ROOMS × MAX_PLAYERS − players`) less the seats it has
+  promised there in the last minute and the arena has not yet counted, promises one more, writes
+  a ticket and answers that arena's address. Without the promises, every request between two
+  announcements went to the same arena (§2.7,
+  [D-79](../architecture/03-decision-log.md#d-79--a-public-seat-is-promised-in-the-store-when-its-arena-is-chosen)).
 - **A made match** (a duel, a team match, a tournament round, a sandbox): the matcher picks the
   arena with the **most free rooms**, and promises the room in the store so that two matches
   chosen at once do not both take the last one ([D-42](../architecture/03-decision-log.md#d-42--a-matchs-room-is-promised-in-the-store-when-its-arena-is-chosen)).
@@ -126,18 +129,34 @@ port works as designed. The arenas were started by hand; the unit steps of §2.4
 template every arena uses (`check-units-el9.sh` starts `backend-arena@a1` so) but were not run
 as written for a second instance.
 
-### 2.7 Known limit: a burst lands on one arena (T-59)
+### 2.7 A burst of seats, spread (T-59, fixed 2026-10-06)
 
-The allocator counts an arena's free places from its last announcement, and a ticket counts
-only once its player has joined and the arena has announced again. Requests that arrive
-between two announcements all go to the same arena. On 2026-10-06, 400 bots took their
-tickets in 20 seconds before any of them joined: all 400 were sent to one arena of 300
-places, and **100 were refused (`Kick` 2, no room) while the other arena stood empty**. Real
-clients join within a second of their ticket, so the window is about the 3-second
-announcement interval; a burst of logins (after a deploy, at an event's start) can still pile
-onto one arena. Until it is fixed ([T-59](../defects.md#4-concurrency): count the tickets an
-arena has been given and not yet claimed, as D-42 does for made matches' rooms), leave every
-arena room to spare, and roll arenas out of service one at a time.
+The allocator used to count an arena's free places only as announced, and a ticket counted
+only once its player had joined and the arena had announced again: requests between two
+announcements all went to the same arena. On 2026-10-06, 400 bots took their tickets in
+20 seconds before any joined: **all 400 were sent to one arena of 300 places, and 100 were
+refused (`Kick` 2, no room) while the other stood empty.**
+
+Now each seat given is promised to its arena in the store until the arena counts the player,
+or a minute passes ([D-79](../architecture/03-decision-log.md#d-79--a-public-seat-is-promised-in-the-store-when-its-arena-is-chosen)).
+The same run on the release with the fix:
+
+| | Before (item 84) | After (item 85) |
+|---|---|---|
+| Players per arena | 300 and 0 | **200 and 200** |
+| Welcomed | 300 of 400 | **400 of 400** |
+| Refused, no room | 100 | **0** |
+
+Seats promised, read every few seconds during that run: they rose to 166 and 180 while the
+tickets were given, reached 200 each, and fell to 0 in the announcement that counted each
+arena's 200 players.
+
+What it costs an operator:
+- **A ticket holds its place for up to a minute** if its player never comes. A burst of
+  abandoned requests can make arenas look full for that minute: the platform then answers 503
+  `no_arena` at once, where before it sent players on to be refused at the door.
+- **Upgrade the arenas before the platform.** An arena of an older release does not drop
+  promises, so it looks fuller than it is and is sent fewer players until they lapse.
 
 ## 3. The lobby, the API, the results, the data
 
@@ -281,7 +300,7 @@ another machine.
 | Signal | Metric | Act when |
 |---|---|---|
 | Rooms falling behind | `backend_arena_tick_p99_seconds{room}` | above 0.015 for five minutes: add arenas (or machines) |
-| Arenas full | `GET /admin/arenas`: players against `maxPlayers`; `no_arena` and `no_room` refusals | free places fall below a burst's worth (T-59): add an arena |
+| Arenas full | `GET /admin/arenas`: players against `maxPlayers`; `no_arena` and `no_room` refusals | free places fall below a burst's worth (a place is held a minute for each ticket given, §2.7): add an arena |
 | Logins turned away | `backend_platform_hasher_line` | at 168: a platform (a machine) more |
 | Results behind | `backend_worker_queue_depth` | growing for minutes: add a worker |
 | Retention behind | `backend_worker_retention_seconds` | above 1 800 |

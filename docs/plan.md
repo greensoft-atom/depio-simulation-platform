@@ -3075,6 +3075,35 @@ documents on scaling the service and on its performance.
 
 ---
 
+#### 85. ~~A burst of seats spread over the arenas (T-59, D-79).~~ — **done 2026-10-06**
+
+**The owner, 2026-10-06:** go ahead (T-59, then the small open items).
+
+- **Design**: [D-79](architecture/03-decision-log.md#d-79--a-public-seat-is-promised-in-the-store-when-its-arena-is-chosen),
+  [04 §3](detailed-design/04-platform-services.md#seats-promised-designed-2026-10-06-plan-item-85).
+  A seat given is promised to its arena, by player, for the ticket's 60 s; the choice counts
+  free places less the promises; the arena drops a promise in the announcement that first
+  counts the player, and counts places reserved as well as taken.
+- **Built**: `ArenaDirectory.pick` and `promiseSeat`; `JoinService` promises before it writes
+  the ticket; `RoomRegistry.seated`, `takeSeated` and `committedPlayers`; the arena's claim notes
+  the player once a place is sought; `ArenaAnnouncer` takes the notes, then counts.
+- **Tests first**, each seen failing for its reason: the directory sent all 600 of a burst to one
+  arena before the fix, 300 and 300 after. Six new tests; **12 mutants, all caught**. Not
+  testable: the two orderings that keep a player from being counted by neither, each a race
+  between threads, argued in the design.
+- **Full build**: 1 061 tests, none failing.
+- **Drilled on the release**:
+  - item 84's run again, two arenas of 300 and 400 bots: **200 and 200, all 400 welcomed, none
+    refused** (before: 300 and 0, 100 refused);
+  - the promises read during it: up to 200 an arena while tickets were given, 0 once counted;
+  - the headless drill's `play`, `lobby` and `resume`: all passed.
+- **Not measured**: the cost of the extra store call per arena on a request (one `ZCOUNT` an
+  arena; the request's latency by route is still unmeasured, item 84).
+- **Next, in order:** the small open items P-55 to P-59 and O-36, with DOC-24 (a compiler
+  warning the plan's status says is not there).
+
+---
+
 ### Completed 2026-09-23
 
 1. **The public arena runs continuously.** Ten bots, ten open-match records,

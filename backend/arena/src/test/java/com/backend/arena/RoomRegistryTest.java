@@ -97,6 +97,31 @@ class RoomRegistryTest {
 
     @Test
     @Timeout(30)
+    @DisplayName("an announcement counts places reserved as well as taken, and drops the promises of the players it counts (D-79)")
+    void announcesItsSeats() throws Exception {
+        RoomRegistry registry = new RoomRegistry(1_000f, 256, 4, 0, 3);
+        try (com.jredis.embedded.JRedisEmbedded store = com.jredis.embedded.JRedisEmbedded.start();
+             com.jredis.client.JRedisClient client = store.newClient()) {
+            assertThat(registry.allocate()).as("a place reserved, its join not yet in the room").isNotNull();
+            registry.seated(7);
+            String later = Long.toString(System.currentTimeMillis() + 60_000);
+            client.sync().send("ZADD", "seats:promised:arena-9", later, "7", later, "8");
+            com.backend.handoff.ArenaDirectory directory = new com.backend.handoff.ArenaDirectory(client);
+            try (ArenaAnnouncer announcer = new ArenaAnnouncer(directory, "arena-9", "10.0.0.9", 9009, registry)) {
+                announcer.start();
+                assertThat(directory.live()).singleElement()
+                        .satisfies(e -> assertThat(e.players()).as("the reserved place counted").isEqualTo(1));
+                assertThat(client.sync().zscore("seats:promised:arena-9", "7")).as("counted, so no longer promised").isNull();
+                assertThat(client.sync().zscore("seats:promised:arena-9", "8")).as("not here yet").isNotNull();
+                assertThat(registry.takeSeated()).as("taken by the announcement").isEmpty();
+            }
+        } finally {
+            registry.close();
+        }
+    }
+
+    @Test
+    @Timeout(30)
     @DisplayName("a room made to replace a failed one does not take a living room's name")
     void roomNamesAreNeverReused() throws Exception {
         RoomRegistry registry = new RoomRegistry(1_000f, 256, 2, 0, 3);

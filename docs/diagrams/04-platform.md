@@ -97,7 +97,7 @@ sequenceDiagram
 
 ## A seat in the public arena
 
-`JoinService.requestJoin`, `EquipmentService.bonusOf` and `skinOf`, `handoff/ArenaDirectory.pick`
+`JoinService.requestJoin`, `EquipmentService.bonusOf` and `skinOf`, `handoff/ArenaDirectory.pick` and `promiseSeat`
 and `TicketStore`; the arena claims the ticket in `MatchFrameHandler`. The ticket carries
 everything the arena needs, so the arena never reads MySQL.
 
@@ -111,10 +111,11 @@ sequenceDiagram
     C->>P: POST /v1/match-requests with the session
     P->>S: the session's player, one HGET
     P->>D: the profile, and what the player wears and holds
-    P->>S: the live arenas, the one with the most free places
+    P->>S: the live arenas, the one with the most free places less its seats promised (D-79)
     alt no arena has a place
         P-->>C: 503 no_arena
     else an arena
+        P->>S: the seat promised to the player, 60 s
         P->>S: MULTI, HSET ticket with player, name, team 0, bonus, skin, EXPIRE 60, EXEC
         P-->>C: 200 arenaHost, arenaPort, ticketId, tls
         C->>A: connect, Join with the ticket

@@ -365,6 +365,9 @@ public final class MatchFrameHandler extends SimpleChannelInboundHandler<ByteBuf
         RoomThread target = ticket.isMatch()
                 ? registry.allocateMatch(ticket.matchUid(), MatchMode.ofId(ticket.mode()))
                 : registry.allocate();
+        // After the place is sought (D-79): reserved, the announcement that drops the player's seat promise counts
+        // them; refused, they hold nothing here.
+        registry.seated(ticket.playerId());
         if (target == null) {
             log.info("no room for player {}{}", ticket.playerId(),
                     ticket.isMatch() ? " in match " + ticket.matchUid() : ": every room is full");

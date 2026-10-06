@@ -85,7 +85,8 @@ for the backend, its docs and its client.
      the decision log when a choice is made) before any code.
   2. **Test first.** Write the test, watch it fail for the right reason, then implement.
   3. **Mutation check.** Break each new rule on purpose and confirm a test catches it. A
-     surviving mutant means a missing test; add it.
+     surviving mutant means a missing test; add it. Build `clean` afterwards: the restored
+     source is older than the mutant's class, which Maven keeps.
   4. **Live drill** when the behaviour crosses processes: `client/headless-drill.sh` against
      the real stack from a release.
   5. **Measure** when the tick, the payload or the bandwidth could move: before and after,

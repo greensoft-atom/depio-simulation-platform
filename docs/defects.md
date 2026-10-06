@@ -3,10 +3,12 @@
 Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
-re-ordered around it rather than the other way round. **As of 2026-10-04
-nothing is open but M-6's three latent leftovers** (L, none reachable in play):
-every other entry is fixed, closed as not a defect with its reason, or left as
-it is by a stated choice (O-5).
+re-ordered around it rather than the other way round. **Open as of 2026-10-06:**
+M-6's three latent leftovers (L, none reachable in play); P-55 to P-59 and O-36
+(L, found writing the API reference, plan item 83); O-37 (M, the `events`
+store's memory past ~19 000 players, plan item 84); DOC-24 (a compiler warning).
+Every other entry is fixed,
+closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
 **Ids.** P protocol (§2), D data and the result pipeline (§3), M simulation
 (§3a), T concurrency (§4), S security and input (§5), O operations (§6), DOC
@@ -359,7 +361,7 @@ collision *reach* fix is mutation-proven; determinism holds and is not vacuous.
 | **T-56** | L | **FOUND AND FIXED 2026-10-04 (the review's drill of every scenario, plan item 79). How many scenarios passed hung on how fast they ran.** The headless driver registers and logs in faster than people do, from one address, and `platform` allows 30 such attempts a minute an address (04 §1). Run beside a full build, the scenarios passed; alone, eleven failed with 429 `too_many_attempts`. **Fixed:** the driver waits a 429's `Retry-After` and asks again, as a client would (`Patiently`). | drill |
 | **T-57** | L | **FOUND AND FIXED 2026-10-05 (the review's drill of every scenario, plan item 79). The maze scenario's bullet check saw a frame in several.** It read the world's removals after a poll, and a poll applies every frame waiting while the world keeps the last one's only, as P-33 found for events: a bullet that ended at a wall in an earlier frame of the same poll went unseen, and on a loaded machine most did (29 bullets in flight, one removal seen). And the wall it fired at could lie behind another, its bullets ending in their first tick, before any frame (0 seen). It had passed by luck since item 32. **Fixed:** `MatchConnection.OnFrame`, after each frame while the world holds its removals, test first; the scenario reads every frame's, and fires only at a wall with a clear line to it. | drill, tested |
 | **T-58** | L | **FOUND AND FIXED 2026-10-05 (plan item 80, the backend's tests run against the release's MySQL 8.4 on a port of its own). The tests that rewrite the database's address assumed it was 127.0.0.1:3306.** `DatabaseLimitsTest`, `PrimaryDataSourceTest` and `ReplicaWatchTest` make their failover cases by replacing `127.0.0.1:3306` in the URL; with `JDBC_URL` naming another port the replacement did nothing, and they tested the plain server: four failed ("expecting code to raise a throwable"), and a case whose assertion still held passed without testing what it says. **Fixed:** each takes the server's address from the URL. All three classes pass against both, the machine's 8.0 on 3306 and 8.4 on 3314. | tested |
-| **T-59** | M | **FOUND 2026-10-06, OPEN (scaling, plan item 84). A burst of public-arena requests lands on one arena.** `ArenaDirectory.pick` takes the arena with the most free places as last announced (every 3 s), and a ticket counts only once its player has joined and the arena has announced again: nothing counts the tickets given out meanwhile. Two arenas of 300 places, 400 bots taking their tickets in 20 s before any joined: **all 400 sent to one arena, 100 refused (`Kick` 2, no room) while the other stood empty**. With fresh counts the second of two waves of 200 went to the emptier arena, as designed. A real client joins within a second, so the window is about 3 s; a login burst after a deploy or at an event's start still piles onto one. Fix, as D-42 does for made matches' rooms: count each arena's issued, unclaimed public tickets (60 s each) against its free places. | measured |
+| **T-59** | M | **FOUND 2026-10-06 (scaling, plan item 84), FIXED 2026-10-06 (plan item 85, [D-79](architecture/03-decision-log.md#d-79--a-public-seat-is-promised-in-the-store-when-its-arena-is-chosen)). A burst of public-arena requests landed on one arena.** `ArenaDirectory.pick` took the arena with the most free places as last announced (every 3 s), and a ticket counted only once its player had joined and the arena had announced again: nothing counted the tickets given out meanwhile. Two arenas of 300 places, 400 bots taking their tickets in 20 s before any joined: **all 400 sent to one arena, 100 refused (`Kick` 2, no room) while the other stood empty.** **Fixed** as D-42 is for a match's room: each seat given is promised in `seats:promised:{arena}` (by player, 60 s), `pick` counts free places less the promises, and the arena drops a promise in the announcement that first counts its player, which now counts places reserved as well as taken. The same run again on the release: **200 and 200, all 400 welcomed, none kicked**; the promises rose to 200 an arena while the tickets were given and fell to 0 in the announcement that counted the players. Tests: the directory spreads 600 seats 300 and 300; a promise one a player, dropped when counted, lapsing; the arena notes a player once a place is sought and its announcement counts places reserved; the platform promises with each ticket. Twelve mutants, all caught. Not testable: the two orderings that keep a player from being counted by neither (noted after the reservation, the notes taken before the count), each a race between threads. | measured |
 
 **Sound, and checked rather than assumed:** the `active` list is genuinely room-thread
 confined; the join/leave handshake is correct under the Java memory model in both
@@ -1106,6 +1108,11 @@ gives each figure with its date:
 - the `mobile` budget as 2.85, 2.90 and 2.25 KB/s;
 - 07 §6's `nofile 262144` against the units' 65 536;
 - the core budget's table itself (architecture/01 §3).
+
+**DOC-24, found 2026-10-06, OPEN** (plan item 85's full build). The plan's status table says
+"0 compiler warnings"; the full build has one: `worker/SeasonKeeper.LockLost`, a serializable
+exception with no `serialVersionUID`. It came with the repository's first commit here, so its
+start is not in this history.
 
 ---
 

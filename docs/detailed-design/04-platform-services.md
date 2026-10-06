@@ -445,7 +445,7 @@ above:** `host, port, players, maxPlayers, tls, rooms, maxRooms`, where
 `maxPlayers` is rooms × players per room and `rooms` of `maxRooms` are running,
 and `roomList`, the arena's rooms as JSON for an operator (§10); there is no
 `version`. For the public arena `platform` picks the arena with the most free
-places (`ArenaDirectory.pick`), not the lowest ratio, which is the same choice
+places less the seats promised to it (`ArenaDirectory.pick`), not the lowest ratio, which is the same choice
 while every arena has the same capacity; for a made match, the arena with the
 most free rooms less the rooms promised to it (`reserveForMatch`, §4). An arena announces itself rather than being registered by
 an operator: configuration can say an arena exists, but only the arena can say
@@ -491,6 +491,38 @@ queue or a tournament, and a sandbox is a made room opened by `POST
 
 **This allocator is the load balancer for match traffic** — not nginx
 ([D-5](../architecture/03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)).
+
+### Seats promised (designed 2026-10-06, plan item 85)
+
+An arena's announcement, every 3 s, counts only the players in its rooms. A ticket given out
+since counted nowhere, so a burst of requests all saw the same counts and all went to the same
+arena: 400 bots sent to one arena of 300 places, 100 refused at the door, a second arena empty
+([T-59](../defects.md#4-concurrency)). Now a seat is promised as a match's room is (§4,
+[D-79](../architecture/03-decision-log.md#d-79--a-public-seat-is-promised-in-the-store-when-its-arena-is-chosen)):
+
+```
+platform, per request    pick: for each live arena, free = maxPlayers − players − ZCOUNT seats:promised:{arena} now +inf
+                         the most free wins; none above 0 → 503 no_arena
+                         MULTI · ZREMRANGEBYSCORE seats:promised:{arena} -inf now
+                               · ZADD seats:promised:{arena} now+60s {playerId} · PEXPIRE … 60s · EXEC
+                         then the ticket, as before
+arena, each claim        a place sought: reserved, or none to be had → note the player's id
+arena, each 3 s          take the notes → count players + places reserved → one write:
+                         HSET arena:{name} … players … · EXPIRE · SADD · ZREM seats:promised:{name} {the notes}
+```
+
+- **Never counted by neither.** A note is made after the place is reserved and taken before the
+  count, and the count includes reserved places: a player whose promise is dropped is in the
+  same write's `players`, or holds nothing here (refused for want of room, or gone). A note made
+  between the take and the count is counted twice until the next announcement, the safe way.
+- **Promises lapse with the ticket**, 60 s: a player who never comes holds a place that long,
+  and so does one turned away before a place is sought (taken out by an operator, or gone while
+  the claim ran).
+- **Not guarded by a transaction**, as D-42's last room is: two requests at once can be sent to
+  one arena's last place, and one player refused at the door, as before. A refused seat is asked
+  for again; a refused match is not.
+- **By player id**, not ticket id: the ticket's id is a credential, and a player who asks twice
+  holds one place on each arena chosen, not two.
 
 ### The join ticket
 
