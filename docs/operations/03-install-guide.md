@@ -224,7 +224,8 @@ Every unit `active`, and `201`. Each unit's log: `journalctl -u backend-platform
 ## 12. Open the firewall
 
 Players reach nginx (443, and 80 for the certificate's challenge) and the arena
-(`ARENA_PORT`, 9001); nothing else is reachable from outside.
+(`ARENA_PORT`, 9001); nothing else is reachable from outside. Each further arena on the
+machine opens its own port ([scaling §2.4](04-scaling-and-performance.md#24-adding-capacity)).
 
 ```console
 firewall-cmd --permanent --add-service=https --add-service=http --add-port=9001/tcp

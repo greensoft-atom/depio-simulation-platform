@@ -155,7 +155,7 @@ boards and the stream, as in it: where to look first if it must go faster.
 
 | Stream | Producer | Consumers | Retention | Loss tolerance |
 |---|---|---|---|---|
-| `s:match-result` | arena | `rewards`, `analytics` | 7 days | **None.** Progression and currency depend on it. |
+| `s:match-result` | arena | `rewards`, `analytics` | 24 hours, as built (a week would not fit in memory: [D-26](../defects.md#3-data-and-the-result-pipeline)) | **None.** Progression and currency depend on it. |
 | `s:match-event` | arena | `analytics`, `moderation` | 24 hours | Tolerable. Kill feeds and captures. |
 | `s:platform` | platform | `analytics` | 7 days | Low. Purchases, team changes, tournament transitions. |
 | `s:audit` | platform | `audit` | 90 days | **None.** Admin actions and bans. |

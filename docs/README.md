@@ -87,6 +87,7 @@ Then the detailed design of whatever you are working on.
 | [01 — Deploy](operations/01-deploy.md)               | What runs where, conventions and secrets, j-redis and its replicas, nginx, rolling deployment, installing a machine, TLS for match traffic, MySQL and its replica, copies off the database's machine, the certificate |
 | [02 — Runbook](operations/02-runbook.md)             | Triage, stateful failover, per-component procedures, whole-machine loss, what to watch, routine, the admin API, restores                                                                                              |
 | [03 — Install guide](operations/03-install-guide.md) | Step by step: a fresh RHEL 9 server and a clone of the repository to every process running, with nothing installed; then operating it, and three machines                                                             | run as written by `check-install-guide-el9.sh` |
+| [04 — Scaling and performance](operations/04-scaling-and-performance.md) | How each part grows and how to add capacity (rooms, arenas on their own ports, machines); every performance figure measured, dated; what 10 000 and 50 000 players would take | measured 2026-10-06 |
 
 ### Project
 

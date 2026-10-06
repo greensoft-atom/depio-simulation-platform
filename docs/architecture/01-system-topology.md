@@ -137,6 +137,20 @@ budget by the same factor: encoding costs about six times the simulation, and
 socket writes, measured since (above), cost more than both. The simulation is
 not the constraint; the encoder is, and after it the writes.
 
+**Measured again, 2026-10-06** ([operations/04](../operations/04-scaling-and-performance.md)),
+on the current build with bots sending what a client sends. The figures above are from before
+the class tree and the benchmark's T-53, and the load run's from bots sending twice a client's
+input (T-54).
+- **A full room costs about 0.24 cores** in a running arena: 0.13 its network threads', 0.10 its
+  room thread's. Over loopback, so an upper bound.
+- **A mature room at the design density costs 11.6 % of a core** for its simulation and encoding
+  alone (1.72 ms simulation p50, 4.61 ms encoding a round).
+- **An arena's two network threads fill near 2 300 players.**
+
+At 50 000 that is ~80 arena cores and ~22 arena processes, against the 28 allocated and the 7
+named here. At the launch's 10 000 it is ~16 cores and 5 processes. Q-3 settles which on the
+production hardware.
+
 **Provision 10 GbE.** 1.1 Gbit/s sustained on a 1 Gbit uplink leaves nothing for
 bursts and would run at 85 % of line rate at peak.
 

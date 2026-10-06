@@ -359,6 +359,7 @@ collision *reach* fix is mutation-proven; determinism holds and is not vacuous.
 | **T-56** | L | **FOUND AND FIXED 2026-10-04 (the review's drill of every scenario, plan item 79). How many scenarios passed hung on how fast they ran.** The headless driver registers and logs in faster than people do, from one address, and `platform` allows 30 such attempts a minute an address (04 §1). Run beside a full build, the scenarios passed; alone, eleven failed with 429 `too_many_attempts`. **Fixed:** the driver waits a 429's `Retry-After` and asks again, as a client would (`Patiently`). | drill |
 | **T-57** | L | **FOUND AND FIXED 2026-10-05 (the review's drill of every scenario, plan item 79). The maze scenario's bullet check saw a frame in several.** It read the world's removals after a poll, and a poll applies every frame waiting while the world keeps the last one's only, as P-33 found for events: a bullet that ended at a wall in an earlier frame of the same poll went unseen, and on a loaded machine most did (29 bullets in flight, one removal seen). And the wall it fired at could lie behind another, its bullets ending in their first tick, before any frame (0 seen). It had passed by luck since item 32. **Fixed:** `MatchConnection.OnFrame`, after each frame while the world holds its removals, test first; the scenario reads every frame's, and fires only at a wall with a clear line to it. | drill, tested |
 | **T-58** | L | **FOUND AND FIXED 2026-10-05 (plan item 80, the backend's tests run against the release's MySQL 8.4 on a port of its own). The tests that rewrite the database's address assumed it was 127.0.0.1:3306.** `DatabaseLimitsTest`, `PrimaryDataSourceTest` and `ReplicaWatchTest` make their failover cases by replacing `127.0.0.1:3306` in the URL; with `JDBC_URL` naming another port the replacement did nothing, and they tested the plain server: four failed ("expecting code to raise a throwable"), and a case whose assertion still held passed without testing what it says. **Fixed:** each takes the server's address from the URL. All three classes pass against both, the machine's 8.0 on 3306 and 8.4 on 3314. | tested |
+| **T-59** | M | **FOUND 2026-10-06, OPEN (scaling, plan item 84). A burst of public-arena requests lands on one arena.** `ArenaDirectory.pick` takes the arena with the most free places as last announced (every 3 s), and a ticket counts only once its player has joined and the arena has announced again: nothing counts the tickets given out meanwhile. Two arenas of 300 places, 400 bots taking their tickets in 20 s before any joined: **all 400 sent to one arena, 100 refused (`Kick` 2, no room) while the other stood empty**. With fresh counts the second of two waves of 200 went to the emptier arena, as designed. A real client joins within a second, so the window is about 3 s; a login burst after a deploy or at an event's start still piles onto one. Fix, as D-42 does for made matches' rooms: count each arena's issued, unclaimed public tickets (60 s each) against its free places. | measured |
 
 **Sound, and checked rather than assumed:** the `active` list is genuinely room-thread
 confined; the join/leave handshake is correct under the Java memory model in both
@@ -872,6 +873,14 @@ moment before the dump now fails if the comparison is put back.
   cannot tell it worked; a ban whose sessions cannot be ended (503 `sessions_not_ended`) skips
   the push and the kick until it is called again. Documented as it is (platform's README,
   docs/api/03); a 503 naming what was done is the likely fix.
+- **O-37 (M), found 2026-10-06, OPEN (scaling, plan item 84, from documented numbers). The
+  `events` store's `maxmemory` holds a day of results only to about 19 000 players.** The
+  result stream keeps 24 hours (D-26), ~530 bytes a result: 1.6 GB at 10 000 players, 7.8 GB at
+  the design's 50 000. The shipped store has an 8 GB heap and `maxmemory 3gb`, so past ~19 000
+  players a day's results no longer fit; under `noeviction` the arenas' result writes are then
+  refused, and they hold the results in their spools. Not reached at launch (5 000 to 10 000).
+  Before it: a bigger heap and `maxmemory` for the `events` instance, or a shorter retention
+  (operations/04 §3.4). Not measured: the arithmetic from D-26 and the shipped configuration.
 
 ---
 
@@ -1080,6 +1089,23 @@ gateway's and the admin API's code against their documents, and running both:
 
 Fixed in the gateway's README, 03 §6, the platform's README, 04 §10, and the Javadoc on
 `AdminServer.createTournament`, which omitted `format`.
+
+**DOC-23, found 2026-10-06** (scaling and performance, plan item 84). Twenty places where the
+documents' performance figures contradicted each other or had gone stale, gathered from every
+measurement the repository records. Corrected:
+- the capacity model's arena costs (architecture/01 §3: a dated note with the new measurements);
+- NFR-1a's and NFR-1b's "measured" (requirements §4);
+- the result stream's retention (05 §2: 24 hours, not 7 days);
+- the public-room fill policy (04 §3 and §11: as built, rooms fill one after another);
+- j-redis 06's `maxmemory` example (3 GB, as shipped).
+
+Left, and now dated in [operations/04](operations/04-scaling-and-performance.md), which
+gives each figure with its date:
+- the worker's rate, quoted as 10, 13 and 9.6–16.3 a second;
+- Argon2 as 88 and 62–88 ms;
+- the `mobile` budget as 2.85, 2.90 and 2.25 KB/s;
+- 07 §6's `nofile 262144` against the units' 65 536;
+- the core budget's table itself (architecture/01 §3).
 
 ---
 

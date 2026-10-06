@@ -69,6 +69,8 @@ copy off the site goes (Q-53), and the certificate's domain and CA
 - **The APIs**: every HTTP route, the lobby WebSocket and the admin API, with
   real examples, and a Postman collection that runs them all:
   [docs/api/](docs/api/README.md).
+- **Scaling and performance**: how to add capacity to each part, and what each
+  costs as measured: [docs/operations/04-scaling-and-performance.md](docs/operations/04-scaling-and-performance.md).
 
 ## Developer quickstart
 

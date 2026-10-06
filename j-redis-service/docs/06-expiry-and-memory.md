@@ -126,8 +126,8 @@ room would surface as a mysterious application bug. A hard, visible error is bet
 | Pre-touch | `-XX:+AlwaysPreTouch` | Page faults at start-up, not during play |
 | Netty fast path | `--add-opens java.base/java.nio=ALL-UNNAMED` | Without it Netty cannot use its direct-buffer constructor and falls back to a slower cleaner |
 
-For the expected data set (well under 1 GB) an **8 GB heap with `maxmemory 4gb`**
-is generous. The full flag set is in
+For the expected data set (well under 1 GB) an **8 GB heap with `maxmemory 3gb`**
+(about 40 % of the heap, as the shipped `dist/conf/j-redis.conf` has it) is generous. The full flag set is in
 [11 §4](11-operations-and-security.md#4-running-on-linux).
 
 ### ZGC makes every stored object bigger

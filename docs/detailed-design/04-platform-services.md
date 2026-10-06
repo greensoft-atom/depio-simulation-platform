@@ -472,7 +472,11 @@ are rescheduled.
 1. **Public modes** (FFA, teams, tag, domination): pick an existing room of the
    mode with `players < maxPlayers − 5`, preferring the fewest players above a
    minimum, so rooms stay lively at roughly 40–70 % full. If none, create on
-   the arena with the lowest `players / capacityPlayers` ratio.
+   the arena with the lowest `players / capacityPlayers` ratio. **As built**
+   (the public arena): `platform` sends the player to the arena with the most
+   free places, and the arena puts them in its **fullest** room below
+   `maxPlayers − 5`, opening a room only when every room is that full, so rooms
+   fill one after another ([operations/04 §2.1](../operations/04-scaling-and-performance.md#21-how-players-are-placed)).
 2. **Ranked, duel, team-vs-team, tournament, co-op**: always a fresh room with
    a `matchUid` assigned by `platform`, a fixed roster, a join window (30 s in
    the first slice, §4), and a walkover if a side never arrives.
@@ -2621,7 +2625,7 @@ token, checked less than the player API. Now:
 | Matchmaking wait time p50/p95 per mode | The number players actually feel in the lobby |
 | Queue depth per mode and bucket | A widening rating band with no matches means the population is too thin for that mode |
 | Ticket claim rate | Unclaimed tickets mean clients are failing to reach arenas; for made matches, the no-shows a penalty would answer ([Q-38](../requirements/01-scope-and-nfrs.md#7-open-questions): none until they pass 5 % of a week's match tickets) |
-| Room fill distribution | Validates the 40–70 % allocation policy |
+| Room fill distribution | Shows how full the rooms run: as built they fill one after another, to 145 of 150 |
 | Purchase failures by cause | Insufficient funds is normal; anything else is a bug |
 | Request latency by module, p99 | Finds the module that will need splitting out first |
 

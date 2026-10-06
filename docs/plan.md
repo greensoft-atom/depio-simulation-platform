@@ -3041,6 +3041,38 @@ with paths, parameters, examples and responses, and a Postman collection to test
 - **Not verified:** anything through nginx; the match protocol (its own drills); the pushes
   no request of the runs triggered (given from the code).
 
+#### 84. ~~Scaling and performance, for operators.~~ — **done 2026-10-06**
+
+**The owner, 2026-10-06:** how the service scales with one arena port, then: update the
+documents on scaling the service and on its performance.
+
+- **[operations/04](operations/04-scaling-and-performance.md)**: how each part grows and how to add
+  capacity, step by step (rooms, arenas on their own ports, machines); the allocator's rules;
+  the arena process's limit; what each part costs as measured, each figure dated; what 10 000
+  and 50 000 players would take; when to scale.
+- **Measured for it, 2026-10-06**, on the current build:
+  - `TickBenchmark` at the design density: a mature room's simulation 1.72 ms p50, **3.11 ms
+    p99, over NFR-1a**; encoding a round 4.61 ms; 11.6 % of a core.
+  - One arena under 150, 300 and 600 bots that send what a client sends (T-54 fixed): **0.24
+    cores a full room**, 0.52 cores of network threads at 600 players, so ~2 300 players a
+    process. None dropped or kicked.
+  - Two arenas on two ports: a second wave went to the emptier arena, as designed.
+- **Found:**
+  - **T-59**: a burst of requests lands on one arena; 100 of 400 bots refused while the other
+    arena was empty. Recorded open, with its fix.
+  - **O-37**: the `events` store's `maxmemory` holds a day of results only to ~19 000 players.
+  - **DOC-23**: twenty stale or contradictory performance figures; the misleading ones
+    corrected.
+- **Gathered first:** every performance measurement the repository records (about 120, by an
+  agent), each with its date, conditions and source.
+- **Not verified:**
+  - production hardware (Q-3);
+  - the unit steps for a second arena, run as written;
+  - the gateway's capacity;
+  - the API's latency by route.
+- **Next, in order, if the owner agrees:** T-59 (the burst), then the small open items P-55 to
+  P-59 and O-36.
+
 ---
 
 ### Completed 2026-09-23
