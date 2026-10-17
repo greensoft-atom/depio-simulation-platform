@@ -3133,6 +3133,54 @@ documents on scaling the service and on its performance.
 
 ---
 
+#### 87. ~~A clone builds, tests, runs and is debugged from inside its folder, offline; VS Code set for it (O-38, O-39, DOC-25, D-80).~~ — **done 2026-10-17**
+
+**The owner, 2026-10-17:** on a RHEL machine with no network, Java 8 and MySQL 5 installed (not to
+be touched), `./build-offline.sh` failed with what read as Maven plugin download errors; the
+documents named `/opt` and `/tmp` paths they did not know; everything is to run inside the
+repository's folder; and VS Code's Java settings explained.
+
+- **Found** (reproduced on a fresh clone with no network, an empty home, Java 8 as `JAVA_HOME`):
+  no download failed. The database tests went to 127.0.0.1:3306 and failed, and Maven's last
+  line named `maven-surefire-plugin` (O-38). The build also wrote its repository to `/tmp` and
+  read `/etc/mavenrc` (O-39), and the guides gave the development VM's own tools (DOC-25).
+- **Design**: [D-80](architecture/03-decision-log.md#d-80--a-checkout-builds-tests-runs-and-is-debugged-from-inside-its-own-folder),
+  [09 §3](detailed-design/09-release-and-packaging.md#3-the-build-from-the-repository-alone).
+- **Built**:
+  - `dev-env.sh`, the one environment;
+  - `dev-mysql.sh`, `vendor/`'s MySQL 8.4 on 3314 in `work/mysql`;
+  - `run-local.sh`, the whole backend from the release, with debugger ports on `DEBUG=1`;
+  - `build-offline.sh` on them, its tests on the development MySQL;
+  - `.vscode/` settings, launch configurations and recommendations;
+  - guides: [development/03](development/03-build-and-run.md) rewritten,
+    [development/05](development/05-vscode.md) new.
+- **Checked on purpose**, each refusal seen:
+  - a port taken (3306, the machine's);
+  - the development MySQL already running on another port, which it had misreported before the fix;
+  - a path with a space;
+  - the execute bits lost;
+  - `run-local.sh` with no release, which had ended silently before the fix.
+- **Proved** in UBI 9.5 with no network, as an ordinary user, Java 8 the default (`JAVA_HOME`,
+  `/etc/mavenrc`), `/tmp` `noexec`, a listener on 3306:
+  - `./build-offline.sh` with every test, 34 minutes, all passing;
+  - `run-local.sh` with 20 bots, `welcomes 20 disconnects 0`;
+  - `DEBUG=1` and `jdb` on 5005;
+  - `jcmd` on the release's runtime;
+  - by hand, the store's install and one test class.
+
+  0 connections to 3306, no `~/.m2`, nothing written outside the checkout but the JVM's
+  `/tmp/hsperfdata_dev/`. Red Hat's Java language server 1.57.0, headless and offline with the
+  committed settings: 19 projects on `vendor/jdk-21` at level 21, a full build with no errors.
+  `run-local.sh stop` spares a process its stale pid file names (3 of 3), and its mutant does
+  not (3 of 3). `-Dmaven.surefire.debug` waits on 5005. The install guide's own check
+  (`check-install-guide-el9.sh`, its build through the new `build-offline.sh`): 10 steps, 0 failed.
+- **Not proved**: VS Code's own window (no display here); a real MySQL 5 on 3306 (a stand-in
+  recorded connections instead); the drills, which need .NET and the VM's MySQL (O-40).
+- **Open**: O-40, the processes' and tests' built-in default database, still 3306; moving it,
+  and the drills with it, is the next unit if the owner agrees.
+
+---
+
 ### Completed 2026-09-23
 
 1. **The public arena runs continuously.** Ten bots, ten open-match records,

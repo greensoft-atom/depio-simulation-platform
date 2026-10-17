@@ -255,9 +255,9 @@ From `backend/`, with j-redis 2.2.1 installed first (see the
 [backend README](../README.md#commands)):
 
 ```bash
-export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
-/opt/maven/bin/mvn -o -pl handoff -am install
-/opt/maven/bin/mvn -o -pl handoff test -Dtest=TicketStoreTest
+. ../dev-env.sh  # vendor/'s JDK and Maven, the bundle, work/ (D-80)
+mvn -pl handoff -am install
+mvn -pl handoff test -Dtest=TicketStoreTest
 ```
 
 Each test class runs an embedded j-redis; nothing outside the JVM is needed.

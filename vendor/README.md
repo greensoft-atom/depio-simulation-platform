@@ -22,15 +22,18 @@ file is under GitHub's 100 MB limit.
 
 Building everything, with nothing else: `../build-offline.sh`
 ([build and run](../docs/development/03-build-and-run.md)). To use the JDK and
-Maven by hand, from the repository's root:
+Maven by hand, from the repository's root, source the environment every script
+uses: `vendor/`'s JDK and Maven on the `PATH`, the bundle as Maven's only
+repository, everything written in `work/` (D-80):
 
 ```bash
-export JAVA_HOME=$PWD/vendor/jdk-21 PATH=$PWD/vendor/jdk-21/bin:$PWD/vendor/maven-3.9/bin:$PATH
+. ./dev-env.sh
 java -version && mvn -v
 ```
 
-MySQL for the tests, a server of its own on a private port:
-[build and run §3](../docs/development/03-build-and-run.md#3-the-tests). On a
+MySQL for the tests and a run by hand, a server of its own from `mysql-8.4/` on
+127.0.0.1:3314: `../dev-mysql.sh start`
+([build and run §3](../docs/development/03-build-and-run.md#3-the-tests)). On a
 server, nothing here is used directly: the release carries what it needs, and the
 [install guide](../docs/operations/03-install-guide.md) installs that.
 

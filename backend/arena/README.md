@@ -271,16 +271,16 @@ class before their experience, so their points follow the boss caps.
 From `backend/` (the repository's CLAUDE.md):
 
 ```bash
-export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
-/opt/maven/bin/mvn -o install                    # everything
-/opt/maven/bin/mvn -o -pl arena -am test         # this module and what it depends on
+. ../dev-env.sh         # vendor/'s JDK and Maven, the bundle, work/ (D-80)
+mvn install             # everything
+mvn -pl arena -am test  # this module and what it depends on
 ```
 
 The tests start a real embedded j-redis and real sockets; no MySQL. A release
 for drills:
 
 ```bash
-MVN="/opt/maven/bin/mvn -Daether.enhancedLocalRepository.trackingFilename=_none" scripts/make-release.sh
+scripts/make-release.sh
 TMPDIR=<scratchpad> client/headless-drill.sh play resume coldresume duel tag maze sandbox
 TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted
 DRAIN_AFTER=20 TMPDIR=<scratchpad> client/headless-drill.sh duel     # stop the arena mid-duel: it drains

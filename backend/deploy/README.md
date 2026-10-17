@@ -253,12 +253,15 @@ Each script's own settings are in [scripts/README](../scripts/README.md). Those 
 
 | Variable | Read by | Default |
 |---|---|---|
-| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | the persistence and worker tests | `jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true`, `backend`, `backend-dev-password` |
+| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | the persistence, worker and platform tests | `jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true`, `backend`, `backend-dev-password`; `dev-env.sh` sets `JDBC_URL` to the development MySQL's, on `MYSQL_PORT` |
 | `BACKEND_BOT_PROFILE`, `BACKEND_BOT_STAYS`, `BACKEND_BOT_VIA`, `BACKEND_BOT_TRUSTSTORE`, `BACKEND_BOT_TRUSTSTORE_PASSWORD` | `tools/BotClient` | none ([01 §8](../../docs/operations/01-deploy.md#8-tls-for-match-traffic)) |
 | `BACKEND_DRILL_SQL`, `BACKEND_ADMIN_URL`, `BACKEND_ADMIN_TOKEN` | the headless client | set by `client/headless-drill.sh` |
 | `TMPDIR`, `SEED_DB`, `SEED_PASSWORD` | `backup-drill.sh` | `/tmp`, `backend_dev`, `backend-dev-password` |
 | `RELEASE` | `backup-drill.sh` | none: the machine's `/usr/sbin/mysqld` and tools; given a release with `mysql/`, its MySQL 8.4 |
-| `SKIP_TESTS`, `WORK` | `build-offline.sh` | 0 (every test run), `backend-build-offline` under `TMPDIR` or `/tmp` (its settings and local repository) |
+| `SKIP_TESTS` | `build-offline.sh` | 0 (every test run) |
+| `WORK` | `dev-env.sh`, so every script beside it | `work/` in the checkout: Maven's settings and local repository, `TMPDIR`, the development MySQL, a run by hand (D-80) |
+| `MYSQL_PORT` | `dev-env.sh`, `dev-mysql.sh`, `run-local.sh` | 3314, the development MySQL's |
+| `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT`, `DEBUG` | `run-local.sh` | 6380, 8080, 8081, 9001; `DEBUG=1` for debugger ports 5005 to 5009 |
 | `IMAGE` | `check-release-el9.sh` | `registry.access.redhat.com/ubi9/ubi-minimal:9.5` |
 | `RELEASE`, `JREDIS_JAR`, `JREDIS_CLI_JAR`, `TOOLS_JAR`, `JAVA`, `MYSQLD_BIN`, `DOTNET`, `TLS`, `FAILOVER`, `MYSQL_FAILOVER`, `BOTS`, `ARENA_OPTS`, `SOAK`, `STAYS`, `SAMPLE_EVERY`, `JUDGE_FROM`, `WORKERS`, `TAKEOVER`, `DRAIN_AFTER`, `BACKEND_DB_PASSWORD` | `client/headless-drill.sh` | its header |
 

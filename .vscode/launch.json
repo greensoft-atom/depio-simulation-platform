@@ -1,0 +1,58 @@
+// Debugging the backend from VS Code (docs/development/05-vscode.md, D-80), two ways:
+//  - "Attach": to a process ./run-local.sh started with DEBUG=1 (DEBUG=1 ./run-local.sh start),
+//    each listening on its own port;
+//  - "Launch": one process from its sources, the rest from the release. Start what it needs
+//    first: ./run-local.sh start store (the platform, worker, gateway and arena need the store;
+//    the platform and worker, the development MySQL, which run-local.sh starts with them) and
+//    leave out the process you launch here.
+// Ports and arguments as run-local.sh gives them.
+{
+    "version": "0.2.0",
+    "configurations": [
+        { "type": "java", "request": "attach", "name": "Attach: platform", "hostName": "127.0.0.1", "port": 5005 },
+        { "type": "java", "request": "attach", "name": "Attach: worker",   "hostName": "127.0.0.1", "port": 5006 },
+        { "type": "java", "request": "attach", "name": "Attach: gateway",  "hostName": "127.0.0.1", "port": 5007 },
+        { "type": "java", "request": "attach", "name": "Attach: arena",    "hostName": "127.0.0.1", "port": 5008 },
+        {
+            "type": "java", "request": "launch", "name": "Launch: platform",
+            "projectName": "platform", "mainClass": "com.backend.platform.PlatformMain",
+            "args": ["127.0.0.1", "8080", "127.0.0.1", "6380"],
+            "javaExec": "${workspaceFolder}/vendor/jdk-21/bin/java",
+            "vmArgs": "--add-opens java.base/java.nio=ALL-UNNAMED -Djava.io.tmpdir=${workspaceFolder}/work/tmp",
+            "env": {
+                "BACKEND_DB_URL": "jdbc:mysql://127.0.0.1:3314/backend_dev?useSSL=false&allowPublicKeyRetrieval=true",
+                "BACKEND_DB_USER": "backend", "BACKEND_DB_PASSWORD": "backend-dev-password"
+            },
+            "cwd": "${workspaceFolder}/work/run"
+        },
+        {
+            "type": "java", "request": "launch", "name": "Launch: worker",
+            "projectName": "worker", "mainClass": "com.backend.worker.WorkerMain",
+            "args": ["127.0.0.1", "6380", "worker-1"],
+            "javaExec": "${workspaceFolder}/vendor/jdk-21/bin/java",
+            "vmArgs": "--add-opens java.base/java.nio=ALL-UNNAMED -Djava.io.tmpdir=${workspaceFolder}/work/tmp",
+            "env": {
+                "BACKEND_DB_URL": "jdbc:mysql://127.0.0.1:3314/backend_dev?useSSL=false&allowPublicKeyRetrieval=true",
+                "BACKEND_DB_USER": "backend", "BACKEND_DB_PASSWORD": "backend-dev-password"
+            },
+            "cwd": "${workspaceFolder}/work/run"
+        },
+        {
+            "type": "java", "request": "launch", "name": "Launch: gateway",
+            "projectName": "gateway", "mainClass": "com.backend.gateway.GatewayMain",
+            "args": ["127.0.0.1", "8081", "http://127.0.0.1:8080", "127.0.0.1", "6380", "gateway-1"],
+            "javaExec": "${workspaceFolder}/vendor/jdk-21/bin/java",
+            "vmArgs": "--add-opens java.base/java.nio=ALL-UNNAMED -Djava.io.tmpdir=${workspaceFolder}/work/tmp",
+            "cwd": "${workspaceFolder}/work/run"
+        },
+        {
+            "type": "java", "request": "launch", "name": "Launch: arena",
+            "projectName": "arena", "mainClass": "com.backend.arena.ArenaMain",
+            "args": ["9001", "5700", "150", "1500", "2", "127.0.0.1", "6380", "arena-1", "0",
+                     "${workspaceFolder}/work/run/spool", "127.0.0.1", "127.0.0.1"],
+            "javaExec": "${workspaceFolder}/vendor/jdk-21/bin/java",
+            "vmArgs": "-XX:+UseZGC -XX:+ZGenerational --add-opens java.base/java.nio=ALL-UNNAMED -Djava.io.tmpdir=${workspaceFolder}/work/tmp",
+            "cwd": "${workspaceFolder}/work/run"
+        }
+    ]
+}

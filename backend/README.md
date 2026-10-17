@@ -2,8 +2,8 @@
 
 Implementation of the realtime arena backend
 ([design docs](../docs/README.md)). Java 21 and Maven, built offline: Temurin 21 and Maven 3.9,
-in `/opt/jdk21` and `/opt/maven` on the development machine and committed in
-[`../vendor/`](../vendor/VERSIONS.md); every library from [`java21-offline`](../java21-offline/README.md)
+committed in [`../vendor/`](../vendor/VERSIONS.md) and put on the `PATH` by
+[`../dev-env.sh`](../dev-env.sh); every library from [`java21-offline`](../java21-offline/README.md)
 (its `repository/` has the shape of `~/.m2/repository`), except j-redis 2.2.1, which is installed
 into the local repository from [`../j-redis-service`](../j-redis-service/README.md) first.
 [`../build-offline.sh`](../build-offline.sh) builds it all, the release included, from the
@@ -55,11 +55,13 @@ Flyway runs at every `platform` and `worker` start.
 
 ## Commands
 
-Build and test everything, offline (the persistence and platform tests need the [MySQL](#mysql) below):
+Build and test everything, offline, in a shell that sourced `dev-env.sh` from the repository's
+root ([build and run](../docs/development/03-build-and-run.md); the persistence, worker and platform
+tests need the [MySQL](#mysql) below):
 
 ```bash
-cd backend && export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH && /opt/maven/bin/mvn -o install
-# one module and what it needs:  /opt/maven/bin/mvn -o -pl platform -am install
+. ./dev-env.sh && ./dev-mysql.sh start && cd backend && mvn install
+# one module and what it needs:  mvn -pl platform -am install
 ```
 
 `com.jredis:*:2.2.1` is not in the offline bundle: `cd ../j-redis-service && mvn install -DskipTests`
@@ -82,7 +84,7 @@ Java 21 runtime they run on (linked by `jlink` from `vendor/jdk-21`), j-redis, M
 then runs it in RHEL 9's own userspace with nothing installed (it needs Docker):
 
 ```bash
-cd backend && MVN="/opt/maven/bin/mvn -Daether.enhancedLocalRepository.trackingFilename=_none" scripts/make-release.sh
+cd backend && scripts/make-release.sh               # in a shell that sourced dev-env.sh
 scripts/check-release-el9.sh [release-dir]       # then, in backend/; default target/release/backend-*/
 ```
 
@@ -99,23 +101,25 @@ TLS=1 TMPDIR=<scratch> client/headless-drill.sh play untrusted  # the arena over
 TMPDIR=<scratch> backend/scripts/backup-drill.sh                # the backups' own drill; RELEASE=<release> on its MySQL 8.4
 ```
 
-Benchmarks, from `backend/` with the tools jar built:
+Benchmarks, from `backend/` with the tools jar built; the database ones on the development MySQL
+(`./dev-mysql.sh start`):
 
 ```bash
 # tick cost: [tanks] [shapes] [ticks] [mapSize] [startLevel] [mazeSeed], defaults 150 1500 20000 22000 1 0
 java -XX:+UseZGC -XX:+ZGenerational -jar tools/target/tools-0.1.0-SNAPSHOT-all.jar
 # results a second by thread count; wipes the database it is given, which must end in _test
 java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.ApplyBenchmark \
-     "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 400 1,2,4,8
+     "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 400 1,2,4,8
 # retention's purge rate: [matches] [players a match], defaults 200000 4; wipes as above
 java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.PurgeBenchmark \
-     "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 200000 1
+     "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 200000 1
 # a rating board's place: [accounts] [listed] [reads], defaults 200000 5000 21; wipes as above
 java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.RankBenchmark \
-     "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 200000 5000 21
+     "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 200000 5000 21
 ```
 
-The client's own tests: `cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test`. Running each
+The client's own tests, with the .NET 8 SDK (not in the repository; `/opt/dotnet` on the development
+VM): `cd client && DOTNET_NOLOGO=1 dotnet test`. Running each
 process by hand is [below](#running-it).
 
 ## Login, and what it costs
@@ -182,13 +186,14 @@ silent "already applied" and silent clamping — see
 production broke.
 
 ```bash
-apt-get install -y mysql-server            # 8.0.46 on Ubuntu 24.04
-mysql -e "CREATE DATABASE backend_test CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
-          CREATE USER 'backend'@'localhost' IDENTIFIED BY 'backend-dev-password';
-          GRANT ALL ON backend_test.* TO 'backend'@'localhost';"
+./dev-mysql.sh start      # from the repository's root: vendor/'s 8.4 on 127.0.0.1:3314, its files in work/mysql
 ```
 
-Override with `JDBC_URL`, `DB_USER` and `DB_PASSWORD`. Flyway migrates the
+That is the development MySQL ([build and run §3](../docs/development/03-build-and-run.md#3-the-tests)):
+the first start makes `backend_test`, `backend_dev` and the user `backend` / `backend-dev-password`,
+and `dev-env.sh` points the tests' `JDBC_URL` at it. Without `JDBC_URL` the tests go to
+127.0.0.1:3306, where the development VM's own MySQL 8.0 is; `DB_USER` and `DB_PASSWORD` override
+the rest. Flyway migrates the
 schema before each test class. On 2026-10-05 they were also run against a server from the
 release's MySQL 8.4 ([09 §7](../docs/detailed-design/09-release-and-packaging.md#7-how-it-is-verified)).
 

@@ -16,9 +16,9 @@ plugin's own output.
 Run everything below from `backend/`:
 
 ```bash
-export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
-/opt/maven/bin/mvn -o install                    # builds the jar, with every module's tests
-/opt/maven/bin/mvn -o -pl tools -am package      # the jar alone, with the modules it needs
+. ../dev-env.sh            # vendor/'s JDK and Maven, the bundle, work/ (D-80)
+mvn install                # builds the jar, with every module's tests
+mvn -pl tools -am package  # the jar alone, with the modules it needs
 ```
 
 | Main class | Measures | Needs |
@@ -128,7 +128,7 @@ a request and its reply is passed over. Every wait is bounded at 10 s.
 
 ```bash
 java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.ApplyBenchmark \
-     "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true" \
+     "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true" \
      backend backend-dev-password [results=400] [threads=1,2,4,8] [mysqld pid]
 ```
 
@@ -144,7 +144,7 @@ writes, which is why the rate rises with threads.
 
 ```bash
 java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.PurgeBenchmark \
-     "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true" \
+     "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true" \
      backend backend-dev-password [matches=200000] [players a match=4]
 ```
 
@@ -159,7 +159,7 @@ one player a match.
 
 ```bash
 java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.RankBenchmark \
-     "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true" \
+     "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true" \
      backend backend-dev-password [accounts=200000] [listed=5000] [reads=21]
 ```
 
@@ -204,7 +204,7 @@ and freed between two rounds does not read as growth.
 | `SoakJudgeTest` | 13 | Each rule passing and failing at its edge; only the judged window counting; unreadable samples, failed scans and too few samples failing; the sampler's line format |
 
 ```bash
-/opt/maven/bin/mvn -o -pl tools -am test
+mvn -pl tools -am test
 ```
 
 ## Design documents

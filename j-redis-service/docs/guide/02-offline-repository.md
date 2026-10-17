@@ -1,5 +1,12 @@
 # 2 — Build with the `java21-offline` repository
 
+> **Inside the backend's repository**, where `j-redis-service/` sits beside
+> `dev-env.sh`, skip the JDK and Maven setup below: `dev-env.sh`, sourced from the
+> repository's root, puts the committed JDK and Maven on the `PATH` and
+> points Maven at `java21-offline` where it is, with everything written in `work/`
+> ([build and run](../../../docs/development/03-build-and-run.md)). This guide is
+> for j-redis on its own.
+
 j-redis-service builds without internet access. Every library and every Maven
 plugin it needs comes from the **`java21-offline`** bundle. This guide shows
 three ways to connect Maven to the bundle, on Windows and on Linux. Method 1

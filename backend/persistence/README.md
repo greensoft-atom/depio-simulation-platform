@@ -266,15 +266,16 @@ every local user could read it with `ps`:
 
 The tests read `JDBC_URL`, `DB_USER` and `DB_PASSWORD`, defaulting to
 `jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true`,
-`backend` and `backend-dev-password`.
+`backend` and `backend-dev-password`. `dev-env.sh`, `build-offline.sh` and VS Code's settings set
+`JDBC_URL` to the development MySQL's `backend_test` on 127.0.0.1:3314 instead (D-80).
 
 ## Tests
 
-The tests run against a real MySQL 8.0, never a fake: what matters here is
+The tests run against a real MySQL 8.4, never a fake: what matters here is
 transactional, the locking order, a plain insert's duplicate key as the
 idempotency check, the `CHECK` as the last defence. They need the database
-`backend_test` and the user `backend` / `backend-dev-password` on 127.0.0.1:3306
-([backend README, MySQL](../README.md#mysql)). **Every database test drops
+`backend_test` and the user `backend` / `backend-dev-password`: the development
+MySQL has both (`./dev-mysql.sh start`, [backend README, MySQL](../README.md#mysql)). **Every database test drops
 everything in `backend_test` and migrates it afresh** (`Database.resetForTests`), so
 never point `JDBC_URL` at a database that matters. The development database,
 `backend_dev`, is the processes' default and the drills'.
@@ -295,10 +296,10 @@ never point `JDBC_URL` at a database that matters. The development database,
 From `backend/`, offline:
 
 ```bash
-export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
-/opt/maven/bin/mvn -o -pl persistence -am install                    # this module, and common
-/opt/maven/bin/mvn -o -pl persistence test -Dtest=PersistenceTest    # one class
-/opt/maven/bin/mvn -o install                                        # everything
+. ../dev-env.sh                                  # vendor/'s JDK and Maven, the bundle, work/ (D-80)
+mvn -pl persistence -am install                  # this module, and common
+mvn -pl persistence test -Dtest=PersistenceTest  # one class
+mvn install                                      # everything
 ```
 
 The benchmarks that measure this module's statements, each refusing any database

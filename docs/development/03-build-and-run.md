@@ -1,135 +1,241 @@
-# Build, test and run: a guide
+# Build, test, run and debug: a guide
 
-From a clone of the repository to the backend built, tested and running on your
-machine, with what the repository carries: the JDK, Maven and MySQL in
-[`vendor/`](../../vendor/README.md), every library in
-[`java21-offline/`](../../java21-offline/README.md). No network and nothing
-installed is needed for the backend. To install it on a server instead: the
-[install guide](../operations/03-install-guide.md).
+From a copy of the repository to the backend built, tested, running and under a
+debugger, on a machine with no network, using only what the repository carries:
+the JDK, Maven and MySQL in [`vendor/`](../../vendor/README.md), every library in
+[`java21-offline/`](../../java21-offline/README.md). Nothing is installed,
+nothing is written outside the repository's folder, and of the machine's own
+software only its basic tools are used (§1)
+([D-80](../architecture/03-decision-log.md#d-80--a-checkout-builds-tests-runs-and-is-debugged-from-inside-its-own-folder)).
+A Java and a MySQL already on the machine (a Java 8, a MySQL 5) are neither used
+nor changed. To install the backend on a server instead, see the
+[install guide](../operations/03-install-guide.md). For VS Code, see
+[05-vscode](05-vscode.md).
 
-Every command here was run as written on 2026-10-05 (Ubuntu 24.04; the build
-also in Rocky Linux 9 and in UBI 9.5, with no network), but one:
-`./build-offline.sh` with every test, an hour, was not run in one go. The
-backend's tests last ran whole on 2026-10-04, and its database tests again on
-MySQL 8.4 on 2026-10-05. Commands run from the repository's root.
+**Run as written on 2026-10-17** in UBI 9.5, RHEL 9's own userspace, with no network, as an
+ordinary user:
+- the machine set up as the owner's is: Java 8 installed as the default (`alternatives`,
+  `JAVA_HOME`, and an `/etc/mavenrc` pointing Maven at it), `/tmp` mounted `noexec`, and a
+  listener on 3306 standing in for its MySQL;
+- `./build-offline.sh` with every test, which passed;
+- `run-local.sh` with twenty bots; `DEBUG=1` with `jdb` attached; `jcmd` on a running process;
+- by hand, the store's install (§2) and one test class on the development MySQL (§3); the
+  other by-hand lines were not run separately, though `build-offline.sh` runs them all.
 
-## 1. What you need
+No connection reached 3306, nothing was written to `~/.m2`, and outside the checkout the
+JVM's own `/tmp/hsperfdata_<user>/` alone (§1). Not run as written: the drills (§7), which
+need .NET, and the RHEL 9 checks (§8) other than the install guide's, which passed the same
+day. Commands run from the repository's root.
+
+## 1. What you need, and what the repository touches
 
 | For | Needs |
 |---|---|
-| Building, testing and running the backend | Linux on x86-64 with bash, coreutils, findutils, `sed`, `tar`, `gzip`, `curl` |
+| Building, testing, running and debugging the backend | Linux on x86-64 with bash, coreutils, findutils, `sed`, `tar` and `gzip`. No Java, Maven, MySQL or network. |
 | The checks on RHEL 9, and compiling nginx again | Docker |
-| The client, the Unity package and the drills (which drive the backend with the headless client) | the .NET 8 SDK, which the repository does not carry |
+| The client, the Unity package and the drills | the .NET 8 SDK, which the repository does not carry (§7) |
+
+**Copy the repository whole**: with `git clone`, or as one `tar` archive. A copy
+made file by file can lose the files' execute bits, and then nothing runs
+(`dev-env.sh` says so). **Its path may hold letters, digits and `. _ - + @ /`
+only**: no spaces. A symbolic link without spaces to it will do.
+
+**Everything a build, a test or a run writes is in `work/`**, beside this
+repository's `README.md`. It is never committed. Delete it to start afresh: the
+next build copies the libraries it needs from the bundle again.
+
+| In `work/` | What it holds | Written by |
+|---|---|---|
+| `settings.xml` | Maven's settings: the bundle as Maven's only repository, `work/m2` as its local one | `dev-env.sh` |
+| `m2/` | Maven's local repository, copied from the bundle as the build needs it | Maven |
+| `tmp/` | temporary files of Maven, the tests and MySQL (`TMPDIR`, `java.io.tmpdir`) | all of them |
+| `mysql/` | the development MySQL's data, socket and logs (§3) | `dev-mysql.sh` |
+| `run/` | a run by hand: each process's log and pid, the store's files, the arena's spool (§5) | `run-local.sh` |
+
+**`dev-env.sh` is the environment**, and each script beside it starts by reading it:
+- `JAVA_HOME` and `PATH` on `vendor/jdk-21` and `vendor/maven-3.9`, whatever the machine's `JAVA_HOME` says;
+- Maven reads `work/settings.xml` (`MAVEN_ARGS`) and neither `/etc/mavenrc` nor `~/.mavenrc` (`MAVEN_SKIP_RC`), either of which may point Maven at another Java;
+- temporary files in `work/tmp`;
+- the tests' database is the development MySQL (`JDBC_URL`).
+
+To work by hand in a shell, source it first:
+
+```bash
+. ./dev-env.sh
+java -version          # 21.0.12.1, vendor/'s, not the machine's
+mvn -v                 # 3.9.16, vendor/'s, on that Java
+```
+
+**Other paths in these documents** are not this machine's:
+- **`/opt/backend`** is where a release is installed on a server ([install guide](../operations/03-install-guide.md)).
+- **`/opt/jdk21`, `/opt/maven` and `/opt/dotnet`** are the development VM's own tools ([02 §3](02-working-here.md#3-the-development-machine)). A clone does not need them.
+- **`/tmp`** appears only as the default scratch directory of the drills, the RHEL 9 checks (§7, §8) and `vendor/`'s refresh scripts, which need the internet. Name your own with `TMPDIR=`.
+- **The JVM still keeps two things of its own in `/tmp`**, whatever `java.io.tmpdir` says:
+  - `hsperfdata_<user>/`, each running JVM's performance counters, which it removes at exit, leaving the directory empty;
+  - while `jcmd` or `jdb` attaches to a process, that process's attach socket.
+
+  Neither runs code from `/tmp`, so a `noexec` `/tmp` is no obstacle (checked).
 
 ## 2. Build
 
-Everything, with the committed JDK and Maven and the bundle as the only source of
-libraries; `j-redis-service`, the backend, then a release:
+Everything, offline: `j-redis-service`, the backend with every test, then a release.
 
 ```bash
-SKIP_TESTS=1 ./build-offline.sh          # about fifteen minutes; without SKIP_TESTS, the tests too (§3)
+./build-offline.sh                # with every test: 34 minutes on 2026-10-17, about an hour on a loaded machine
+SKIP_TESTS=1 ./build-offline.sh   # without the tests: about fifteen minutes
 ```
 
-Its local Maven repository is its own (`WORK`, by default under `TMPDIR`), so it
-never mixes with `~/.m2`. To use the committed JDK and Maven by hand instead:
+With the tests, it starts the development MySQL (§3) and stops it at the end,
+unless it was already running, or `JDBC_URL` names another server. It ends with
+`--- done:` and the release's directory. On a machine already holding the
+development VM's `~/.m2`, it still reads nothing from it.
+
+By hand, in a shell that sourced `dev-env.sh`: the store first, since the backend
+builds against its client.
 
 ```bash
-export JAVA_HOME=$PWD/vendor/jdk-21 PATH=$PWD/vendor/jdk-21/bin:$PWD/vendor/maven-3.9/bin:$PATH
-(cd j-redis-service && mvn -q install -DskipTests)    # the store first: the backend builds against its client
-(cd backend && mvn -q install -DskipTests)
+(cd j-redis-service && mvn install -DskipTests)
+(cd backend && mvn install -DskipTests)
+(cd backend && mvn -pl platform -am install)      # one module, with what it needs and its tests
 ```
 
-That `mvn` reads Maven Central unless told otherwise; to read the bundle instead,
-pass its settings as `build-offline.sh` does (`java21-offline/README.md`, method 1).
+No `-o`: Maven's offline flag refuses the bundle too, since it is a `file://`
+repository. The settings already make the bundle Maven's only repository, so
+nothing is fetched from the network.
 
 ## 3. The tests
 
-Most of the backend's tests need nothing; `persistence`, `worker` and `platform`
-need a MySQL. Start one of your own from `vendor/`, on a private port:
+Most of the backend's tests need nothing; those of `persistence`, `worker` and
+`platform` need a MySQL. They get the **development MySQL**: `vendor/`'s 8.4, its
+files in `work/mysql`, on 127.0.0.1:3314. It reads no option file, so a
+`/etc/my.cnf` meant for the machine's own MySQL is ignored. It has its own port,
+data and socket, so it never meets that server.
 
 ```bash
-M=$PWD/vendor/mysql-8.4/bin
-D=${TMPDIR:-/tmp}/backend-test-mysql
-"$M/mysqld" --no-defaults --initialize-insecure --datadir="$D" --user="$(id -un)"
-"$M/mysqld" --no-defaults --datadir="$D" --user="$(id -un)" --port=3314 --bind-address=127.0.0.1 \
-    --mysqlx=OFF --socket=/tmp/backend-test-mysql.sock --log-error="$D.err" --default-time-zone=+00:00 &
-until "$M/mysqladmin" -S /tmp/backend-test-mysql.sock -u root ping > /dev/null 2>&1; do sleep 1; done
-"$M/mysql" -S /tmp/backend-test-mysql.sock -u root -e "
-    CREATE DATABASE backend_test; CREATE DATABASE backend_dev;
-    CREATE USER backend@'127.0.0.1' IDENTIFIED BY 'backend-dev-password';
-    GRANT ALL ON backend_test.* TO backend@'127.0.0.1'; GRANT ALL ON backend_dev.* TO backend@'127.0.0.1'"
-export JDBC_URL="jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true"
+./dev-mysql.sh start      # the first start makes backend_test, backend_dev and their user
+./dev-mysql.sh status
+./dev-mysql.sh stop
 ```
 
-The socket's path is short on purpose: a Unix socket's may not pass 108
-characters. The tests read `JDBC_URL` (`DB_USER` and `DB_PASSWORD` default to
-`backend` and `backend-dev-password`), and wipe the database they are given, which
-must end in `_test`. Then:
+The tests read `JDBC_URL`, which `dev-env.sh` points at `backend_test` there.
+`DB_USER` and `DB_PASSWORD` default to `backend` and `backend-dev-password`. They
+wipe the database they are given, which must end in `_test`. So never point
+`JDBC_URL` at a server whose `backend_test` you want kept. Port 3314 taken?
+`MYSQL_PORT=<a free port>` for every script, sourced or run.
+
+One class, or one module:
 
 ```bash
-./build-offline.sh                        # everything, with every test: about an hour
-(cd backend && mvn -q -pl persistence test -Dtest=AccountRepositoryTest)   # or one class, with the JDK and Maven of §2
+. ./dev-env.sh && ./dev-mysql.sh start
+(cd backend && mvn -pl persistence test -Dtest=AccountRepositoryTest)
+(cd backend && mvn -pl platform test)
 ```
 
-A whole backend build ran 1 020 tests on 2026-10-04; the counts per module are in
-each module's README. Stop the server with
-`"$M/mysqladmin" -S /tmp/backend-test-mysql.sock -u root shutdown`.
+A whole backend build ran 1 064 tests on 2026-10-06 (plan item 86). On 2026-10-17
+`build-offline.sh` passed them all again, with j-redis's 227. The backend's count was
+not kept, since the release step's `clean` removes the test reports. The counts per module
+are in each module's README.
 
 ## 4. A release
 
 `build-offline.sh` leaves it in `backend/target/release/`: a directory and its
 `.tar.gz`, with its own Java runtime, j-redis, MySQL and nginx
 ([09 §4](../detailed-design/09-release-and-packaging.md#4-the-release)); its
-`VERSIONS.md` says what is inside. With the JDK and Maven of §2 on the `PATH`,
-`backend/scripts/make-release.sh` makes it alone (`MVN=` for the bundle's
-settings, as its header says).
+`VERSIONS.md` says what is inside. In a shell that sourced `dev-env.sh`,
+`(cd backend && scripts/make-release.sh)` makes it alone, from what `work/m2`
+already holds.
 
 ## 5. Running it by hand
 
-The whole chain on one machine from a release: the store, the platform, a worker,
-the gateway and an arena, on the release's own runtime, against the MySQL of §3
-(its `backend_dev`). Then twenty bots play through it as a client does: register,
-log in, open the lobby, ask for a match, join the arena they are given.
+The whole chain on this machine, from the release, on the release's own runtime:
+the store, the platform, a worker, the gateway and an arena, against the
+development MySQL's `backend_dev`, which is started if it is not running.
 
 ```bash
-R=$(ls -d backend/target/release/backend-*/ | head -1); R=${R%/}
-J="$R/runtime/bin/java --add-opens java.base/java.nio=ALL-UNNAMED"
-L=${TMPDIR:-/tmp}/backend-run; mkdir -p "$L/spool"
-export BACKEND_DB_URL="jdbc:mysql://127.0.0.1:3314/backend_dev?useSSL=false&allowPublicKeyRetrieval=true"
-export BACKEND_DB_USER=backend BACKEND_DB_PASSWORD=backend-dev-password
-$J -jar "$R/jredis/lib/j-redis-server.jar" --port 6380 --dir "$L" > "$L/store.log" 2>&1 &
-sleep 3
-$J -cp "$R/lib/platform/*" com.backend.platform.PlatformMain 127.0.0.1 8080 127.0.0.1 6380 > "$L/platform.log" 2>&1 &
-$J -cp "$R/lib/worker/*" com.backend.worker.WorkerMain 127.0.0.1 6380 worker-1 > "$L/worker.log" 2>&1 &
-$J -cp "$R/lib/gateway/*" com.backend.gateway.GatewayMain 127.0.0.1 8081 http://127.0.0.1:8080 127.0.0.1 6380 gateway-1 > "$L/gateway.log" 2>&1 &
-$J -cp "$R/lib/arena/*" com.backend.arena.ArenaMain 9001 5700 150 1500 2 127.0.0.1 6380 arena-1 0 "$L/spool" 127.0.0.1 127.0.0.1 > "$L/arena.log" 2>&1 &
-until curl -s -o /dev/null http://127.0.0.1:8080/health; do sleep 1; done
-# twenty bots for fifteen seconds
-$J -cp backend/tools/target/tools-*-all.jar com.backend.tools.BotClient 20 15 http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby
+./run-local.sh start          # or some: ./run-local.sh start store platform
+./run-local.sh bots           # twenty bots for fifteen seconds; or: bots 100 30
+./run-local.sh status
+./run-local.sh stop           # the development MySQL keeps running: ./dev-mysql.sh stop
 ```
 
-It ends with `welcomes 20   disconnects 0` and each bot's stay paid by the worker.
-What each process's arguments mean: [backend/README](../../backend/README.md#running-it).
-Stop them with `kill $(jobs -p)` in the same shell. Ports 6380, 8080, 8081 and
-9001 must be free; any others do, given to each process alike.
+The bots play as a client does: they register, log in, open the lobby, ask for a
+match and join the arena they are given. The run ends with `welcomes 20
+disconnects 0   kicks 0` and `stays 20, each joined and left on purpose`. Each
+process logs to `work/run/<process>.log`.
 
-## 6. The drills
+| Process | Listens on | To change |
+|---|---|---|
+| store (j-redis) | 127.0.0.1:6380 | `STORE_PORT` |
+| platform (the API) | 127.0.0.1:8080, `GET /health` | `PLATFORM_PORT` |
+| gateway (the lobby) | 127.0.0.1:8081, `ws://…/lobby` | `GATEWAY_PORT` |
+| arena | 127.0.0.1:9001 | `ARENA_PORT` |
+| worker | none | |
 
-They start the whole stack from a release and drive it with the headless client,
-so they need the .NET 8 SDK and the client built (`cd client && dotnet build Headless`):
+A port already taken is refused, with its name. `stop` stops only processes it
+started from this checkout's release, whatever their pid files say. An arena still
+running a match drains it first, for up to eleven minutes (D-29). Give every command the same
+settings, `start` and `bots` alike. What each process's arguments mean:
+[backend/README](../../backend/README.md#running-it).
+
+## 6. Debugging
+
+**A process from the release, under a debugger**: `DEBUG=1` makes each Java
+process listen for one, on 127.0.0.1 only, without waiting for it.
+
+```bash
+DEBUG=1 ./run-local.sh start
+```
+
+| Process | Debugger port |
+|---|---|
+| platform | 5005 |
+| worker | 5006 |
+| gateway | 5007 |
+| arena | 5008 |
+| store | 5009 |
+
+With `DEBUG=1` the processes run on `vendor/jdk-21`, the same Java version, not
+the release's runtime: its modules leave out the debugger's agent,
+`jdk.jdwp.agent` ([09 §4.1](../detailed-design/09-release-and-packaging.md#41-the-runtime)). Attach VS Code ([05 §4](05-vscode.md#4-debugging)), or the
+JDK's own debugger:
+
+```bash
+vendor/jdk-21/bin/jdb -attach 127.0.0.1:5005       # then: threads, stop in <class>.<method>, cont
+```
+
+**A test under a debugger**: from VS Code, or Maven's own way, which waits on 5005
+until a debugger attaches:
+
+```bash
+(cd backend && mvn -pl platform test -Dtest=AuthServiceTest -Dmaven.surefire.debug)
+```
+
+**What a running process is doing**, without a debugger, with the JDK's tools on its pid
+(`work/run/<process>.pid`):
+
+```bash
+vendor/jdk-21/bin/jcmd $(cat work/run/platform.pid) Thread.print       # every thread's stack
+vendor/jdk-21/bin/jcmd $(cat work/run/arena.pid) GC.heap_info
+```
+
+## 7. The drills
+
+The drills are the live tests that drive a release with the headless client.
+They need the .NET 8 SDK and the client built
+(`cd client && dotnet build Headless`), which the repository does not carry. They
+also expect a MySQL on 3306 holding `backend_dev`, as the development VM has
+([02 §3](02-working-here.md#3-the-development-machine)), and start their own
+servers on ports 3307 to 3309, 6390 to 6392, 8093 and 8094, 9011 and 9195 to 9199.
+So they are the development VM's tools and not yet a clone's: on a machine whose
+3306 is another MySQL, do not run them.
 
 ```bash
 TMPDIR=<a scratch directory> RELEASE=$PWD/backend/target/release/backend-0.1.0-SNAPSHOT \
     client/headless-drill.sh play duel                    # any of the scenarios its header lists
-TMPDIR=<a scratch directory> RELEASE=... MYSQL_FAILOVER=1 client/headless-drill.sh play duel
 TMPDIR=<a scratch directory> RELEASE=... backend/scripts/backup-drill.sh
 ```
 
-They take every process, the store and their MySQL servers from the release, and
-the MySQL 3306 the tests use for `backend_dev` (`client/headless-drill.sh`'s
-header has the rest: ports, scenarios, TLS, soak).
-
-## 7. The checks on RHEL 9
+## 8. The checks on RHEL 9
 
 With Docker, each on a release:
 
@@ -141,9 +247,23 @@ With Docker, each on a release:
 
 And `vendor/build-nginx.sh` compiles nginx again ([vendor/README](../../vendor/README.md)).
 
-## 8. The client
+## 9. The client
 
 The engine-free core, its tests and the headless driver, with the .NET 8 SDK:
 `cd client && dotnet test` (read `Total tests:`); the Unity package:
 `client/unity-package.sh && client/unity-check.sh` (compiled against stubs; nothing
 here runs Unity). [client/README](../../client/README.md).
+
+## 10. When something fails
+
+| What you see | What it means | What to do |
+|---|---|---|
+| `[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:…:test … on project persistence`, above it `Communications link failure` or `Access denied for user 'backend'` | Not a plugin that could not be fetched: tests failed. The database tests reached no MySQL, or one that is not theirs. Before D-80 they went to 127.0.0.1:3306. | `./build-offline.sh` from this version starts the development MySQL itself. By hand: `./dev-mysql.sh start`, in a shell that sourced `dev-env.sh`. |
+| `dev-env.sh: vendor/jdk-21/bin/java is not executable` | the copy lost the files' modes | copy again with `git clone` or `tar` |
+| `dev-env.sh: … holds a character the build cannot carry` | a space or another character in the path | move the checkout, or link to it from a path without one |
+| `port 3314 is taken by another process` | another server on the development MySQL's port | `MYSQL_PORT=<a free port>` |
+| `platform: port 8080 is taken by another process` | another program on that port | `PLATFORM_PORT=<a free port>`, and the same for every later command |
+| `Cannot access java21-offline in offline mode` | `-o` with the bundle's settings | drop `-o` (§2) |
+| `class file has wrong version 65.0, should be 52.0`, or `release version 21 not supported` | Maven ran on Java 8: `dev-env.sh` was not sourced, or `/etc/mavenrc` won | `. ./dev-env.sh` first; it sets `MAVEN_SKIP_RC` |
+| `Could not resolve dependencies … com.jredis:j-redis-client` | the backend built before the store | `(cd j-redis-service && mvn install -DskipTests)` first, or `./build-offline.sh` |
+| `no release in backend/target/release` | `run-local.sh` before a build | `./build-offline.sh` (`SKIP_TESTS=1` for speed) |

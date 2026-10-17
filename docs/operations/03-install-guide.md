@@ -80,7 +80,8 @@ export MYSQL_PORT=3306                   # another if the server's own MySQL kee
 
 The committed JDK and Maven, the committed libraries, no network
 (`build-offline.sh`, 09 §3). About fifteen minutes; `SKIP_TESTS=1` because the
-backend's tests need a MySQL of their own ([build and run](../development/03-build-and-run.md#3-the-tests)).
+tests, an hour more on their own MySQL, belong on the machine the release is made on
+([build and run](../development/03-build-and-run.md#3-the-tests)), not on a server.
 
 ```bash
 cd "$SRC"

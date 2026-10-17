@@ -271,9 +271,9 @@ From `backend/`, with j-redis 2.2.1 installed first (see the
 [backend README](../README.md#commands)):
 
 ```bash
-export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
-/opt/maven/bin/mvn -o -pl gateway -am install                       # with handoff and common
-/opt/maven/bin/mvn -o -pl gateway test -Dtest=GatewayServerTest     # one class
+. ../dev-env.sh                                # vendor/'s JDK and Maven, the bundle, work/ (D-80)
+mvn -pl gateway -am install                    # with handoff and common
+mvn -pl gateway test -Dtest=GatewayServerTest  # one class
 ```
 
 The tests need nothing outside the JVM. They run an embedded j-redis and the JDK's HTTP server

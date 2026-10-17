@@ -1,0 +1,37 @@
+// This checkout's VS Code settings, for the Java extensions (docs/development/05-vscode.md, D-80).
+// Paths are the checkout's own: ${workspaceFolder} is this folder. Run ./build-offline.sh once
+// before the first opening: it writes work/settings.xml, which the Maven import reads.
+{
+    // The Maven import reads the bundle as its only repository and work/m2 as its local one,
+    // as the command-line build does. The language server expands ${workspaceFolder} here.
+    "java.configuration.maven.userSettings": "${workspaceFolder}/work/settings.xml",
+
+    // The projects compile and run on the committed JDK 21, never on the machine's Java 8.
+    // java.jdt.ls.java.home is left unset on purpose: the language server itself needs Java 25
+    // or later, and runs on the one inside the Red Hat extension.
+    "java.configuration.runtimes": [
+        { "name": "JavaSE-21", "path": "${workspaceFolder}/vendor/jdk-21", "default": true }
+    ],
+
+    // Tests run from the editor as dev-env.sh runs them: on the committed JDK, their temporary
+    // files in work/tmp, and the database tests on the development MySQL (./dev-mysql.sh start).
+    "java.test.config": {
+        "name": "workspace",
+        "javaExec": "${workspaceFolder}/vendor/jdk-21/bin/java",
+        "vmArgs": ["-Djava.io.tmpdir=${workspaceFolder}/work/tmp"],
+        "env": {
+            "JDBC_URL": "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true"
+        }
+    },
+
+    // A terminal opened here, and the Maven extension's, build as dev-env.sh does: vendor/'s JDK
+    // and Maven, the bundle's settings, nothing read from /etc/mavenrc or ~/.mavenrc.
+    "terminal.integrated.env.linux": {
+        "JAVA_HOME": "${workspaceFolder}/vendor/jdk-21",
+        "PATH": "${workspaceFolder}/vendor/jdk-21/bin:${workspaceFolder}/vendor/maven-3.9/bin:${env:PATH}",
+        "MAVEN_SKIP_RC": "1",
+        "MAVEN_ARGS": "-s ${workspaceFolder}/work/settings.xml -DargLine=-Djava.io.tmpdir=${workspaceFolder}/work/tmp",
+        "MAVEN_OPTS": "-Djava.io.tmpdir=${workspaceFolder}/work/tmp",
+        "JDBC_URL": "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true"
+    }
+}

@@ -8,6 +8,15 @@ to contain only Java 21 or older bytecode.
 running a real build from an empty local repository — see
 [How this was verified](#8-how-this-was-verified).
 
+> **In this repository, do none of [§2 Setup](#2-setup).** Nothing is extracted to
+> `/opt` and nothing goes in `~/.m2`: `../dev-env.sh` writes Maven's settings for
+> the bundle where it is (`work/settings.xml`, method 1 below, with `work/m2` as the
+> local repository), and `../build-offline.sh` and VS Code read them
+> ([build and run](../docs/development/03-build-and-run.md),
+> [D-80](../docs/architecture/03-decision-log.md#d-80--a-checkout-builds-tests-runs-and-is-debugged-from-inside-its-own-folder)).
+> The paths below, `/opt/java21-offline` and `C:\java21-offline`, are for the bundle
+> carried alone to another project.
+
 ---
 
 ## Contents

@@ -59,9 +59,9 @@ property, and opens no port.
 From `backend/`, with the offline repository (the repository's CLAUDE.md):
 
 ```bash
-export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
-/opt/maven/bin/mvn -o install                    # everything
-/opt/maven/bin/mvn -o -pl protocol test          # this module alone
+. ../dev-env.sh        # vendor/'s JDK and Maven, the bundle, work/ (D-80)
+mvn install            # everything
+mvn -pl protocol test  # this module alone
 ```
 
 | Test class | Tests | What it covers |

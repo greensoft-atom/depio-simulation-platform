@@ -3,9 +3,10 @@
 Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
-re-ordered around it rather than the other way round. **Open as of 2026-10-06:**
-M-6's three latent leftovers (L, none reachable in play) and O-37 (M, the
-`events` store's memory past ~19 000 players, plan item 84). Every other entry is fixed,
+re-ordered around it rather than the other way round. **Open as of 2026-10-17:**
+M-6's three latent leftovers (L, none reachable in play), O-37 (M, the
+`events` store's memory past ~19 000 players, plan item 84) and O-40 (M, the
+processes' and tests' default database is still 127.0.0.1:3306). Every other entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
 **Ids.** P protocol (§2), D data and the result pipeline (§3), M simulation
@@ -887,6 +888,49 @@ moment before the dump now fails if the comparison is put back.
   refused, and they hold the results in their spools. Not reached at launch (5 000 to 10 000).
   Before it: a bigger heap and `maxmemory` for the `events` instance, or a shorter retention
   (operations/04 §3.4). Not measured: the arithmetic from D-26 and the shipped configuration.
+- **O-38 (H), found 2026-10-17, FIXED the same day (plan item 87, D-80). `build-offline.sh` with
+  its tests failed on any machine but the development VM, in a way that read as a download
+  error.** The database tests of `persistence`, `worker` and `platform` default to
+  127.0.0.1:3306, the VM's MySQL, and nothing started one elsewhere. The owner's machine has
+  no network, Java 8 and MySQL 5 installed (to be left alone), and reported "Maven
+  `org.apache.maven.plugins` download errors". Reproduced on a fresh clone with no network, an
+  empty home and Java 8 as `JAVA_HOME`:
+  - `j-redis-service` and the backend's first five modules resolved every plugin and library
+    from the bundle and passed;
+  - `persistence` stopped with 24 errors, `Communications link failure` to 127.0.0.1:3306, and
+    Maven's last line was `Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.6.0:test`.
+
+  On the owner's machine 3306 is their MySQL 5. Inferred, not reproduced with a MySQL 5: the
+  tests reach it, are refused, and fail the same way. Had its `backend` user existed with the development password, the tests would
+  have wiped a `backend_test` there. **Fixed:** the tests' MySQL is the repository's own
+  (`dev-mysql.sh`, `vendor/`'s 8.4 on 127.0.0.1:3314, its files in `work/mysql`, no option file
+  read), started by `build-offline.sh` for the tests and stopped after. **Verified** in UBI 9.5
+  with no network, as an ordinary user, Java 8 the default and a listener on 3306:
+  `./build-offline.sh` with every test passed in 34 minutes, and no connection reached 3306.
+- **O-39 (M), found 2026-10-17, FIXED the same day (plan item 87, D-80). The build wrote outside
+  the checkout and took more from the machine than it said.**
+  - Its Maven settings and local repository were in `${TMPDIR:-/tmp}/backend-build-offline`.
+    `/tmp` may be cleared, or shared with another user whose directory there cannot be written.
+  - The tests' temporary files and Netty's native libraries went to `/tmp`, which a hardened
+    RHEL mounts `noexec`.
+  - Maven read `/etc/mavenrc` and `~/.mavenrc`, either of which may point it at another Java.
+
+  The `/tmp` part is read from the script; the `noexec` and `mavenrc` cases are reasoned, not
+  reproduced on the old script. **Fixed:** everything is written under `work/` in the checkout,
+  `java.io.tmpdir` included, for Maven and for the tests' JVMs, and `MAVEN_SKIP_RC` is set
+  (`dev-env.sh`). **Verified** in the same run:
+  - with `/tmp` mounted `noexec` and `/etc/mavenrc` naming Java 8, Maven ran on `vendor/`'s Java 21;
+  - no `~/.m2` was made;
+  - outside the checkout, only the JVM's own `/tmp/hsperfdata_dev/` was written;
+  - `work/` came to 360 MB.
+- **O-40 (M), found 2026-10-17, OPEN. The processes' and the tests' own defaults still name
+  127.0.0.1:3306.** `DatabaseSettings.DEV_URL` (`backend_dev`) and the 29 test classes' `JDBC_URL`
+  default are the development VM's MySQL. Every script and VS Code configuration of D-80 names
+  the development MySQL instead. A process started another way does reach 3306, for example
+  with VS Code's "Run" link above `main`. On the owner's machine that is their MySQL 5, which
+  refuses the development user. The drills rely on the default, and need .NET and that 3306
+  database anyway (development/03 §7). The fix is the defaults moved to 3314 and the drills
+  with them, one change, not yet made.
 
 ---
 
@@ -1118,6 +1162,22 @@ gives each figure with its date:
 exception with no `serialVersionUID`. It came with the repository's first commit here, so its
 start is not in this history. **Fixed:** `serialVersionUID` declared, as the other exceptions do;
 item 86's full build, 0 warnings.
+
+**DOC-25, found 2026-10-17, FIXED the same day** (plan item 87). The guides gave the development
+VM's own tools as the way to build:
+- the root README's quickstart (`/opt/jdk21`, `/opt/maven`, MySQL 8.0 on 3306);
+- every module README's build lines (`export JAVA_HOME=/opt/jdk21`, `/opt/maven/bin/mvn -o`);
+- `CLAUDE.md`'s commands.
+
+Building and running put files in `/tmp` (development/03 §3 and §5). Development/03 said "no
+network and nothing installed is needed", while its full build needed a MySQL that nothing
+started (O-38). The owner, on a clone, did not know what the `/opt` and `/tmp` paths were.
+**Fixed:** one way, a clone's, everywhere:
+- `dev-env.sh` and the scripts beside it;
+- development/03 rewritten, with what each path in the documents is;
+- a VS Code guide (development/05) and its committed settings;
+- the module READMEs, `CLAUDE.md` and working-here §3 changed;
+- the bundle's, `vendor/`'s and j-redis's setup guides labelled.
 
 ---
 

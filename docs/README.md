@@ -68,8 +68,9 @@ Then the detailed design of whatever you are working on.
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
 | [01 — Code patterns](development/01-code-patterns.md) | Module layout, dependency set, patterns, coding rules, error handling, testing                                                                   | current; each pattern says where the code differs from the first design |
 | [02 — Working here](development/02-working-here.md)   | How a unit of work is done, the owner's standing decisions, the development machine and its traps                                                | current                                                                 |
-| [03 — Build and run](development/03-build-and-run.md) | A guide: build, test and run the backend from a clone with what the repository carries (the JDK, Maven, MySQL), the drills and the RHEL 9 checks | tested as written, 2026-10-05                                           |
+| [03 — Build and run](development/03-build-and-run.md) | A guide: build, test, run and debug the backend from a clone, offline, everything inside its folder (`work/`, D-80); the drills and the RHEL 9 checks | tested as written in UBI 9 with no network, 2026-10-17 |
 | [04 — Cryptography](development/04-crypto.md)         | What Java 21 and BouncyCastle give, the rules and traps, and the tested examples in `backend/crypto-examples`                                     | 35 tests, checked against `openssl` both ways, 2026-10-05               |
+| [05 — VS Code](development/05-vscode.md)              | The Java extensions installed offline, and each committed setting in `.vscode/` with its reason: import, JDK, tests, debugging | the import proved offline with the language server, 2026-10-17; VS Code's window not run |
 
 ### API
 

@@ -55,8 +55,26 @@ history.
 Maven's only repository (a mirror, without `-o`) and a local repository of its
 own, so nothing comes from `~/.m2`; it builds `j-redis-service`, then the backend
 with its tests (or without, `SKIP_TESTS=1`), then the release. It needs bash,
-coreutils, findutils, sed, tar and gzip: no Java, no Maven, no network. The usual
-development build, with the machine's own JDK and Maven, works as before.
+coreutils, findutils, sed, tar and gzip: no Java, no Maven, no MySQL, no network.
+
+Everything it writes is inside the checkout, in `work/`
+([D-80](../architecture/03-decision-log.md#d-80--a-checkout-builds-tests-runs-and-is-debugged-from-inside-its-own-folder)):
+
+| In `work/` | What | Written by |
+|---|---|---|
+| `settings.xml` | Maven's settings: the bundle, at this checkout's path, as the mirror of every repository; `work/m2` as the local repository | `dev-env.sh`, each time it is sourced |
+| `m2/` | Maven's local repository, filled from the bundle | Maven |
+| `tmp/` | `TMPDIR`, and `java.io.tmpdir` for Maven and the tests' JVMs | Maven, the tests, MySQL |
+| `mysql/` | the development MySQL: `vendor/`'s 8.4, on 127.0.0.1:3314, its data, socket and logs | `dev-mysql.sh` |
+| `run/` | a run by hand: each process's log and pid, the store's files, the arena's spool | `run-local.sh` |
+
+`dev-env.sh`, sourced, makes the environment every script runs in, and a shell
+too: `JAVA_HOME` and `PATH` on `vendor/`'s JDK and Maven, Maven reading
+`work/settings.xml` (by `MAVEN_ARGS`) and neither `/etc/mavenrc` nor `~/.mavenrc`
+(`MAVEN_SKIP_RC`), `java.io.tmpdir` in `work/tmp`, and the tests' `JDBC_URL` on
+the development MySQL. The machine's own Java, Maven and MySQL are neither used
+nor changed. With the tests, `build-offline.sh` starts the development MySQL and
+stops it after, unless `JDBC_URL` names another server.
 
 ## 4. The release
 

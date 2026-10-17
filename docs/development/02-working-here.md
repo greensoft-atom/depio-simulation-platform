@@ -57,19 +57,23 @@ under `background/`.
 | The Unity editor's check and an admin panel are put off: not proposed until the owner brings them back | 2026-10-05 | Q-54, Q-55 |
 | Java 21 only (no Java 8 line); MySQL 8.4 LTS; the release carries its own Java runtime, MySQL and nginx, nothing installed as an OS package | 2026-10-05 | Q-56, plan item 80 |
 | The production machines run RHEL 9.x (the owner thinks 9.5) | 2026-09-22 | requirements C-1; §3 below |
+| Everything a development machine builds, tests, runs and debugs stays inside the checkout (`work/`); a Java and a MySQL already installed there (the owner's: Java 8, MySQL 5) are neither used nor changed | 2026-10-17 | D-80, [03](03-build-and-run.md) |
 
 ## 3. The development machine
 
 A shared Ubuntu 24.04 VM, 12 cores, with other users' jobs on it: the load
-average sits around 5 to 9.
+average sits around 5 to 9. **What this table lists under `/opt` is this VM's own**:
+a clone needs none of it, and builds, tests and runs with what the repository
+carries ([03 §1](03-build-and-run.md#1-what-you-need-and-what-the-repository-touches)).
 
 | What | Where | Notes |
 |---|---|---|
-| JDK 21 | `/opt/jdk21` | Temurin 21.0.12.1+1, not on PATH: `export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:/opt/maven/bin:$PATH` |
-| Maven | `/opt/maven` | 3.9.16 |
+| JDK 21 | `/opt/jdk21` | Temurin 21.0.12.1+1, not on PATH; the work uses `vendor/jdk-21`, the same build, through `dev-env.sh` |
+| Maven | `/opt/maven` | 3.9.16; the work uses `vendor/maven-3.9` |
+| The development MySQL | 127.0.0.1:3314 | `vendor/`'s 8.4, its files in `work/mysql` (`dev-mysql.sh`): the tests' and the benchmarks' |
 | The JDK and Maven, committed | `vendor/jdk-21`, `vendor/maven-3.9` | the same versions, usable as they are; `build-offline.sh` builds with them alone, no network ([09 §3](../detailed-design/09-release-and-packaging.md#3-the-build-from-the-repository-alone)) |
 | .NET 8 SDK | `/opt/dotnet` | for `client/`; NuGet.org is reachable. Not in `vendor/`: the owner chose the backend only (D-77) |
-| MySQL | 127.0.0.1:3306 | 8.0.46 from the distribution; databases `backend_dev` and `backend_test`, user `backend` / `backend-dev-password` |
+| MySQL | 127.0.0.1:3306 | 8.0.46 from the distribution; databases `backend_dev` (the drills') and `backend_test`, user `backend` / `backend-dev-password` |
 | Docker | `/usr/bin/docker` | other users' containers too: name ours distinctly, remove them after |
 | The internet | reachable | Maven Central, NuGet.org, GitHub, the vendors' downloads |
 
@@ -86,7 +90,34 @@ image, which is RHEL 9's own userspace (plan item 80).
 
 ## 4. Traps, each met at least once
 
-- **`~/.m2` holds artifacts from two sources**, Maven Central and the
+- **A failing test reads like a plugin that could not be fetched.** Maven's last line
+  after test failures is `Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:…`.
+  On a clone, `build-offline.sh`'s database tests once went to 127.0.0.1:3306 and failed
+  that way, which the owner took for a download error (O-38, 2026-10-17). Read the
+  lines above it.
+- **Maven reads `/etc/mavenrc` and `~/.mavenrc` before anything**, and either may set
+  `JAVA_HOME` to another Java (a machine with a packaged Maven has one). `dev-env.sh`
+  sets `MAVEN_SKIP_RC=1`.
+- **The release's runtime has no debugger agent** (`jdk.jdwp.agent` is not among its
+  modules): `-agentlib:jdwp` fails on it. `DEBUG=1 ./run-local.sh` runs on `vendor/jdk-21`.
+- **A Unix socket's path is at most 107 bytes**, and a checkout deep in a home directory
+  passes it: the development MySQL's socket is named relative to its data directory, where
+  `mysqld` runs.
+- **`x=$(ls … | head -1)` under `set -euo pipefail` ends the script silently** when `ls`
+  finds nothing: add `|| true` and test the empty result (`run-local.sh`, 2026-10-17).
+- **A test's target process is named by its own pid (`$!`), never found by name**:
+  `pgrep -n -x sleep` once found another program's `sleep 1`, a container's keep-alive
+  loop's, and the test killed it (2026-10-17; the loop and its container went on).
+- **`kill -0` succeeds on a zombie**: a child the test killed answers it until it is reaped.
+  Judge liveness by the state, `ps -o stat=` not `Z`.
+- **`a | grep -q` under `pipefail` can fail though `grep` matched**: `grep` ends first, `a`
+  dies of SIGPIPE, and the pipeline's status is `a`'s. Read into a variable and match that
+  (`run-local.sh`'s guard; a mutant that swapped `grep` for `true` made it fail one run in two).
+- **`env -i` drops `PWD`**, so a script started through a symbolic link sees the resolved
+  path: a check of "a path with a space" through a link does not test it. Use a real directory.
+- **Red Hat's Java extension runs on Java 25 or later since 1.57**: `java.jdt.ls.java.home`
+  cannot be the repository's 21. Leave it unset; the extension carries its own ([05](05-vscode.md)).
+- **`~/.m2` holds artifacts from two sources** (before D-80, when the work used it), Maven Central and the
   `java21-offline` mirror, and an offline (`-o`) build trusts only those cached
   from the repository it is using. `make-release.sh` therefore runs as
   `MVN="/opt/maven/bin/mvn -Daether.enhancedLocalRepository.trackingFilename=_none" scripts/make-release.sh`.

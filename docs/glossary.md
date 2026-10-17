@@ -1,7 +1,7 @@
 # Glossary
 
 Every term this system uses, what it means, and where it appears. Updated
-2026-10-04.
+2026-10-17.
 
 This exists because the same idea kept acquiring second names, and two of them
 had genuinely collided — "session" meant both an authenticated lobby session
@@ -296,3 +296,6 @@ instance when `BACKEND_EVENTS_STORE` names one; every other key on
 | **restore proof** | The weekly restore of the newest dump and the binlog copies onto the backup machine's scratch server, checked and recorded ([06 §10](detailed-design/06-persistence-mysql.md#10-backup-and-recovery), D-71). | `backend-restore-proof.timer`, `backup_run` |
 | **copy off the site** | The dumps and closed binlog copies, encrypted and pushed by rsync over SSH each hour to a host the owner names; off until there is one (Q-53). | `backup-offsite.sh`, `backend-backup-offsite.timer` |
 | **baseline** (schema) | The two migrations that make the schema from nothing since 2026-10-04: `V1__schema.sql` and `V2__seed.sql`, squashed from V1 to V34 ([D-75](architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)). A `V`-number above 2 in a document is a step of that history. | `backend/persistence/src/main/resources/db/migration` |
+| **`work/`** | The folder inside the checkout, never committed, where everything a development machine writes goes: Maven's settings and local repository, the temporary files, the development MySQL, a run by hand ([D-80](architecture/03-decision-log.md#d-80--a-checkout-builds-tests-runs-and-is-debugged-from-inside-its-own-folder)). `WORK=` moves it. | `dev-env.sh` |
+| **development MySQL** | `vendor/`'s MySQL 8.4 run from `work/mysql` on 127.0.0.1:3314, reading no option file: the tests' `backend_test` and a run by hand's `backend_dev`. Not the machine's own MySQL, which it never touches ([development/03 §3](development/03-build-and-run.md#3-the-tests)). | `dev-mysql.sh` |
+| **run by hand** | The whole backend on one machine from a release, against the development MySQL: the store, the platform, a worker, the gateway, an arena; with debugger ports on `DEBUG=1` ([development/03 §5](development/03-build-and-run.md#5-running-it-by-hand)). | `run-local.sh` |

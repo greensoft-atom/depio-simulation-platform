@@ -128,9 +128,9 @@ fraction of the maximum.
 From `backend/` (the repository's CLAUDE.md):
 
 ```bash
-export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
-/opt/maven/bin/mvn -o install                    # everything
-/opt/maven/bin/mvn -o -pl sim -am test           # this module and common
+. ../dev-env.sh       # vendor/'s JDK and Maven, the bundle, work/ (D-80)
+mvn install           # everything
+mvn -pl sim -am test  # this module and common
 ```
 
 What a change costs a tick is measured with `TickBenchmark`, before and after on

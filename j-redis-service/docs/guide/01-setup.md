@@ -1,5 +1,12 @@
 # 1 — Set up a development machine
 
+> **Inside the backend's repository**, where `j-redis-service/` sits beside
+> `dev-env.sh`, skip the JDK and Maven setup below: `dev-env.sh`, sourced from the
+> repository's root, puts the committed JDK and Maven on the `PATH` and
+> points Maven at `java21-offline` where it is, with everything written in `work/`
+> ([build and run](../../../docs/development/03-build-and-run.md)). This guide is
+> for j-redis on its own.
+
 This guide gets a Windows or Linux machine ready to build and run
 j-redis-service, without internet access if necessary.
 

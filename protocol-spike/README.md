@@ -20,7 +20,7 @@ protocol-spike/
 ## Running the Java side
 
 ```bash
-export JAVA_HOME=/opt/jdk21
+export JAVA_HOME=../vendor/jdk-21          # from protocol-spike/: the committed JDK
 $JAVA_HOME/bin/javac -Xlint:all -d java java/SnapshotCodec.java
 $JAVA_HOME/bin/java -cp java SnapshotCodec vectors/vectors.txt
 ```

@@ -540,11 +540,12 @@ and the process's own `backend_jvm_*`, `backend_process_uptime_seconds` and `bac
 
 ```bash
 # from backend/: platform and what it needs, with its tests
-export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
-/opt/maven/bin/mvn -o -pl platform -am install
+. ../dev-env.sh  # vendor/'s JDK and Maven, the bundle, work/ (D-80)
+mvn -pl platform -am install
 ```
 
-The tests need MySQL at `127.0.0.1:3306`, database `backend_test`, user `backend`, password
+The tests need a MySQL: the development one (`./dev-mysql.sh start`, 127.0.0.1:3314, which
+`dev-env.sh` names in `JDBC_URL`), database `backend_test`, user `backend`, password
 `backend-dev-password` (or `JDBC_URL`, `DB_USER`, `DB_PASSWORD`); a test that needs a store starts
 an embedded j-redis. The live drill (`client/headless-drill.sh`, see the
 [backend README](../README.md#commands)) drives this module through the real stack.

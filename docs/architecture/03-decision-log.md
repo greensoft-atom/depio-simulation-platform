@@ -2141,3 +2141,58 @@ arena stood empty.** A login burst after a deploy, or at an event's start, does 
 **Kept by player, not by ticket.** A player who asks twice before joining is counted once on
 each arena chosen, not once per ticket. The ticket's id is a bearer credential, and is not
 copied into a second key.
+
+### D-80 — A checkout builds, tests, runs and is debugged from inside its own folder
+
+**Decided 2026-10-17** by the owner (plan item 87, [O-38](../defects.md#6-operations)): on a
+machine with no network, where Java 8 and MySQL 5 are installed and must not be touched,
+everything is to be built, run and operated from inside the repository's folder. Extends
+[D-77](#d-77--everything-the-backend-builds-and-runs-with-is-in-the-repository-and-in-the-release),
+which put the tools in the repository but left the build's files in `/tmp` and its tests on the
+machine's MySQL.
+
+**Decision.**
+- **`work/`, at the repository's root and never committed, holds all a development machine
+  writes**: Maven's settings and local repository (`work/settings.xml`, `work/m2/`), the
+  temporary files of Maven, the tests and MySQL (`work/tmp/`), the development MySQL
+  (`work/mysql/`) and a run by hand (`work/run/`). `WORK=<dir>` moves it.
+- **`dev-env.sh`, sourced, is the one environment**: `JAVA_HOME` and `PATH` on `vendor/`'s JDK
+  and Maven; Maven told to skip `/etc/mavenrc` and `~/.mavenrc` and to read
+  `work/settings.xml`, whose only repository is the bundle; `java.io.tmpdir` in `work/tmp`
+  for Maven and for the tests' JVMs; `JDBC_URL` on the development MySQL. Every script beside it
+  sources it.
+- **The tests' MySQL is the repository's own**: `dev-mysql.sh` runs `vendor/`'s MySQL 8.4 from
+  `work/mysql` on 127.0.0.1:3314 (`MYSQL_PORT`), reading no option file, and creates
+  `backend_test` and `backend_dev` on its first start. `build-offline.sh` starts it for the
+  tests and stops it after, unless `JDBC_URL` names another server.
+- **A run by hand is a script**: `run-local.sh` starts the store, the platform, a worker, the
+  gateway and an arena from the release against `backend_dev`, each refusing a port already
+  taken; with `DEBUG=1` each JVM listens for a debugger, on `vendor/`'s JDK, since the release's
+  runtime has no debugger agent.
+- **VS Code's settings are committed** (`.vscode/`): its Maven import reads `work/settings.xml`,
+  `JavaSE-21` is `vendor/jdk-21`, the tests run as `dev-env.sh` runs them, and the debugger can
+  launch each process from source or attach to `run-local.sh`'s.
+- **The path may hold letters, digits and `. _ - + @ /` only**: Maven takes its settings from
+  `MAVEN_ARGS`, which it splits at spaces, and the paths go into an XML file and a `sed`
+  expression unescaped. `dev-env.sh` refuses any other path, saying so.
+
+**Why.**
+- **The full build failed on any machine but the development VM**: with its tests,
+  `build-offline.sh` stopped at `persistence`, 24 errors connecting to 127.0.0.1:3306, the VM's
+  MySQL. Maven's last line, `Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin`,
+  reads like a plugin that could not be fetched. On the owner's machine 3306 is MySQL 5. A
+  database named `backend_test` there would have been wiped had the tests' user existed.
+- **`/tmp` is not the repository's**: it may be cleared at boot, shared with other users whose
+  files there cannot be overwritten, or mounted `noexec`. The owner did not know what the
+  repository put there.
+- **What a person types by hand, a person types wrongly**: the run of 03 §5 was a block of
+  commands to paste; a script refuses a taken port with its name.
+
+**Cost.**
+- **About 360 MB in `work/`** after a full build and a run (2026-10-17): 132 MB the local
+  repository, 215 MB the development MySQL. Deleting it costs only the next build's copying from
+  the bundle.
+- **A path with a space cannot hold the checkout**; a symbolic link without one can.
+- **Port 3314** must be free, or another named by `MYSQL_PORT`; and four more for a run by hand.
+- **The development VM's own JDK, Maven and `~/.m2`** are no longer how this repository is built,
+  even there: one way, the one a clone has.

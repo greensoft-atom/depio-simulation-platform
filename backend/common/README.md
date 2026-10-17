@@ -76,9 +76,9 @@ module's README and in [operations/01](../../docs/operations/01-deploy.md#7-inst
 From `backend/`:
 
 ```bash
-export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
-/opt/maven/bin/mvn -o -pl common install
-/opt/maven/bin/mvn -o -pl common test -Dtest=MetricsTest
+. ../dev-env.sh  # vendor/'s JDK and Maven, the bundle, work/ (D-80)
+mvn -pl common install
+mvn -pl common test -Dtest=MetricsTest
 ```
 
 | Class | Tests | What it covers |

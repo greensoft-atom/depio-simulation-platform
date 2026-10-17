@@ -136,22 +136,36 @@ for the backend, its docs and its client.
   metrics), 9196 (platform's admin API), 9197, 9198 and 9199 (the arena's, the gateway's and
   the worker's metrics), and MySQL servers of their own on 3307 (a primary), 3308 (its
   replica, `MYSQL_FAILOVER=1`) and 3309 (the backup drill's scratch server).
+- **Everything a build, a test or a run by hand writes goes in `work/`**, inside the checkout
+  (D-80, owner 2026-10-17): the scripts source `dev-env.sh` (`vendor/`'s JDK and Maven, the bundle
+  as the only repository, `work/m2`, `work/tmp`), the tests use the development MySQL
+  (`dev-mysql.sh`, 3314), a run by hand is `run-local.sh` (6380, 8080, 8081, 9001; debugger
+  5005 to 5009). Nothing in `/tmp`, `~/.m2` or `/opt` is needed by a clone; the drills, which
+  need .NET and this VM's MySQL on 3306, are the exception (03 §7).
 - Push to `main`; never rewrite pushed history. Temporary files go in the session scratchpad.
 
 ## Commands
 
 ```bash
-# Backend: build and test everything (offline)
-cd backend && export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH && /opt/maven/bin/mvn -o install
+# Everything, offline, from the repository alone: j-redis, the backend with every test (on the
+# development MySQL, started and stopped for them), the release; all it writes in work/ (D-80)
+./build-offline.sh                                  # SKIP_TESTS=1 without the tests
 
-# Release, for drills
-MVN="/opt/maven/bin/mvn -Daether.enhancedLocalRepository.trackingFilename=_none" scripts/make-release.sh
+# By hand, in a shell that sourced dev-env.sh (vendor/'s JDK and Maven, the bundle; never -o)
+. ./dev-env.sh && ./dev-mysql.sh start
+(cd backend && mvn install)                         # or: mvn -pl platform -am install
+
+# Release, for drills (in that shell)
+(cd backend && scripts/make-release.sh)
+
+# The whole backend from the release, on the development MySQL; DEBUG=1 for debugger ports
+./run-local.sh start && ./run-local.sh bots && ./run-local.sh stop
 
 # Client core tests (look for "Total tests:")
 cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test --logger "console;verbosity=normal"
 
-# Crypto examples (from backend/), then their probe on a release's runtime (docs/development/04 §5)
-/opt/maven/bin/mvn -o -q -pl crypto-examples test
+# Crypto examples (from backend/, in that shell), then their probe on a release's runtime (docs/development/04 §5)
+mvn -q -pl crypto-examples test
 target/release/backend-*/runtime/bin/java -cp crypto-examples/target/classes com.backend.examples.crypto.RuntimeProbe
 
 # The Unity package: the core built into it, then its scripts compiled against stubs (nothing run)
@@ -172,19 +186,20 @@ java -XX:+UseZGC -XX:+ZGenerational -jar tools/target/tools-0.1.0-SNAPSHOT-all.j
 
 # The result rate by thread count (from backend/); only on a database named *_test, which it wipes
 java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.ApplyBenchmark \
-     "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 400 1,2,4,8
+     "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 400 1,2,4,8
 
 # Retention's purge rate, the worker's own batches (from backend/); only on a database named *_test, which it wipes
 java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.PurgeBenchmark \
-     "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 200000 1
+     "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 200000 1
 
 # A rating board's place, top to bottom (from backend/); only on a database named *_test, which it wipes
 java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.RankBenchmark \
-     "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 200000 5000 21
+     "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 200000 5000 21
 ```
 
-MySQL for tests and drills: `backend` / `backend-dev-password` on 127.0.0.1:3306, databases
-`backend_dev` and `backend_test`.
+MySQL: the tests and the benchmarks use the development MySQL (`./dev-mysql.sh start`,
+127.0.0.1:3314, `vendor/`'s 8.4, its files in `work/mysql`); the drills use this VM's own MySQL 8.0
+on 127.0.0.1:3306, database `backend_dev`. Both: user `backend` / `backend-dev-password`.
 
 **Committing.** The word check runs over the staged lines, the staged file names and the
 message, and blocks the commit on any hit (`g[a]me` so this file passes its own check):

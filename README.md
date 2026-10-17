@@ -40,7 +40,11 @@ machine layout, the protocols and the failover paths are drawn in
 | [`protocol-spike/`](protocol-spike/README.md)   | The golden vectors, written by an independent codec, that bind the server's wire to the client's                                                                                                                                                                                         |
 | [`java21-offline/`](java21-offline/README.md)   | Every third-party library the build needs, for a machine with no network                                                                                                                                                                                                                 |
 | [`vendor/`](vendor/VERSIONS.md)                 | What the backend is built with and runs on, committed ready to use: the JDK (Temurin 21), Maven 3.9, MySQL 8.4 LTS, nginx 1.30 compiled for RHEL 9 and the sources it is compiled from, and the scripts that refresh them (D-77)                                                         |
-| [`build-offline.sh`](build-offline.sh)          | Builds j-redis, the backend and the release from the repository alone, with no network: `vendor/`'s JDK and Maven, `java21-offline` as the only repository                                                                                                                               |
+| [`build-offline.sh`](build-offline.sh)          | Builds j-redis, the backend with every test and the release from the repository alone, with no network: `vendor/`'s JDK and Maven, `java21-offline` as the only repository, the tests on the development MySQL |
+| [`dev-env.sh`](dev-env.sh), [`dev-mysql.sh`](dev-mysql.sh), [`run-local.sh`](run-local.sh) | The environment every build and run uses (sourced), the development MySQL (`vendor/`'s 8.4 on 127.0.0.1:3314), and the whole backend run from the release, with a debugger if asked (D-80) |
+| `work/`                                         | Not in the repository (ignored): all a build, a test or a run writes, Maven's local repository and the development MySQL among it; deleting it costs only the next build's copying |
+| [`.vscode/`](.vscode/)                          | VS Code's settings for the Java extensions, and the debugger's configurations ([05 — VS Code](docs/development/05-vscode.md)) |
+| `jdk21/`, `vscode/`                             | Added by the owner, used by no script: a JDK 21 RPM and `.tar.gz` and the Java 21.0.12 API documentation; VS Code 1.140.0's RPM. Each 7z archive is split into 50 MB parts |
 | `*.tar.gz`                                      | Not in the repository (ignored): packed copies made by hand on this machine, for carrying a directory elsewhere                                                                                                                                                                          |
 | [`CLAUDE.md`](CLAUDE.md)                        | The standing instructions for work in this folder, with every command                                                                                                                                                                                                                    |
 
@@ -57,8 +61,10 @@ copy off the site goes (Q-53), and the certificate's domain and CA
 
 ## Guides
 
-- **Build, test and run** the backend from a clone, with what the repository
-  carries: [docs/development/03-build-and-run.md](docs/development/03-build-and-run.md).
+- **Build, test, run and debug** the backend from a clone, offline, everything
+  inside its folder: [docs/development/03-build-and-run.md](docs/development/03-build-and-run.md).
+- **VS Code**: the Java extensions installed offline, and the committed settings:
+  [docs/development/05-vscode.md](docs/development/05-vscode.md).
 - **Install it on a RHEL 9 server**, from a clone, step by step:
   [docs/operations/03-install-guide.md](docs/operations/03-install-guide.md).
 - **The JDK, Maven, MySQL and nginx** the repository carries, and how to move
@@ -74,52 +80,23 @@ copy off the site goes (Q-53), and the certificate's domain and CA
 
 ## Developer quickstart
 
-What the development machine has, none of it on the `PATH`:
-
-| Tool                       | Where                                                                                                         |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| JDK 21 (Temurin 21.0.12.1) | `/opt/jdk21`                                                                                                  |
-| Maven 3.9.16, offline      | `/opt/maven`; the local repository holds the bundle in [`java21-offline`](java21-offline/README.md)           |
-| MySQL 8.0                  | `127.0.0.1:3306`, user `backend`, password `backend-dev-password`, databases `backend_dev` and `backend_test` |
-| .NET 8 SDK                 | `/opt/dotnet`                                                                                                 |
-
-The same JDK and Maven versions are committed in `vendor/jdk-21` and `vendor/maven-3.9`:
-`build-offline.sh` builds with them and nothing else from the machine.
-
-j-redis is ours and not in the offline bundle: install it into the local
-repository from source before the first backend build.
+From a clone, on Linux x86-64, with no network and nothing installed. The machine's
+own Java and MySQL are neither used nor changed, and everything written goes in
+`work/` ([build, test, run and debug](docs/development/03-build-and-run.md)):
 
 ```bash
-export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
-
-# j-redis, once
-cd j-redis-service && /opt/maven/bin/mvn -o install -DskipTests && cd ..
-
-# The backend: build and test everything (the persistence tests need the MySQL above)
-cd backend && /opt/maven/bin/mvn -o install && cd ..
-
-# A release, which the drills run from
-cd backend && MVN="/opt/maven/bin/mvn -Daether.enhancedLocalRepository.trackingFilename=_none" scripts/make-release.sh && cd ..
-
-# Or all three from the repository alone, with no network (SKIP_TESTS=1 to skip the tests)
-./build-offline.sh
-
-# The client core's tests (read "Total tests:", not only the verdict)
-cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test --logger "console;verbosity=normal" && cd ..
-
-# The Unity package: the core built into it, then its scripts compiled against stubs (nothing run)
-client/unity-package.sh && client/unity-check.sh
-
-# The live drill: the whole stack from the release, the headless client against it
-TMPDIR=<scratch directory> client/headless-drill.sh [scenario ...]
-TLS=1 TMPDIR=<scratch directory> client/headless-drill.sh play untrusted
-
-# The backups' drill, on private MySQL servers seeded from backend_dev
-TMPDIR=<scratch directory> backend/scripts/backup-drill.sh
+./build-offline.sh            # j-redis, the backend with every test, the release; SKIP_TESTS=1 without tests
+./run-local.sh start          # the store, the platform, a worker, the gateway, an arena, from the release
+./run-local.sh bots           # twenty bots play through it; then ./run-local.sh stop
+. ./dev-env.sh                # then mvn and java in this shell: vendor/'s, offline
 ```
 
-Every command, the benchmarks among them, is in [`CLAUDE.md`](CLAUDE.md#commands).
-The drills use their own ports so as not to meet anything else on the machine.
+With VS Code: [05 — VS Code](docs/development/05-vscode.md). The client and the
+drills need the .NET 8 SDK, which the repository does not carry
+([client/README.md](client/README.md)). The development VM's own tools under
+`/opt` are listed in [working here §3](docs/development/02-working-here.md#3-the-development-machine)
+and are not needed. Every command, the benchmarks among them, is in
+[`CLAUDE.md`](CLAUDE.md#commands).
 
 **The database.** The schema is two Flyway migrations,
 `backend/persistence/src/main/resources/db/migration/V1__schema.sql` (every

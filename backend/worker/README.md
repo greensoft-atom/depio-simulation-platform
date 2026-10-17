@@ -286,9 +286,9 @@ What to alert on, and what to do, is in the
 From `backend/`, offline:
 
 ```bash
-export JAVA_HOME=/opt/jdk21 PATH=/opt/jdk21/bin:$PATH
-/opt/maven/bin/mvn -o -pl worker -am install                          # this module and what it needs
-/opt/maven/bin/mvn -o -pl worker test -Dtest=MatchResultPipelineTest  # one class
+. ../dev-env.sh                                     # vendor/'s JDK and Maven, the bundle, work/ (D-80)
+mvn -pl worker -am install                          # this module and what it needs
+mvn -pl worker test -Dtest=MatchResultPipelineTest  # one class
 ```
 
 The tests run against MySQL's `backend_test`, which they drop and migrate afresh
