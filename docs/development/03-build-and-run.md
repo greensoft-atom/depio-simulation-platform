@@ -10,7 +10,8 @@ software only its basic tools are used (§1)
 A Java and a MySQL already on the machine (a Java 8, a MySQL 5) are neither used
 nor changed. To install the backend on a server instead, see the
 [install guide](../operations/03-install-guide.md). For VS Code, see
-[05-vscode](05-vscode.md).
+[05-vscode](05-vscode.md). The questions asked while setting up an offline machine, each
+answered in full, are in [06](06-questions-and-answers.md).
 
 **Run as written on 2026-10-17** in UBI 9.5, RHEL 9's own userspace, with no network, as an
 ordinary user:

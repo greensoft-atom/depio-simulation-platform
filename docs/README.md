@@ -71,6 +71,7 @@ Then the detailed design of whatever you are working on.
 | [03 — Build and run](development/03-build-and-run.md) | A guide: build, test, run and debug the backend from a clone, offline, everything inside its folder (`work/`, D-80); the drills and the RHEL 9 checks | tested as written in UBI 9 with no network, 2026-10-17 |
 | [04 — Cryptography](development/04-crypto.md)         | What Java 21 and BouncyCastle give, the rules and traps, and the tested examples in `backend/crypto-examples`                                     | 35 tests, checked against `openssl` both ways, 2026-10-05               |
 | [05 — VS Code](development/05-vscode.md)              | The Java extensions installed offline, and each committed setting in `.vscode/` with its reason: import, JDK, tests, debugging | the import proved offline with the language server, 2026-10-17; VS Code's window not run |
+| [06 — Questions and answers](development/06-questions-and-answers.md) | The owner's questions setting up an offline machine, each answered in full: the plugin errors, the `/opt` and `/tmp` paths, `dev-env.sh` line by line, the MySQL, exceptions in tests, testing each interface, VS Code | each command run as written, 2026-10-17 to 2026-10-19 |
 
 ### API
 

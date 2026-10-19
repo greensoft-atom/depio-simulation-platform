@@ -4,3 +4,5 @@
 target/
 # What a development machine writes, all inside the checkout (dev-env.sh, D-80); never tracked.
 /work/
+
+/vscode/
