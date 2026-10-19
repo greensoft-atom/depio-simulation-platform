@@ -158,9 +158,15 @@ counters in j-redis, so they hold across all three `platform` processes:
 | 10 a quarter hour per account | every login naming it, existing or not | guessing one account from many addresses |
 
 Beyond either: 429 `too_many_attempts` with `Retry-After`. The address is the
-TCP peer's, or, when the peer is on the same machine (nginx), the **last**
-entry of `X-Forwarded-For`, the only one nginx wrote. It is parsed as an IP
-literal and never resolved. The store not answering refuses the attempt (503),
+TCP peer's, or, when the peer is nginx, the **last** entry of `X-Forwarded-For`,
+the only one nginx wrote. nginx is a peer on the same machine, or, since
+[D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name),
+one of the addresses in `BACKEND_TRUSTED_PROXIES`: the front's nginx reaches every
+platform over the private network, and without it every player would count as the
+front. That setting is a comma-separated list of IP literals, the three machines'; a
+name or anything else in it refuses the start (exit 2), since it must never reach DNS.
+The header is parsed as an IP literal and never resolved. The gateway names a lobby
+connection's client in its logs by the same rule. The store not answering refuses the attempt (503),
 because a limit that fails open is off exactly when it is attacked hardest.
 Measured across two instances sharing a store: sixteen guesses at one account
 from sixteen addresses gave ten 401s at 110–160 ms and then six 429s at
@@ -444,7 +450,12 @@ chooses its own room. **As built the arena's entry differs from the sketch
 above:** `host, port, players, maxPlayers, tls, rooms, maxRooms`, where
 `maxPlayers` is rooms × players per room and `rooms` of `maxRooms` are running,
 and `roomList`, the arena's rooms as JSON for an operator (§10); there is no
-`version`. For the public arena `platform` picks the arena with the most free
+`version`. `port` is the one players dial: `BACKEND_ADVERTISE_PORT` when set, the
+public 9001 behind the front's nginx (D-82), and otherwise the port the arena listens on.
+`tlsName`, when the arena sets `BACKEND_ADVERTISE_TLS_NAME`, is the name a client sends in its
+TLS handshake and checks the certificate against, the front's nginx routing by it; with it, the
+entry's `tls` is 1 though the arena itself speaks plaintext. Every grant carries it beside
+`arenaHost` and `arenaPort`, and a client without it uses the host, as before. For the public arena `platform` picks the arena with the most free
 places less the seats promised to it (`ArenaDirectory.pick`), not the lowest ratio, which is the same choice
 while every arena has the same capacity; for a made match, the arena with the
 most free rooms less the rooms promised to it (`reserveForMatch`, §4). An arena announces itself rather than being registered by

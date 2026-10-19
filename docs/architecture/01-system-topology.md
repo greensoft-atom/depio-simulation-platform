@@ -21,7 +21,7 @@ distributed transactions, tracing — are permanent ([D-4](03-decision-log.md#d-
 
 | Process | Shape | Owns | Scales on | Instances |
 |---|---|---|---|---|
-| `arena` | CPU-bound, latency-critical, stateful | live rooms; never touches MySQL | players in battle | 3, one a machine: a machine has one public port for match traffic ([D-81](03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)); 7 in the design before |
+| `arena` | CPU-bound, latency-critical, stateful | live rooms; never touches MySQL | players in battle | 7 (2–3 per machine), reached through the front's nginx by name ([D-82](03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)) |
 | `gateway` | IO-bound, many idle connections, thin | client lobby connections, auth handshake, routing | concurrent players | 3 (1 per machine) |
 | `platform` | request/response, DB-bound | all platform modules | lobby traffic | 3 (1 per machine) |
 | `worker` | throughput-bound, async | results, rewards, tournaments, analytics | event rate | 2, or as many as the result rate needs ([05 §1](../detailed-design/05-worker-and-events.md#1-why-a-stream-and-not-a-queue): about 10 results a second each on the development machine) |
@@ -43,9 +43,14 @@ one fatal error takes down one arena's rooms, not all of them (NFR-8).
                       │  10 GbE    │
        ┌──────────────┴────────────┴──────────────┐
        │                                          │
-   match: client ──raw TCP+TLS──► arena           │  lobby: client ──WSS /lobby──► nginx ──► gateway ──► platform
-   (direct, never proxied)                        │  API:   client ──HTTPS /v1/──► nginx ──► platform
+   match: client ──TCP+TLS :9001──► nginx ──► arena │  lobby: client ──WSS :443 /lobby──► nginx ──► gateway ──► platform
+                                                    │  API:   client ──HTTPS :443 /v1/──► nginx ──► platform
 ```
+
+**Since [D-82](03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name) the site has one public address**, an IP, which the
+provider forwards to one machine, the front: its nginx ends TLS on 443 and 9001 and passes each
+request and match connection over the private network to a platform, a gateway or the arena
+named in the handshake, on any of the three machines. Every machine is set up as a front.
 
 | | Machine A | Machine B | Machine C |
 |---|---|---|---|
@@ -53,7 +58,7 @@ one fatal error takes down one arena's rooms, not all of them (NFR-8).
 | gateway | 2c / 4G | 2c / 4G | 2c / 4G |
 | platform | 2c / 4G | 2c / 4G | 2c / 4G |
 | worker | — | — | ×2, 4c / 4G |
-| arena | ×1 (D-81), 8c / 16G | ×1 (D-81), 12c / 24G | ×1 (D-81), 8c / 16G |
+| arena | ×2, 8c / 16G | ×3, 12c / 24G | ×2, 8c / 16G |
 | MySQL | **primary** 6c / 20G | — | replica 3c / 20G |
 | j-redis `session` | **primary** 2c / 8G | replica 1c / 8G | — |
 | j-redis `events` | — | **primary** 2c / 8G | replica 1c / 8G |
@@ -66,10 +71,9 @@ evict a session, and so the two fail independently
 ([D-7](03-decision-log.md#d-7--two-j-redis-instances-not-one)).
 
 Allocations are ceilings, not steady-state usage: the arena's 28 allocated
-cores carry a ~25-core load at full occupancy. **Since D-81 each machine runs one
-arena**, set for 1 800 players in battle (12 rooms) and capped by its two network threads
-near 2 100 to 2 300, about 2.9 cores of rooms at full: the cores past those wait on the
-thread count being raised, a code change not made.
+cores carry a ~25-core load at full occupancy. Each arena is set for 1 800 players in
+battle (12 rooms), short of where its two network threads fill, 2 100 to 2 300: about 2.9
+cores of rooms each at full.
 
 **Open: the launch on two machines.** The launch target is 5 000–10 000
 players on two machines with replication (the scope decision of 2026-09-23,
@@ -152,10 +156,9 @@ input (T-54).
 
 At 50 000 that is ~80 arena cores and ~22 arena processes, against the 28 allocated and the 7
 named here. At the launch's 10 000 it is ~16 cores and 5 processes. Q-3 settles which on the
-production hardware. **Under D-81's one arena a machine**, three machines carry 5 400 players
-in battle as set, 6 300 to 6 900 at most: the launch's 10 000 while no more than about half
-are in battle (Q-2), and not the 50 000 without the network threads raised, a proxy in front
-of several arenas, or more machines (D-81's cost).
+production hardware. **The seven arenas of D-82** carry 12 600 players in battle as set: the
+launch's 10 000 all in battle, not the 50 000, which needs more arenas than these machines'
+network threads give, or the threads raised (a code change, not made).
 
 **Provision 10 GbE.** 1.1 Gbit/s sustained on a 1 Gbit uplink leaves nothing for
 bursts and would run at 85 % of line rate at peak.
@@ -195,7 +198,7 @@ The rule that matters most at 50 000 players:
 
 | Path | Transport | Through nginx? | Through gateway? |
 |---|---|---|---|
-| Match traffic (client ↔ arena) | raw TCP + TLS in Netty | **no** | **no** |
+| Match traffic (client ↔ arena) | TCP + TLS, ended on the front by nginx's `stream`, passed by the arena's name (D-82) | **yes**, passed through by name | **no** |
 | Lobby (client ↔ gateway ↔ platform) | WebSocket over TLS, JSON, `/lobby` | yes | yes |
 | API: accounts, login, match requests, leaderboards, the shop (client ↔ platform) | HTTPS, JSON, `/v1/` | yes | **no** |
 | Domain events (arena/platform → worker) | j-redis `events` streams | no | no |
@@ -204,12 +207,13 @@ The rule that matters most at 50 000 players:
 
 Proxying 1.1 Gbit/s of match traffic through a gateway would double internal network
 load and add a hop to the one path that cannot afford it. The matchmaker hands
-out a specific arena address: **the allocator is the load balancer for
-match traffic, not nginx** ([D-5](03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)).
+out a specific arena, by its name since D-82: **the allocator is the load balancer for
+match traffic, not nginx**, which only follows the name it was given
+([D-5](03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway), revised by D-82).
 
-No VIP and no keepalived: the client ships with all three edge endpoints and
-retries the next on failure. Simpler than VRRP, and better on mobile where the
-client is already reconnecting constantly.
+No VIP and no keepalived: the client holds the site's endpoint and retries on failure; with one
+public address since D-82, a lost front is covered by the provider forwarding to another
+machine.
 
 ## 6. Technology choices
 

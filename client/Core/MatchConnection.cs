@@ -56,6 +56,11 @@ namespace Backend.Client.Core
         /// <summary>The grant says whether this arena speaks TLS; the client obeys.</summary>
         public bool Tls;
         /// <summary>
+        /// The name sent in the TLS handshake and checked against the certificate, the grant's tlsName behind the
+        /// front (D-82), whose nginx routes by it; null: <see cref="Host"/>.
+        /// </summary>
+        public string TlsName;
+        /// <summary>
         /// Null: the device's trust store and the grant's host name, which is what players get.
         /// A test sets its own, to trust a test CA; nothing is pinned either way (03 §2).
         /// </summary>
@@ -494,8 +499,9 @@ namespace Backend.Client.Core
                     if (_settings.Tls)
                     {
                         var tls = new SslStream(stream, false, _settings.CertificateCheck);
-                        // Checked against the host the grant names, whatever address was dialled.
-                        tls.AuthenticateAsClient(_settings.Host);
+                        // Checked against the name the grant gives, whatever address was dialled: behind the front
+                        // (D-82) its tlsName, which is also what the handshake sends and nginx routes by.
+                        tls.AuthenticateAsClient(_settings.TlsName ?? _settings.Host);
                         stream = tls;
                     }
                     Stream = stream;

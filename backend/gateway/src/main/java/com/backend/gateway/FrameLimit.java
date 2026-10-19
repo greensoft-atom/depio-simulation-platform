@@ -59,12 +59,12 @@ final class FrameLimit extends ChannelInboundHandlerAdapter {
     static final io.netty.util.AttributeKey<String> CLIENT = io.netty.util.AttributeKey.valueOf("backend.client");
 
     /**
-     * Who to name in a log: the peer, unless it is on this machine, nginx, which reports the address it saw as the
-     * last entry of X-Forwarded-For; only the last, every earlier one being the client's to choose. For the logs only:
-     * nothing is decided by it here.
+     * Who to name in a log: the peer, unless it is nginx, on this machine or the front's named in
+     * BACKEND_TRUSTED_PROXIES (D-82), which reports the address it saw as the last entry of X-Forwarded-For; only the
+     * last, every earlier one being the client's to choose. For the logs only: nothing is decided by it here.
      */
-    static String clientOf(java.net.SocketAddress peer, String forwardedFor) {
-        if (peer instanceof java.net.InetSocketAddress at && at.getAddress() != null && at.getAddress().isLoopbackAddress()
+    static String clientOf(java.net.SocketAddress peer, String forwardedFor, com.backend.common.TrustedProxies proxies) {
+        if (peer instanceof java.net.InetSocketAddress at && proxies.trusts(at.getAddress())
                 && forwardedFor != null) {
             String last = forwardedFor.substring(forwardedFor.lastIndexOf(',') + 1).trim();
             if (!last.isEmpty() && last.length() <= 45 && last.chars().allMatch(c -> Character.digit(c, 16) >= 0 || c == '.' || c == ':')) {
@@ -86,8 +86,11 @@ final class FrameLimit extends ChannelInboundHandlerAdapter {
     private boolean refused;
     private final Metrics.LabeledCounter errors;
 
-    FrameLimit(Metrics.LabeledCounter errors) {
+    private final com.backend.common.TrustedProxies proxies;
+
+    FrameLimit(Metrics.LabeledCounter errors, com.backend.common.TrustedProxies proxies) {
         this.errors = errors;
+        this.proxies = proxies;
     }
 
     @Override
@@ -95,7 +98,7 @@ final class FrameLimit extends ChannelInboundHandlerAdapter {
         if (!(msg instanceof WebSocketFrame)) {
             if (msg instanceof io.netty.handler.codec.http.HttpRequest upgrade) {
                 ctx.channel().attr(CLIENT).set(clientOf(ctx.channel().remoteAddress(),
-                        upgrade.headers().get("X-Forwarded-For")));
+                        upgrade.headers().get("X-Forwarded-For"), proxies));
             }
             ctx.fireChannelRead(msg);           // the HTTP upgrade, before any frame
             return;

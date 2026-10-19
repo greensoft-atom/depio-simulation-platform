@@ -282,4 +282,28 @@ class ArenaDirectoryTest {
         assertThat(directory.live()).filteredOn(e -> e.name().equals("arena-2"))
                 .singleElement().satisfies(e -> assertThat(e.tls()).isFalse());
     }
+
+    @Test
+    @DisplayName("an arena behind the front announces the name a client's TLS handshake gives (D-82); none means its host")
+    void tlsNameIsAnnounced() throws Exception {
+        directory.announce(new ArenaDirectory.Endpoint("arena-1", "203.0.113.10", 9001, 0, 150, true, 0, 4,
+                "a1.arena.internal")).get(5, TimeUnit.SECONDS);
+        announce("arena-2", 9002, 0, 150);
+
+        assertThat(directory.live()).extracting(ArenaDirectory.Endpoint::name, ArenaDirectory.Endpoint::tlsName)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("arena-1", "a1.arena.internal"),
+                        org.assertj.core.groups.Tuple.tuple("arena-2", null));
+
+        // Announced again without one: written every time, so the name goes with the next announcement.
+        directory.announce(new ArenaDirectory.Endpoint("arena-1", "203.0.113.10", 9001, 0, 150, true, 0, 4))
+                .get(5, TimeUnit.SECONDS);
+        assertThat(directory.live()).filteredOn(e -> e.name().equals("arena-1"))
+                .singleElement().satisfies(e -> assertThat(e.tlsName()).isNull());
+
+        // What an arena older than the field left behind.
+        client.sync().hdel("arena:arena-2", "tlsName");
+        assertThat(directory.live()).filteredOn(e -> e.name().equals("arena-2"))
+                .singleElement().satisfies(e -> assertThat(e.tlsName()).isNull());
+    }
 }

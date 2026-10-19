@@ -116,9 +116,16 @@ public final class MatchQueue {
         }
     }
 
-    /** Where a matched player is to go: what {@code evt.match.found} carries. */
+    /**
+     * Where a matched player is to go: what {@code evt.match.found} carries. {@code tlsName}: the
+     * name the client's TLS handshake gives, behind the front (D-82); null for the host.
+     */
     public record Grant(String arenaHost, int arenaPort, String ticketId, boolean tls,
-                        String matchUid) { }
+                        String matchUid, String tlsName) {
+        public Grant(String arenaHost, int arenaPort, String ticketId, boolean tls, String matchUid) {
+            this(arenaHost, arenaPort, ticketId, tls, matchUid, null);
+        }
+    }
 
     /**
      * What {@code GET /v1/queue} answers. {@code mode} and {@code since} are null and 0 for none;
@@ -320,9 +327,10 @@ public final class MatchQueue {
         MatchMode mode = MatchMode.ofKey(f.get("mode"));
         long since = parseLong(f.get("since"));
         if (MATCHED.equals(f.get("state"))) {
+            String tlsName = f.get("tlsName");                 // absent before D-82, empty for none
             return new Status(MATCHED, mode, since, new Grant(f.get("arenaHost"),
                     (int) parseLong(f.get("arenaPort")), f.get("ticketId"), "1".equals(f.get("tls")),
-                    f.get("matchUid")), null, 0);
+                    f.get("matchUid"), tlsName == null || tlsName.isEmpty() ? null : tlsName), null, 0);
         }
         if (CONFIRMING.equals(f.get("state"))) {
             return new Status(CONFIRMING, mode, since, null, f.get("matchUid"), parseLong(f.get("deadline")));
@@ -407,7 +415,8 @@ public final class MatchQueue {
                 Grant grant = grants.get(player);
                 tx.send("HSET", playerKey(player), "state", MATCHED, "mode", p.mode().key,
                                 "arenaHost", grant.arenaHost(), "arenaPort", Integer.toString(grant.arenaPort()),
-                                "ticketId", grant.ticketId(), "tls", grant.tls() ? "1" : "0", "matchUid", grant.matchUid())
+                                "ticketId", grant.ticketId(), "tls", grant.tls() ? "1" : "0", "matchUid", grant.matchUid(),
+                                "tlsName", grant.tlsName() == null ? "" : grant.tlsName())
                         .send("EXPIRE", playerKey(player), ttlSeconds);
             }
             return conn.sync().exec(tx) == null ? null : true;
@@ -647,7 +656,8 @@ public final class MatchQueue {
                 .send("HSET", key, "state", MATCHED, "mode", mode.key, "since", Long.toString(sinceMillis),
                         "arenaHost", grant.arenaHost(),
                         "arenaPort", Integer.toString(grant.arenaPort()), "ticketId", grant.ticketId(),
-                        "tls", grant.tls() ? "1" : "0", "matchUid", grant.matchUid())
+                        "tls", grant.tls() ? "1" : "0", "matchUid", grant.matchUid(),
+                        "tlsName", grant.tlsName() == null ? "" : grant.tlsName())
                 .send("EXPIRE", key, ttlSeconds)
                 .exec());
     }

@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
+import com.backend.common.TrustedProxies;
 import com.backend.handoff.ArenaDirectory;
 import com.backend.handoff.MatchMode;
 import com.backend.handoff.LeaderboardStore;
@@ -383,23 +384,43 @@ class PlatformHttpServerTest {
     void forwardedForIsTrustedOnlyFromThisMachine() throws Exception {
         InetAddress local = InetAddress.getLoopbackAddress();
         InetAddress remote = InetAddress.getByName("192.0.2.50");
-        assertThat(PlatformHttpServer.clientAddress(remote, List.of("198.51.100.1")))
+        TrustedProxies here = TrustedProxies.LOOPBACK;
+        assertThat(PlatformHttpServer.clientAddress(remote, List.of("198.51.100.1"), here))
                 .as("from elsewhere the header is only the client's word").isEqualTo(remote);
-        assertThat(PlatformHttpServer.clientAddress(local, List.of("10.9.9.9, 198.51.100.1")))
+        assertThat(PlatformHttpServer.clientAddress(local, List.of("10.9.9.9, 198.51.100.1"), here))
                 .as("the last entry is the one nginx wrote")
                 .isEqualTo(InetAddress.getByName("198.51.100.1"));
-        assertThat(PlatformHttpServer.clientAddress(local, List.of("10.9.9.9", "198.51.100.2")))
+        assertThat(PlatformHttpServer.clientAddress(local, List.of("10.9.9.9", "198.51.100.2"), here))
                 .isEqualTo(InetAddress.getByName("198.51.100.2"));
-        assertThat(PlatformHttpServer.clientAddress(local, List.of("2001:db8::7")))
+        assertThat(PlatformHttpServer.clientAddress(local, List.of("2001:db8::7"), here))
                 .isEqualTo(InetAddress.getByName("2001:db8::7"));
         // Not addresses. None of them may reach DNS, and each falls back to the peer, which
         // throttles more rather than less.
         for (String junk : List.of("example.com", "999.1.1.1", "1.2.3", "fe80::1%eth0", ".:",
                 "", "unknown", "::g")) {
-            assertThat(PlatformHttpServer.clientAddress(local, List.of(junk)))
+            assertThat(PlatformHttpServer.clientAddress(local, List.of(junk), here))
                     .as("'%s'", junk).isEqualTo(local);
         }
-        assertThat(PlatformHttpServer.clientAddress(local, null)).isEqualTo(local);
+        assertThat(PlatformHttpServer.clientAddress(local, null, here)).isEqualTo(local);
+    }
+
+    @Test
+    @DisplayName("behind the front (D-82), its nginx is believed from the addresses named, and no other")
+    void forwardedForIsTrustedFromTheFront() throws Exception {
+        InetAddress front = InetAddress.getByName("10.0.0.3");
+        InetAddress other = InetAddress.getByName("10.0.0.4");
+        TrustedProxies named = TrustedProxies.fromEnvironment(
+                java.util.Map.of("BACKEND_TRUSTED_PROXIES", "10.0.0.1,10.0.0.2,10.0.0.3"));
+        assertThat(PlatformHttpServer.clientAddress(front, List.of("198.51.100.7"), named))
+                .as("the front's nginx, over the private network").isEqualTo(InetAddress.getByName("198.51.100.7"));
+        assertThat(PlatformHttpServer.clientAddress(front, List.of("6.6.6.6, 198.51.100.7"), named))
+                .as("its last entry, still").isEqualTo(InetAddress.getByName("198.51.100.7"));
+        assertThat(PlatformHttpServer.clientAddress(other, List.of("198.51.100.7"), named))
+                .as("a machine not named").isEqualTo(other);
+        assertThat(PlatformHttpServer.clientAddress(front, List.of("198.51.100.7"), TrustedProxies.LOOPBACK))
+                .as("unset, the front is a peer like any").isEqualTo(front);
+        assertThat(PlatformHttpServer.clientAddress(InetAddress.getLoopbackAddress(), List.of("198.51.100.8"), named))
+                .as("nginx on this machine, still").isEqualTo(InetAddress.getByName("198.51.100.8"));
     }
 
     @Test
@@ -1081,6 +1102,13 @@ class PlatformHttpServerTest {
         assertThat(status.path("grant").get("ticketId").asText()).isEqualTo("tkt-9");
         assertThat(status.path("grant").get("tls").asBoolean()).isTrue();
         assertThat(status.path("grant").get("mode").asText()).isEqualTo("duel");
+        assertThat(status.path("grant").has("tlsName")).isFalse();
+        // Behind the front (D-82): the name kept with the grant, read back with it.
+        new MatchQueue(jredis).matched(playerId, MatchMode.DUEL, new MatchQueue.Grant("203.0.113.10", 9001, "tkt-10",
+                true, "01JC0000000000000000000001", "b1.arena.internal"), 60, System.currentTimeMillis());
+        assertThat(body(queue("GET", null, token)).path("grant").get("tlsName").asText()).isEqualTo("b1.arena.internal");
+        new MatchQueue(jredis).matched(playerId, MatchMode.DUEL, new MatchQueue.Grant("10.0.0.7", 9001, "tkt-9", true,
+                "01JC0000000000000000000000"), 60, System.currentTimeMillis());
         HttpResponse<String> requeue = queue("POST", "{\"mode\":\"duel\"}", token);
         assertThat(requeue.statusCode()).isEqualTo(409);
         assertThat(body(requeue).get("code").asText()).isEqualTo("in_match");
@@ -1389,6 +1417,21 @@ class PlatformHttpServerTest {
         assertThat(json.get("arenaPort").asInt()).isEqualTo(9001);
         assertThat(json.get("ticketId").asText()).isNotBlank();
         assertThat(json.get("tls").asBoolean()).as("this arena did not announce TLS").isFalse();
+        assertThat(json.has("tlsName")).as("no name: the host, as before").isFalse();
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("an arena behind the front (D-82) is handed out with the name the client's TLS handshake gives")
+    void requestMatchBehindTheFront() throws Exception {
+        String token = register("ada");
+        directory.announce(new ArenaDirectory.Endpoint("a1", "203.0.113.10", 9001, 0, 150, true, 0, 4,
+                "a1.arena.internal")).get();
+        JsonNode json = body(post("/v1/match-requests", null, token));
+        assertThat(json.get("arenaHost").asText()).as("dialled").isEqualTo("203.0.113.10");
+        assertThat(json.get("arenaPort").asInt()).isEqualTo(9001);
+        assertThat(json.get("tls").asBoolean()).isTrue();
+        assertThat(json.get("tlsName").asText()).as("sent and checked").isEqualTo("a1.arena.internal");
     }
 
     @Test

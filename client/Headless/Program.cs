@@ -45,7 +45,6 @@ namespace Backend.Client.Headless
                 return 2;
             }
             _platform = args[0].TrimEnd('/');
-            Api = new ApiClient(new[] { _platform });
             var scenarios = new List<string>();
             for (int i = 1; i < args.Length; i++)
             {
@@ -54,6 +53,8 @@ namespace Backend.Client.Headless
                 else if (args[i] == "--wrong-trust") _wrongTrust = new X509Certificate2(args[++i]);
                 else scenarios.Add(args[i]);
             }
+            // --trust is the backend's root, trusted alone for the API, the lobby and matches, as the app does (D-82).
+            Api = new ApiClient(new[] { _platform }, _trust == null ? null : new TrustRoot(_trust).HttpHandler());
             if (scenarios.Count == 0) scenarios.AddRange(new[] { "play", "resume", "badticket", "lifecycle" });
             if (_lobby == null) scenarios.RemoveAll(NeedsLobby.Contains);
             foreach (string s in scenarios)
@@ -335,8 +336,8 @@ namespace Backend.Client.Headless
             var (ada, _) = NewSession();
             var (bob, _) = NewSession();
             // Each in the lobby, where every change of the team is pushed (04 §2, Q-35).
-            using var la = new LobbyClient(_lobby, new SystemClock());
-            using var lb = new LobbyClient(_lobby, new SystemClock());
+            using var la = NewLobby();
+            using var lb = NewLobby();
             la.Connect(ada.Token);
             lb.Connect(bob.Token);
             Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb),
@@ -480,7 +481,7 @@ namespace Backend.Client.Headless
                 $"worn in its own slot, giving nothing ({worn})");
 
             MatchGrant grant = Api.RequestMatch(session.Token).Result.Value;
-            var g = new Grant { Host = grant.ArenaHost, Port = grant.ArenaPort, TicketId = grant.TicketId, Tls = grant.Tls };
+            var g = new Grant { Host = grant.ArenaHost, Port = grant.ArenaPort, TicketId = grant.TicketId, Tls = grant.Tls, TlsName = grant.TlsName };
             using var m = Connect(g);
             m.Join(g.TicketId);
             Check(RunUntil(m, 10_000, () => m.Alive && m.World[Wire.SelfHandle].Skin != 0) && m.World[Wire.SelfHandle].Skin == 1,
@@ -488,7 +489,7 @@ namespace Backend.Client.Headless
 
             var (other, _) = NewSession();
             MatchGrant plain = Api.RequestMatch(other.Token).Result.Value;
-            var pg = new Grant { Host = plain.ArenaHost, Port = plain.ArenaPort, TicketId = plain.TicketId, Tls = plain.Tls };
+            var pg = new Grant { Host = plain.ArenaHost, Port = plain.ArenaPort, TicketId = plain.TicketId, Tls = plain.Tls, TlsName = plain.TlsName };
             using var p = Connect(pg);
             p.Join(pg.TicketId);
             Check(RunUntil(p, 10_000, () => p.Alive) && p.World[Wire.SelfHandle].Skin == 0, "another, wearing none, told none");
@@ -507,7 +508,7 @@ namespace Backend.Client.Headless
                   && fresh.Value.Tiers[4].Premium.ItemId == "boost_xp_hour", $"a new pass: nothing yet, forty tiers ({fresh})");
             Check(DrillSql("INSERT INTO season_pass (player_id, season_id, points) SELECT " + session.PlayerId
                   + ", id, 245 FROM season WHERE placed_at IS NULL ORDER BY id DESC LIMIT 1"), "245 points, as a fixture");
-            using var lobby = new LobbyClient(_lobby, new SystemClock());
+            using var lobby = NewLobby();
             JsonValue paid = null;
             lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
             lobby.Connect(session.Token);
@@ -536,7 +537,7 @@ namespace Backend.Client.Headless
             var (session, _) = NewSession();
             Check(DrillSql($"UPDATE player SET xp = 50000, level = 4 WHERE id = {session.PlayerId}"),
                 "given 50 000 xp with level 4 stored, as a fixture");
-            using var lobby = new LobbyClient(_lobby, new SystemClock());
+            using var lobby = NewLobby();
             JsonValue paid = null;
             lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
             lobby.Connect(session.Token);
@@ -580,7 +581,7 @@ namespace Backend.Client.Headless
             int season = before.Value.Current.Id;
             Console.WriteLine($"    season {season}, to end {before.Value.Current.EndsAt}");
             long gemsA = Api.Inventory(ada.Token).Result.Value.Gems, gemsB = Api.Inventory(bob.Token).Result.Value.Gems;
-            using var lobby = new LobbyClient(_lobby, new SystemClock());
+            using var lobby = NewLobby();
             bool told = false;
             lobby.OnPush += (t, d) => { if (t == "evt.inbox") told = true; };
             lobby.Connect(ada.Token);
@@ -647,7 +648,7 @@ namespace Backend.Client.Headless
             Check(before.Ok && before.Value.Count == 17
                 && before.Value.Exists(a => a.Id == "matches_50" && a.Progress == 49 && !a.Reached),
                 $"seventeen listed; the fiftieth stay not yet reached, at 49 ({before})");
-            using var lobby = new LobbyClient(_lobby, new SystemClock());
+            using var lobby = NewLobby();
             JsonValue paid = null;
             lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
             lobby.Connect(session.Token);
@@ -688,7 +689,7 @@ namespace Backend.Client.Headless
                     + $" '{today.Day}', '{g.Id}', {(g.Id == stays.Id ? g.Target - 1 : g.Target)})");
             Check(set, $"the other two met and {stays.Id} a stay short, as a fixture");
             var wallet = Api.Inventory(session.Token).Result.Value;
-            using var lobby = new LobbyClient(_lobby, new SystemClock());
+            using var lobby = NewLobby();
             JsonValue paid = null;
             lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
             lobby.Connect(session.Token);
@@ -745,7 +746,7 @@ namespace Backend.Client.Headless
         {
             var (lead, _) = NewSession();
             var (other, _) = NewSession();
-            var lobby = new LobbyClient(_lobby, new SystemClock());
+            var lobby = NewLobby();
             lobby.Connect(other.Token);
             bool Until(int ms, Func<bool> done)
             {
@@ -793,8 +794,8 @@ namespace Backend.Client.Headless
         {
             var (lead, _) = NewSession();
             var (applicant, _) = NewSession();
-            using var ll = new LobbyClient(_lobby, new SystemClock());
-            using var la = new LobbyClient(_lobby, new SystemClock());
+            using var ll = NewLobby();
+            using var la = NewLobby();
             var toLead = new List<string>();
             ll.OnPush += (t, d) => toLead.Add(t);
             ll.Connect(lead.Token);
@@ -836,7 +837,7 @@ namespace Backend.Client.Headless
             for (int i = 0; i < 3; i++)
             {
                 seeds[i] = NewSession().session;
-                lobbies[i] = new LobbyClient(_lobby, new SystemClock());
+                lobbies[i] = NewLobby();
                 lobbies[i].Connect(seeds[i].Token);
             }
             var matches = new List<MatchConnection>();
@@ -855,7 +856,7 @@ namespace Backend.Client.Headless
             bool Walkover(LobbyClient lobby, int round)
             {
                 TournamentGrant g = lobby.TournamentMatch;
-                var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls });
+                var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls, TlsName = g.TlsName });
                 matches.Add(m);
                 m.Join(g.TicketId);
                 return Until(45_000, () => m.State == MatchState.Ended) && m.End == MatchEnd.MatchOver;
@@ -931,7 +932,7 @@ namespace Backend.Client.Headless
             for (int i = 0; i < 4; i++)
             {
                 seeds[i] = NewSession().session;
-                lobbies[i] = new LobbyClient(_lobby, new SystemClock());
+                lobbies[i] = NewLobby();
                 lobbies[i].Connect(seeds[i].Token);
             }
             var matches = new List<MatchConnection>();
@@ -950,7 +951,7 @@ namespace Backend.Client.Headless
             }
             MatchConnection Play(TournamentGrant g)
             {
-                var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls });
+                var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls, TlsName = g.TlsName });
                 matches.Add(m);
                 m.Join(g.TicketId);
                 return m;
@@ -1074,7 +1075,7 @@ namespace Backend.Client.Headless
         {
             ApiResult<MatchGrant> g = Api.RequestMatch(s.Token).Result;
             if (!g.Ok) throw new InvalidOperationException("match request: " + g);
-            return new Grant { Host = g.Value.ArenaHost, Port = g.Value.ArenaPort, TicketId = g.Value.TicketId, Tls = g.Value.Tls };
+            return new Grant { Host = g.Value.ArenaHost, Port = g.Value.ArenaPort, TicketId = g.Value.TicketId, Tls = g.Value.Tls, TlsName = g.Value.TlsName };
         }
 
         /// <summary>Where the own tank is and what is around it, for a check that fails now and then (P-32).</summary>
@@ -1201,7 +1202,8 @@ namespace Backend.Client.Headless
             Check(grant.Tls, "the grant says TLS");
             using var m = new MatchConnection(new MatchSettings
             {
-                Host = grant.Host, Port = grant.Port, Tls = true, CertificateCheck = TrustOnly(_wrongTrust),
+                Host = grant.Host, Port = grant.Port, Tls = true, TlsName = grant.TlsName,
+                CertificateCheck = new TrustRoot(_wrongTrust).Check,
             }, new SystemClock());
             m.Join(grant.TicketId);
             Check(RunUntil(m, 10_000, () => m.State == MatchState.Ended), "the attempt ended");
@@ -1215,7 +1217,7 @@ namespace Backend.Client.Headless
         private static void LobbyToResult()
         {
             var (session, _) = NewSession();
-            using var lobby = new LobbyClient(_lobby, new SystemClock());
+            using var lobby = NewLobby();
             lobby.Connect(session.Token);
             Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.Ready), "the lobby authenticated the session");
             Check(lobby.PlayerId == session.PlayerId, "as the player who logged in");
@@ -1225,7 +1227,7 @@ namespace Backend.Client.Headless
             Check(g != null, $"with a grant ({lobby.GrantRefusal})");
             if (g == null) return;
 
-            using var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls });
+            using var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls, TlsName = g.TlsName });
             m.Join(g.TicketId);
             Check(RunUntil(m, 10_000, () => m.Alive), "joined the arena the lobby named");
             long coins0 = Api.Inventory(session.Token).Result.Value.Coins;
@@ -1253,8 +1255,8 @@ namespace Backend.Client.Headless
         {
             var (a, _) = NewSession();
             var (b, _) = NewSession();
-            var la = new LobbyClient(_lobby, new SystemClock());
-            var lb = new LobbyClient(_lobby, new SystemClock());
+            var la = NewLobby();
+            var lb = NewLobby();
             la.Connect(a.Token);
             lb.Connect(b.Token);
             Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb), "both players are in the lobby");
@@ -1289,8 +1291,8 @@ namespace Backend.Client.Headless
                 la.OnPush += (t, d) => { if (t == "evt.rewards") paidA = d; };
                 lb.OnPush += (t, d) => { if (t == "evt.rewards") paidB = d; };
                 long coinsA = Api.Inventory(a.Token).Result.Value.Coins, coinsB = Api.Inventory(b.Token).Result.Value.Coins;
-                using var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls });
-                using var mb = Connect(new Grant { Host = lb.Grant.ArenaHost, Port = lb.Grant.ArenaPort, TicketId = lb.Grant.TicketId, Tls = lb.Grant.Tls });
+                using var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls, TlsName = la.Grant.TlsName });
+                using var mb = Connect(new Grant { Host = lb.Grant.ArenaHost, Port = lb.Grant.ArenaPort, TicketId = lb.Grant.TicketId, Tls = lb.Grant.Tls, TlsName = lb.Grant.TlsName });
                 ma.Join(la.Grant.TicketId);
                 mb.Join(lb.Grant.TicketId);
                 Check(RunMatchesUntil(10_000, () => ma.Alive && mb.Alive, la, lb, ma, mb), "both joined the room made for the match");
@@ -1326,7 +1328,7 @@ namespace Backend.Client.Headless
             using (la) using (lb)
             {
                 if (la.Grant == null) return;
-                using var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls });
+                using var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls, TlsName = la.Grant.TlsName });
                 ma.Join(la.Grant.TicketId);
                 var clock = System.Diagnostics.Stopwatch.StartNew();
                 Check(RunMatchesUntil(45_000, () => ma.State == MatchState.Ended, la, lb, ma), "the match ended without the other side");
@@ -1444,8 +1446,8 @@ namespace Backend.Client.Headless
         {
             var (a, nameA) = NewSession();
             var (b, nameB) = NewSession();
-            using var la = new LobbyClient(_lobby, new SystemClock());
-            using var lb = new LobbyClient(_lobby, new SystemClock());
+            using var la = NewLobby();
+            using var lb = NewLobby();
             la.Connect(a.Token);
             lb.Connect(b.Token);
             Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb),
@@ -1475,8 +1477,8 @@ namespace Backend.Client.Headless
             Check(la.Grant.Mode == "sandbox" && lb.Grant.Mode == "sandbox" && la.Grant.TicketId == opened.Value.TicketId,
                 "for the sandbox, the leader's push and answer one ticket");
 
-            using var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls });
-            using var mb = Connect(new Grant { Host = lb.Grant.ArenaHost, Port = lb.Grant.ArenaPort, TicketId = lb.Grant.TicketId, Tls = lb.Grant.Tls });
+            using var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls, TlsName = la.Grant.TlsName });
+            using var mb = Connect(new Grant { Host = lb.Grant.ArenaHost, Port = lb.Grant.ArenaPort, TicketId = lb.Grant.TicketId, Tls = lb.Grant.Tls, TlsName = lb.Grant.TlsName });
             ma.Join(la.Grant.TicketId);
             mb.Join(lb.Grant.TicketId);
             Check(RunMatchesUntil(10_000, () => ma.Alive && mb.Alive, la, lb, ma, mb), "both joined, at once");
@@ -1578,7 +1580,7 @@ namespace Backend.Client.Headless
             for (int i = 0; i < players; i++)
             {
                 sessions[i] = NewSession().session;
-                lobbies[i] = new LobbyClient(_lobby, new SystemClock());
+                lobbies[i] = NewLobby();
                 lobbies[i].Connect(sessions[i].Token);
             }
             var matches = new List<MatchConnection>();
@@ -1596,7 +1598,7 @@ namespace Backend.Client.Headless
                 Check(Array.TrueForAll(lobbies, l => l.Grant.Mode == mode), $"for {mode}");
                 foreach (LobbyClient l in lobbies)
                 {
-                    var m = Connect(new Grant { Host = l.Grant.ArenaHost, Port = l.Grant.ArenaPort, TicketId = l.Grant.TicketId, Tls = l.Grant.Tls });
+                    var m = Connect(new Grant { Host = l.Grant.ArenaHost, Port = l.Grant.ArenaPort, TicketId = l.Grant.TicketId, Tls = l.Grant.Tls, TlsName = l.Grant.TlsName });
                     matches.Add(m);
                     m.Join(l.Grant.TicketId);
                 }
@@ -1640,7 +1642,7 @@ namespace Backend.Client.Headless
             for (int i = 0; i < 6; i++)
             {
                 sessions[i] = NewSession().session;
-                lobbies[i] = new LobbyClient(_lobby, new SystemClock());
+                lobbies[i] = NewLobby();
                 lobbies[i].Connect(sessions[i].Token);
             }
             var matches = new List<MatchConnection>();
@@ -1711,7 +1713,7 @@ namespace Backend.Client.Headless
 
                 foreach (LobbyClient l in lobbies)
                 {
-                    var m = Connect(new Grant { Host = l.Grant.ArenaHost, Port = l.Grant.ArenaPort, TicketId = l.Grant.TicketId, Tls = l.Grant.Tls });
+                    var m = Connect(new Grant { Host = l.Grant.ArenaHost, Port = l.Grant.ArenaPort, TicketId = l.Grant.TicketId, Tls = l.Grant.Tls, TlsName = l.Grant.TlsName });
                     matches.Add(m);
                     m.Join(l.Grant.TicketId);
                 }
@@ -1780,8 +1782,8 @@ namespace Backend.Client.Headless
             var (ada, _) = NewSession();
             var (bob, _) = NewSession();
             var (cyd, _) = NewSession();
-            using var la = new LobbyClient(_lobby, new SystemClock());
-            using var lb = new LobbyClient(_lobby, new SystemClock());
+            using var la = NewLobby();
+            using var lb = NewLobby();
             var toAda = new List<string>();
             var toBob = new List<string>();
             la.OnPush += (t, d) => toAda.Add(t + ":" + d["playerId"].AsLong);
@@ -1843,7 +1845,7 @@ namespace Backend.Client.Headless
             for (int i = 0; i < 6; i++)
             {
                 sessions[i] = NewSession().session;
-                lobbies[i] = new LobbyClient(_lobby, new SystemClock());
+                lobbies[i] = NewLobby();
                 lobbies[i].Connect(sessions[i].Token);
             }
             var matches = new List<MatchConnection>();
@@ -1913,7 +1915,7 @@ namespace Backend.Client.Headless
                 for (int k = 0; k < 3; k++)
                 {
                     TournamentGrant g = lobbies[comes + k].TournamentMatch;
-                    var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls });
+                    var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls, TlsName = g.TlsName });
                     matches.Add(m);
                     m.Join(g.TicketId);
                 }
@@ -1948,7 +1950,7 @@ namespace Backend.Client.Headless
             for (int i = 0; i < 6; i++)
             {
                 sessions[i] = NewSession().session;
-                lobbies[i] = new LobbyClient(_lobby, new SystemClock());
+                lobbies[i] = NewLobby();
                 lobbies[i].Connect(sessions[i].Token);
             }
             var matches = new List<MatchConnection>();
@@ -2003,7 +2005,7 @@ namespace Backend.Client.Headless
 
                 foreach (LobbyClient l in lobbies)
                 {
-                    var m = Connect(new Grant { Host = l.Grant.ArenaHost, Port = l.Grant.ArenaPort, TicketId = l.Grant.TicketId, Tls = l.Grant.Tls });
+                    var m = Connect(new Grant { Host = l.Grant.ArenaHost, Port = l.Grant.ArenaPort, TicketId = l.Grant.TicketId, Tls = l.Grant.Tls, TlsName = l.Grant.TlsName });
                     matches.Add(m);
                     m.Join(l.Grant.TicketId);
                 }
@@ -2049,7 +2051,7 @@ namespace Backend.Client.Headless
             for (int i = 0; i < 8; i++)
             {
                 sessions[i] = NewSession().session;
-                lobbies[i] = new LobbyClient(_lobby, new SystemClock());
+                lobbies[i] = NewLobby();
                 lobbies[i].Connect(sessions[i].Token);
             }
             var matches = new List<MatchConnection>();
@@ -2069,7 +2071,7 @@ namespace Backend.Client.Headless
                 if (!Array.TrueForAll(lobbies, l => l.Grant != null)) return;
                 foreach (LobbyClient l in lobbies)
                 {
-                    var m = Connect(new Grant { Host = l.Grant.ArenaHost, Port = l.Grant.ArenaPort, TicketId = l.Grant.TicketId, Tls = l.Grant.Tls });
+                    var m = Connect(new Grant { Host = l.Grant.ArenaHost, Port = l.Grant.ArenaPort, TicketId = l.Grant.TicketId, Tls = l.Grant.Tls, TlsName = l.Grant.TlsName });
                     matches.Add(m);
                     m.Join(l.Grant.TicketId);
                 }
@@ -2158,8 +2160,8 @@ namespace Backend.Client.Headless
                 return;
             }
             Session a = NewSession().session, b = NewSession().session;
-            using var la = new LobbyClient(_lobby, new SystemClock());
-            using var lb = new LobbyClient(_lobby, new SystemClock());
+            using var la = NewLobby();
+            using var lb = NewLobby();
             string toldA = null, toldB = null;
             la.OnPush += (t, d) => { if (t == "evt.notice") toldA = d["text"].AsString; };
             lb.OnPush += (t, d) => { if (t == "evt.notice") toldB = d["text"].AsString; };
@@ -2200,7 +2202,7 @@ namespace Backend.Client.Headless
             }
             var (sa, _) = NewSession();
             MatchGrant first = Api.RequestMatch(sa.Token).Result.Value;
-            var ga = new Grant { Host = first.ArenaHost, Port = first.ArenaPort, TicketId = first.TicketId, Tls = first.Tls };
+            var ga = new Grant { Host = first.ArenaHost, Port = first.ArenaPort, TicketId = first.TicketId, Tls = first.Tls, TlsName = first.TlsName };
             using var ma = Connect(ga);
             ma.Join(ga.TicketId);
             Check(RunUntil(ma, 10_000, () => ma.Alive), "a player in the public arena");
@@ -2232,7 +2234,7 @@ namespace Backend.Client.Headless
             ApiResult<MatchGrant> again = Api.RequestMatch(sa.Token).Result;
             Check(again.Ok, $"the player removed, not banned, may play again ({again})");
             if (!again.Ok) return;
-            using var back = Connect(new Grant { Host = again.Value.ArenaHost, Port = again.Value.ArenaPort, TicketId = again.Value.TicketId, Tls = again.Value.Tls });
+            using var back = Connect(new Grant { Host = again.Value.ArenaHost, Port = again.Value.ArenaPort, TicketId = again.Value.TicketId, Tls = again.Value.Tls, TlsName = again.Value.TlsName });
             back.Join(again.Value.TicketId);
             Check(RunUntil(back, 10_000, () => back.Alive), "and is back in the arena");
         }
@@ -2246,7 +2248,7 @@ namespace Backend.Client.Headless
         {
             var (session, name) = NewSession();
             MatchGrant grant = Api.RequestMatch(session.Token).Result.Value;
-            var g = new Grant { Host = grant.ArenaHost, Port = grant.ArenaPort, TicketId = grant.TicketId, Tls = grant.Tls };
+            var g = new Grant { Host = grant.ArenaHost, Port = grant.ArenaPort, TicketId = grant.TicketId, Tls = grant.Tls, TlsName = grant.TlsName };
             using var m = Connect(g);
             var heard = new List<(int, int, string)>();
             m.OnEvent = e => { if (e.Type == Wire.EvtPhrase) heard.Add((e.Speaker, e.PhraseId, e.SpeakerName)); };
@@ -2282,7 +2284,7 @@ namespace Backend.Client.Headless
                 return;
             }
             var (session, name) = NewSession();
-            using var lobby = new LobbyClient(_lobby, new SystemClock());
+            using var lobby = NewLobby();
             lobby.Connect(session.Token);
             Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.Ready), "in the lobby");
             using var http = new System.Net.Http.HttpClient();
@@ -2321,7 +2323,7 @@ namespace Backend.Client.Headless
             for (int i = 0; i < 3; i++)
             {
                 (sessions[i], names[i]) = NewSession();
-                lobbies[i] = new LobbyClient(_lobby, new SystemClock());
+                lobbies[i] = NewLobby();
                 lobbies[i].Connect(sessions[i].Token);
             }
             var matches = new List<MatchConnection>();
@@ -2361,7 +2363,7 @@ namespace Backend.Client.Headless
                     "to one arena, for co-op");
                 foreach (LobbyClient l in lobbies)
                 {
-                    var m = Connect(new Grant { Host = l.Grant.ArenaHost, Port = l.Grant.ArenaPort, TicketId = l.Grant.TicketId, Tls = l.Grant.Tls });
+                    var m = Connect(new Grant { Host = l.Grant.ArenaHost, Port = l.Grant.ArenaPort, TicketId = l.Grant.TicketId, Tls = l.Grant.Tls, TlsName = l.Grant.TlsName });
                     matches.Add(m);
                     m.Join(l.Grant.TicketId);
                 }
@@ -2415,8 +2417,8 @@ namespace Backend.Client.Headless
         {
             var (a, _) = NewSession();
             var (b, _) = NewSession();
-            using var la = new LobbyClient(_lobby, new SystemClock());
-            using var lb = new LobbyClient(_lobby, new SystemClock());
+            using var la = NewLobby();
+            using var lb = NewLobby();
             la.Connect(a.Token);
             lb.Connect(b.Token);
             Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb), "both players are in the lobby");
@@ -2498,10 +2500,10 @@ namespace Backend.Client.Headless
         private static void Replaced()
         {
             var (session, _) = NewSession();
-            using var first = new LobbyClient(_lobby, new SystemClock());
+            using var first = NewLobby();
             first.Connect(session.Token);
             Check(RunLobbyUntil(first, 10_000, () => first.State == LobbyState.Ready), "the first device is in the lobby");
-            using var second = new LobbyClient(_lobby, new SystemClock());
+            using var second = NewLobby();
             second.Connect(session.Token);
             Check(RunLobbyUntil(second, 10_000, () => second.State == LobbyState.Ready), "the second device is in the lobby");
             Check(RunLobbyUntil(first, 5_000, () => first.State == LobbyState.Replaced), "the first was told it was replaced");
@@ -2514,7 +2516,7 @@ namespace Backend.Client.Headless
         /// <summary>A token the store does not know is refused, and not retried: log in again.</summary>
         private static void BadSession()
         {
-            using var lobby = new LobbyClient(_lobby, new SystemClock());
+            using var lobby = NewLobby();
             lobby.Connect("not-a-session-token");
             Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.InvalidSession), $"refused as an invalid session ({lobby.LastError})");
         }
@@ -2534,26 +2536,9 @@ namespace Backend.Client.Headless
 
         // ---- plumbing -------------------------------------------------------------------------
 
-        /// <summary>
-        /// Trusts one certificate, as a root, in place of the device's store. The name check the
-        /// handshake made against the grant's host still has to have passed.
-        /// </summary>
-        private static RemoteCertificateValidationCallback TrustOnly(X509Certificate2 root)
-        {
-            return (sender, certificate, chain, errors) =>
-            {
-                if ((errors & SslPolicyErrors.RemoteCertificateNameMismatch) != 0 || certificate == null) return false;
-                using var build = new X509Chain();
-                build.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                build.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-                build.ChainPolicy.CustomTrustStore.Add(root);
-                return build.Build(new X509Certificate2(certificate));
-            };
-        }
-
         private sealed class Grant
         {
-            public string Host, TicketId;
+            public string Host, TicketId, TlsName;
             public int Port;
             public bool Tls;
         }
@@ -2563,9 +2548,13 @@ namespace Backend.Client.Headless
         private static MatchConnection Connect(Grant g) =>
             new MatchConnection(new MatchSettings
             {
-                Host = g.Host, Port = g.Port, Tls = g.Tls,
-                CertificateCheck = _trust == null ? null : TrustOnly(_trust),
+                Host = g.Host, Port = g.Port, Tls = g.Tls, TlsName = g.TlsName,
+                CertificateCheck = _trust == null ? null : new TrustRoot(_trust).Check,
             }, new SystemClock());
+
+        /// <summary>A lobby connection, trusting --trust's root when given, as the app's does (D-82).</summary>
+        private static LobbyClient NewLobby() =>
+            new LobbyClient(_lobby, new SystemClock(), _trust == null ? null : new TrustRoot(_trust).Configure);
 
         /// <summary>Polls as a frame loop would, at 60 Hz, until the condition holds or time runs out.</summary>
         private static bool RunUntil(MatchConnection m, int ms, Func<bool> done, bool quiet = false)
@@ -2590,7 +2579,7 @@ namespace Backend.Client.Headless
             var (session, _) = NewSession();
             ApiResult<MatchGrant> g = Api.RequestMatch(session.Token).Result;
             if (!g.Ok) throw new InvalidOperationException("match request: " + g);
-            return (session.PlayerId, new Grant { Host = g.Value.ArenaHost, Port = g.Value.ArenaPort, TicketId = g.Value.TicketId, Tls = g.Value.Tls });
+            return (session.PlayerId, new Grant { Host = g.Value.ArenaHost, Port = g.Value.ArenaPort, TicketId = g.Value.TicketId, Tls = g.Value.Tls, TlsName = g.Value.TlsName });
         }
 
         private static (Session session, string name) NewSession()

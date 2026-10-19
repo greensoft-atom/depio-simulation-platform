@@ -288,7 +288,9 @@ public final class BotClient {
         if (grant.tls()) {
             // Added once connected and before the first byte: the handler starts
             // the handshake as it is added, and holds the join below until it is done.
-            ch.pipeline().addFirst(handshake(tls, ch, grant.arenaHost(), grant.arenaPort()));
+            // The name the grant gives, behind the front (D-82), else the host: sent and checked.
+            ch.pipeline().addFirst(handshake(tls, ch,
+                    grant.tlsName() != null ? grant.tlsName() : grant.arenaHost(), grant.arenaPort()));
         }
         Bot bot = ch.attr(BOT).get();
         bot.sendJoin(grant.ticketId());

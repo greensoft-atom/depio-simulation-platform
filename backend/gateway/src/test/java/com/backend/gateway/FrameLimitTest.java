@@ -45,7 +45,7 @@ class FrameLimitTest {
     void aFloodIsRefusedOnce() {
         Metrics.LabeledCounter errors = new Metrics.LabeledCounter();
         Behind behind = new Behind();
-        EmbeddedChannel channel = new EmbeddedChannel(new FrameLimit(errors), behind);
+        EmbeddedChannel channel = new EmbeddedChannel(new FrameLimit(errors, com.backend.common.TrustedProxies.LOOPBACK), behind);
 
         // Sixty frames in one read. The close did not stop the forty after the limit reaching
         // the handler, and each was refused, logged at INFO and counted again: measured, 40.
@@ -75,7 +75,7 @@ class FrameLimitTest {
     @Test
     @DisplayName("a refused client that never answers the close is closed after the linger")
     void aSilentClientIsClosedLater() {
-        EmbeddedChannel channel = new EmbeddedChannel(new FrameLimit(new Metrics.LabeledCounter()), new Behind());
+        EmbeddedChannel channel = new EmbeddedChannel(new FrameLimit(new Metrics.LabeledCounter(), com.backend.common.TrustedProxies.LOOPBACK), new Behind());
         // The channel's clock is the real one plus what the test advances, unless frozen: a slow
         // thread's millisecond made the linger due a millisecond early (T-24).
         channel.freezeTime();
@@ -94,7 +94,7 @@ class FrameLimitTest {
     void theWindowSlides() throws Exception {
         Metrics.LabeledCounter errors = new Metrics.LabeledCounter();
         Behind behind = new Behind();
-        EmbeddedChannel channel = new EmbeddedChannel(new FrameLimit(errors), behind);
+        EmbeddedChannel channel = new EmbeddedChannel(new FrameLimit(errors, com.backend.common.TrustedProxies.LOOPBACK), behind);
 
         channel.writeInbound((Object[]) frames(FrameLimit.MAX_FRAMES_PER_SECOND));
         Thread.sleep(600);
@@ -109,7 +109,7 @@ class FrameLimitTest {
     void aSteadyClientIsServed() throws Exception {
         Metrics.LabeledCounter errors = new Metrics.LabeledCounter();
         Behind behind = new Behind();
-        EmbeddedChannel channel = new EmbeddedChannel(new FrameLimit(errors), behind);
+        EmbeddedChannel channel = new EmbeddedChannel(new FrameLimit(errors, com.backend.common.TrustedProxies.LOOPBACK), behind);
 
         channel.writeInbound((Object[]) frames(FrameLimit.MAX_FRAMES_PER_SECOND));
         Thread.sleep(1_050);
@@ -124,12 +124,28 @@ class FrameLimitTest {
     void aLogNamesTheClient() {
         var nginx = new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 40_000);
         var far = new java.net.InetSocketAddress("203.0.113.9", 40_000);
-        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(nginx, "1.2.3.4, 198.51.100.7")).isEqualTo("198.51.100.7");
-        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(nginx, "2001:db8::1")).isEqualTo("2001:db8::1");
-        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(far, "198.51.100.7")).as("from afar, not trusted")
+        var here = com.backend.common.TrustedProxies.LOOPBACK;
+        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(nginx, "1.2.3.4, 198.51.100.7", here)).isEqualTo("198.51.100.7");
+        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(nginx, "2001:db8::1", here)).isEqualTo("2001:db8::1");
+        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(far, "198.51.100.7", here)).as("from afar, not trusted")
                 .isEqualTo(String.valueOf(far));
-        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(nginx, "<script>")).as("not an address")
+        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(nginx, "<script>", here)).as("not an address")
                 .isEqualTo(String.valueOf(nginx));
-        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(nginx, null)).isEqualTo(String.valueOf(nginx));
+        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(nginx, null, here)).isEqualTo(String.valueOf(nginx));
+    }
+
+    @Test
+    @DisplayName("behind the front (D-82), a log believes its nginx from the addresses named, and no other")
+    void aLogBelievesTheFront() {
+        var front = new java.net.InetSocketAddress("10.0.0.3", 40_000);
+        var other = new java.net.InetSocketAddress("10.0.0.4", 40_000);
+        var named = com.backend.common.TrustedProxies.fromEnvironment(
+                java.util.Map.of("BACKEND_TRUSTED_PROXIES", "10.0.0.1,10.0.0.2,10.0.0.3"));
+        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(front, "6.6.6.6, 198.51.100.7", named))
+                .isEqualTo("198.51.100.7");
+        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(other, "198.51.100.7", named)).as("a machine not named")
+                .isEqualTo(String.valueOf(other));
+        org.assertj.core.api.Assertions.assertThat(FrameLimit.clientOf(front, "198.51.100.7", com.backend.common.TrustedProxies.LOOPBACK))
+                .as("unset, the front is a peer like any").isEqualTo(String.valueOf(front));
     }
 }

@@ -41,6 +41,7 @@ public final class ArenaAnnouncer implements AutoCloseable {
     private final ScheduledExecutorService scheduler;
 
     private final boolean tls;
+    private final String tlsName;
 
     public ArenaAnnouncer(ArenaDirectory directory, String name, String host, int port,
                           RoomRegistry registry) {
@@ -49,7 +50,13 @@ public final class ArenaAnnouncer implements AutoCloseable {
 
     public ArenaAnnouncer(ArenaDirectory directory, String name, String host, int port,
                           RoomRegistry registry, boolean tls) {
+        this(directory, name, host, port, registry, tls, null);
+    }
+
+    public ArenaAnnouncer(ArenaDirectory directory, String name, String host, int port,
+                          RoomRegistry registry, boolean tls, String tlsName) {
         this.tls = tls;
+        this.tlsName = tlsName;
         this.directory = directory;
         this.name = name;
         this.host = host;
@@ -68,8 +75,8 @@ public final class ArenaAnnouncer implements AutoCloseable {
         announceOnce();                 // immediately, so the arena is usable without a first delay
         scheduler.scheduleAtFixedRate(this::announceOnce,
                 ArenaDirectory.REFRESH_SECONDS, ArenaDirectory.REFRESH_SECONDS, TimeUnit.SECONDS);
-        log.info("announcing as {} at {}:{} every {}s", name, host, port,
-                ArenaDirectory.REFRESH_SECONDS);
+        log.info("announcing as {} at {}:{}{} every {}s", name, host, port,
+                tlsName == null ? "" : ", TLS as " + tlsName, ArenaDirectory.REFRESH_SECONDS);
     }
 
     private void announceOnce() {
@@ -87,8 +94,10 @@ public final class ArenaAnnouncer implements AutoCloseable {
                     open.add(v.matchUid());
                 }
             }
+            // A name means TLS, which the front's nginx ends for an arena that speaks none itself (D-82).
             directory.announce(new ArenaDirectory.Endpoint(name, host, port, registry.committedPlayers(),
-                    registry.capacity(), tls, registry.roomCount(), registry.maxRooms()), roomList(views), open, seated).join();
+                    registry.capacity(), tls || tlsName != null, registry.roomCount(), registry.maxRooms(), tlsName),
+                    roomList(views), open, seated).join();
         } catch (RuntimeException e) {
             log.warn("could not announce: {}", e.toString());
         }

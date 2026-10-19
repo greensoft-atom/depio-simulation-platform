@@ -29,6 +29,11 @@ namespace UnityEngine
 
     public class ScriptableObject : Object { }
 
+    public class TextAsset : Object
+    {
+        public string text => throw Stub();
+    }
+
     public class Transform : Component
     {
         public Vector3 position { get => throw Stub(); set => throw Stub(); }

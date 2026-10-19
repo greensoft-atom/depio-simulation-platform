@@ -75,6 +75,8 @@ public final class PlatformMain {
         String storeHost = Arguments.text(args, 2, "store host", "127.0.0.1");
         int storePort = Arguments.integer(args, 3, "store port", 6379);
         DatabaseSettings database = DatabaseSettings.fromEnvironment();
+        // Before anything connects: a setting that is not IP addresses refuses the start (exit 2).
+        com.backend.common.TrustedProxies proxies = com.backend.common.TrustedProxies.fromEnvironment(System.getenv());
         if (database.usesDevelopmentPassword()) {
             log.warn("no BACKEND_DB_PASSWORD_FILE or BACKEND_DB_PASSWORD; using the development"
                     + " database password");
@@ -138,6 +140,8 @@ public final class PlatformMain {
                 new AchievementService(auth, new com.backend.persistence.AchievementRepository(db.dataSource())),
                 new GoalService(auth, new com.backend.persistence.DailyGoalRepository(db.dataSource()), java.time.Clock.systemUTC()),
                 payments, passes, bindHost, port);
+        server.trustForwardedFor(proxies);
+        log.info("X-Forwarded-For believed from {}", proxies);
         // The listeners' settings first, metrics' and the admin API's: a bad one is refused (exit 2) before the
         // public API serves anything, not after (the platform review, 2026-10-04).
         Metrics metrics = new Metrics();

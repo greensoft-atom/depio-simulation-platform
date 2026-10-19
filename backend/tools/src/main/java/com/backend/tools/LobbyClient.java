@@ -44,7 +44,8 @@ public final class LobbyClient implements AutoCloseable {
      * Where platform said to go, and the credential to get in with. {@code tls}: the arena
      * must be dialled with TLS, which the grant says and the client obeys.
      */
-    public record Grant(String arenaHost, int arenaPort, String ticketId, boolean tls) { }
+    /** {@code tlsName}: the name the TLS handshake gives behind the front (D-82); null for the host. */
+    public record Grant(String arenaHost, int arenaPort, String ticketId, boolean tls, String tlsName) { }
 
     public static final class LobbyException extends RuntimeException {
         private static final long serialVersionUID = 1L;
@@ -186,7 +187,8 @@ public final class LobbyClient implements AutoCloseable {
         }
         JsonNode d = reply.path("d");
         return new Grant(d.get("arenaHost").asText(), d.get("arenaPort").asInt(),
-                d.get("ticketId").asText(), d.path("tls").asBoolean(false));
+                d.get("ticketId").asText(), d.path("tls").asBoolean(false),
+                d.hasNonNull("tlsName") ? d.get("tlsName").asText() : null);
     }
 
     /**

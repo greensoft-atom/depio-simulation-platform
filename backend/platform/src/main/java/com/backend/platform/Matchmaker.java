@@ -344,7 +344,7 @@ public final class Matchmaker implements AutoCloseable {
                     Ticket ticket = Ticket.forMatch(m.playerId(), m.name(), team, p.matchUid(), mode.id, m.bonus(), m.skin());
                     await(tickets.issue(ticket));
                     grants.put(m.playerId(), new MatchQueue.Grant(arena.host(), arena.port(), ticket.id(), arena.tls(),
-                            p.matchUid()));
+                            p.matchUid(), arena.tlsName()));
                 }
             }
         }
@@ -399,12 +399,16 @@ public final class Matchmaker implements AutoCloseable {
 
     /** What {@code evt.match.found} carries, and {@code GET /v1/queue} too: the grant, and the mode. */
     static ObjectNode foundMessage(MatchMode mode, MatchQueue.Grant grant) {
-        return JSON.createObjectNode()
+        ObjectNode found = JSON.createObjectNode()
                 .put("arenaHost", grant.arenaHost())
                 .put("arenaPort", grant.arenaPort())
                 .put("ticketId", grant.ticketId())
                 .put("tls", grant.tls())
                 .put("mode", mode.key);
+        if (grant.tlsName() != null) {
+            found.put("tlsName", grant.tlsName());     // behind the front (D-82): sent and checked
+        }
+        return found;
     }
 
     /** What {@code evt.queue.update} carries: queued for {@code mode}, or, for null, no longer queued. */

@@ -23,7 +23,10 @@ final class ApiMessages {
 
     record LoginResponse(String token, long playerId, int expiresInSeconds) { }
 
-    record MatchResponse(String arenaHost, int arenaPort, String ticketId, boolean tls) { }
+    /** {@code tlsName}, behind the front (D-82): the name to send and check; left out for the host. */
+    record MatchResponse(String arenaHost, int arenaPort, String ticketId, boolean tls,
+                         @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                         String tlsName) { }
 
     /**
      * One row of a board.
@@ -143,7 +146,9 @@ final class ApiMessages {
     record PartyRequest(Long playerId, String partyId, Integer phraseId) { }
 
     /** What {@code evt.match.found} carries, and {@code GET /v1/queue} when matched (04 §4). */
-    record FoundView(String arenaHost, int arenaPort, String ticketId, boolean tls, String mode) { }
+    record FoundView(String arenaHost, int arenaPort, String ticketId, boolean tls, String mode,
+                     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                     String tlsName) { }
 
     /** {@code mode} and {@code grant} are left out when they do not apply. */
     @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)

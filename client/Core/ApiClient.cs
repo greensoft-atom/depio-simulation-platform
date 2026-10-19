@@ -48,6 +48,11 @@ namespace Backend.Client.Core
     public sealed class MatchGrant
     {
         public string ArenaHost, TicketId;
+        /// <summary>
+        /// The name the TLS handshake gives and the certificate is checked against, behind the front (D-82); null:
+        /// <see cref="ArenaHost"/>, which is then dialled and checked alike.
+        /// </summary>
+        public string TlsName;
         public int ArenaPort;
         public bool Tls;
         /// <summary>The mode of a match the matcher made ("duel"); null for a seat in the public arena.</summary>
@@ -396,6 +401,8 @@ namespace Backend.Client.Core
         public int Round, ArenaPort;
         public string ArenaHost, TicketId, Mode;
         public bool Tls;
+        /// <summary>As <see cref="MatchGrant.TlsName"/>.</summary>
+        public string TlsName;
     }
 
     /// <summary>Another player, by id and display name.</summary>
@@ -1017,6 +1024,7 @@ namespace Backend.Client.Core
         {
             TournamentId = j["tournamentId"].AsLong, Round = j["round"].AsInt, ArenaHost = j["arenaHost"].AsString,
             ArenaPort = j["arenaPort"].AsInt, TicketId = j["ticketId"].AsString, Tls = j["tls"].AsBool, Mode = j["mode"].AsString,
+            TlsName = j["tlsName"].AsString,
         };
 
         /// <summary>Friends, with presence, and the requests either way (04 §9).</summary>
@@ -1167,7 +1175,7 @@ namespace Backend.Client.Core
         internal static MatchGrant ReadGrant(JsonValue j) => new MatchGrant
         {
             ArenaHost = j["arenaHost"].AsString, ArenaPort = j["arenaPort"].AsInt, TicketId = j["ticketId"].AsString, Tls = j["tls"].AsBool,
-            Mode = j["mode"].AsString,
+            Mode = j["mode"].AsString, TlsName = j["tlsName"].AsString,
         };
 
         /// <summary>A party as platform answers and pushes it; null when partyId is, which is none.</summary>

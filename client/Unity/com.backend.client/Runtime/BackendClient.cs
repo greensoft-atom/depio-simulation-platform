@@ -12,10 +12,13 @@ namespace Backend.Client.Unity
     /// </summary>
     public sealed class BackendClient : MonoBehaviour
     {
-        [Tooltip("The platform API's endpoints, tried in turn, as https://api.example.com")]
+        [Tooltip("The platform API's endpoints, tried in turn, as https://203.0.113.10: the site's public address (D-82)")]
         [SerializeField] private string[] apiEndpoints = Array.Empty<string>();
-        [Tooltip("The lobby's WebSocket, as wss://api.example.com/lobby")]
+        [Tooltip("The lobby's WebSocket, as wss://203.0.113.10/lobby")]
         [SerializeField] private string lobbyUrl = "";
+        [Tooltip("The backend's root certificate, ca.pem from scripts/private-ca.sh: trusted alone, for the API, the "
+                 + "lobby and matches (D-82). Empty: the device's own store, for a backend a public CA certifies")]
+        [SerializeField] private TextAsset trustedRoot;
 
         public ApiClient Api { get; private set; }
         public Session Session { get; private set; }
@@ -30,6 +33,7 @@ namespace Backend.Client.Unity
         public Scene Scene { get; } = new Scene();
 
         private readonly IClock _clock = new SystemClock();
+        private TrustRoot _trust;
         private ISecureStore _store;
         private Task<ApiResult<Session>> _signingIn;
         private ClientWorld _world;
@@ -39,7 +43,8 @@ namespace Backend.Client.Unity
         private void Awake()
         {
             DontDestroyOnLoad(this);            // its object and everything under it, as it is a root's (08 §8)
-            Api = new ApiClient(apiEndpoints);
+            _trust = trustedRoot == null ? null : TrustRoot.FromPem(trustedRoot.text);
+            Api = new ApiClient(apiEndpoints, _trust?.HttpHandler());
             _store = SecureStores.ForThisDevice();
         }
 
@@ -72,7 +77,7 @@ namespace Backend.Client.Unity
                     Session = signedIn.Value;
                     Problem = null;
                     Lobby?.Dispose();
-                    Lobby = new LobbyClient(new Uri(lobbyUrl), _clock);
+                    Lobby = new LobbyClient(new Uri(lobbyUrl), _clock, _trust == null ? null : _trust.Configure);
                     Lobby.Connect(Session.Token);
                 }
                 else
@@ -95,7 +100,12 @@ namespace Backend.Client.Unity
             {
                 MatchGrant grant = Lobby.TakeGrant();
                 LastEnd = null;
-                Match = new MatchConnection(new MatchSettings { Host = grant.ArenaHost, Port = grant.ArenaPort, Tls = grant.Tls }, _clock);
+                // The address dialled, and the name the handshake gives behind the front (D-82).
+                Match = new MatchConnection(new MatchSettings
+                {
+                    Host = grant.ArenaHost, Port = grant.ArenaPort, Tls = grant.Tls, TlsName = grant.TlsName,
+                    CertificateCheck = _trust?.Check,
+                }, _clock);
                 Match.Join(grant.TicketId);
             }
             if (Match == null) return;

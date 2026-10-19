@@ -67,4 +67,39 @@ class ArenaAnnouncerTest {
             store.close();
         }
     }
+
+    @Test
+    @DisplayName("behind the front (D-82), an arena announces the public address, port and its TLS name, and TLS though it speaks none")
+    void behindTheFront() throws Exception {
+        JRedisEmbedded store = JRedisEmbedded.start();
+        JRedisClient client = store.newClient();
+        RoomRegistry registry = new RoomRegistry(1_000f, 2_048, 10, 10, 2);
+        ArenaDirectory directory = new ArenaDirectory(client);
+        try (ArenaAnnouncer announcer = new ArenaAnnouncer(directory, "a1", "203.0.113.10", 9001, registry, false,
+                "a1.arena.internal")) {
+            announcer.start();
+            assertThat(directory.live()).singleElement().satisfies(e -> {
+                assertThat(e.host()).isEqualTo("203.0.113.10");
+                assertThat(e.port()).isEqualTo(9001);
+                assertThat(e.tlsName()).isEqualTo("a1.arena.internal");
+                assertThat(e.tls()).as("the client must use TLS: the front ends it").isTrue();
+            });
+        } finally {
+            client.close();
+            store.close();
+        }
+        JRedisEmbedded second = JRedisEmbedded.start();
+        JRedisClient other = second.newClient();
+        ArenaDirectory plain = new ArenaDirectory(other);
+        try (ArenaAnnouncer announcer = new ArenaAnnouncer(plain, "a1", "127.0.0.1", 9011, registry, false, null)) {
+            announcer.start();
+            assertThat(plain.live()).singleElement().satisfies(e -> {
+                assertThat(e.tlsName()).isNull();
+                assertThat(e.tls()).as("no name and no keystore: plaintext, as before").isFalse();
+            });
+        } finally {
+            other.close();
+            second.close();
+        }
+    }
 }

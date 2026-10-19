@@ -127,6 +127,10 @@ image, which is RHEL 9's own userspace (plan item 80).
   failed with `fatal error: -28` (ENOSPC), so firewalld never started, after a release rebuild
   gave VS Code more files to watch. Count them per process in `/proc/<pid>/fdinfo`. The owner
   allowed `sysctl -w fs.inotify.max_user_watches=524288`, until the next reboot (2026-10-19).
+- **A heredoc's text must not hold its own end word on a line alone**: a script fed to `python3 - <<'EOF'`
+  that carried a guide's `EOF` ended there, and the shell ran the rest of the text as commands on
+  the VM until a syntax error stopped it (2026-10-19; it made one empty directory, removed). Write
+  such a script to a file, or give the heredoc an end word the text cannot hold.
 - **firewalld's `--reload` keeps connections already made**: a port closed to an address cuts
   only its new connections. A session from there goes on, and is the last (2026-10-19, measured).
   `--complete-reload` did not cut it either, in the check's container.

@@ -952,6 +952,26 @@ namespace Backend.Client.Core.Tests
         }
 
         [Test]
+        public void AGrantBehindTheFrontCarriesTheNameItsHandshakeGives()
+        {
+            var hosts = new Hosts
+            {
+                Answer = r => Json(HttpStatusCode.OK,
+                    "{\"arenaHost\":\"203.0.113.10\",\"arenaPort\":9001,\"ticketId\":\"t\",\"tls\":true,\"tlsName\":\"b1.arena.internal\"}"),
+            };
+            MatchGrant g = new ApiClient(Three, hosts).RequestMatch("tok").Result.Value;
+            Assert.That((g.ArenaHost, g.ArenaPort, g.Tls, g.TlsName), Is.EqualTo(("203.0.113.10", 9001, true, "b1.arena.internal")));
+
+            hosts.Answer = r => Json(HttpStatusCode.OK,
+                "{\"arenaHost\":\"10.0.0.7\",\"arenaPort\":9001,\"ticketId\":\"t\",\"tls\":true}");
+            Assert.That(new ApiClient(Three, hosts).RequestMatch("tok").Result.Value.TlsName, Is.Null, "none: the host");
+            hosts.Answer = r => Json(HttpStatusCode.OK,
+                "{\"tournamentId\":7,\"round\":1,\"arenaHost\":\"203.0.113.10\",\"arenaPort\":9001,\"ticketId\":\"t\","
+                + "\"tls\":true,\"mode\":\"duel\",\"tlsName\":\"c1.arena.internal\"}");
+            Assert.That(new ApiClient(Three, hosts).TournamentMatch("tok", 7).Result.Value.TlsName, Is.EqualTo("c1.arena.internal"));
+        }
+
+        [Test]
         public void AMatchAskedAboutIsReadWithItsIdAndTheSecondsLeft()
         {
             var hosts = new Hosts

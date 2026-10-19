@@ -261,6 +261,9 @@ final class TournamentScheduler implements AutoCloseable {
                     .put("ticketId", issued.get(i).id())
                     .put("tls", arena.tls())
                     .put("mode", mode.key);
+            if (arena.tlsName() != null) {
+                grant.put("tlsName", arena.tlsName());          // behind the front (D-82): sent and checked
+            }
             await(grants.put(id, player, grant.toString()));
             push.send(player, "evt.tournament.match", grant);
         }

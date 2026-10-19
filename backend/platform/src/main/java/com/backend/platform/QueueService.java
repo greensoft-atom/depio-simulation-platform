@@ -203,7 +203,8 @@ public final class QueueService {
         for (MatchQueue.Member m : members) {
             Ticket ticket = Ticket.forMatch(m.playerId(), m.name(), 0, matchUid, mode.id, m.bonus(), m.skin());
             await(tickets.issue(ticket));
-            MatchQueue.Grant grant = new MatchQueue.Grant(arena.host(), arena.port(), ticket.id(), arena.tls(), matchUid);
+            MatchQueue.Grant grant = new MatchQueue.Grant(arena.host(), arena.port(), ticket.id(), arena.tls(), matchUid,
+                    arena.tlsName());
             queue.matched(m.playerId(), mode, grant, TicketStore.TTL_SECONDS, now());
             push.send(m.playerId(), "evt.match.found", Matchmaker.foundMessage(mode, grant));
             if (m.playerId() == playerId) {

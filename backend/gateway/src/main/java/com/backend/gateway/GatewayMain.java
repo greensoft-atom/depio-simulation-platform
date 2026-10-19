@@ -57,10 +57,13 @@ public final class GatewayMain {
         String storeHost = Arguments.text(args, 3, "store host", "127.0.0.1");
         int storePort = Arguments.integer(args, 4, "store port", 6379);
         String gatewayId = Arguments.text(args, 5, "gateway id", "gateway-" + port);
+        // Before anything connects: a setting that is not IP addresses refuses the start (exit 2).
+        com.backend.common.TrustedProxies proxies = com.backend.common.TrustedProxies.fromEnvironment(System.getenv());
 
         JRedisClient store = StoreClients.open(storeHost, storePort, "gateway");
 
         GatewayServer server = new GatewayServer(store, platformUrl, gatewayId, 2);
+        server.trustForwardedFor(proxies);
         int bound = server.start(bindHost, port);
         System.out.printf("gateway %s on %s:%d/lobby, platform %s, store %s:%d%n",
                 gatewayId, bindHost, bound, platformUrl, storeHost, storePort);

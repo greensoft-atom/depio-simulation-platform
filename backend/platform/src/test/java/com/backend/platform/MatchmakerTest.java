@@ -374,6 +374,33 @@ class MatchmakerTest {
         assertThat(msg.get("t").asText()).isEqualTo("evt.match.found");
         assertThat(msg.path("d").get("mode").asText()).isEqualTo("duel");
         assertThat(msg.path("d").get("arenaPort").asInt()).isEqualTo(9001);
+        assertThat(msg.path("d").has("tlsName")).as("no name: the host, as before").isFalse();
+        assertThat(a.grant().tlsName()).isNull();
+    }
+
+    @Test
+    @DisplayName("behind the front (D-82), a made match's grant and push carry the arena's TLS name")
+    void aRoundBehindTheFront() throws Exception {
+        new ArenaDirectory(store).announce(new ArenaDirectory.Endpoint("a1", "203.0.113.10", 9001, 0, 600,
+                true, 1, 4, "a1.arena.internal")).get(5, TimeUnit.SECONDS);
+        queued(11, 1_200, T0);
+        queued(12, 1_230, T0 + 500);
+        now.set(T0 + 1_000);
+        assertThat(matcher.lead()).isTrue();
+        assertThat(matcher.match(MatchMode.DUEL)).isEqualTo(1);
+        for (int i = 0; i < 2; i++) {
+            pushed.poll(5, TimeUnit.SECONDS);                     // evt.match.ready, each
+        }
+        accept(11);
+        accept(12);
+        assertThat(matcher.settle()).isEqualTo(1);
+        MatchQueue.Status a = queue.status(11);
+        assertThat(a.grant().arenaHost()).isEqualTo("203.0.113.10");
+        assertThat(a.grant().tlsName()).as("kept with the grant, for one who missed the push").isEqualTo("a1.arena.internal");
+        JsonNode found = JSON.readTree(pushed.poll(5, TimeUnit.SECONDS)).get("msg");
+        assertThat(found.get("t").asText()).isEqualTo("evt.match.found");
+        assertThat(found.at("/d/tlsName").asText()).isEqualTo("a1.arena.internal");
+        assertThat(found.at("/d/tls").asBoolean()).isTrue();
     }
 
     @Test

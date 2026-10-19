@@ -32,11 +32,14 @@ public final class JoinService {
 
     public enum Outcome { OK, NO_SESSION, NO_PROFILE, NO_ARENA }
 
-    /** {@code tls}: whether the client must open this arena's connection with TLS. */
+    /**
+     * {@code tls}: whether the client must open this arena's connection with TLS. {@code tlsName}:
+     * the name its handshake gives, behind the front (D-82); null for the host.
+     */
     public record Grant(Outcome outcome, String arenaHost, int arenaPort, String ticketId,
-                        boolean tls) {
+                        boolean tls, String tlsName) {
         static Grant failed(Outcome outcome) {
-            return new Grant(outcome, null, 0, null, false);
+            return new Grant(outcome, null, 0, null, false, null);
         }
     }
 
@@ -88,7 +91,7 @@ public final class JoinService {
         issued.increment();
 
         log.info("player {} → arena {} ({}:{})", playerId, arena.name(), arena.host(), arena.port());
-        return new Grant(Outcome.OK, arena.host(), arena.port(), ticket.id(), arena.tls());
+        return new Grant(Outcome.OK, arena.host(), arena.port(), ticket.id(), arena.tls(), arena.tlsName());
     }
 
     public long issued() {

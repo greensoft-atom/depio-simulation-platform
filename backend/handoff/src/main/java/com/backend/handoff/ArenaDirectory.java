@@ -41,13 +41,24 @@ public final class ArenaDirectory {
     /** A promise lasts as long as the tickets naming its match, or its seat: the room is made at the first claim. */
     private static final long PROMISE_MILLIS = java.util.concurrent.TimeUnit.SECONDS.toMillis(TicketStore.TTL_SECONDS);
 
+    private static String blankToNull(String s) {
+        return s == null || s.isEmpty() ? null : s;
+    }
+
     /**
      * Where an arena is, how full, and whether it speaks TLS — which a client has to know
      * before it opens the connection, and learns from its grant. And how many rooms it runs of
-     * how many it may: a match's room is one more (04 §4).
+     * how many it may: a match's room is one more (04 §4). {@code tlsName}: the name a client
+     * sends in its TLS handshake and checks the certificate against, when not its host: behind the
+     * front's nginx, which routes by it (D-82); null for the host.
      */
     public record Endpoint(String name, String host, int port, int players, int maxPlayers,
-                           boolean tls, int rooms, int maxRooms) {
+                           boolean tls, int rooms, int maxRooms, String tlsName) {
+        public Endpoint(String name, String host, int port, int players, int maxPlayers,
+                        boolean tls, int rooms, int maxRooms) {
+            this(name, host, port, players, maxPlayers, tls, rooms, maxRooms, null);
+        }
+
         public Endpoint(String name, String host, int port, int players, int maxPlayers) {
             this(name, host, port, players, maxPlayers, false, 0, 0);
         }
@@ -100,6 +111,9 @@ public final class ArenaDirectory {
                 "players", Integer.toString(endpoint.players()),
                 "maxPlayers", Integer.toString(endpoint.maxPlayers()),
                 "tls", endpoint.tls() ? "1" : "0",
+                // Written every time, empty for none, so a name dropped from the settings goes with
+                // the next announcement (D-82).
+                "tlsName", endpoint.tlsName() == null ? "" : endpoint.tlsName(),
                 "rooms", Integer.toString(endpoint.rooms()),
                 "maxRooms", Integer.toString(endpoint.maxRooms())));
         if (roomList != null) {
@@ -181,7 +195,9 @@ public final class ArenaDirectory {
                         "1".equals(fields.get("tls")),
                         // Absent from an arena older than matches: it has no room for one.
                         intOr(fields.get("rooms"), 0),
-                        intOr(fields.get("maxRooms"), 0)));
+                        intOr(fields.get("maxRooms"), 0),
+                        // Absent from an arena older than the field, empty from one with none: its host.
+                        blankToNull(fields.get("tlsName"))));
             } catch (RuntimeException malformed) {
                 log.warn("ignoring malformed arena entry {}: {}", name, malformed.toString());
             }

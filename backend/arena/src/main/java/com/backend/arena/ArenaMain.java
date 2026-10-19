@@ -133,6 +133,8 @@ public final class ArenaMain {
         // its directory entry live for ten seconds, platform sending players to an arena gone (the arena review).
         MetricsServer metrics = MetricsServer.startIfConfigured(
                 metricsFor(server, publisher, store, events), System.getenv());
+        Integer advertisedPort = advertisedPort(System.getenv());
+        String tlsName = advertisedTlsName(System.getenv());
         int bound = server.start(bindHost, port);
         if (!bindHost.equals("127.0.0.1") && isLoopback(advertiseHost)) {
             // Listening everywhere but telling clients to connect to themselves: the arena
@@ -144,7 +146,7 @@ public final class ArenaMain {
         // Announced after binding, never before: the entry means "accepting connections",
         // and publishing it earlier would send players to a socket that is not open yet.
         ArenaAnnouncer announcer = new ArenaAnnouncer(new ArenaDirectory(store), name,
-                advertiseHost, bound, server.registry(), server.tls());
+                advertiseHost, advertisedPort != null ? advertisedPort : bound, server.registry(), server.tls(), tlsName);
         announcer.start();
 
         // Logged, not printed: players are already being served, and a console write would wait
@@ -228,6 +230,49 @@ public final class ArenaMain {
             out.put(p.label(), (double) value.applyAsLong(p));
         }
         return out;
+    }
+
+    /**
+     * The port the arena announces, the one players dial: {@code BACKEND_ADVERTISE_PORT}, or null
+     * when unset, for the port it listens on. Behind the front's nginx (D-82) arenas listen on
+     * private ports and announce the public 9001, which is nginx's on every machine.
+     */
+    static Integer advertisedPort(java.util.Map<String, String> env) {
+        String value = env.get("BACKEND_ADVERTISE_PORT");
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        if (value.matches("[0-9]{1,5}")) {
+            int port = Integer.parseInt(value);
+            if (port >= 1 && port <= 65535) {
+                return port;
+            }
+        }
+        throw new RefusedConfiguration("BACKEND_ADVERTISE_PORT must be a port, 1 to 65535, not '" + value + "'");
+    }
+
+    /**
+     * The name a client's TLS handshake gives this arena, when something in front of it ends TLS:
+     * the front's nginx, which routes by that name (D-82). Null when unset: its host, as before.
+     */
+    static String advertisedTlsName(java.util.Map<String, String> env) {
+        String value = env.get("BACKEND_ADVERTISE_TLS_NAME");
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        // A host name of two labels or more: a handshake carries no address, and nginx's map lists names.
+        if (value.length() > 253 || !value.matches(
+                "(?i)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+")
+                || value.matches("[0-9.]+")) {
+            throw new RefusedConfiguration("BACKEND_ADVERTISE_TLS_NAME must be a host name such as"
+                    + " a1.arena.internal, not '" + value + "'");
+        }
+        String keystore = env.get("BACKEND_ARENA_TLS_KEYSTORE");
+        if (keystore != null && !keystore.isBlank()) {
+            throw new RefusedConfiguration("BACKEND_ADVERTISE_TLS_NAME is for an arena behind the front, whose nginx"
+                    + " ends TLS and speaks plaintext to it: not with BACKEND_ARENA_TLS_KEYSTORE");
+        }
+        return value.toLowerCase(java.util.Locale.ROOT);
     }
 
     private static boolean isLoopback(String host) {

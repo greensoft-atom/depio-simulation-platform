@@ -100,6 +100,11 @@ knows.
 **Consequence.** The **allocator is the load balancer** for match traffic. nginx is
 not, and no amount of nginx configuration would make it one.
 
+**Revised by [D-82](#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)** (2026-10-19), since the site has one public address: match traffic now
+passes the front's nginx, which ends its TLS and passes the connection to the arena the
+handshake names. The allocator still decides; nginx only follows the name the allocator gave.
+The extra hop is the cost.
+
 ### D-6 — No custom message broker; use j-redis streams
 
 **Decision.** Domain events, work queues, telemetry and audit go through
@@ -317,6 +322,9 @@ rather than only during an incident.
 **Cost.** Adding or moving an edge endpoint requires a client release, so the
 list should be generous and stable. A server-provided endpoint list fetched at
 login can supersede this later without changing the model.
+
+**Since [D-82](#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)** the site has one public address, so the list holds one endpoint: the
+retrying stays, and a lost front is covered by the provider forwarding to another machine.
 
 ### D-14 — Communication is a fixed phrase list, never free text
 
@@ -2199,6 +2207,9 @@ machine's MySQL.
 
 ### D-81 — Three public ports a machine, so one arena on each
 
+**Superseded by [D-82](#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)** the same day: the three ports are the whole site's, on one address,
+not each machine's. Kept as the record of what was decided on that premise.
+
 **Decided 2026-10-19** by the owner (plan item 89, constraint
 [C-9](../requirements/01-scope-and-nfrs.md#3-constraints)): a machine may have few public ports,
 80, 443 and one more, 9001; private ports are not limited. Asked how players are then to reach
@@ -2256,3 +2267,92 @@ build, nothing in the client, D-5 kept.
   room), against the 8 to 12 the topology gives each machine's arenas.
 - **12 rooms in one arena were not run full**: the 2 100 is the load run's measure of the
   network threads (2026-09-30), and the largest clean run is 1 200 bots.
+
+### D-82 — One public address for the site: nginx in front, ending TLS, routing match traffic by name
+
+**Decided 2026-10-19** by the owner (plan item 90,
+[Q-57](../requirements/01-scope-and-nfrs.md#7-open-questions) answered,
+[C-9](../requirements/01-scope-and-nfrs.md#3-constraints) revised):
+- the site's public ports are on **one public address**, an IP address with no domain, which the
+  provider forwards to one of the three machines; the others are reachable on the private
+  network alone;
+- the machine it forwards to sees each player's own address;
+- operators come in by SSH from the internal network alone.
+
+The owner chose nginx in front, on one of A, B and C, rather than a fourth machine. It routes
+match traffic by the name in the TLS handshake, and the encryption of match traffic ends at nginx,
+not at each arena. It replaces D-81, whose premise, three public ports on each machine, was wrong.
+
+**Decision.**
+- **The front is the machine the provider forwards to**, C in the examples: losing C needs no
+  promotion, and A already holds both primaries. **Every machine is set up as a front**: nginx,
+  its configuration, its certificate and its firewall's public side are the same on all three.
+  If the front is lost, the provider forwards to another, and nothing else changes.
+- **Players reach two ports: 443 and 9001.** 80 of the owner's three stays closed: it served
+  only a public CA's challenge, and with no domain there is none.
+- **443: nginx ends TLS and sends the API and the lobby to all three machines** over the private
+  network. Its upstreams are the three platforms (8080) and the three gateways (8090), which now
+  listen on their machine's private address; one that fails is passed over. The platform and the
+  gateway believe `X-Forwarded-For` from the addresses in `BACKEND_TRUSTED_PROXIES`, the three
+  machines', as they did from loopback alone. That is what keeps the per-address login limits
+  counting players, not the front.
+- **9001: nginx's `stream` ends TLS, and passes the connection to the arena its handshake
+  names** (`$ssl_server_name`, the SNI), over the private network in plaintext. An arena's name
+  is a label, `a1.arena.internal` and so on: no DNS holds it, since a player dials the public
+  address and only sends the name.
+- **The grant carries the name.** An arena announces:
+  - the public address as `ADVERTISE_HOST`;
+  - 9001 as `BACKEND_ADVERTISE_PORT`, since it listens on a private port, 9011, 9012 or 9013,
+    9001 being nginx's on every machine;
+  - its name as `BACKEND_ADVERTISE_TLS_NAME`, which also announces TLS, though the arena
+    speaks plaintext behind nginx.
+
+  The platform passes `tlsName` in every grant beside `arenaHost` and `arenaPort`. The client
+  dials the host and port, and sends and checks the name: `tlsName` when the grant has one,
+  the host as before when not.
+- **One certificate, from a CA of the backend's own.** With no domain no public CA certifies the
+  site, so `scripts/private-ca.sh` makes a root once and, from it, the certificate nginx serves.
+  That certificate names the public address (443) and every arena's name (9001). The app ships
+  with the root's certificate and trusts it, for the API, the lobby and matches alike. The
+  root's key stays off every server. The certificate is renewed from it without a client release,
+  since only the root is trusted and nothing is pinned.
+- **Seven arenas again**, the design's: `a1` and `a2` on A, `b1` to `b3` on B, `c1` and `c2` on
+  C. A public port no longer limits their number, because the name tells them apart. D-81's one
+  arena a machine and its costs are undone: crash isolation within a machine comes back
+  ([NFR-8](../requirements/01-scope-and-nfrs.md#4-non-functional-requirements)), and so does the
+  capacity, 1 800 players an arena as set (`MAX_ROOMS=12`), 12 600 on seven.
+- **The firewall**, on every machine:
+  - public side: 443 and 9001, with cockpit and SSH taken out of it;
+  - SSH from the internal network alone;
+  - private side: the stores and MySQL, as before, and now 8080, 8090 and the machine's arenas'
+    ports, open to the other two machines alone, since any of them may be the front.
+- **nginx is rebuilt** with its `stream` module and that module's TLS.
+
+**Why.**
+- **It is the owner's plan**: nginx in front of services that are not public, nothing outside
+  the release.
+- **One certificate in one place**: the front's nginx ends TLS for both ports, so no
+  certificate goes to the arenas.
+- **It needs no domain and no public CA.** The app trusts the backend's root alone, the same on
+  every device, whatever its age.
+- **No component of ours stands in the match path**: routing by name is nginx's own.
+- **It brings back the seven arenas** that D-81 had given up.
+
+**Cost.**
+- **The front is the one way in.** Lost, the site is unreachable until the provider forwards to
+  another machine ([NFR-4](../requirements/01-scope-and-nfrs.md#4-non-functional-requirements)
+  holds with that step only). D-13's three endpoints become one.
+- **All traffic crosses the front twice**, once on the public side and once on the private one.
+  At NFR-3's 50 000 in battle that is about 1.5 Gbit/s each way through its links: 1.1 down to
+  the players and 0.35 up ([architecture/01 §3](01-system-topology.md#3-capacity-model)). At
+  the launch's 10 000, about 0.3.
+- **nginx encrypts every match byte** for the front's cores, and every byte takes one more hop.
+  Neither is measured.
+- **Match traffic is plaintext on the private network**, join tickets included, as the API and
+  the lobby already were behind nginx. The private network must be the backend's alone.
+- **The root's key is the site's**: whoever holds it can impersonate the backend to every
+  player. It is kept off the servers, with a copy apart, and a new root means a client release.
+- **The front's nginx holds every player's connections**, two descriptors each: its limits are
+  raised to 262 144.
+- **The platforms and gateways listen on the private network**, reachable from the other two
+  machines alone, by the firewall.

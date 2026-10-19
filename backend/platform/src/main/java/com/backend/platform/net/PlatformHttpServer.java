@@ -130,9 +130,9 @@ import org.slf4j.LoggerFactory;
  * login are counted per address, and logins also per account, by {@link LoginThrottle}, here rather than
  * at nginx, because the edge sees neither the account nor the other two machines.
  *
- * The address is the TCP peer's, unless the peer is on this machine — nginx, in production
- * — in which case it is the last entry of {@code X-Forwarded-For}: see
- * {@link #clientAddress}.
+ * The address is the TCP peer's, unless the peer is nginx — on this machine, or the front's,
+ * named in {@code BACKEND_TRUSTED_PROXIES} (D-82) — in which case it is the last entry of
+ * {@code X-Forwarded-For}: see {@link #clientAddress}.
  */
 public final class PlatformHttpServer implements AutoCloseable {
 
@@ -182,6 +182,7 @@ public final class PlatformHttpServer implements AutoCloseable {
     private final String skinsJson;
     private final long skinsVersion;
     private final HttpServer server;
+    private volatile com.backend.common.TrustedProxies proxies = com.backend.common.TrustedProxies.LOOPBACK;
 
     /** Every routed response by status; read by the metrics scrape. */
     private final Metrics.LabeledCounter responses = new Metrics.LabeledCounter();
@@ -287,6 +288,11 @@ public final class PlatformHttpServer implements AutoCloseable {
         m.gauge("backend_platform_hasher_line",
                 "Requests holding or waiting for a password hash; 168 is full (S-7).",
                 auth::hasherLine);
+    }
+
+    /** Whose X-Forwarded-For to believe besides this machine's (D-82); before {@link #start}. */
+    public void trustForwardedFor(com.backend.common.TrustedProxies trusted) {
+        this.proxies = trusted;
     }
 
     public int start() {
@@ -474,7 +480,7 @@ public final class PlatformHttpServer implements AutoCloseable {
     /** The per-address limit alone, for what hashes nothing slow: true once a 429 is answered. */
     private boolean throttled(HttpExchange exchange) throws IOException {
         InetAddress who = clientAddress(exchange.getRemoteAddress().getAddress(),
-                exchange.getRequestHeaders().get("X-Forwarded-For"));
+                exchange.getRequestHeaders().get("X-Forwarded-For"), proxies);
         LoginThrottle.Verdict verdict = throttle.attempt(LoginThrottle.addressKey(who), null);
         if (verdict.allowed()) {
             return false;
@@ -506,7 +512,7 @@ public final class PlatformHttpServer implements AutoCloseable {
         switch (grant.outcome()) {
             case OK -> respond(exchange, 200, Json.MAPPER.writeValueAsString(
                     new MatchResponse(grant.arenaHost(), grant.arenaPort(), grant.ticketId(),
-                            grant.tls())));
+                            grant.tls(), grant.tlsName())));
             case NO_SESSION, NO_PROFILE -> error(exchange, 401, "invalid_session",
                     "log in again");
             // 503, not 500: nothing is broken, there is simply nowhere to put this player
@@ -649,7 +655,7 @@ public final class PlatformHttpServer implements AutoCloseable {
         MatchQueue.Grant g = opened.grant();
         switch (opened.outcome()) {
             case OPENED -> respond(exchange, 200, Json.MAPPER.writeValueAsString(
-                    new FoundView(g.arenaHost(), g.arenaPort(), g.ticketId(), g.tls(), MatchMode.SANDBOX.key)));
+                    new FoundView(g.arenaHost(), g.arenaPort(), g.ticketId(), g.tls(), MatchMode.SANDBOX.key, g.tlsName())));
             case NO_SESSION -> error(exchange, 401, "invalid_session", "log in again");
             case IN_PARTY -> error(exchange, 409, "in_party", "the party's leader opens it");
             case ALREADY_QUEUED -> error(exchange, 409, "already_queued", "leave the queue first");
@@ -680,7 +686,7 @@ public final class PlatformHttpServer implements AutoCloseable {
                 : Math.max(0, (queues.now() - status.since()) / 1_000);
         MatchQueue.Grant g = status.grant();
         FoundView grant = g == null ? null
-                : new FoundView(g.arenaHost(), g.arenaPort(), g.ticketId(), g.tls(), mode);
+                : new FoundView(g.arenaHost(), g.arenaPort(), g.ticketId(), g.tls(), mode, g.tlsName());
         Long secondsLeft = status.matchUid() == null ? null
                 : Math.max(0, (status.deadline() - queues.now() + 999) / 1_000);
         respond(exchange, 200, Json.MAPPER.writeValueAsString(
@@ -1951,7 +1957,7 @@ public final class PlatformHttpServer implements AutoCloseable {
             return "busy";
         }
         InetAddress who = clientAddress(exchange.getRemoteAddress().getAddress(),
-                exchange.getRequestHeaders().get("X-Forwarded-For"));
+                exchange.getRequestHeaders().get("X-Forwarded-For"), proxies);
         LoginThrottle.Verdict verdict = throttle.attempt(LoginThrottle.addressKey(who), account);
         if (verdict.allowed()) {
             return null;
@@ -1975,19 +1981,20 @@ public final class PlatformHttpServer implements AutoCloseable {
     /**
      * The address a request is counted under.
      *
-     * The TCP peer, unless the peer is on this machine. Then it is nginx, which terminates
-     * the client's connection and reports the address it saw as the <em>last</em> entry of
-     * {@code X-Forwarded-For} ({@code proxy_add_x_forwarded_for}). Only the last: every
-     * earlier entry is whatever the client chose to send. A header from any peer that is not
-     * on this machine is ignored for the same reason, and one that does not parse falls back
-     * to the peer, which throttles more rather than less.
+     * The TCP peer, unless the peer is nginx: on this machine, or one of the addresses
+     * {@code BACKEND_TRUSTED_PROXIES} names, the front's nginx reaching every machine over the
+     * private network (D-82). nginx terminates the client's connection and reports the address
+     * it saw as the <em>last</em> entry of {@code X-Forwarded-For}
+     * ({@code proxy_add_x_forwarded_for}). Only the last: every earlier entry is whatever the
+     * client chose to send. A header from any other peer is ignored for the same reason, and
+     * one that does not parse falls back to the peer, which throttles more rather than less.
      *
-     * This trusts every local process. That is the deployment the topology describes — nginx
-     * on each machine, in front of that machine's processes — and a local process could
-     * already do worse than lie about an address.
+     * This trusts every local process, and every process on a machine named: they are ours,
+     * and could already do worse than lie about an address.
      */
-    static InetAddress clientAddress(InetAddress peer, List<String> forwardedFor) {
-        if (!peer.isLoopbackAddress() || forwardedFor == null || forwardedFor.isEmpty()) {
+    static InetAddress clientAddress(InetAddress peer, List<String> forwardedFor,
+                                     com.backend.common.TrustedProxies proxies) {
+        if (!proxies.trusts(peer) || forwardedFor == null || forwardedFor.isEmpty()) {
             return peer;
         }
         String last = forwardedFor.get(forwardedFor.size() - 1);

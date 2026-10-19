@@ -147,6 +147,24 @@ class TournamentSchedulerTest {
 
     @Test
     @Timeout(60)
+    @DisplayName("behind the front (D-82), a tournament match's grant carries the arena's TLS name")
+    void aGrantBehindTheFront() throws Exception {
+        long a = player("aaa", 1_500);
+        long b = player("bbb", 1_400);
+        long c = player("ccc", 1_300);
+        long cup = running(a, b, c);
+        new ArenaDirectory(store).announce(new ArenaDirectory.Endpoint("arena-1", "203.0.113.10", 9001, 0, 1_000, true,
+                0, 50, "a1.arena.internal")).get(5, TimeUnit.SECONDS);
+        scheduler.tick(T.plusSeconds(125));
+        for (long p : new long[] {b, c}) {
+            JsonNode grant = JSON.readTree(new TournamentGrants(store).get(cup, p).get(5, TimeUnit.SECONDS));
+            assertThat(grant.get("arenaHost").asText()).isEqualTo("203.0.113.10");
+            assertThat(grant.get("tlsName").asText()).isEqualTo("a1.arena.internal");
+        }
+    }
+
+    @Test
+    @Timeout(60)
     @DisplayName("a match with both players is made once: a ticket each naming it, the grant kept and pushed")
     void makesAMatchOnce() throws Exception {
         long a = player("aaa", 1_500);
@@ -174,6 +192,7 @@ class TournamentSchedulerTest {
             assertThat(grant.get("arenaPort").asInt()).isEqualTo(9011);
             assertThat(grant.get("tls").asBoolean()).isTrue();
             assertThat(grant.get("mode").asText()).isEqualTo("duel");
+            assertThat(grant.has("tlsName")).as("no name: the host, as before").isFalse();
             tickets.put(p, grant.get("ticketId").asText());
 
             LobbyPush.Delivery pushed = heard.poll(5, TimeUnit.SECONDS);

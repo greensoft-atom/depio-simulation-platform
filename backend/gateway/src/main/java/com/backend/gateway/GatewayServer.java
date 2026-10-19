@@ -96,6 +96,7 @@ public final class GatewayServer implements AutoCloseable {
     private final java.util.concurrent.atomic.LongAdder resubscribed = new java.util.concurrent.atomic.LongAdder();
     private final String gatewayId;
     private Channel serverChannel;
+    private volatile com.backend.common.TrustedProxies proxies = com.backend.common.TrustedProxies.LOOPBACK;
 
     public GatewayServer(JRedisClient store, String platformBaseUrl, String gatewayId,
                          int ioThreads) {
@@ -106,6 +107,11 @@ public final class GatewayServer implements AutoCloseable {
         this.registry = new ConnectionRegistry(store, gatewayId);
         this.boss = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
         this.workers = new MultiThreadIoEventLoopGroup(ioThreads, NioIoHandler.newFactory());
+    }
+
+    /** Whose X-Forwarded-For a log believes besides this machine's (D-82); before {@link #start}. */
+    public void trustForwardedFor(com.backend.common.TrustedProxies trusted) {
+        this.proxies = trusted;
     }
 
     public int start(String bindHost, int port) throws InterruptedException {
@@ -126,7 +132,7 @@ public final class GatewayServer implements AutoCloseable {
                                 .addLast(new HttpObjectAggregator(MAX_FRAME_BYTES))
                                 .addLast(new IdleStateHandler(READER_IDLE_SECONDS, 0, 0))
                                 // Before the protocol handler, which answers pings itself.
-                                .addLast(new FrameLimit(errors))
+                                .addLast(new FrameLimit(errors, proxies))
                                 .addLast(new WebSocketServerProtocolHandler(LOBBY))
                                 // A message may come in fragments; its first was read as the
                                 // whole of it (bad_json) and the rest dropped.

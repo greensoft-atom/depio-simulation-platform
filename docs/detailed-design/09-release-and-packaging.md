@@ -131,12 +131,14 @@ compiler, `make` and `perl` installed there, nothing on the host. Configured wit
 `--prefix=/opt/backend/nginx` and its paths outside the release
 (`--conf-path=/etc/backend/nginx/nginx.conf`, logs under `/var/log/backend-nginx`,
 temporary files under `/var/cache/backend-nginx`, the pid under `/run/backend-nginx`),
-`--with-http_ssl_module --with-http_v2_module`, and OpenSSL, PCRE2 (with its JIT)
-and zlib from `vendor/src/` compiled in, so it links nothing the system's
-OpenSSL updates would change. Its modules are the ones the configuration uses
-(`deploy/nginx/`); `nginx -V` prints them. The release ships `nginx.conf`, the
-main file, beside the two the distribution's nginx used to include, and
-`backend-nginx.service` runs it.
+`--with-http_ssl_module --with-http_v2_module`, and since
+[D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)
+`--with-stream --with-stream_ssl_module`, the TCP proxy on 9001 that ends match traffic's TLS
+and passes each connection to the arena its handshake names. OpenSSL, PCRE2 (with its JIT) and zlib from
+`vendor/src/` are compiled in, so it links nothing the system's OpenSSL updates would
+change. Its modules are the ones the configuration uses (`deploy/nginx/`); `nginx -V`
+prints them. The release ships `nginx.conf`, the main file, beside the files it
+includes, and `backend-nginx.service` runs it.
 
 A security fix to nginx or OpenSSL is ours to take: a new version in
 `vendor/src/`, `build-nginx.sh` again, a release. The runbook says so.
