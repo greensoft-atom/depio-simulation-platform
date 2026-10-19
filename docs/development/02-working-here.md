@@ -105,6 +105,9 @@ image, which is RHEL 9's own userspace (plan item 80).
   `mysqld` runs.
 - **`x=$(ls … | head -1)` under `set -euo pipefail` ends the script silently** when `ls`
   finds nothing: add `|| true` and test the empty result (`run-local.sh`, 2026-10-17).
+- **`git add -A` takes the owner's edits too**: the owner works in the same folder, from VS
+  Code. A `.gitignore` line they had added went into a commit of Claude's (954994d,
+  2026-10-19). Read `git status` before staging, and stage by name what is not one's own work.
 - **A test's target process is named by its own pid (`$!`), never found by name**:
   `pgrep -n -x sleep` once found another program's `sleep 1`, a container's keep-alive
   loop's, and the test killed it (2026-10-17; the loop and its container went on).
