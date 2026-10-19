@@ -22,8 +22,8 @@ the import was then proved, and what was not proved, is in §6.
 | Maven for Java | `vscjava.vscode-maven` | 0.46.0 | the Maven view: goals run in a terminal |
 | Project Manager for Java | `vscjava.vscode-java-dependency` | 0.27.7 | the Java Projects view |
 
-VS Code 1.140 runs them all; the strictest asks for 1.95. The archive in `vscode/` is
-VS Code 1.140.0's RPM, with no extensions.
+VS Code 1.140 runs them all; the strictest asks for 1.95. VS Code itself is not in the
+repository: bring its RPM to the machine as you bring the extensions.
 
 **With no network, install each from its `.vsix` file**, in this order: the Test
 Runner needs the first two in place.
