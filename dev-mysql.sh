@@ -7,7 +7,7 @@
 # makes sure of the databases backend_test (the tests'; they wipe it) and backend_dev (a run by
 # hand's), and of their user, backend / backend-dev-password.
 #
-#   ./dev-mysql.sh start | stop | status
+#   ./dev-mysql.sh start | stop | restart | status
 set -euo pipefail
 . "$(dirname "$0")/dev-env.sh"
 M=$B/vendor/mysql-8.4/bin
@@ -46,10 +46,13 @@ start)
 stop)
     if up; then admin shutdown; echo "the development MySQL stopped"
     else echo "the development MySQL is not running"; fi ;;
+restart)
+    # stop returns once the server has ended: mysqladmin waits for its pid file to go.
+    "$0" stop && exec "$0" start ;;
 status)
     if up; then echo "the development MySQL runs on 127.0.0.1:$(cd "$D/data" && "$M/mysql" --no-defaults \
                      -S mysqld.sock -u root -N -e 'SELECT @@port'), its files in $D"
     else echo "the development MySQL is not running"; exit 1; fi ;;
 *)
-    echo "usage: $0 start | stop | status" >&2; exit 2 ;;
+    echo "usage: $0 start | stop | restart | status" >&2; exit 2 ;;
 esac

@@ -3178,6 +3178,11 @@ repository's folder; and VS Code's Java settings explained.
   recorded connections instead); the drills, which need .NET and the VM's MySQL (O-40).
 - **Open**: O-40, the processes' and tests' built-in default database, still 3306; moving it,
   and the drills with it, is the next unit if the owner agrees.
+- **2026-10-19, the owner's question how to run, stop and restart the MySQL alone:**
+  `dev-mysql.sh restart` added, and [03 §3.1](development/03-build-and-run.md#31-the-development-mysql-step-by-step)
+  walks through each command, connecting, its files, its errors, a crash and a fresh start.
+  Each was run as written: the data kept across a restart and across a `kill -9`, a refusal
+  for a port already in use, a fresh start in 5 s.
 
 ---
 

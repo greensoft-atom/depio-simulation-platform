@@ -111,11 +111,7 @@ files in `work/mysql`, on 127.0.0.1:3314. It reads no option file, so a
 `/etc/my.cnf` meant for the machine's own MySQL is ignored. It has its own port,
 data and socket, so it never meets that server.
 
-```bash
-./dev-mysql.sh start      # the first start makes backend_test, backend_dev and their user
-./dev-mysql.sh status
-./dev-mysql.sh stop
-```
+How to run it, stop it and restart it, step by step, is §3.1.
 
 The tests read `JDBC_URL`, which `dev-env.sh` points at `backend_test` there.
 `DB_USER` and `DB_PASSWORD` default to `backend` and `backend-dev-password`. They
@@ -135,6 +131,89 @@ A whole backend build ran 1 064 tests on 2026-10-06 (plan item 86). On 2026-10-1
 `build-offline.sh` passed them all again, with j-redis's 227. The backend's count was
 not kept, since the release step's `clean` removes the test reports. The counts per module
 are in each module's README.
+
+### 3.1 The development MySQL, step by step
+
+Every command runs from the repository's root and needs nothing else first, not even
+`dev-env.sh`, which the script reads itself. Each was run as written on 2026-10-19.
+
+| Command | What it does |
+|---|---|
+| `./dev-mysql.sh start` | Starts it, and returns once it answers. The first time, it first makes its data in `work/mysql/data` (about 5 s). Every start makes sure of `backend_test`, `backend_dev` and the user `backend`. Already running: prints where it runs, and changes nothing else. |
+| `./dev-mysql.sh status` | Says whether it runs, and on which port. Exit status 0 if it runs, 1 if not, for scripts. |
+| `./dev-mysql.sh stop` | Shuts it down cleanly, and returns once it has ended. Not running: says so. |
+| `./dev-mysql.sh restart` | `stop`, then `start`. The data is kept. |
+
+```console
+$ ./dev-mysql.sh start
+the development MySQL runs on 127.0.0.1:3314, its files in /home/you/depio-simulation-platform/work/mysql
+$ ./dev-mysql.sh restart
+the development MySQL stopped
+the development MySQL runs on 127.0.0.1:3314, its files in /home/you/depio-simulation-platform/work/mysql
+$ ./dev-mysql.sh stop
+the development MySQL stopped
+$ ./dev-mysql.sh status
+the development MySQL is not running
+```
+
+**Who else starts and stops it.**
+- `./build-offline.sh` starts it for the tests and stops it at the end. If it was
+  already running, the build leaves it running.
+- `./run-local.sh start` starts it with the platform or the worker. `./run-local.sh
+  stop` leaves it running; stop it with `./dev-mysql.sh stop`.
+- It does not start with the machine. After a reboot, run `./dev-mysql.sh start`.
+
+**Connecting to it**, with `vendor/`'s client:
+
+```bash
+# as the backend's user, over TCP, as the tests and the processes connect
+vendor/mysql-8.4/bin/mysql --no-defaults -h 127.0.0.1 -P 3314 --protocol=TCP \
+    -u backend -pbackend-dev-password backend_dev
+
+# as root, which has no password and is reached only through the socket, from the data directory
+(cd work/mysql/data && ../../../vendor/mysql-8.4/bin/mysql --no-defaults -S mysqld.sock -u root)
+```
+
+`--no-defaults` keeps the client from reading `/etc/my.cnf` or `~/.my.cnf`, which may
+name the machine's own MySQL. Use `vendor/`'s client. The `mysql` on the machine's
+`PATH` belongs to the machine's own MySQL 5, and was not tried against this 8.4 server.
+
+**Where its files are**, all in `work/mysql`:
+
+| File | What |
+|---|---|
+| `data/` | the databases; `data/mysqld.sock` is its socket while it runs |
+| `mysqld.err` | its log: start, stop, crash recovery, errors |
+| `init.err` | the log of the first start's initialisation |
+| `mysqld.pid` | its process id, while it runs |
+
+**When it does not start**, `start` prints the end of `work/mysql/mysqld.err`. Its
+messages:
+
+| What `start` says | What to do |
+|---|---|
+| `port 3314 is taken by another process` | Another program has the port. Choose another: `MYSQL_PORT=3324 ./dev-mysql.sh start`. Then give every command the same `MYSQL_PORT` (`dev-env.sh`, the tests and `run-local.sh` read it), or `export MYSQL_PORT=3324` once in the shell. VS Code's settings name 3314: change it in `.vscode/settings.json` and `.vscode/launch.json` too. `stop` and `status` find it on any port. |
+| `already runs, on 3314, not 3324` | It runs on another port than the one asked: `./dev-mysql.sh stop` first. |
+| `MySQL could not be initialised` | the first start failed; read `work/mysql/init.err`. The half-made data is removed, so the next `start` tries again. |
+
+**After a crash** (the machine lost power, or the server was killed): `./dev-mysql.sh
+start` as usual. MySQL recovers its data at start: `Starting XA crash recovery...`
+and `ready for connections` in `mysqld.err`. A row written before the crash was still
+there after it.
+
+**To start afresh**, with empty databases:
+
+```bash
+./dev-mysql.sh stop
+rm -rf work/mysql           # only this server's files; the machine's MySQL is elsewhere
+./dev-mysql.sh start        # makes them again, about 5 s
+```
+
+**The machine's own MySQL** (a MySQL 5 on 3306, say) is a different server: it has its
+own systemd service (`systemctl list-units | grep -i -E 'mysql|maria'` names it), its own
+files, and its own port.
+None of these commands reads, starts, stops or changes it. Do not stop it to free a
+port; give this one another port instead.
 
 ## 4. A release
 
