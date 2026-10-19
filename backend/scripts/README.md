@@ -17,6 +17,7 @@ Every setting a script or unit reads is also in the
 |---|---|---|---|
 | [`make-release.sh`](#make-releasesh) | Release | no | hand, on the build machine; `build-offline.sh` |
 | [`check-release-el9.sh`](#check-release-el9sh) | Release | no | hand, on a machine with Docker |
+| [`check-ports-el9.sh`](#check-ports-el9sh) | Release | no | hand, on a machine with Docker |
 | [`binlog-stream.sh`](#binlog-streamsh) | Backups | yes | `backend-binlog-stream.service`, always on |
 | [`backup-mysql.sh`](#backup-mysqlsh) | Backups | yes | `backend-mysql-backup.timer`, nightly |
 | [`record-backup.sh`](#record-backupsh) | Backups | yes | the three scripts that record |
@@ -110,6 +111,27 @@ scripts/check-release-el9.sh [release-dir]       default: target/release/backend
 | Environment | `IMAGE`, the image (default `registry.access.redhat.com/ubi9/ubi-minimal:9.5`; another RHEL 9.x tag to check that one) |
 | Needs | Docker, and the image, pulled the first time |
 | Runs | on the build machine, from anywhere |
+
+### check-ports-el9.sh
+
+Checks [operations/05](../../docs/operations/05-ports-and-firewall.md), the ports and the firewall,
+as written, for machine A, in Rocky Linux 9.5 (RHEL 9's firewalld) with systemd and no network. A
+release's processes start with the settings the release ships, and must listen where 05 §2 says,
+and nowhere else. Then B, C, a stranger on the private network and a player, each in a network
+namespace of its own, try every port that matters: with the firewall stopped, as RHEL 9 has it, and
+after 05 §5's commands for A, which it takes from the page. Through the opened ports a registration
+and the lobby go through nginx, and the store and MySQL answer B. Then the rules after a restart of
+firewalld, the commands run twice, B's and C's commands, and the install guide's §12. It ends `---
+<n> failed` and exits non-zero on any failure ([05 §9](../../docs/operations/05-ports-and-firewall.md#9-what-was-checked-and-what-was-not)).
+
+```
+scripts/check-ports-el9.sh                     the release in target/release/backend-*/
+```
+
+| | |
+|---|---|
+| Needs | Docker, and the network once, to build its image (`rockylinux/rockylinux:9.5` with firewalld) |
+| Runs | on the build machine, from anywhere; about two minutes once its image is built |
 
 ## Backups and recovery
 

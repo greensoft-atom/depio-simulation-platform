@@ -228,10 +228,18 @@ Players reach nginx (443, and 80 for the certificate's challenge) and the arena
 (`ARENA_PORT`, 9001); nothing else is reachable from outside. Each further arena on the
 machine opens its own port ([scaling §2.4](04-scaling-and-performance.md#24-adding-capacity)).
 
+<!-- firewall one machine -->
 ```console
-firewall-cmd --permanent --add-service=https --add-service=http --add-port=9001/tcp
+firewall-cmd --permanent --add-service=https --add-service=http
+firewall-cmd --permanent --add-port=9001/tcp
 firewall-cmd --reload
 ```
+<!-- /firewall -->
+
+Services and ports go in separate commands: firewalld refuses `--add-service` and
+`--add-port` in one, and applies none of it. On three machines, each one's firewall also opens
+its private ports to the other two, and to no one else: [05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9)
+has each machine's commands, and every port is in [05](05-ports-and-firewall.md).
 
 ## Operating it
 

@@ -60,7 +60,7 @@ and fixed-phrase chat
 | `platform` design | **[Written](detailed-design/04-platform-services.md)** and extended module by module in Phase 5 — auth and guests, teams, matchmaking and every queued mode, tournaments, boards and seasons, the economy (shop, items, gems, payments, the season pass, skins), the social layer, the admin API. |
 | `worker` / events design | **[Written](detailed-design/05-worker-and-events.md)** — streams, consumer loop, dead-lettering, result pipeline, scheduled jobs, analytics and the funnel. The worker reads the result stream (item 10). |
 | MySQL persistence design | **[Written](detailed-design/06-persistence-mysql.md)** — schema, transaction patterns, idempotency via natural keys, pooling, retention and growth, backups proved weekly. The schema is one baseline since 2026-10-04, `V1__schema.sql` and `V2__seed.sql` (D-75). |
-| Operations docs | [Mostly written](operations/01-deploy.md) — install, TLS, MySQL, backups and the certificate run for real; the stores' promotion scripted and drilled ([runbook §2](operations/02-runbook.md#2-stateful-primary-failure)), MySQL's too (2026-09-29, rehearsed under load 2026-09-30); backups proved by a weekly restore (item 76). What is left is the alert thresholds, which wait on Q-3's hardware ([runbook](operations/02-runbook.md)). |
+| Operations docs | [Mostly written](operations/01-deploy.md) — install, TLS, MySQL, backups and the certificate run for real; the stores' promotion scripted and drilled ([runbook §2](operations/02-runbook.md#2-stateful-primary-failure)), MySQL's too (2026-09-29, rehearsed under load 2026-09-30); backups proved by a weekly restore (item 76); every port and each machine's firewall, run as written ([05](operations/05-ports-and-firewall.md), item 88). What is left is the alert thresholds, which wait on Q-3's hardware ([runbook](operations/02-runbook.md)). |
 | Application code | **[backend/](../backend/README.md)**: `common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`, `crypto-examples`. 1 064 tests, 0 compiler warnings (item 86, 2026-10-06). Multi-room arena, largest clean run 1 200 bots, every one sent every snapshot (item 14), and 600 through a failover (item 23); MySQL transactions tested for idempotency and double-spend under concurrency; single-use join tickets; Argon2id login and sessions; register → login → lobby → ticket → play → result persisted → **leaderboard updated**, verified end to end across four processes against real MySQL and real j-redis. |
 | Unity client | **Claude writes it** ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer), 2026-09-27): the engine-free core and a headless driver in [client/](../client/README.md), 148 tests (2026-10-04), driven against the real stack by the live drills. The Unity layer is written as scripts over the core, compiled against stubs and not yet run in Unity (item 77, the owner's Q-51); own-tank prediction, deferred with it on 2026-09-27, was brought back on 2026-10-03 and built (item 70). |
 
@@ -3188,6 +3188,49 @@ repository's folder; and VS Code's Java settings explained.
   collection (131 of 131 on fresh data), `lobby-example.mjs`, the bots. Found on the way:
   O-41 (the run's arena had too few rooms for the collection; 4 now) and DOC-26 (the
   collection is to run once per fresh stack).
+
+---
+
+#### 88. ~~Every port, and the firewall on each machine (O-42, DOC-27).~~ — **done 2026-10-19**
+
+**The owner, 2026-10-19:** a guide to every port the system uses in a server deployment, correct
+and in detail, written down.
+
+- **Found** writing it down, then running it:
+  - **O-42**: no guide opened the ports the machines reach each other on, which RHEL 9's firewalld
+    closes (measured); and the install guide's one firewall command is refused whole by firewalld.
+  - **DOC-27**: the deploy README's port catalogue had not followed D-80, and no document gave the
+    second and third arenas' ports.
+  - The arena listens on IPv6 too (`*:9001`; a player reached it over IPv6), which nothing said;
+    the JVM's loopback listeners show as `[::ffff:127.0.0.1]` (working-here §4).
+- **Written**: [operations/05](operations/05-ports-and-firewall.md):
+  - three kinds of port;
+  - every port on each machine, with its address, who connects and from where, and what names it;
+  - the arenas' numbering;
+  - who connects to whom;
+  - each machine's firewalld commands: a `backend` zone of the other two machines' addresses,
+    beside `public`;
+  - checking, and reading a failure;
+  - what changes together when a port changes;
+  - development's and the drills' ports, apart.
+
+  Also: the install guide's §12 fixed, the deploy README's catalogue corrected, and pointers from
+  01, 04 and the indexes.
+- **Checked**: `check-ports-el9.sh`, in Rocky Linux 9.5 (RHEL 9's firewalld 1.3.4) with no network:
+  118 checks, none failing ([05 §9](operations/05-ports-and-firewall.md#9-what-was-checked-and-what-was-not)).
+  - A's processes from a release listened on §2's addresses, and nowhere else.
+  - B, C, a stranger and a player tried every port: with the firewall stopped, as RHEL 9 has it,
+    and after the page's commands.
+  - A registration and the lobby went through nginx, and the store and MySQL answered B.
+  - B's and C's commands, and the install guide's §12, made what they say.
+  - Four mutants, all caught.
+- **Not checked**:
+  - RHEL 9 itself, real machines and a real private network;
+  - SELinux enforcing;
+  - B's and C's processes: their commands were run and their zones read, not probed;
+  - the arenas over TLS;
+  - a provider's firewall.
+- **Next**, as item 87 left it: O-40 if the owner agrees, then O-37 and M-6.
 
 ---
 

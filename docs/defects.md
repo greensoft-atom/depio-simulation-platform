@@ -937,6 +937,28 @@ moment before the dump now fails if the comparison is put back.
   made a duel, the Postman collection's sandbox was refused, `503 no_room`, and 130 of its 131
   checks passed. **Fixed:** 4 rooms, as backend/README's example has; the same sequence on fresh
   data passed 131 of 131.
+- **O-42 (H), found 2026-10-19, FIXED the same day (plan item 88). No guide opened the ports the
+  machines reach each other on, and the one firewall command given was refused.** Found writing
+  every port down for the owner (operations/05), then running it.
+  - **The private ports.** The install guide's §12 opened 80, 443 and 9001 for players and nothing
+    else. A RHEL 9 server runs firewalld with every interface in its `public` zone, which allows
+    `ssh`, `dhcpv6-client` and `cockpit` alone. On three machines, B and C could not have reached
+    A's session store or MySQL, nor A and C B's `events` store. Measured with RHEL 9's firewalld:
+    from 10.0.0.2, A's 6379 and 3306 answered `No route to host`. The arenas past the first (9002,
+    9003) were left to the scaling guide.
+  - **The command itself.** `firewall-cmd --permanent --add-service=https --add-service=http
+    --add-port=9001/tcp` is refused (`argument --add-port: not allowed with argument
+    --add-service`), and none of it is applied: on one machine too, players would have reached SSH
+    alone. Nobody had run it: §12 is outside the steps `check-install-guide-el9.sh` runs.
+  - With the firewall stopped, a player able to route to 10.0.0.1 reached the store and MySQL
+    (measured), each still behind its password, MySQL behind TLS too: the firewall is what closes
+    them.
+
+  **Fixed:** [operations/05](operations/05-ports-and-firewall.md), every port and each machine's
+  commands, a `backend` zone of the other two machines' addresses beside `public`; the install
+  guide's §12 split in two commands. `check-ports-el9.sh` runs both pages' commands as written,
+  with A's processes from a release, seen from B, C, a stranger on the private network and a player
+  (05 §9).
 
 ---
 
@@ -1191,6 +1213,16 @@ therefore to run once per fresh stack. Run twice on the same data, the second ru
 of 131 checks: `409 season_ended` before the worker began the next season, and a room
 already closed. **Fixed:** said in docs/api/README, with how to start afresh
 (development/03 §5.1).
+
+**DOC-27, found 2026-10-19, FIXED the same day** (plan item 88). The ports catalogue in
+deploy/README had not followed D-80, and left ports unsaid:
+- it gave 3306 as the tests' MySQL, and had neither the development MySQL's 3314, nor the
+  debugger's 5005 to 5009, nor `run-local.sh`;
+- no document gave the second and third arenas' ports or metrics ports: the examples gave the
+  first's (9001, 9110), the scaling guide an `a3`'s (9003, 9113).
+
+**Fixed:** the catalogue corrected, and the arenas' numbering in operations/05 §3 (9112 skipped,
+as a worker's on C).
 
 ---
 

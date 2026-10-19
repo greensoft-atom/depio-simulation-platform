@@ -269,16 +269,19 @@ Each script's own settings are in [scripts/README](../scripts/README.md). Those 
 
 ### Production
 
+Who connects to each, the firewall on each machine, and what changes together when a port
+changes: [operations/05](../../docs/operations/05-ports-and-firewall.md).
+
 | Port | Listener | Bound to | Where |
 |---|---|---|---|
 | 80, 443 | nginx | every address, IPv4 and IPv6 | A, B, C |
-| 9001 in the example, one per arena | arena, match traffic (TLS once a certificate is installed) | `0.0.0.0` | A (2), B (3), C (2) |
+| 9001, 9002, 9003: one per arena, by its number on the machine ([05 §3](../../docs/operations/05-ports-and-firewall.md#3-the-arenas-ports)) | arena, match traffic (TLS once a certificate is installed) | `0.0.0.0`, which the native transport takes as every address, IPv4 and IPv6 | A (2), B (3), C (2) |
 | 8090 | gateway (`/lobby` behind nginx) | `127.0.0.1` | A, B, C |
 | 8080 | platform (`/v1/` behind nginx; the gateway calls it too) | `127.0.0.1` | A, B, C |
 | 9120 | platform's admin API, when named | loopback, enforced | A, B, C |
 | 9101 | platform's metrics | `127.0.0.1` | A, B, C |
 | 9103 | gateway's metrics | `127.0.0.1` | A, B, C |
-| 9110 onwards | arenas' metrics, one per instance | `127.0.0.1` | A, B, C |
+| 9110, 9111, 9113 | arenas' metrics, one per arena (9112 is skipped: a worker's on C) | `127.0.0.1` | A, B, C |
 | 9102, 9112 | workers' metrics (`c1`, `c2`) | `127.0.0.1` | C |
 | 6379 | j-redis `session`: primary on A, replica on B | `127.0.0.1` and the machine's private address ([01 §3](../../docs/operations/01-deploy.md#3-j-redis-built-and-tested)) | A, B |
 | 6380 | j-redis `events`: primary on B, replica on C | the same | B, C |
@@ -302,8 +305,10 @@ the host the owner names.
 | 9197, 9198, 9199 | the arena's, the gateway's and the worker's metrics | `client/headless-drill.sh` |
 | 3307, 3308 | MySQL primary and replica (`MYSQL_FAILOVER`) | `client/headless-drill.sh` |
 | 3307, 3309 | MySQL primary and scratch server | `backup-drill.sh` (not at the same time as `MYSQL_FAILOVER`) |
-| 3306 | the development MySQL (`backend_dev`, `backend_test`) | the tests, both drills |
-| 6380, 8080, 8081, 9001 | j-redis, platform, gateway, arena | the by-hand example in [backend/README](../README.md#running-it) |
+| 3306 | the development VM's MySQL 8.0 (`backend_dev`) | both drills; still the tests' own default when `dev-env.sh` is not sourced (O-40) |
+| 3314 | the development MySQL, `vendor/`'s 8.4 (`backend_test`, `backend_dev`) | `dev-mysql.sh`: the tests through `dev-env.sh`, the benchmarks, `run-local.sh` (D-80) |
+| 6380, 8080, 8081, 9001 | j-redis, platform, gateway, arena | `run-local.sh`, and the by-hand example in [backend/README](../README.md#running-it) |
+| 5005 to 5009 | the debugger, one per process | `DEBUG=1 ./run-local.sh start` |
 
 All bind `127.0.0.1`. 6381 and 8082 belong to other processes on the development machine.
 

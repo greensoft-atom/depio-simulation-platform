@@ -95,7 +95,8 @@ firewall-cmd --permanent --add-port=9003/tcp && firewall-cmd --reload
 Check that it is live: `GET /admin/arenas` lists `arena-a3` with port 9003 within a few
 seconds ([api/03](../api/03-admin-api.md)), and the platform starts sending players to it at
 once. Pick a metrics port no other process on the machine uses: the examples give the platform
-9101, the gateway 9103, the workers 9102 and 9112, the arenas 9110 onwards. A drop-in under
+9101, the gateway 9103, the workers 9102 and 9112, the arenas 9110 onwards, numbered by the
+arena's number on its machine ([05 §3](05-ports-and-firewall.md#3-the-arenas-ports)). A drop-in under
 `backend-arena@.service.d/` (the heap on a small machine, a credential) applies to every
 instance, the new one included. If the arenas serve TLS, the new one takes the machine's
 keystore as the others do ([01 §8](01-deploy.md#8-tls-for-match-traffic)).

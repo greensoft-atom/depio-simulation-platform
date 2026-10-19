@@ -118,6 +118,13 @@ image, which is RHEL 9's own userspace (plan item 80).
   (`run-local.sh`'s guard; a mutant that swapped `grep` for `true` made it fail one run in two).
 - **`env -i` drops `PWD`**, so a script started through a symbolic link sees the resolved
   path: a check of "a path with a space" through a link does not test it. Use a real directory.
+- **`ss` shows a JVM's `127.0.0.1:8080` as `[::ffff:127.0.0.1]:8080`**: Java's sockets are
+  IPv6, so a match on `127.0.0.1:8080` finds nothing, and an arena's `0.0.0.0` is `*:9001`, both
+  families, reachable over IPv6 too. The store's unit sets `preferIPv4Stack` and shows plain
+  IPv4 (2026-10-19, `check-ports-el9.sh`).
+- **`firewall-cmd` refuses `--add-service` and `--add-port` in one command**, and applies none
+  of it; several of one option are fine. The install guide's firewall step did that, and no one
+  had run it (O-42, 2026-10-19).
 - **Red Hat's Java extension runs on Java 25 or later since 1.57**: `java.jdt.ls.java.home`
   cannot be the repository's 21. Leave it unset; the extension carries its own ([05](05-vscode.md)).
 - **`~/.m2` holds artifacts from two sources** (before D-80, when the work used it), Maven Central and the

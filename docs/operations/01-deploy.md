@@ -6,7 +6,9 @@ How the system is installed and rolled out across the three machines.
 the systemd units and the nginx configuration are written: `backend/deploy/`,
 file by file in [its README](../../backend/deploy/README.md), which also holds
 the catalogue of every setting, port and timer; and `backend/scripts/`, script
-by script in [theirs](../../backend/scripts/README.md). The four process units
+by script in [theirs](../../backend/scripts/README.md). Every port, who connects
+to it and from where, and each machine's firewall:
+[05](05-ports-and-firewall.md). The four process units
 and the release have been run for real, sandboxed, with bots and MySQL (§7),
 and so have arena TLS (§8), MySQL's own setup with TLS (§9), the binlog stream
 and the dump under systemd (§10), the scratch server's unit (§10), and nginx
