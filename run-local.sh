@@ -50,7 +50,7 @@ start_one() {
                   # port, map size, max players, shapes, rooms, store, name, match seconds (0: continuous),
                   # spool, bind host, advertised host (backend/README, Running it)
                   args=(-XX:+UseZGC -XX:+ZGenerational -cp "$R/lib/arena/*" com.backend.arena.ArenaMain
-                        "$ARENA_PORT" 5700 150 1500 2 127.0.0.1 "$STORE_PORT" arena-1 0 "$L/spool" 127.0.0.1 127.0.0.1) ;;
+                        "$ARENA_PORT" 5700 150 1500 4 127.0.0.1 "$STORE_PORT" arena-1 0 "$L/spool" 127.0.0.1 127.0.0.1) ;;
         *)        echo "no process $p: $ALL" >&2; exit 2 ;;
     esac
     if [ -n "$port" ] && taken "$port"; then

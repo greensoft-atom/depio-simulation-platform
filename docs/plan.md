@@ -3183,6 +3183,11 @@ repository's folder; and VS Code's Java settings explained.
   walks through each command, connecting, its files, its errors, a crash and a fresh start.
   Each was run as written: the data kept across a restart and across a `kill -9`, a refusal
   for a port already in use, a fresh start in 5 s.
+- **2026-10-19, the owner's question how to try the WebSocket and the socket:** 03 §5.1, each
+  interface and what tries it, run as written against a run by hand: `curl`, the Postman
+  collection (131 of 131 on fresh data), `lobby-example.mjs`, the bots. Found on the way:
+  O-41 (the run's arena had too few rooms for the collection; 4 now) and DOC-26 (the
+  collection is to run once per fresh stack).
 
 ---
 

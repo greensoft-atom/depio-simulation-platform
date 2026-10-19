@@ -41,6 +41,11 @@ What it needs and does:
 
 - **A test stack, never production.** Folder 09 sends a notice to every connected player,
   closes a room and suspends this run's player C; folder 12 ends the current season.
+- **Once per fresh stack.** Run again on the same data, a few checks fail on what the last
+  run left: `409 season_ended` until the worker begins the next season, a minute or so
+  later, and a closed room no longer there. On a run by hand, start afresh as
+  [development/03 §5.1](../development/03-build-and-run.md#51-trying-each-interface) says;
+  it gives the command for a run by hand with payments and the admin API on, too.
 - **Payments switched on**: `platform` with `BACKEND_PAYMENT_PROVIDER=simulated`, or folder 03's
   payments answer 503 `payments_off` and the purchases after them fail.
 - **The admin API on** (`BACKEND_ADMIN_ADDR` and its secret) for folders 09 and 12, and **a live

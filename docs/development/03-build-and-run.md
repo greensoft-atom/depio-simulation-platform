@@ -256,6 +256,109 @@ running a match drains it first, for up to eleven minutes (D-29). Give every com
 settings, `start` and `bots` alike. What each process's arguments mean:
 [backend/README](../../backend/README.md#running-it).
 
+### 5.1 Trying each interface
+
+| Interface | Where, on a run by hand | Try it with |
+|---|---|---|
+| The player API, HTTP | `http://127.0.0.1:8080/v1/...` | `curl`, Postman |
+| The admin API, HTTP | `http://127.0.0.1:9120/admin/...`, with `Authorization: Bearer <secret>` | `curl`, Postman |
+| The lobby, WebSocket | `ws://127.0.0.1:8081/lobby` | Postman's WebSocket request; `docs/api/lobby-example.mjs` (Node 22 or later) |
+| A match, binary over TCP | `127.0.0.1:9001`, the address a grant names | `./run-local.sh bots`. `curl` and Postman cannot speak it. |
+
+Every route, message and frame, with real examples: [docs/api](../api/README.md). Each
+command below was run as written on 2026-10-19, on fresh data, and the outputs shown are what
+it printed. Your token will differ. The arena has four rooms of 150 places, the public
+area's and three for matches and private rooms.
+
+**Start it with payments simulated and the admin API on.** The Postman collection needs
+both. `run-local.sh` passes the shell's environment to every process, and these three
+are read by the platform:
+
+```bash
+(umask 077; head -c 24 /dev/urandom | base64 > work/admin-token)   # the admin API's secret, kept in work/
+export BACKEND_PAYMENT_PROVIDER=simulated BACKEND_ADMIN_ADDR=127.0.0.1:9120 \
+       BACKEND_ADMIN_TOKEN_FILE=$PWD/work/admin-token
+./run-local.sh start
+```
+
+**HTTP, with `curl`:**
+
+```console
+$ curl -s http://127.0.0.1:8080/health
+{"status":"ok"}
+$ curl -s -X POST http://127.0.0.1:8080/v1/accounts -H 'Content-Type: application/json' \
+       -d '{"username":"try_1","password":"example-password-1"}'
+{"playerId":1}
+$ curl -s -X POST http://127.0.0.1:8080/v1/sessions -H 'Content-Type: application/json' \
+       -d '{"username":"try_1","password":"example-password-1"}'
+{"token":"vEw_g8LL08jNXDiHOeFlswTCagwkg-lykE9z9u2mNYw","playerId":1,"expiresInSeconds":94879}
+$ curl -s http://127.0.0.1:8080/v1/inventory -H "Authorization: Bearer vEw_g8LL08jNXDiHOeFlswTCagwkg-lykE9z9u2mNYw"
+{"coins":0,"gems":0,"items":[]}
+$ curl -s http://127.0.0.1:9120/admin/arenas -H "Authorization: Bearer $(cat work/admin-token)"
+[{"name":"arena-1","host":"127.0.0.1","port":9001,"players":0,"maxPlayers":600,"tls":false,"rooms":1,"maxRooms":4}]
+```
+
+**HTTP, with Postman**: import `docs/api/backend.postman_collection.json`, set its
+variables:
+- `baseUrl` to `http://127.0.0.1:8080`;
+- `adminUrl` to `http://127.0.0.1:9120`;
+- `adminToken` to the contents of `work/admin-token`.
+
+Then run the collection whole. **It is a scenario for a fresh test stack, to run once**:
+it ends the current season, closes a room and bans its third player. Run again on the same
+data, a few checks fail on what the last run left (`409 season_ended`, a room no longer
+there). To run it again from scratch:
+
+```bash
+./run-local.sh stop && ./dev-mysql.sh stop
+rm -rf work/mysql            # the development MySQL's data, made again at the next start
+./run-local.sh start         # with the three variables above still exported
+```
+
+On fresh data it passed 131 of 131, run straight after the lobby example below.
+
+**The lobby WebSocket.** Postman's WebSocket request, by hand:
+1. New, WebSocket; URL `ws://127.0.0.1:8081/lobby`; Connect.
+2. Send `{"t":"auth","id":1,"d":{"token":"<a token from a login>"}}` first. It answers `auth.ok`.
+3. Then any message of [02 §4](../api/02-lobby-websocket.md#4-what-a-client-sends), for example
+   `{"t":"ping","id":2}` or `{"t":"queue.join","id":3,"d":{"mode":"duel"}}`.
+
+A party or a duel needs a second connection, as another player. Or the whole session
+scripted, with two players, every frame printed and checked:
+
+```console
+$ node docs/api/lobby-example.mjs http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby http://127.0.0.1:9120 "$(cat work/admin-token)"
+--- two players, over http://127.0.0.1:8080
+...
+--- every answer as expected
+```
+
+It needs Node 22 or later, which the repository does not carry.
+
+**A match, the arena's socket.** It is binary, over TCP
+([02-networking](../detailed-design/02-networking.md)). The bots speak it as a client
+does: they log in, ask the lobby for a seat, dial the arena the grant names, join, send
+input ten times a second, and leave.
+
+```console
+$ ./run-local.sh bots 20 15
+lobby: 20 of 20 bots registered, logged in and got a ticket in 1.7 s (87 ms of wall time per bot)
+20 bots connected to 127.0.0.1:9001
+welcomes 20   disconnects 0   kicks 0 (last reason 0)   lobby failures 0
+over 15.0 s with every bot in: snapshots 4500   bytes 373722
+mean frame 83.0 B   per bot 15.00 snapshots/s, 1.22 KB/s (payload only)
+stays 20, each joined and left on purpose
+```
+
+Read it as follows:
+- `welcomes` should equal the bots;
+- `disconnects` and `kicks` should be 0;
+- each bot gets 15 snapshots a second.
+
+Its options (a profile, a proxy, staying and coming back) are in
+[tools/README](../../backend/tools/README.md#botclient). Whether the port answers at all:
+`(exec 3<>/dev/tcp/127.0.0.1/9001) && echo open`.
+
 ## 6. Debugging
 
 **A process from the release, under a debugger**: `DEBUG=1` makes each Java
@@ -338,6 +441,7 @@ here runs Unity). [client/README](../../client/README.md).
 | What you see | What it means | What to do |
 |---|---|---|
 | `[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:…:test … on project persistence`, above it `Communications link failure` or `Access denied for user 'backend'` | Not a plugin that could not be fetched: tests failed. The database tests reached no MySQL, or one that is not theirs. Before D-80 they went to 127.0.0.1:3306. | `./build-offline.sh` from this version starts the development MySQL itself. By hand: `./dev-mysql.sh start`, in a shell that sourced `dev-env.sh`. |
+| Stack traces and `ERROR` lines while the tests run, such as `room-1 - tick 161 failed` or `has not ticked for 10451 ms; abandoning it`, and the build still ends `--- done:` | Not failures. Tests that break something on purpose (a tick that throws, a spool that cannot be written, a room that hangs) check what the backend does then, and the backend logs it as it would in production. | Nothing. A test that fails stops the build with `[ERROR] Tests run: …, Failures: …` and its name under `[ERROR] Failures:` or `[ERROR] Errors:`, and its report is in `<module>/target/surefire-reports/`. |
 | `dev-env.sh: vendor/jdk-21/bin/java is not executable` | the copy lost the files' modes | copy again with `git clone` or `tar` |
 | `dev-env.sh: … holds a character the build cannot carry` | a space or another character in the path | move the checkout, or link to it from a path without one |
 | `port 3314 is taken by another process` | another server on the development MySQL's port | `MYSQL_PORT=<a free port>` |

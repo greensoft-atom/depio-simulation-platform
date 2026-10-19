@@ -48,7 +48,7 @@
         {
             "type": "java", "request": "launch", "name": "Launch: arena",
             "projectName": "arena", "mainClass": "com.backend.arena.ArenaMain",
-            "args": ["9001", "5700", "150", "1500", "2", "127.0.0.1", "6380", "arena-1", "0",
+            "args": ["9001", "5700", "150", "1500", "4", "127.0.0.1", "6380", "arena-1", "0",
                      "${workspaceFolder}/work/run/spool", "127.0.0.1", "127.0.0.1"],
             "javaExec": "${workspaceFolder}/vendor/jdk-21/bin/java",
             "vmArgs": "-XX:+UseZGC -XX:+ZGenerational --add-opens java.base/java.nio=ALL-UNNAMED -Djava.io.tmpdir=${workspaceFolder}/work/tmp",

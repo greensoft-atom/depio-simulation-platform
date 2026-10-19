@@ -931,6 +931,12 @@ moment before the dump now fails if the comparison is put back.
   refuses the development user. The drills rely on the default, and need .NET and that 3306
   database anyway (development/03 §7). The fix is the defaults moved to 3314 and the drills
   with them, one change, not yet made.
+- **O-41 (L), found 2026-10-19, FIXED the same day (plan item 87). A run by hand had too few
+  rooms for the API's own scenario.** `run-local.sh` gave its arena 2 rooms, the number the
+  guide's old commands used: the public area's and one more. After `docs/api/lobby-example.mjs`
+  made a duel, the Postman collection's sandbox was refused, `503 no_room`, and 130 of its 131
+  checks passed. **Fixed:** 4 rooms, as backend/README's example has; the same sequence on fresh
+  data passed 131 of 131.
 
 ---
 
@@ -1178,6 +1184,13 @@ started (O-38). The owner, on a clone, did not know what the `/opt` and `/tmp` p
 - a VS Code guide (development/05) and its committed settings;
 - the module READMEs, `CLAUDE.md` and working-here §3 changed;
 - the bundle's, `vendor/`'s and j-redis's setup guides labelled.
+
+**DOC-26, found 2026-10-19, FIXED the same day** (plan item 87). docs/api/README said the
+Postman collection ends the season, closes a room and bans a player, but not that it is
+therefore to run once per fresh stack. Run twice on the same data, the second run failed 2
+of 131 checks: `409 season_ended` before the worker began the next season, and a room
+already closed. **Fixed:** said in docs/api/README, with how to start afresh
+(development/03 §5.1).
 
 ---
 
