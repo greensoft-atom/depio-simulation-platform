@@ -243,12 +243,13 @@ curl -s --cacert /etc/backend/tls/ca.pem --connect-to "$ADDRESS:443:127.0.0.1:44
     "https://$ADDRESS/v1/accounts"
 # Match traffic's TLS on 9001, as a device sees it: the arena's name, verified against the root
 echo | openssl s_client -connect 127.0.0.1:9001 -servername a1.arena.internal -verify_hostname a1.arena.internal \
-    -CAfile /etc/backend/tls/ca.pem 2>/dev/null | grep 'Verify return code'
+    -CAfile /etc/backend/tls/ca.pem 2>/dev/null | grep -E '^subject=|Verify return code'
 /opt/backend/scripts/install-certificate.sh --check
 ```
 
-Every unit `active`, `201`, `Verify return code: 0 (ok)`, and the certificate's check naming both
-ports. Each unit's log: `journalctl -u backend-platform`
+Every unit `active`, `201`, a `subject=` line naming `backend` with `Verify return code: 0 (ok)`,
+and the certificate's check naming both ports. The subject matters: on a port that speaks no TLS,
+`openssl s_client` finds no certificate and still prints `Verify return code: 0 (ok)`. Each unit's log: `journalctl -u backend-platform`
 (and so on); their metrics on loopback (01 §7).
 
 <!-- /guide-steps -->

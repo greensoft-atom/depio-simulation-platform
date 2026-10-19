@@ -199,4 +199,6 @@ under 30 days. The runbook's routine lists the renewal ([02 §6](02-runbook.md#6
 | By hand, what 443 serves | `openssl s_client -connect 203.0.113.10:443 -verify_ip 203.0.113.10 -CAfile ca.pem </dev/null` |
 | By hand, what 9001 serves for an arena | `openssl s_client -connect 203.0.113.10:9001 -servername a1.arena.internal -verify_hostname a1.arena.internal -CAfile ca.pem </dev/null` |
 
-Each ends with `Verify return code: 0 (ok)` when the certificate is right.
+Each ends with `Verify return code: 0 (ok)` when the certificate is right, with the certificate's
+`subject=` line naming `backend` above it (`CN = backend` or `CN=backend`, by OpenSSL's version). Look for both: on a port that speaks no TLS, s_client gets no certificate (`no peer
+certificate available`) and still prints `Verify return code: 0 (ok)`.

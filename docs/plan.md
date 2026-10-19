@@ -3343,7 +3343,18 @@ and for every guide and setting a fresh OS and a fresh developer need, without t
     passed; over TLS, eight scenarios, one check failed in `party`:
     [T-61](defects.md#4-concurrency), a party's leader shown queued in no queue when a member
     left at once, the leader's late answer applied over the newer push. Fixed in the C# core; two
-    tests, test first, two mutants caught; the core's 176 tests pass, and the Unity scripts compile;
+    tests, test first, two mutants caught; the core's 176 tests pass, and the Unity scripts compile.
+    Then every scenario plaintext, 44, all passed, and `party` three times over TLS with the fix,
+    each passed;
+  - [O-44](defects.md#6-operations): `check-units-el9.sh` had not followed D-82 (its arena on
+    9001, nginx's now) and would have failed; and `openssl s_client` says `Verify return code: 0
+    (ok)` with no certificate at all, which three TLS checks took as success. Fixed: the units
+    check runs one machine's front (20 checks, none failing), and every verdict needs the
+    certificate's subject beside it. Mutants: port 80 served again, and 9001 without TLS, the
+    latter failing nine checks of `check-ports-el9.sh` and two of the units check;
+  - after these, on the committed state: `check-release-el9.sh`, 0 failed; `check-ports-el9.sh`,
+    156 checks, none failing, the C# driver's 16 scenarios passed; the install guide as written,
+    0 failed;
   - the backend's full build before T-60: 1 078 tests, none failing, 0 warnings; after it, the
     gateway's tests. C# core: 174 tests. The Unity scripts compile against their stubs.
 - **Not checked**:

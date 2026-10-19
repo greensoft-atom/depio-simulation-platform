@@ -174,6 +174,9 @@ longer needed. On RHEL 9, SELinux runs a service started from `/opt` unconfined.
    first process; installs as the deploy document says, starts `backend-mysql`
    (`Type=notify`), `backend-store@session`, `backend-platform` and `backend-nginx`,
    registers an account through nginx over HTTPS, reloads nginx and stops them all.
+   Since D-82 as one machine's front: the arena on 9011 behind nginx's 9001, a
+   certificate from `private-ca.sh` and its root trusted alone, a match connection
+   verified as `a1.arena.internal` and seen passed to the arena, and nothing on 80.
    Mutation-checked: a store unit naming a jar that is not there fails it. One thing
    a container cannot show: `LoadCredential` for a service that is not root
    (operations/01 §2); the check gives the platform its secrets by a drop-in.

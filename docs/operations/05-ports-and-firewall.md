@@ -495,7 +495,8 @@ check: above every port here.
 
 **Mutation-checked** (each mutant run on its own and caught), in earlier runs of this page's
 layout: A's SSH line removed; C left out of A's sources; the install guide's old command put back;
-`mysqlx` on; the example's rooms back to 4; the line closing cockpit removed. The code's own rules,
+`mysqlx` on; the example's rooms back to 4; the line closing cockpit removed; 9001 without TLS in
+the release's nginx (nine checks failed, the C# client's matches among them). The code's own rules,
 in their tests: `BACKEND_TRUSTED_PROXIES`, `BACKEND_ADVERTISE_PORT`, `BACKEND_ADVERTISE_TLS_NAME`,
 the grants' `tlsName`, the client's `TrustRoot`, and T-60's replacement across gateways.
 

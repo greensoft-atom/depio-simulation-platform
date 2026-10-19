@@ -182,6 +182,10 @@ image, which is RHEL 9's own userspace (plan item 80).
   `objcopy` (binutils), present here and absent there, and a release built on a
   fresh server failed on it. Anything a build or a release runs is checked by
   `check-install-guide-el9.sh`, which builds in UBI 9 with nothing added.
+- **`pkill -f <pattern>` kills the shell that runs it** when that shell's own command line holds
+  the pattern, as `bash -c "pkill -f 'node server.mjs'; …"` does: the rest of the command never
+  ran (exit 144, 2026-10-19). Kill by the pid kept at the start (`kill $(cat server.pid)`), or
+  make the pattern one the command line cannot hold (`pkill -f '[n]ode server.mjs'`).
 - **Never edit a script while it runs**: bash reads it as it goes, and an edit
   moves what it reads next. A drill edited mid-run ran its scenarios, then failed
   with a syntax error where its failover should have begun.

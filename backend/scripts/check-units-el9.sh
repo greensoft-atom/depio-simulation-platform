@@ -4,8 +4,9 @@
 # deploy/; installs as docs/operations/01-deploy.md §7 and §9 say (the users, the units, the
 # database's configuration from its example, initialised as its header says), then starts
 # backend-mysql, backend-store@session, backend-platform, backend-gateway, backend-worker@c1,
-# backend-arena@a1 and backend-nginx, registers an account through nginx over HTTPS, reloads nginx,
-# and stops them all. Smaller heaps than production's, by a drop-in: this is a check, not a machine.
+# backend-arena@a1 and backend-nginx, as one machine's front (D-82): registers an account through nginx
+# over HTTPS, opens a match connection through its 9001 to the arena, reloads nginx, and stops them
+# all. Smaller heaps than production's, by a drop-in: this is a check, not a machine.
 #
 #   scripts/check-units-el9.sh [release-dir]       default: target/release/backend-*/; needs docker,
 #                                                  and a privileged container (systemd inside it)
@@ -117,7 +118,7 @@ BACKEND_DB_URL=jdbc:mysql://127.0.0.1:3306/backend?useSSL=false&allowPublicKeyRe
 BACKEND_DB_USER=backend
 EOF
 cat > /etc/backend/arena-a1.env <<EOF
-ARENA_PORT=9001
+ARENA_PORT=9011
 MAP_SIZE=5700
 MAX_PLAYERS=150
 SHAPES=1500
@@ -125,6 +126,8 @@ MAX_ROOMS=2
 MATCH_SECONDS=0
 ARENA_BIND=127.0.0.1
 ADVERTISE_HOST=127.0.0.1
+BACKEND_ADVERTISE_PORT=9001
+BACKEND_ADVERTISE_TLS_NAME=a1.arena.internal
 STORE_HOST=127.0.0.1
 STORE_PORT=6379
 EOF
@@ -138,18 +141,35 @@ done
 
 echo "--- backend-nginx"
 cp /deploy/nginx/*.conf /etc/backend/nginx/
-# A stand-in certificate for a.example.com: MySQL's own, generated at initialisation.
-cp /var/lib/backend-mysql/server-cert.pem /etc/backend/tls/fullchain.pem
-cp /var/lib/backend-mysql/server-key.pem /etc/backend/credentials/privkey.pem
-mkdir -p /var/www/acme
+# One machine, as the install guide's §9 makes it: this machine's platform, gateway and arena, on loopback.
+printf '%s\n' 'upstream backend_gateway {' '    least_conn;' '    server 127.0.0.1:8090;' '}' \
+    'upstream backend_platform {' '    server 127.0.0.1:8080;' '    keepalive 32;' '    keepalive_timeout 20s;' '}' \
+    > /etc/backend/nginx/backend-upstreams.conf
+sed -i -e '/^    [a-c][0-9]\.arena\.internal /d' \
+    -e 's/^    default .*/    a1.arena.internal  127.0.0.1:9011;\n    default            "";/' \
+    /etc/backend/nginx/backend-stream.conf
+# The certificate from a root of its own, for this machine's address and the arena's name (06 §2, §3).
+$R/scripts/private-ca.sh root /tmp/ca > /dev/null
+$R/scripts/private-ca.sh issue /tmp/ca /tmp/site 127.0.0.1 a1.arena.internal > /dev/null
+cp /tmp/site/fullchain.pem /etc/backend/tls/fullchain.pem
+cp /tmp/site/privkey.pem /etc/backend/credentials/privkey.pem
 systemctl start backend-nginx
 active backend-nginx 20 && ok "active, workers as $(ps -o user= -C nginx 2>/dev/null | sort -u | tr '\n' ' ')" \
     || { bad "backend-nginx"; journalctl -u backend-nginx --no-pager | tail -8; }
-code=$(curl -sk -o /tmp/reg -w "%{http_code}" --resolve a.example.com:443:127.0.0.1 -X POST \
-    -H 'Content-Type: application/json' -d '{"username":"unitsnine","password":"hunter2-hunter2"}' https://a.example.com/v1/accounts)
-[ "$code" = 201 ] && ok "a registration through nginx over HTTPS: 201" || bad "a registration through nginx: $code $(head -c 200 /tmp/reg)"
-code=$(curl -s -o /dev/null -w "%{http_code}" --resolve a.example.com:80:127.0.0.1 http://a.example.com/v1/accounts)
-[ "$code" = 403 ] && ok "plain HTTP refused: 403" || bad "plain HTTP: $code"
+code=$(curl -s --cacert /tmp/ca/ca.pem -o /tmp/reg -w "%{http_code}" -X POST \
+    -H 'Content-Type: application/json' -d '{"username":"unitsnine","password":"hunter2-hunter2"}' https://127.0.0.1/v1/accounts)
+[ "$code" = 201 ] && ok "a registration through nginx over HTTPS, its root trusted alone: 201" \
+    || bad "a registration through nginx: $code $(head -c 200 /tmp/reg)"
+curl -s -o /dev/null --max-time 5 http://127.0.0.1/ && bad "something answers on port 80" || ok "nothing on port 80 (D-82)"
+# s_client says "Verify return code: 0 (ok)" with no certificate at all, on a port that speaks no TLS: the
+# certificate's subject must be there too.
+v=$(openssl s_client -connect 127.0.0.1:9001 -servername a1.arena.internal -verify_hostname a1.arena.internal \
+    -CAfile /tmp/ca/ca.pem < /dev/null 2> /dev/null | grep -E '^subject=|Verify return code' | sed 's/^ *//' | paste -sd ' ')
+[[ $v == subject=* && $v == *"Verify return code: 0 (ok)" ]] && ok "9001 as a1.arena.internal: $v" \
+    || bad "9001 as a1.arena.internal: ${v:-nothing}"
+sleep 1
+grep -q '"a1.arena.internal" 127.0.0.1:9011 ' /var/log/backend-nginx/stream.log \
+    && ok "and passed to the arena, 127.0.0.1:9011" || bad "not passed to the arena: $(tail -2 /var/log/backend-nginx/stream.log)"
 systemctl reload backend-nginx && sleep 1 && [ "$(systemctl is-active backend-nginx)" = active ] && ok "reloaded (tested first)" \
     || bad "reload"
 

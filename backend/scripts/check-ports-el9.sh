@@ -343,17 +343,21 @@ lobby=$(curlp --http1.1 --max-time 3 -i -H 'Connection: Upgrade' -H 'Upgrade: we
     -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "https://$PUB/lobby" 2> /dev/null | head -1 | tr -d '\r')
 expect "the lobby through nginx" "HTTP/1.1 101 Switching Protocols" "$lobby"
 expect "nothing on 80" "000" "$(ip netns exec player curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://$PUB/")"
+# s_client prints "Verify return code: 0 (ok)" when no certificate came at all, a port speaking no TLS: the verdict
+# counts only beside the certificate's subject.
+# (The subject's spacing is OpenSSL's version's: "CN = backend" in 3.0, "CN=backend" in 3.2.)
+verdict() { awk '/^subject=/ { s = 1 } /Verify return code/ { sub(/^ */, ""); v = $0 } END { print (s ? "a certificate, " v : "no certificate") }'; }
 for name in a1.arena.internal b1.arena.internal; do
     v=$(echo | ip netns exec player openssl s_client -connect "$PUB:9001" -servername "$name" -verify_hostname "$name" \
-        -CAfile "$CA/ca.pem" 2> /dev/null | grep -m1 'Verify return code' | sed 's/^ *//')
-    expect "9001, as $name" "Verify return code: 0 (ok)" "$v"
+        -CAfile "$CA/ca.pem" 2> /dev/null | verdict)
+    expect "9001, as $name" "a certificate, Verify return code: 0 (ok)" "$v"
 done
 v=$(echo | ip netns exec player openssl s_client -connect "$PUB:9001" -servername nope.arena.internal \
-    -verify_hostname nope.arena.internal -CAfile "$CA/ca.pem" 2> /dev/null | grep -m1 'Verify return code' | sed 's/^ *//')
-expect "9001, a name not on the certificate" "Verify return code: 62 (hostname mismatch)" "$v"
+    -verify_hostname nope.arena.internal -CAfile "$CA/ca.pem" 2> /dev/null | verdict)
+expect "9001, a name not on the certificate" "a certificate, Verify return code: 62 (hostname mismatch)" "$v"
 v=$(echo | ip netns exec player openssl s_client -connect "$PUB:9001" -servername a1.arena.internal \
-    -CAfile /root/another-ca/ca.pem 2> /dev/null | grep -m1 'Verify return code' | sed 's/^ *//')
-expect "9001, trusting another root" "Verify return code: 21 (unable to verify the first certificate)" "$v"
+    -CAfile /root/another-ca/ca.pem 2> /dev/null | verdict)
+expect "9001, trusting another root" "a certificate, Verify return code: 21 (unable to verify the first certificate)" "$v"
 "$R/scripts/install-certificate.sh" --check > "$L/certificate-check.log" 2>&1 \
     && ok "install-certificate.sh --check: $(grep -c '(ok)$' "$L/certificate-check.log") names, each ok" \
     || { cat "$L/certificate-check.log"; fail "install-certificate.sh --check"; }

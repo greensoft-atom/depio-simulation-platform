@@ -983,6 +983,25 @@ moment before the dump now fails if the comparison is put back.
   - the equal numbers written in D-81 and operations/05.
 
   `check-ports-el9.sh` runs both steps, and a mutant of each is caught.
+- **O-44 (M), found 2026-10-19, FIXED the same day (plan item 90). Two checks D-82 broke or
+  weakened.** Found reviewing what the front's change left behind.
+  - **`check-units-el9.sh` would have failed**, not run since nginx changed: its arena listened on
+    9001, now nginx's stream port on every machine, so nginx could not have started; its upstreams
+    were the shipped 10.0.0.x, which a container does not have; and it expected port 80 to answer
+    `403`, where nothing listens now.
+  - **A TLS verdict that passes without TLS.** `openssl s_client` prints `Verify return code: 0
+    (ok)` when no certificate came at all (`no peer certificate available`), as on a port that
+    speaks no TLS (OpenSSL 3.0, measured). The install guide's step 11, `check-ports-el9.sh`'s 9001
+    checks and the new units check judged by that line alone: a mutant with TLS taken off 9001
+    passed the units check's line, caught only by the next check, nginx's stream log.
+
+  **Fixed:** the units check runs one machine's front, as the install guide's §9 makes it: the
+  arena on 9011 behind nginx's 9001, upstreams on loopback, a certificate from `private-ca.sh`
+  with its root trusted alone, a match connection verified and seen passed to the arena, nothing on
+  80. Every verdict now needs the certificate's `subject=` line beside it, and 06 §10 and the
+  guide say to look for both. The subject's spacing is OpenSSL's version's (`CN = backend` in 3.0,
+  `CN=backend` in UBI 9's), which a first exact match got wrong. Mutants: port 80 served again,
+  and 9001 without TLS, each caught.
 
 ---
 
