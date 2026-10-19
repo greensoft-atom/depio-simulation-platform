@@ -288,6 +288,9 @@ changes: [operations/05](../../docs/operations/05-ports-and-firewall.md).
 | 3306 | MySQL: primary on A, replica on C; TLS required | the private address (`10.0.0.1`, `10.0.0.3`); `mysqlx = OFF`, so nothing on 33060 | A, C |
 | 3309 | the scratch MySQL server the proofs restore onto | `127.0.0.1`; `mysqlx=OFF` | C |
 
+Open to the internet besides these: the system's SSH, which [05 §5](../../docs/operations/05-ports-and-firewall.md#5-the-firewall-on-rhel-9)
+leaves as RHEL has it and says how to limit; cockpit's 9090, which RHEL allows, is closed there.
+
 Between the machines: C streams binlogs from A's 3306, and its replica replicates and clones from
 it; each store's replica connects to its primary's port; the copy off the site leaves C by SSH, to
 the host the owner names.

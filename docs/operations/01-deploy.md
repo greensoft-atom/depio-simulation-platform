@@ -514,8 +514,9 @@ host they were told to dial, so the arena refuses to start (exit 2) when no
 subject alternative name covers that host: an exact name, a wildcard for one
 leftmost label, or the address itself. In practice that makes `ADVERTISE_HOST`
 a DNS name, since public CAs certify IP addresses briefly, if at all: **the
-machine's one public name**, the one its nginx serves (§11). The arenas on a
-machine share its address, so they share its name and differ by port.
+machine's one public name**, the one its nginx serves (§11). A machine's arena
+shares its address, so it shares its name (one arena a machine:
+[D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)).
 
 **It also refuses** a keystore it cannot read, a wrong password, a store with
 no private key (a trust store given by mistake would otherwise fail every
@@ -952,7 +953,7 @@ and was run from placeholder to renewal on 2026-09-26**: the domain, and the CA
 
 **One name per machine, one certificate per machine.** Machine A is
 `a.<domain>`, B `b.<domain>`, C `c.<domain>`: its nginx serves that name, its
-arenas advertise it (`ADVERTISE_HOST`) and differ by port, and the client's
+arena advertises it (`ADVERTISE_HOST`), and the client's
 endpoint list ([D-13](../architecture/03-decision-log.md#d-13--the-client-holds-an-endpoint-list-no-vip))
 holds the three. So each machine's certificate names one host, and each
 machine gets its own through the CA's HTTP-01 challenge on its own port 80.

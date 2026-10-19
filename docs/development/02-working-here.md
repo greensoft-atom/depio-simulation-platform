@@ -127,6 +127,9 @@ image, which is RHEL 9's own userspace (plan item 80).
   failed with `fatal error: -28` (ENOSPC), so firewalld never started, after a release rebuild
   gave VS Code more files to watch. Count them per process in `/proc/<pid>/fdinfo`. The owner
   allowed `sysctl -w fs.inotify.max_user_watches=524288`, until the next reboot (2026-10-19).
+- **firewalld's `--reload` keeps connections already made**: a port closed to an address cuts
+  only its new connections. A session from there goes on, and is the last (2026-10-19, measured).
+  `--complete-reload` did not cut it either, in the check's container.
 - **`firewall-cmd` refuses `--add-service` and `--add-port` in one command**, and applies none
   of it; several of one option are fine. The install guide's firewall step did that, and no one
   had run it (O-42, 2026-10-19).

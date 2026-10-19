@@ -26,6 +26,27 @@ yet; `a.example.com` stands for A's.
 | **Private** | the other two machines, and nothing else | the machine's private address (MySQL), or that and `127.0.0.1` (the stores) | opened to the other two machines' addresses alone (the `backend` zone, §5) |
 | **Loopback** | this machine's own processes; an operator over SSH | `127.0.0.1` | nothing to open: no other machine can reach a loopback address, whatever the firewall says |
 
+**Exactly what the internet reaches**, on each machine, after §5's commands:
+
+| Port | What | |
+|---|---|---|
+| 443/tcp | nginx: the API and the lobby | one of C-9's three |
+| 80/tcp | nginx: the certificate's challenge; `HTTPS only` to everything else | one of C-9's three |
+| 9001/tcp | the machine's arena | one of C-9's three |
+| 22/tcp | SSH, the system's | **not one of the three**: RHEL leaves it open, and so do §5's commands, since closing it to the address an operator came in from leaves them no way back once that session ends. §5 says how to limit it to the operators' address ([Q-57](../requirements/01-scope-and-nfrs.md#7-open-questions)) |
+
+Nothing else, over IPv4 or IPv6:
+- cockpit's 9090, which RHEL's default zone allows, is closed by §5;
+- `dhcpv6-client`, that zone's third service, takes DHCPv6 replies on UDP 546 from link-local
+  addresses alone, which no other network can send;
+- ICMP stays allowed, so a machine answers ping; it is not a port.
+
+**The number players dial is the number the arena listens on.** The arena announces its own port,
+and there is no setting for another. A provider that forwards its public 9001 forwards it to the
+machine's 9001; if its public number is another, set `ARENA_PORT` to that number. The client's
+endpoints are whole URLs, so nginx could be reached on another public number than 443, but the
+CA's HTTP-01 challenge comes to port 80 alone.
+
 Most ports are loopback. Players reach two things only: nginx, for the API and the lobby, and
 the arenas, directly for match traffic
 ([D-5](../architecture/03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)).
@@ -40,7 +61,7 @@ The machines reach each other on three ports: the two stores and MySQL.
 | **443**/tcp | nginx (`backend-nginx`): HTTPS. `/v1/` is the API, `/lobby` the lobby's WebSocket | every address, IPv4 and IPv6 | players | `listen 443 ssl` in `/etc/backend/nginx/backend.conf` |
 | **80**/tcp | nginx: the certificate's HTTP-01 challenge (01 §11); everything else is answered 403 `HTTPS only`, with no redirect (01 §4) | every address, IPv4 and IPv6 | the CA | `listen 80` in the same file |
 | **9001**/tcp | the machine's one arena (`backend-arena@a1` on A, `@b1` on B, `@c1` on C; D-81): match traffic, the binary protocol over TCP; TLS on the same port once the arenas have a certificate (01 §8). §3 | every address, IPv4 and IPv6: `ARENA_BIND=0.0.0.0`, which the arena's native transport takes as both (`ss` shows `*:9001`) | players, directly | `ARENA_PORT` and `ARENA_BIND` in `/etc/backend/arena-<name>.env` |
-| **22**/tcp | sshd, the system's own | every address | operators | the system |
+| **22**/tcp | sshd, the system's own: not one of C-9's three (§1, §5) | every address | operators | the system |
 | 8080 | the platform (`backend-platform`): the API, plain HTTP | `127.0.0.1` | this machine's nginx (`/v1/`) and gateway | `PLATFORM_PORT` in `platform.env`; nginx's `upstream backend_platform`; `PLATFORM_URL` in `gateway.env` |
 | 8090 | the gateway (`backend-gateway`): the lobby, plain WebSocket | `127.0.0.1` | this machine's nginx (`/lobby`) | `GATEWAY_PORT` in `gateway.env`; nginx's `upstream backend_gateway` |
 | 9120 | the platform's admin API, only when it is named (unset, there is none) | loopback, enforced: any other address and the platform refuses to start (exit 2) | an operator on the machine, or over SSH: `ssh -L 9120:127.0.0.1:9120 <machine>` ([api/03](../api/03-admin-api.md)) | `BACKEND_ADMIN_ADDR` in `platform.env`, with the drop-in `platform-admin.conf.example` for its secret |
@@ -138,7 +159,8 @@ through the `session` store's channels.
 
 ### From the internet
 
-Players connect to 443 and to 9001. The CA connects to 80. Operators connect to 22.
+Players connect to 443 and to 9001. The CA connects to 80. Operators connect to 22, where the
+provider passes it and §5 leaves it open (Q-57).
 
 ### Out to the internet
 
@@ -154,11 +176,12 @@ rule.
 **What RHEL 9 has already.** firewalld, installed and running unless the installation turned it
 off: `firewall-cmd --state` says `running`. Its default zone is `public`, which allows `ssh`,
 `dhcpv6-client` and `cockpit`. Every network interface that is not given a zone is in it. So,
-untouched, the firewall lets players reach SSH alone, and the other two machines reach nothing of the
-backend's: neither store, nor MySQL (seen in §9).
+untouched, the firewall lets players reach SSH, and cockpit's 9090 where cockpit runs, and nothing
+of the backend's; and the other two machines reach neither store, nor MySQL (seen in §9).
 
 **What these commands do.** Two zones, on each machine:
-- **`public`**, for players: nginx's 443 and 80, and the arena's 9001. SSH is in it already.
+- **`public`**, for players: nginx's 443 and 80, and the arena's 9001; cockpit taken out of it.
+  SSH is in it already.
 - **`backend`**, a new zone holding the other two machines' private addresses as its
   sources, with only the ports they reach on this one, and SSH. firewalld decides a
   connection from those addresses by this zone alone, not by `public`, which is why SSH is
@@ -177,6 +200,8 @@ added without `--permanent` would be gone at the next reload or boot.
 # Players: nginx (443, and 80 for the certificate's challenge), and this machine's arena a1
 firewall-cmd --permanent --zone=public --add-service=https --add-service=http
 firewall-cmd --permanent --zone=public --add-port=9001/tcp
+# Cockpit's 9090, which RHEL's public zone allows: not one of the three (C-9), and unused here
+firewall-cmd --permanent --zone=public --remove-service=cockpit
 # B and C, by their private addresses: SSH, the session store and MySQL
 firewall-cmd --permanent --new-zone=backend
 firewall-cmd --permanent --zone=backend --add-source=10.0.0.2 --add-source=10.0.0.3
@@ -193,6 +218,8 @@ firewall-cmd --reload
 # Players: nginx, and this machine's arena b1
 firewall-cmd --permanent --zone=public --add-service=https --add-service=http
 firewall-cmd --permanent --zone=public --add-port=9001/tcp
+# Cockpit's 9090, which RHEL's public zone allows: not one of the three (C-9), and unused here
+firewall-cmd --permanent --zone=public --remove-service=cockpit
 # A and C, by their private addresses: SSH, and both stores
 firewall-cmd --permanent --new-zone=backend
 firewall-cmd --permanent --zone=backend --add-source=10.0.0.1 --add-source=10.0.0.3
@@ -210,6 +237,8 @@ the backups and the scratch server open nothing: they only connect, or listen on
 # Players: nginx, and this machine's arena c1
 firewall-cmd --permanent --zone=public --add-service=https --add-service=http
 firewall-cmd --permanent --zone=public --add-port=9001/tcp
+# Cockpit's 9090, which RHEL's public zone allows: not one of the three (C-9), and unused here
+firewall-cmd --permanent --zone=public --remove-service=cockpit
 # A and B, by their private addresses: SSH, the events store and MySQL
 firewall-cmd --permanent --new-zone=backend
 firewall-cmd --permanent --zone=backend --add-source=10.0.0.1 --add-source=10.0.0.2
@@ -226,12 +255,32 @@ command. Run a second time, `--new-zone` says `Error: NAME_CONFLICT: new_zone():
 'backend'`, and each of the others `Warning: ALREADY_ENABLED: …` then `success`: they change
 nothing.
 
-**Cockpit**, RHEL's web console, is allowed in `public` by default, on port 9090, and nothing of
-the backend's uses it. Close it unless you use it:
-`firewall-cmd --permanent --zone=public --remove-service=cockpit && firewall-cmd --reload`.
+**SSH, the fourth port.** The commands above leave it as RHEL does: open to everyone on the
+public side. C-9 does not name it, so where the operators reach the machines another way (the
+provider's console, a VPN), limit it to their address. This keeps SSH for that address and for
+the other two machines (through `backend`), and closes it to everyone else:
+
+<!-- firewall operators' ssh -->
+```bash
+# 10.0.0.50 stands for the operators' own address: a workstation's, or the VPN's
+firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="10.0.0.50" service name="ssh" accept'
+firewall-cmd --permanent --zone=public --remove-service=ssh
+firewall-cmd --reload
+```
+<!-- /firewall -->
+
+- **Run it from where it keeps SSH**: the console, one of the other two machines, or that
+  address. A session from anywhere else is not cut, since firewalld's `--reload` keeps the
+  connections already made (§9 saw one go on), but it is the last: once it ends, SSH from there
+  is refused. `echo "${SSH_CONNECTION%% *}"` shows where this one comes from.
+- Both lines are `--permanent`, so neither touches the running firewall until `--reload`, which
+  applies them together.
+- With no such address, the console being the way in, leave out the first line.
+- An operator on IPv6 needs the same rule with `family="ipv6"` and that address.
+- **Undone** with `--add-service=ssh`, then `--remove-rich-rule='…'` with the same rule.
 
 **Later changes:**
-- **A second arena on a machine**, should the owner allow a fourth public port, opens it there:
+- **A second arena on a machine**, should the owner allow another public port, opens it there:
   `firewall-cmd --permanent --zone=public --add-port=9002/tcp && firewall-cmd --reload`
   (04 §2.4).
 - **A machine added** to the private network, `10.0.0.4` say, is added as a source on each
@@ -240,7 +289,8 @@ the backend's uses it. Close it unless you use it:
 - **A machine replaced** with a new address: its old address is removed in the same way, with
   `--remove-source`.
 - **A provider's firewall** in front of the machines (a cloud's security group, say) needs the
-  same: the public ports from anywhere, the private ones from the three addresses alone.
+  same: 80, 443 and 9001 from anywhere, SSH from the operators' address if at all, and the
+  private ports from the three machines' addresses alone.
 
 ## 6. Checking
 
@@ -298,8 +348,8 @@ firewall-cmd --zone=public --list-all
 timeout 3 bash -c '</dev/tcp/10.0.0.1/6379' && echo open || echo closed
 ```
 
-From B and C, A's 6379 and 3306 are `open`. From outside, a machine's 443 and 9001 are `open`,
-and 6379, 3306, 8080 and 9120 are not.
+From B and C, A's 6379 and 3306 are `open`. From outside, a machine's 80, 443 and 9001 are
+`open`, and 6379, 3306, 8080, 9090 and 9120 are not.
 
 **Reading a failure** (§9 saw the first three):
 
@@ -318,12 +368,12 @@ other.
 |---|---|---|
 | The platform's, 8080 | `PLATFORM_PORT` in `platform.env`; `server 127.0.0.1:8080` in `backend.conf`'s `upstream backend_platform`; `PLATFORM_URL` in `gateway.env` | restart the platform and the gateway; reload nginx |
 | The gateway's, 8090 | `GATEWAY_PORT` in `gateway.env`; `server 127.0.0.1:8090` in `upstream backend_gateway` | restart the gateway; reload nginx |
-| An arena's | its `ARENA_PORT`; the firewall's port, §5. Nothing else: the arena registers its port, and the platform hands it to players | restart that arena (it drains first: 01 §5) |
+| An arena's | its `ARENA_PORT`; the firewall's port, §5; the provider's forwarding, which must keep the number (§1). Nothing else: the arena registers its port, and the platform hands it to players | restart that arena (it drains first: 01 §5) |
 | A metrics port | its `BACKEND_METRICS_ADDR` alone, unique on the machine; and the scraper's configuration, when there is one | restart that process |
 | The admin API's | `BACKEND_ADMIN_ADDR`, loopback only; and the port in the SSH tunnel | restart the platform |
 | A store's, 6379 or 6380 | `port` in that store's configuration on both machines, primary and replica; the replica's `replicaof`; on every machine, `STORE_PORT` and `BACKEND_STORE_ADDRESSES` (6379) or `BACKEND_EVENTS_STORE` (6380) in every `.env` file that has them; the `backend` zone's port on both store machines; the port argument of the store's scripts (`backup-store.sh`'s third, the restore drill's second, the old primary's `host:port` given to `promote-store.sh`) | restart the stores, then every process |
 | MySQL's, 3306 | a `port` line in `backend.cnf`, on A and C; every `BACKEND_DB_URL`; a `port=` line in the backups' option files (`mysql-backup.cnf`, `mysql-binlog.cnf`); the replica's `SOURCE_PORT` and `clone_valid_donor_list`; the old primary's `host:port` given to `promote-mysql.sh`; the `backend` zone's port on A and C | restart MySQL, then the platforms and the workers |
-| nginx's, 443 and 80 | leave them | players dial `https://`, whose port is 443, and the CA's HTTP-01 challenge always comes to port 80 |
+| nginx's, 443 and 80 | leave them | 443 is what `https://` means without a port: another number would have to be in every client's endpoint list. The CA's HTTP-01 challenge comes to port 80 alone |
 
 ## 8. Ports that are not production
 
@@ -348,8 +398,8 @@ share it, so on a production machine it would stop at the first one.
 ## 9. What was checked, and what was not
 
 **Run as written on 2026-10-19** by
-[`backend/scripts/check-ports-el9.sh`](../../backend/scripts/README.md#check-ports-el9sh): 118
-checks, none failing, again after D-81 on a release rebuilt with its example.
+[`backend/scripts/check-ports-el9.sh`](../../backend/scripts/README.md#check-ports-el9sh): 134
+checks, none failing, after D-81 on a release rebuilt with its example.
 - **Where**: Rocky Linux 9.5, rebuilt from RHEL 9's sources, with RHEL 9's firewalld (1.3.4),
   systemd as its first process, and no network.
 - **What ran**: machine A's processes from a release built from the code as it is now, each
@@ -376,6 +426,7 @@ from this page.
 |---|---|---|---|---|
 | a player | 443, 80, 9001 (443 and 9001 over IPv6 too) | open | refused | open |
 | a player | 9002, where no arena listens | `Connection refused` | refused | refused |
+| a player | 9090, cockpit's, where nothing listens here | `Connection refused` | `Connection refused`: allowed | refused |
 | a player | 22 | open | open | open |
 | a player | 8080, 9120 | `Connection refused`: loopback | refused | refused |
 | a player routing to `10.0.0.1` | 6379, 3306 | **open** | refused | refused |
@@ -395,9 +446,15 @@ from this page.
 - from B, the store (`-NOAUTH Authentication required.`) and MySQL (its greeting, `8.4.11`);
 - the admin API listed `a1` on 9001.
 
+A player's ping was answered after §5's commands.
+
 **And then:**
 - the rules held after a restart of firewalld;
 - A's commands run a second time printed §5's messages and changed nothing;
+- §5's SSH step, the stranger's 10.0.0.50 standing for the operators' address: SSH stayed open to
+  it and to B, and was refused to the player over IPv4 and IPv6; that address was still refused
+  6379, and reached 443 as anyone does. A player's session on 22, open across the step, went on
+  working after `--reload`; a new one was refused;
 - B's and C's commands, each on a firewall as RHEL 9 has it, made the zones §5 says;
 - the install guide's §12, likewise, opened 443 and 9001 to the player, where its old single
   command was refused, and nothing of it applied (O-42).
@@ -413,7 +470,10 @@ check: above every port here, so a connection never takes one a process needs. D
 - `mysqlx` on: a listener beyond §2's;
 - A's public ports back to `9001-9002`, as before D-81: the player's 9002 answered `Connection
   refused`, not the firewall's refusal, and the zone listed `9001-9002/tcp`;
-- the example's rooms back to 4: the arena started with `maxRooms 4`.
+- the example's rooms back to 4: the arena started with `maxRooms 4`;
+- A's line closing cockpit removed: the player's 9090 answered `Connection refused`, and the zone
+  listed `cockpit`;
+- the SSH step's rule for the operators' address removed: that address was refused 22.
 
 **Not checked:**
 - RHEL 9 itself, and real machines on a real private network;
@@ -422,5 +482,8 @@ check: above every port here, so a connection never takes one a process needs. D
 - B's and C's own processes: their commands were run and their zones read, not probed from the
   other machines;
 - the arenas over TLS, which share the port;
+- the SSH step from a real SSH session: the check ran it from inside the machine, as from the
+  console, with a stand-in's connection open from the player;
+- a provider's forwarding, and whether it keeps the numbers (Q-57);
 - a provider's firewall, and IPv6 between the machines (the private network was IPv4 here, as in
   the examples).

@@ -121,7 +121,8 @@ and nowhere else. Then B, C, a stranger on the private network and a player, eac
 namespace of its own, try every port that matters: with the firewall stopped, as RHEL 9 has it, and
 after 05 §5's commands for A, which it takes from the page. Through the opened ports a registration
 and the lobby go through nginx, and the store and MySQL answer B. Then the rules after a restart of
-firewalld, the commands run twice, B's and C's commands, and the install guide's §12. It ends `---
+firewalld, the commands run twice, SSH limited to the operators' address, B's and C's commands, and
+the install guide's §12. It stops at once if firewalld does not start. It ends `---
 <n> failed` and exits non-zero on any failure ([05 §9](../../docs/operations/05-ports-and-firewall.md#9-what-was-checked-and-what-was-not)).
 
 ```

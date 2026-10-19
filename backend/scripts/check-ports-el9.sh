@@ -198,7 +198,7 @@ install -d -o nginx -g nginx /run/backend-nginx /var/log/backend-nginx /var/cach
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=a.example.com" -addext "subjectAltName=DNS:a.example.com" \
     -keyout /etc/backend/credentials/privkey.pem -out /etc/backend/tls/fullchain.pem 2> /dev/null
 "$R/nginx/sbin/nginx" -t -q && "$R/nginx/sbin/nginx" || fail "nginx did not start"
-nohup ncat -lk 22 > /dev/null 2>&1 &                          # the stand-in for sshd
+nohup ncat -lk 22 --exec /bin/cat > /dev/null 2>&1 &         # the stand-in for sshd: it echoes
 nohup ip netns exec player ncat -lk 198.51.100.7 4444 > /dev/null 2>&1 &    # somewhere outside, for A to reach
 
 for a in 0.0.0.0:80 [::]:80 0.0.0.0:443 [::]:443 0.0.0.0:22 '*:9001' 10.0.0.1:3306 \
@@ -240,6 +240,7 @@ MATRIX=(
     "player 198.51.100.1 9001|$O|$N|$O"  "player 198.51.100.1 9002|$C|$N|$N"
     "player 198.51.100.1 22|$O|$O|$O"    "player 198.51.100.1 8080|$C|$N|$N"
     "player 198.51.100.1 9120|$C|$N|$N"  "player 10.0.0.1 6379|$O|$N|$N"
+    "player 198.51.100.1 9090|$C|$C|$N"
     "player 10.0.0.1 3306|$O|$N|$N"
     "player fd00:51::1 443|$O|$N6|$O"    "player fd00:51::1 9001|$O|$N6|$O"
     "player fd00:51::1 22|$O|$O|$O"      "player fd00:51::1 8080|$C|$N6|$N6"
@@ -280,7 +281,8 @@ matrix 3 "after §5's commands for A"
 echo "--- the zones:"
 firewall-cmd --get-active-zones | sed 's/^/      /'
 firewall-cmd --zone=backend --list-all | sed 's/^/      /'
-expect "the public zone's services" "cockpit dhcpv6-client http https ssh" "$(firewall-cmd --zone=public --list-services)"
+expect "the public zone's services" "dhcpv6-client http https ssh" "$(firewall-cmd --zone=public --list-services)"
+ip netns exec player ping -c 1 -W 2 198.51.100.1 > /dev/null 2>&1 && ok "a player's ping answered" || fail "a player's ping not answered"
 expect "the public zone's ports" "9001/tcp" "$(firewall-cmd --zone=public --list-ports)"
 
 echo "--- through the opened ports, the processes themselves answer:"
@@ -315,6 +317,26 @@ expect "the stranger to 6379" "No route to host" "$(probe stranger 10.0.0.1 6379
 echo "--- A's commands run a second time:"
 bash "$L/firewall-A.sh" 2>&1 | sed 's/^/      /'
 
+echo "--- §5's SSH limited to the operators' address, 10.0.0.50, the stranger's here, while a player's"
+echo "    session on 22, from an address it does not keep, is open:"
+coproc SESSION { ip netns exec player ncat 198.51.100.1 22; }
+got=; echo before >&"${SESSION[1]}"; read -r -t 3 got <&"${SESSION[0]}"
+expect "the player's session, before" before "$got"
+block "operators' ssh" > "$L/firewall-ssh.sh"
+[ -s "$L/firewall-ssh.sh" ] || fail "no block for the operators' SSH in the page"
+bash "$L/firewall-ssh.sh" 2>&1 | sort | uniq -c | sed 's/^/      /'
+got=; echo after >&"${SESSION[1]}"; read -r -t 3 got <&"${SESSION[0]}"
+expect "the same session, after --reload" after "$got"
+kill "$SESSION_PID" 2> /dev/null
+expect "the public zone's services" "dhcpv6-client http https" "$(firewall-cmd --zone=public --list-services)"
+expect "the operators' address to 22" open "$(probe stranger 10.0.0.1 22)"
+expect "B to 22" open "$(probe b 10.0.0.1 22)"
+expect "a player to 22" "No route to host" "$(probe player 198.51.100.1 22)"
+expect "a player to 22 over IPv6" "Permission denied" "$(probe player fd00:51::1 22)"
+expect "the operators' address to 6379, still" "No route to host" "$(probe stranger 10.0.0.1 6379)"
+expect "the operators' address to 443, as anyone" open "$(probe stranger 10.0.0.1 443)"
+expect "a player to 443, still" open "$(probe player 198.51.100.1 443)"
+
 for m in B C; do
     echo "--- §5's commands for $m, on a firewall as RHEL 9 has it:"
     rm -f /etc/firewalld/zones/*.xml /etc/firewalld/zones/*.xml.old
@@ -329,6 +351,7 @@ for m in B C; do
     expect "$m: its ports" "$(words $want_ports)" "$(words $(firewall-cmd --zone=backend --list-ports))"
     expect "$m: its services" "ssh" "$(firewall-cmd --zone=backend --list-services)"
     expect "$m: the public zone's ports" "$want_public" "$(firewall-cmd --zone=public --list-ports)"
+    expect "$m: the public zone's services" "dhcpv6-client http https ssh" "$(firewall-cmd --zone=public --list-services)"
 done
 
 echo "--- the install guide's §12, for one machine, on a firewall as RHEL 9 has it:"
@@ -337,7 +360,7 @@ firewall-cmd -q --reload
 block "one machine" /check/install.md > "$L/firewall-one.sh"
 [ -s "$L/firewall-one.sh" ] || fail "no firewall block in the install guide"
 bash "$L/firewall-one.sh" 2>&1 | sort | uniq -c | sed 's/^/      /'
-expect "one machine: the public zone's services" "cockpit dhcpv6-client http https ssh" "$(firewall-cmd --zone=public --list-services)"
+expect "one machine: the public zone's services" "dhcpv6-client http https ssh" "$(firewall-cmd --zone=public --list-services)"
 expect "one machine: its ports" "9001/tcp" "$(firewall-cmd --zone=public --list-ports)"
 expect "one machine: a player to 443" open "$(probe player 198.51.100.1 443)"
 expect "one machine: a player to 9001" open "$(probe player 198.51.100.1 9001)"

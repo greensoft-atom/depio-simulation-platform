@@ -225,7 +225,7 @@ Every unit `active`, and `201`. Each unit's log: `journalctl -u backend-platform
 ## 12. Open the firewall
 
 Players reach nginx (443, and 80 for the certificate's challenge) and the machine's one arena
-(`ARENA_PORT`, 9001); nothing else is reachable from outside. Three public ports a machine is the
+(`ARENA_PORT`, 9001); nothing else is reachable from outside but SSH, as RHEL leaves it. Three public ports a machine is the
 owner's limit, and the reason a machine runs one arena
 ([D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)).
 
@@ -233,12 +233,16 @@ owner's limit, and the reason a machine runs one arena
 ```console
 firewall-cmd --permanent --add-service=https --add-service=http
 firewall-cmd --permanent --add-port=9001/tcp
+firewall-cmd --permanent --remove-service=cockpit
 firewall-cmd --reload
 ```
 <!-- /firewall -->
 
 Services and ports go in separate commands: firewalld refuses `--add-service` and
-`--add-port` in one, and applies none of it. On three machines, each one's firewall also opens
+`--add-port` in one, and applies none of it. Cockpit's 9090, which RHEL allows, is closed: it is
+not one of the three public ports a machine may have (C-9). SSH stays as RHEL has it;
+[05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9) says how to limit it to the operators'
+address. On three machines, each one's firewall also opens
 its private ports to the other two, and to no one else: [05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9)
 has each machine's commands, and every port is in [05](05-ports-and-firewall.md).
 

@@ -3266,6 +3266,15 @@ could not be proxied. Of the two ways laid out, they chose one arena a machine.
 - **Found on the way**: DOC-28, the admin API's name for an arena in the scaling guide.
 - **Not measured**: one arena with 12 full rooms. The 2 100 is the load run's measure of the
   network threads (2026-09-30), and the largest clean run is 1 200 bots.
+- **Reviewed again, every public port, at the owner's request** (O-43):
+  - cockpit's 9090, which RHEL allows, is now closed by each machine's commands;
+  - SSH's 22 is said to be the fourth port, with a step limiting it to the operators' address;
+  - the public arena port must equal `ARENA_PORT`, because the arena announces its own.
+
+  `check-ports-el9.sh`: 134 checks, none failing; a mutant of each new rule caught. A session open
+  across the SSH step went on after `--reload`: the step's danger is the next login, not this one. The questions
+  for the owner are Q-57: are the three ports each machine's, how do operators reach the machines,
+  and does the provider keep the numbers.
 - **The owner's, open**: the capacity this leaves, 5 400 players in battle on three machines as
   set. The launch's 10 000 fits only if no more than about half are in battle (Q-2). Past that,
   in order of cost:

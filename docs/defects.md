@@ -959,6 +959,28 @@ moment before the dump now fails if the comparison is put back.
   guide's §12 split in two commands. `check-ports-el9.sh` runs both pages' commands as written,
   with A's processes from a release, seen from B, C, a stranger on the private network and a player
   (05 §9).
+- **O-43 (M), found 2026-10-19, FIXED the same day (plan item 89). The firewall left a fourth and
+  a fifth port open to the internet, beyond the owner's three (C-9), and no document said the
+  public arena port must be the arena's own.** Found reviewing every public port, at the owner's
+  request.
+  - **Cockpit's 9090**: RHEL's `public` zone allows it, and operations/05 only suggested closing
+    it. Measured: with RHEL's zone, a player's 9090 was let through (`Connection refused` from a
+    machine where nothing listened, not the firewall's refusal).
+  - **SSH's 22**: left open to everyone, as RHEL has it, while the page said only "operators
+    connect to 22".
+  - **The arena's port**: the arena announces the port it listens on and has no setting for
+    another, so a provider forwarding public 9001 to another port would have sent players to the
+    wrong one.
+
+  **Fixed:**
+  - cockpit closed in each machine's commands and in the install guide's §12;
+  - SSH said to be the fourth port, with a step that limits it to the operators' address.
+    Closing it outright would leave an operator who came in over it no way back once their
+    session ends; firewalld's reload keeps that session itself (measured). Whether SSH is public
+    at all is the owner's, Q-57;
+  - the equal numbers written in D-81 and operations/05.
+
+  `check-ports-el9.sh` runs both steps, and a mutant of each is caught.
 
 ---
 

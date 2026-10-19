@@ -2214,6 +2214,16 @@ the arenas, the owner chose one arena a machine over a TCP proxy in front of sev
 - **Players reach three ports a machine**: 443 for the API and the lobby, 80 for the
   certificate's challenge, 9001 for the arena. Match traffic still goes straight to the arena
   ([D-5](#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)).
+- **The number players dial is the one the arena listens on.** The arena announces its own port,
+  and there is no setting for another. A provider forwarding its public 9001 forwards it to 9001;
+  if the public number is another, `ARENA_PORT` is set to that number.
+- **Nothing else is open to the internet but SSH, which is not one of the three.** Each machine's
+  firewall closes cockpit's 9090, which RHEL's default zone allows. It leaves SSH as RHEL does,
+  since closing it to the address an operator came in from leaves them no way back once that
+  session ends, and says how to limit it to the operators' address
+  ([operations/05 §5](../operations/05-ports-and-firewall.md#5-the-firewall-on-rhel-9)). How
+  operators reach the machines is [Q-57](../requirements/01-scope-and-nfrs.md#7-open-questions),
+  as is whether the three ports are each machine's, which this decision takes them to be.
 - **Not taken: nginx's `stream` module in front of several arenas.** A TCP proxy can route only
   by what the TLS handshake names (`ssl_preread`), since the platform hands each player one
   arena and a made match's players must all reach it. That needs:
