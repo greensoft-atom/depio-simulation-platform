@@ -30,7 +30,7 @@ rollout:
 | MySQL primary | A | replica on C |
 | j-redis `session` primary | A | replica on B |
 | j-redis `events` primary | B | replica on C |
-| nginx, gateway, platform | all three | stateless, interchangeable |
+| nginx, gateway, platform | all three | stateless, interchangeable; nginx on every machine set up as the front, the one the provider forwards the site's public address to ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)) |
 | arena | all three | stateful only for the lifetime of a match |
 | worker | C | stateless; what it has in flight stays pending for it in the result stream, and another worker takes it over after a minute |
 | backups: the binlog stream, the dumps, the proofs and their scratch server, the copy off the site | C, the MySQL replica's machine | never the primary's machine; they move with the replica after a failover ([runbook §2](02-runbook.md#mysql-built-2026-09-29-d-35)) |
@@ -56,9 +56,9 @@ These apply to every process type and are settled:
   `backend-arena@a1` on two machines overwrite each other's entry, and a stop
   of one withdraws the other's. The worker's is its consumer in the result
   stream's group (`worker-<id>`). Prefixing the machine's letter keeps them
-  apart: the arenas `a1` on A, `b1` on B, `c1` on C (one a machine:
-  [D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)),
-  and `backend-worker@c1`, `@c2`.
+  apart: arenas `a1`, `a2` on A, `b1` to `b3` on B, `c1`, `c2` on C, and
+  `backend-worker@c1`, `@c2`. Each arena's TLS name is unique too, as nginx
+  routes by it (05 §3).
 - **Versioned directories with a symlink**: `/opt/backend-<version>/` with
   `/opt/backend` pointing at the current one, so a rollback is a symlink swap.
   This is the layout j-redis already uses.
@@ -254,13 +254,20 @@ lets the spool file go either way.
 
 ## 4. nginx
 
-Terminates HTTPS for the lobby and the API only. **Match traffic never passes
-through it** ([D-5](../architecture/03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)) —
-arena connections go direct, with TLS terminated in Netty.
+**The front** ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)): the site has one public address, which the provider forwards to
+one machine, and that machine's nginx ends TLS for everything players send:
+- **443**: the API and the lobby, passed to the platforms (8080) and gateways (8090) of all three
+  machines over the private network (`backend-upstreams.conf`). One that fails is passed over.
+- **9001**: match traffic, nginx's `stream`, passed in plaintext to the arena whose name the
+  handshake gave (`backend-stream.conf`'s map; [05 §3](05-ports-and-firewall.md#3-the-arenas-their-ports-and-their-names)).
 
-One nginx per machine, all three advertised to the client, which retries the
-next endpoint on failure. No VIP and no keepalived
-([D-13](../architecture/03-decision-log.md#d-13--the-client-holds-an-endpoint-list-no-vip)).
+Every machine runs the same nginx and configuration, so another can be the front at once, and the
+client holds the one endpoint
+([D-13](../architecture/03-decision-log.md#d-13--the-client-holds-an-endpoint-list-no-vip)). The
+certificate is [06](06-certificates.md)'s: the backend's own CA, one certificate for the site's
+address and every arena's name. Before D-82 every machine's nginx served its own machine, and the
+arenas were dialled directly
+([D-5](../architecture/03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)).
 
 **The release's own nginx** (D-77, [09 §5](../detailed-design/09-release-and-packaging.md#5-nginx-compiled-for-rhel-9)):
 1.30.5, compiled for RHEL 9 with OpenSSL 3.5.9 built in, run by
@@ -271,8 +278,9 @@ configuration.
 
 **The configuration is `backend/deploy/nginx/`**, installed to
 `/etc/backend/nginx/` (the release's `nginx-conf/`): `nginx.conf`, the main file,
-which the distribution's package used to bring; `backend.conf`, the servers; and
-the `backend-platform.conf` snippet. Its numbers answer to numbers in the code,
+which the distribution's package used to bring; `backend.conf`, the HTTPS server;
+`backend-upstreams.conf`, the three machines' platforms and gateways; `backend-stream.conf`, match
+traffic's server and the arenas' names; and the `backend-platform.conf` snippet. Its numbers answer to numbers in the code,
 and the file says which:
 
 | nginx | because |
@@ -281,8 +289,11 @@ and the file says which:
 | platform upstream `keepalive 32`, `keepalive_timeout 20s` | the platform drops idle connections at 30 s and keeps at most 1 000. The other way round, it closed connections nginx was about to reuse, and nginx does not retry a POST: a 502. Measured on the JDK server, 63 of 16 806 requests failed at its default idle limit of 200 and none at 5 000 |
 | `limit_req` 2/s, burst 30 on the four that make or open an account (`/v1/sessions`, `/v1/accounts`, `/v1/guests`, `/v1/accounts/upgrade`, each matched exactly, as platform matches them: S-18) | a cheap outer guard in front of Java; the precise per-address and per-account limits are the platform's ([04 §1](../detailed-design/04-platform-services.md#1-auth-and-sessions)) |
 | `client_max_body_size 4k` | the platform reads at most 4 KiB |
-| `X-Forwarded-For $proxy_add_x_forwarded_for` | the platform believes the last entry, from a peer on this machine only |
-| port 80: the CA's challenge, 403 for the rest | no redirect: a login sent to `http://` has already crossed in the clear, and a client that follows a 301 turns the POST into a GET. A misconfigured client should fail in testing |
+| `X-Forwarded-For $proxy_add_x_forwarded_for` | the platform believes the last entry, from a peer on this machine or one in `BACKEND_TRUSTED_PROXIES`, the front's nginx (D-82) |
+| nothing on port 80 | no public CA's challenge to answer (D-82), and no redirect: a login sent to `http://` has already crossed in the clear, and a client that follows a 301 turns the POST into a GET. A misconfigured client should fail in testing |
+| the platforms' and gateways' upstreams, all three machines | the front passes requests over the private network; one that fails is passed over (`max_fails`, 10 s) |
+| `stream` on 9001: TLS ended, `proxy_timeout 60s` | longer than the arena's own 30 s without a frame, so the arena decides a connection is dead |
+| `worker_rlimit_nofile` and the unit's `LimitNOFILE` 262 144 | the front holds every player's lobby and match connection, two descriptors each |
 | TLS 1.3 and 1.2, ECDHE with AES-GCM or ChaCha20 only | the same versions as the arenas (§8); nothing without forward secrecy |
 | `ssl_session_tickets off` | nginx never rotates the ticket key, so tickets would undo forward secrecy until the next restart; resumption still works from the session cache (checked: `Reused`) |
 
@@ -321,9 +332,8 @@ The ordering follows from the availability tiers in
    end, then stop. This is the slow step, and the reason `TimeoutStopSec` is
    generous: twelve minutes, for eleven of drain
    ([01 §8.6](../detailed-design/01-arena.md#86-draining-an-arena-designed-2026-09-29-plan-item-7)).
-   With one arena a machine
-   ([D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)),
-   while one drains its machine takes no new match, and the other two take them all.
+   The other arenas take the new players and matches meanwhile, on the same machine and the
+   others.
 5. Stateful roles (MySQL, j-redis) only during a maintenance window, since
    promotion is manual
    ([D-8](../architecture/03-decision-log.md#d-8--failover-is-scripted-not-automatic)).
@@ -502,6 +512,12 @@ journald problem is expected**; the metrics carry on regardless.
 
 ## 8. TLS for match traffic
 
+**The site's match traffic ends its TLS at the front's nginx** ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)): the arenas
+behind it speak plaintext on the private network, and announce the name the client's handshake
+gives (`BACKEND_ADVERTISE_TLS_NAME`), which nginx routes by. They have no keystore, and an arena
+refuses to start given both. What follows is the arena's own TLS, for an arena reached directly:
+a drill, or a machine alone without nginx in front. It is not the site's layout.
+
 **Built and run for real on 2026-09-26** ([S-6](../defects.md#5-security-and-input));
 what it waits for is a certificate (§11). An arena serves TLS when
 `BACKEND_ARENA_TLS_KEYSTORE` names a PKCS#12 keystore, its password in
@@ -516,10 +532,8 @@ used by anyone on the path before its owner uses it.
 host they were told to dial, so the arena refuses to start (exit 2) when no
 subject alternative name covers that host: an exact name, a wildcard for one
 leftmost label, or the address itself. In practice that makes `ADVERTISE_HOST`
-a DNS name, since public CAs certify IP addresses briefly, if at all: **the
-machine's one public name**, the one its nginx serves (§11). A machine's arena
-shares its address, so it shares its name (one arena a machine:
-[D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)).
+a DNS name, since public CAs certify IP addresses briefly, if at all, or an address a CA of the
+backend's own certifies (06).
 
 **It also refuses** a keystore it cannot read, a wrong password, a store with
 no private key (a trust store given by mistake would otherwise fail every
@@ -543,8 +557,7 @@ treat 243 like 2 and stay stopped.
 **Renewal takes a restart.** The keystore is read once, at start, and an
 arena's restart ends every connected player's stay (their results are
 published first). So the renewal only replaces the file, and the weekly
-restart ([runbook §6](02-runbook.md#6-routine)) or the next deploy picks it up:
-certbot renews 30 days ahead, so that is weeks early. What each arena actually
+restart ([runbook §6](02-runbook.md#6-routine)) or the next deploy picks it up. What each arena actually
 serves is `backend_arena_tls_certificate_expiry_timestamp_seconds`, the earliest
 expiry in its chain; alert when it is less than 14 days away, and the arena
 also warns at start inside that window. If the certificate source turns out to
@@ -949,95 +962,27 @@ or `backup_run`, by hand, with `systemctl status backend-binlog-stream`
 
 ## 11. The certificate
 
-What players' devices check, for logins, purchases and the lobby (nginx, §4)
-and for match traffic (the arenas, §8). **Everything but two choices is built
-and was run from placeholder to renewal on 2026-09-26**: the domain, and the CA
-([S-6](../defects.md#5-security-and-input)).
+**Since [D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name) the site's certificate comes from the backend's own CA**, as
+[06](06-certificates.md) says step by step: a root made once with `scripts/private-ca.sh`, whose
+certificate the app ships and trusts alone, and from it one certificate for the site's public
+address and every arena's name, installed on every machine by `scripts/install-certificate.sh`
+and served by nginx on 443 and 9001. The site has no domain, so a public CA cannot certify it.
 
-**One name per machine, one certificate per machine.** Machine A is
-`a.<domain>`, B `b.<domain>`, C `c.<domain>`: its nginx serves that name, its
-arena advertises it (`ADVERTISE_HOST`), and the client's
-endpoint list ([D-13](../architecture/03-decision-log.md#d-13--the-client-holds-an-endpoint-list-no-vip))
-holds the three. So each machine's certificate names one host, and each
-machine gets its own through the CA's HTTP-01 challenge on its own port 80.
-Nothing needs a wildcard, so nothing needs DNS-01 and a DNS provider's API key
-on every machine, and no certificate is copied between machines. A replacement
-machine gets its own once its name points at it. A CAA record in DNS naming the
-chosen CA keeps every other CA from issuing for the domain.
+`install-certificate.sh` still works as certbot's deploy hook (`RENEWED_LINEAGE`), and with any
+CA's PEM files. A public CA's certificate would need a domain, its names in DNS, and port 80 open
+for the HTTP-01 challenge (05 §1 keeps 80 closed). How that was built and run before D-82 is in
+this file's history (git).
 
-**The CA is a choice with one fact to weigh.** Let's Encrypt is free and
-automatic, but devices trust it through the ISRG Root X1 root, which Android
-added in 7.1.1: an older Android device refuses it. Whether that matters is the
-client's minimum OS version, which is not chosen yet either. A CA whose root
-old devices carry costs money, or an account; everything below works with any
-CA that issues PEM files.
+**Watching it.** nginx exports nothing, so the gateway reports the certificate file nginx serves,
+at every scrape, as `backend_gateway_edge_certificate_expiry_timestamp_seconds`
+(`BACKEND_EDGE_CERTIFICATE` in `gateway.env`). An unreadable file reads as 0, so the alert fires
+rather than the series vanishing. It is the earliest expiry in the chain, not the leaf's: a device
+refuses the chain when an intermediate has expired, too. Alert under 30 days: the certificate is
+renewed by hand once a year (06 §6).
 
-**The first time**, on each machine, after DNS points `a.<domain>` at it:
-
-```
-mkdir -p /var/www/acme
-/opt/backend/scripts/install-certificate.sh --placeholder   # nginx cannot start without one
-systemctl enable --now backend-nginx
-dnf install certbot                                         # EPEL
-certbot certonly --webroot -w /var/www/acme -d a.<domain> \
-    --deploy-hook /opt/backend/scripts/install-certificate.sh
-systemctl enable --now certbot-renew.timer
-```
-
-then the arena drop-in (§8) and a restart of the arenas. The placeholder is
-self-signed, for the machine's name, and only goes where no certificate is:
-devices refuse it, so nothing can use it by mistake. The challenge directory
-is under `/var/www` because nginx may read there under SELinux's default
-policy, which it may not in `/var/lib`.
-
-**`install-certificate.sh`** is the deploy hook, and runs the same by hand for a
-CA without ACME: `install-certificate.sh fullchain.pem privkey.pem`. It learns
-what the machine serves from nginx's `server_name` and each
-`/etc/backend/arena-*.env`'s `ADVERTISE_HOST`, and **installs nothing** unless:
-
-- the key is the certificate's;
-- the chain reaches a trusted root through the intermediates in the file
-  alone. Devices do not fetch a missing intermediate, so a file holding only
-  the leaf (`cert.pem` in place of `fullchain.pem`) works in a desktop browser
-  and fails on phones;
-- it is valid now, with a warning inside 14 days;
-- it names every host the machine serves.
-
-Then nginx gets `/etc/backend/tls/fullchain.pem` (0644) and
-`/etc/backend/credentials/privkey.pem` (0600); each file is replaced whole. If
-`nginx -t` refuses them the previous ones are put back; otherwise nginx is
-reloaded, which drops no connection, and the script checks that nginx then
-serves the new certificate. The arenas get
-`/etc/backend/credentials/arena-tls.p12`, with a password made once, and the
-script says which arenas still serve the previous certificate until their
-restart. Two runs at once are refused. **`--check`** shows what every port
-serves, as a device would check it, and fails when anything is wrong or within
-14 days; run it after any change of name or certificate.
-
-**Run for real** against nginx 1.24 and the release, with a test CA shaped like
-a public one (a root and an intermediate): each refusal above, plus a key
-file that was the certificate, left the installed files byte for byte as they
-were; nginx started on the placeholder, devices refused it, and port 80 served
-the challenge; installed as certbot's hook, the certificate was served by
-nginx at once and by the arena from its start, and bots trusting only the root
-went through both. Renewed under ten connected bots, none was dropped; the
-arena kept the previous certificate until restarted, then served the new one.
-A test nginx refusing the files got the previous ones back. **Not yet run**
-on RHEL 9 with SELinux enforcing, nor against a real CA.
-
-**Watching it.** nginx exports nothing, so the gateway reports the certificate
-file nginx serves, at every scrape, as
-`backend_gateway_edge_certificate_expiry_timestamp_seconds`
-(`BACKEND_EDGE_CERTIFICATE` in `gateway.env`); an unreadable file reads as 0,
-so the alert fires rather than the series vanishing. The arenas report what
-they serve (§8). Both are **the earliest expiry in the chain**, not the leaf's:
-a device refuses the chain when an intermediate has expired, too. Alert on
-either under 14 days (§7). Certbot renews 30 days ahead, so an alert means
-renewal has failed for over two weeks: `certbot renew --dry-run` says why.
-
-**What the client must do**, for whoever builds it: `https://` and `wss://`
-only, verified against the device's own trust store, never a plaintext
-fallback. **Pin nothing**: a pinned certificate or key breaks every installed
-client at the next renewal, which with ACME is every few months. On a
-certificate error, try the next endpoint, then show an error; never offer to
-continue.
+**What the client must do**, for whoever builds it ([06 §5](06-certificates.md#5-in-the-app)):
+- `https://` and `wss://` only, with no plaintext fallback, and TLS on 9001;
+- verified against the backend's root alone, with the name checked: the address dialled on 443,
+  the grant's `tlsName` on 9001;
+- **pin nothing but the root**, so the yearly renewal needs no release;
+- on a certificate error, show an error; never offer to continue.

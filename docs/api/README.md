@@ -8,7 +8,7 @@ collection that runs all of the HTTP ones in order.
 | The player API, HTTP | the client | `https://<name>/v1/...` (nginx to `platform`) | [01 — the player API](01-http-api.md) |
 | The lobby, WebSocket | the client, between matches | `wss://<name>/lobby` (nginx to `gateway`) | [02 — the lobby WebSocket](02-lobby-websocket.md) |
 | The admin API, HTTP | operators | `http://127.0.0.1:9120/admin/...` on the machine, over SSH | [03 — the admin API](03-admin-api.md) |
-| A match, binary over TCP | the client, in a match | `<arenaHost>:<arenaPort>`, from a grant | [02-networking](../detailed-design/02-networking.md) |
+| A match, binary over TCP | the client, in a match | `<arenaHost>:<arenaPort>`, from a grant, TLS with the grant's `tlsName` behind the front (D-82) | [02-networking](../detailed-design/02-networking.md) |
 | Metrics, Prometheus text | monitoring | `GET /metrics` on each process's loopback port | [operations/01 §7](../operations/01-deploy.md#7-installing-a-machine) |
 
 How a client goes from nothing to a match: register or make a guest, log in (a token), open
@@ -30,7 +30,7 @@ a team, a tournament).
 
 | Variable | Default | Set it to |
 |---|---|---|
-| `baseUrl` | `http://127.0.0.1:8080` | the platform, or `https://<name>` through nginx |
+| `baseUrl` | `http://127.0.0.1:8080` | the platform, or `https://<the site's address>` through the front's nginx, trusting the backend's root, `ca.pem` ([operations/06](../operations/06-certificates.md)): in Postman, Settings, Certificates, CA certificates; with newman, `--ssl-extra-ca-certs ca.pem` |
 | `adminUrl` | `http://127.0.0.1:9120` | the admin API, through an SSH tunnel |
 | `adminToken` | | the admin secret (`/etc/backend/credentials/admin-token`) |
 | `password` | `example-password-1` | any, 8 to 128 characters |

@@ -6,14 +6,16 @@ over. The words are the [glossary](../glossary.md)'s; the reasons are in the
 [topology](../architecture/01-system-topology.md), the
 [availability model](../architecture/02-availability.md) and the
 [decision log](../architecture/03-decision-log.md). Drawn from the code as of
-2026-10-04.
+2026-10-04, and the site's edge as of 2026-10-19 (D-82).
 
 ## 1. System context
 
 Who and what the backend meets. A player uses only the Unity app, whose
 engine-free core (`Backend.Client.Core`) does all the talking; an operator
-reaches the machines by SSH and `platform`'s admin API (`AdminServer`). The
-payment provider is simulated (`PaymentService`, D-68), and the host for the
+reaches the machines by SSH from the internal network and `platform`'s admin
+API (`AdminServer`). The site has one public address, an IP with no domain, so
+its certificate comes from a CA of the backend's own, whose root the app ships
+([operations/06](../operations/06-certificates.md)). The payment provider is simulated (`PaymentService`, D-68), and the host for the
 backups' copy off the site is not chosen yet (Q-53).
 
 ```mermaid
@@ -23,20 +25,22 @@ flowchart LR
     backend["The backend<br/>arena, gateway, platform, worker<br/>j-redis, MySQL, nginx"]
     provider["Payment provider<br/>simulated, Q-52"]
     offsite["Storage host off the site<br/>not chosen, Q-53"]
-    ca["Certificate authority<br/>deferred by the owner"]
-    player -->|"HTTPS, WSS, TCP with TLS"| backend
-    operator -->|"SSH, then the admin API on loopback"| backend
+    ca["The backend's own CA<br/>its root in the app, its key off the servers"]
+    player -->|"HTTPS, WSS, TCP with TLS, to one public address"| backend
+    operator -->|"SSH from the internal network, then the admin API on loopback"| backend
     backend -.->|"confirms an order"| provider
     backend -.->|"encrypted dumps and binlogs, rsync over SSH"| offsite
-    ca -.->|"certificate for nginx and the arenas"| backend
+    ca -.->|"one certificate, for nginx"| backend
 ```
 
 ## 2. Containers
 
 Every process and store, with what each speaks and the ports of the example
-settings in `backend/deploy/env/` (all of them settings). Match traffic goes
-straight to an arena, never through nginx or the gateway (D-5); the lobby and
-the API go through nginx. Pushes and an operator's room commands are
+settings in `backend/deploy/env/` (all of them settings). Everything a player
+sends reaches the front's nginx, which ends its TLS
+([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)): the API and the
+lobby go on to a platform and a gateway, match traffic to the arena its TLS name
+gives, unread and never through the gateway (D-5). Pushes and an operator's room commands are
 published on the `session` store and reach the gateway and the arena by
 pub/sub. Each process also serves Prometheus metrics on a loopback address
 (`BACKEND_METRICS_ADDR`), not drawn.
@@ -45,13 +49,13 @@ pub/sub. Each process also serves Prometheus metrics on a loopback address
 flowchart LR
     app["Client core<br/>Backend.Client.Core"]
     op["Operator"]
-    subgraph edgeTier["Each machine's edge"]
-        nginx["nginx<br/>443 TLS, 80 for the CA only"]
+    subgraph edgeTier["The front, one of the three machines"]
+        nginx["nginx<br/>443 and 9001, ends TLS"]
     end
-    subgraph procs["Processes"]
-        gateway["gateway<br/>8090 on loopback"]
-        platform["platform<br/>8080 on loopback<br/>admin API 9120 on loopback"]
-        arena["arena<br/>9001, TCP with TLS"]
+    subgraph procs["Processes, on each machine"]
+        gateway["gateway<br/>8090 on the private address"]
+        platform["platform<br/>8080 on the private address<br/>admin API 9120 on loopback"]
+        arena["arena<br/>9011 to 9013 on the private address"]
         worker["worker"]
     end
     subgraph stores["State"]
@@ -61,9 +65,10 @@ flowchart LR
     end
     app -->|"HTTPS /v1/"| nginx
     app -->|"WSS /lobby"| nginx
-    app -->|"binary frames, TCP with TLS"| arena
+    app -->|"binary frames, TLS, 9001"| nginx
     nginx -->|"HTTP"| platform
     nginx -->|"WebSocket"| gateway
+    nginx -->|"the same frames, by the TLS name"| arena
     gateway -->|"HTTP /v1/queue"| platform
     gateway -->|"sessions, conn: registry"| session
     session -.->|"pub/sub push: channels"| gateway
@@ -160,8 +165,8 @@ sequenceDiagram
     PL->>S: a ticket each, the room promised
     PL->>S: publish evt.match.found with the grant
     S-->>G: on the push: channel
-    G-->>P: evt.match.found, arena host, port, ticket, TLS
-    P->>A: TCP with TLS, Join with the ticket
+    G-->>P: evt.match.found, arena host, port, ticket, TLS name
+    P->>A: TLS to the front's 9001 as the name, nginx passing it on; Join with the ticket
     A->>S: claim the ticket, MULTI HGETALL DEL EXEC
     A-->>P: Welcome, then snapshots 15 a second
     P->>A: Input, 10 packets a second

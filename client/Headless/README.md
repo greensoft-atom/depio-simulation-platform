@@ -21,8 +21,8 @@ dotnet Headless/bin/Debug/net8.0/Backend.Client.Headless.dll <platform-url> [--l
 |---|---|
 | `<platform-url>` | The platform API, first and required; the one endpoint `ApiClient` is given |
 | `--lobby <ws-url>` | The gateway's lobby, as `ws://127.0.0.1:8094/lobby` |
-| `--trust <cert>` | With TLS: the one certificate to trust in place of the device's store, as a test CA would be; the host name is still checked, and nothing is pinned |
-| `--wrong-trust <cert>` | A certificate that is not the arena's, for `untrusted` |
+| `--trust <cert>` | The one root to trust in place of the device's store, for the API, the lobby and matches, as the app trusts the backend's own (`TrustRoot`, D-82): a test CA's, or `ca.pem` from `private-ca.sh`. The name is still checked (the address dialled, or a grant's `tlsName`), and nothing is pinned |
+| `--wrong-trust <cert>` | A root that is not the arena's, for `untrusted` |
 | `scenario ...` | Run in the order given; none named runs `play resume badticket lifecycle` |
 
 Without `--lobby`, every scenario that opens a lobby connection is dropped from

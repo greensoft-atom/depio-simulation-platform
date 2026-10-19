@@ -71,7 +71,7 @@ Your values, set once in the shell every later step runs in:
 
 ```bash
 export SRC=/srv/depio-simulation-platform   # where the repository is
-export NAME=a.example.com                # the name players' devices reach this machine by
+export ADDRESS=203.0.113.10              # the public address players' devices reach this machine by
 export MYSQL_BUFFER_POOL=14G             # MySQL's buffer pool: 14G of 20 GB on a production machine
 export MYSQL_PORT=3306                   # another if the server's own MySQL keeps 3306 (§1)
 ```
@@ -162,11 +162,16 @@ From the release's examples (`env/`), pointed at this machine.
 
 ```bash
 local_db="jdbc:mysql://127.0.0.1:$MYSQL_PORT/backend?sslMode=REQUIRED"
+# Everything on loopback: this machine is its own front, and nginx reaches its processes there (D-82).
 for p in platform gateway worker; do
     sed -e "s/^STORE_HOST=.*/STORE_HOST=127.0.0.1/" -e "s#^BACKEND_DB_URL=.*#BACKEND_DB_URL=$local_db#" \
+        -e "s/^PLATFORM_BIND=.*/PLATFORM_BIND=127.0.0.1/" -e "s/^GATEWAY_BIND=.*/GATEWAY_BIND=127.0.0.1/" \
+        -e "s#^PLATFORM_URL=.*#PLATFORM_URL=http://127.0.0.1:8080#" -e "s/^BACKEND_TRUSTED_PROXIES=.*/BACKEND_TRUSTED_PROXIES=/" \
         "/opt/backend/env/$p.env.example" > "/etc/backend/$p.env"
 done
-sed -e "s/^STORE_HOST=.*/STORE_HOST=127.0.0.1/" -e "s/^ADVERTISE_HOST=.*/ADVERTISE_HOST=$NAME/" \
+# The arena behind nginx: on loopback, announcing this machine's address, 9001 and its name.
+sed -e "s/^STORE_HOST=.*/STORE_HOST=127.0.0.1/" -e "s/^ARENA_BIND=.*/ARENA_BIND=127.0.0.1/" \
+    -e "s/^ADVERTISE_HOST=.*/ADVERTISE_HOST=$ADDRESS/" \
     /opt/backend/env/arena.env.example > /etc/backend/arena-a1.env
 # A machine smaller than the production ones (64 GB): smaller heaps, by a drop-in each.
 mem_gb=$(awk '/MemTotal/ {print int($2 / 1048576)}' /proc/meminfo)
@@ -181,18 +186,38 @@ if [ "$mem_gb" -lt 48 ]; then
 fi
 ```
 
-## 9. nginx
+## 9. nginx and the certificate
 
-The release's nginx (01 §4). Until the real certificate is installed (01 §11), a
-placeholder lets it start; players' devices refuse it, so it is for this check
-and for the certificate's first challenge only.
+The release's nginx (01 §4), this machine's front: it ends TLS on 443 and 9001, and passes
+requests and match connections to this machine's processes ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)). Its certificate comes from
+the backend's own CA, since the site has no domain ([06](06-certificates.md)): a root made once,
+whose certificate the app ships, and from it the certificate nginx serves, naming this machine's
+address and its arena's name.
 
 ```bash
 cp /opt/backend/nginx-conf/*.conf /etc/backend/nginx/
-sed -i "s/a\.example\.com/$NAME/g" /etc/backend/nginx/backend.conf
-install -d -m 0755 /var/www/acme /var/log/backend-nginx
-/opt/backend/scripts/install-certificate.sh --placeholder
+sed -i "s/203\.0\.113\.10/$ADDRESS/" /etc/backend/nginx/backend.conf
+# This machine's platform, gateway and arena, on loopback: the site's addresses, for one machine.
+printf '%s\n' 'upstream backend_gateway {' '    least_conn;' '    server 127.0.0.1:8090;' '}' \
+    'upstream backend_platform {' '    server 127.0.0.1:8080;' '    keepalive 32;' '    keepalive_timeout 20s;' '}' \
+    > /etc/backend/nginx/backend-upstreams.conf
+sed -i -e '/^    [a-c][0-9]\.arena\.internal /d' \
+    -e 's/^    default .*/    a1.arena.internal  127.0.0.1:9011;\n    default            "";/' \
+    /etc/backend/nginx/backend-stream.conf
+install -d -m 0755 /var/log/backend-nginx
+# The root, once: its key belongs off this machine afterwards (06 §2). Then the certificate, for this
+# machine's address and its arena's name, installed for nginx.
+/opt/backend/scripts/private-ca.sh root /root/backend-ca
+/opt/backend/scripts/private-ca.sh issue /root/backend-ca /root/backend-certificate "$ADDRESS" \
+    $(/opt/backend/scripts/private-ca.sh names /etc/backend/nginx/backend-stream.conf)
+install -m 0644 /root/backend-ca/ca.pem /etc/backend/tls/ca.pem
+/opt/backend/scripts/install-certificate.sh /root/backend-certificate/fullchain.pem /root/backend-certificate/privkey.pem
 ```
+
+**`/root/backend-ca/ca.key` is the root's key.** Whoever holds it can pass for the backend to every
+player. Move it off this machine now, to where you keep secrets, with a copy apart. It is needed
+again only to issue the next certificate, in a year (06 §4). `ca.pem` beside it is the app's: it
+goes into the client (06 §5).
 
 ## 10. Start everything
 
@@ -211,40 +236,45 @@ for i in $(seq 90); do curl -s -o /dev/null http://127.0.0.1:8080/health && brea
 sleep 10
 systemctl is-active backend-mysql backend-store@session backend-platform backend-gateway \
     backend-worker@c1 backend-arena@a1 backend-nginx
-# A registration as a device makes it, through nginx (-k: the placeholder certificate)
-curl -sk --resolve "$NAME:443:127.0.0.1" -o /dev/null -w "a registration through nginx: %{http_code}\n" \
+# A registration as a device makes it, through nginx, trusting the backend's root alone
+curl -s --cacert /etc/backend/tls/ca.pem --connect-to "$ADDRESS:443:127.0.0.1:443" -o /dev/null \
+    -w "a registration through nginx: %{http_code}\n" \
     -X POST -H 'Content-Type: application/json' -d '{"username":"installcheck","password":"install-check-1"}' \
-    "https://$NAME/v1/accounts"
+    "https://$ADDRESS/v1/accounts"
+# Match traffic's TLS on 9001, as a device sees it: the arena's name, verified against the root
+echo | openssl s_client -connect 127.0.0.1:9001 -servername a1.arena.internal -verify_hostname a1.arena.internal \
+    -CAfile /etc/backend/tls/ca.pem 2>/dev/null | grep 'Verify return code'
+/opt/backend/scripts/install-certificate.sh --check
 ```
 
-Every unit `active`, and `201`. Each unit's log: `journalctl -u backend-platform`
+Every unit `active`, `201`, `Verify return code: 0 (ok)`, and the certificate's check naming both
+ports. Each unit's log: `journalctl -u backend-platform`
 (and so on); their metrics on loopback (01 §7).
 
 <!-- /guide-steps -->
 
 ## 12. Open the firewall
 
-Players reach nginx (443, and 80 for the certificate's challenge) and the machine's one arena
-(`ARENA_PORT`, 9001); nothing else is reachable from outside but SSH, as RHEL leaves it. Three public ports a machine is the
-owner's limit, and the reason a machine runs one arena
-([D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)).
+Players reach nginx's 443 and 9001, and nothing else; SSH comes from the internal network alone
+([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)). Run it from that network, or from the console: a session from elsewhere goes on, but is
+the last (05 §5).
 
 <!-- firewall one machine -->
 ```console
-firewall-cmd --permanent --add-service=https --add-service=http
+LAN=10.0.0.0/24                          # the internal network operators come from
+firewall-cmd --permanent --add-service=https
 firewall-cmd --permanent --add-port=9001/tcp
-firewall-cmd --permanent --remove-service=cockpit
+firewall-cmd --permanent --remove-service=cockpit --remove-service=ssh
+firewall-cmd --permanent --add-rich-rule="rule family=\"ipv4\" source address=\"$LAN\" service name=\"ssh\" accept"
 firewall-cmd --reload
 ```
 <!-- /firewall -->
 
-Services and ports go in separate commands: firewalld refuses `--add-service` and
-`--add-port` in one, and applies none of it. Cockpit's 9090, which RHEL allows, is closed: it is
-not one of the three public ports a machine may have (C-9). SSH stays as RHEL has it;
-[05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9) says how to limit it to the operators'
-address. On three machines, each one's firewall also opens
-its private ports to the other two, and to no one else: [05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9)
-has each machine's commands, and every port is in [05](05-ports-and-firewall.md).
+Services and ports go in separate commands: firewalld refuses `--add-service` and `--add-port` in
+one, and applies none of it. Cockpit's 9090, which RHEL allows, is closed, and so is 80: neither is
+the backend's. On three machines, each one's firewall also opens its private ports to the other
+two, and to no one else: [05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9) has each
+machine's commands, and every port is in [05](05-ports-and-firewall.md).
 
 ## Operating it
 
@@ -266,20 +296,22 @@ The same steps on each, with these differences (01 §1, architecture/01 §2):
 |---|---|---|---|
 | MySQL | primary (§6, with TLS: 01 §9) | none | replica ([01 §9, the replica](01-deploy.md#the-replica-on-c-plan-item-13-d-35)) |
 | Stores | `session` primary | `session` replica, `events` primary | `events` replica (01 §3) |
-| nginx, platform, gateway, one arena (`a1`, `b1`, `c1`: D-81) | yes | yes | yes |
+| nginx, platform, gateway | yes, every machine set up as the front | yes | yes; the front in the examples (D-82) |
+| arenas | `a1`, `a2` | `b1`, `b2`, `b3` | `c1`, `c2` |
 | worker | | | yes |
 | Backups and their proof | | | yes (01 §10) |
 
-Each machine's private address replaces `127.0.0.1` where a process reaches
-another machine (`STORE_HOST`, `BACKEND_STORE_ADDRESSES`, `BACKEND_DB_URL`), the
-database's URL carries its TLS settings (01 §9), each arena's and worker's
-instance name is unique across the three (01 §2), and the units are pinned to
-their cores (01 §7).
+Each machine keeps the shipped examples' private addresses rather than step 8's loopback ones: the
+platform, the gateway and the arenas listen on its private address, and reach the stores and MySQL
+on theirs (`STORE_HOST`, `BACKEND_STORE_ADDRESSES`, `BACKEND_DB_URL`, with MySQL's TLS settings,
+01 §9). nginx keeps the shipped `backend-upstreams.conf` and `backend-stream.conf`, the same file on
+every machine, for all three machines' processes. One certificate serves the whole site: issued once
+for the site's address and every arena's name, and installed on every machine
+([06](06-certificates.md)). Each arena's and worker's instance name is unique across the three
+(01 §2), each arena's TLS name too (05 §3), and the units are pinned to their cores (01 §7).
 
 ## What this guide does not do
 
-- **The certificate and the domain** (01 §11): deferred by the owner; the
-  placeholder above stands in.
 - **The copy off the site** (01 §10, Q-53): its host is not chosen.
 - **The client**: the .NET SDK and its packages are not in the repository (the
   owner's choice); the client is built on a developer's machine.

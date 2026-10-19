@@ -6,14 +6,19 @@ client spike and all of Phase 1
 ([plan §7](../plan.md#7-documentation-order)).
 
 Everything here applies to the **match connection** only: client ↔ arena,
-direct, never through nginx or the gateway
+never through the gateway
 ([D-5](../architecture/03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)).
+On the site it passes through the front's nginx, which ends its TLS and hands
+the bytes on, unread, to the arena the grant's `tlsName` names
+([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)): nothing
+below changes for it.
 The lobby protocol between client and `platform` is ordinary JSON over HTTPS
 and is specified with the gateway.
 
 ## 1. Transport
 
-**Raw TCP with TLS terminated in Netty.** There is no WebSocket framing and no
+**Raw TCP with TLS**, ended by the front's nginx on the site (D-82), or in Netty
+by an arena reached directly (below). There is no WebSocket framing and no
 HTTP upgrade, because there is no browser client
 ([D-1](../architecture/03-decision-log.md#d-1--unity-native-mobile-client-no-browser-build)).
 Unity's `System.Net.Sockets` speaks this directly on iOS and Android.
@@ -33,14 +38,17 @@ SslHandler                          TLS 1.3 or 1.2, the JDK's provider; only wit
   → MatchFrameHandler
 ```
 
-**TLS is built** (2026-09-26, [S-6](../defects.md#5-security-and-input)); what it
-waits for is a certificate, whose CA and domain are not chosen yet: the machine's
-own, which its nginx serves too, since `arenaHost` is the machine's one name
-([operations/01 §11](../operations/01-deploy.md#11-the-certificate)). An arena
+**On the site, TLS ends at the front's nginx** ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)): the
+client dials the site's public address and 9001 (`arenaHost`, `arenaPort`), its handshake gives
+the grant's `tlsName`, which nginx routes by, and it checks the certificate against that name and
+the backend's own root ([operations/06](../operations/06-certificates.md)). The arena behind
+speaks plaintext. What follows is the arena's own TLS, for an arena reached directly.
+
+**TLS in the arena is built** (2026-09-26, [S-6](../defects.md#5-security-and-input)). An arena
 given a keystore serves TLS on every connection from the first byte, and says so
 in the directory; platform's grant then carries `"tls": true`. **The client
 connects with TLS exactly when the grant says so, and verifies the certificate
-against `arenaHost`**: trusting any certificate would make the encryption
+against `tlsName`, or `arenaHost` without one**: trusting any certificate would make the encryption
 decorative. A plaintext client that reaches a TLS arena is dropped by the
 handshake before its `Join` is read, so its ticket is not spent. The arena
 refuses to start when its certificate does not name the host it advertises,

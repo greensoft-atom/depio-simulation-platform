@@ -1,7 +1,7 @@
 # Glossary
 
 Every term this system uses, what it means, and where it appears. Updated
-2026-10-17.
+2026-10-19.
 
 This exists because the same idea kept acquiring second names, and two of them
 had genuinely collided — "session" meant both an authenticated lobby session
@@ -23,10 +23,12 @@ the wire.
 | Term | Meaning | Where |
 |---|---|---|
 | **backend** | The whole system. The namespace for everything: packages, paths, units, the OS user. | `com.backend.*`, `/opt/backend`, `backend-arena@a1` |
-| **arena** | A process that runs match simulation and speaks to clients directly. Also, loosely, the place a match happens. | `arena` module, `ArenaMain`, `arena:{name}` |
+| **arena** | A process that runs match simulation and speaks to clients over its own binary protocol, not through the gateway: on the site, behind the **front**'s nginx (D-82). Also, loosely, the place a match happens. | `arena` module, `ArenaMain`, `arena:{name}` |
 | **platform** | The process serving everything between matches: accounts and guests, sessions, tickets, the matcher, teams, tournaments' registration, the boards, the shop and payments, the social layer, and the admin API. | `platform` module, `PlatformHttpServer`, `AdminServer` |
 | **gateway** | The process that holds client lobby connections and forwards to `platform`. Makes no product decisions. | `gateway` module, `GatewayServer` |
 | **worker** | The process that applies results to MySQL and grants rewards. | `worker` module, `WorkerMain` |
+| **front** | The one machine the site's public address is forwarded to, whose nginx takes every player's connection on 443 and 9001, ends its TLS, and passes it over the private network: the API and the lobby to the three machines' platforms and gateways, a match to the arena its **TLS name** names. C in the examples; every machine's nginx is set up the same, so any can be made the front ([D-82](architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)). | `backend-nginx`, `backend-stream.conf`, [operations/05](operations/05-ports-and-firewall.md) |
+| **trusted proxy** | An address whose `X-Forwarded-For` the platform and the gateway believe, so that a player's address, not the front's, keys the login limits and the logs: the three machines' nginx. Anyone else's header is ignored. | `BACKEND_TRUSTED_PROXIES`, `TrustedProxies` |
 | **handoff** | The module holding what `platform` and `arena` both touch, and nothing else. It exists so `arena` never inherits a database driver. | `handoff` module |
 | **room** | One simulated world inside an arena, with its own thread and its own players. An arena hosts several. | `Room`, `RoomThread`, `RoomRegistry` |
 | **store** | j-redis. Two instances of one binary ([D-7](architecture/03-decision-log.md#d-7--two-j-redis-instances-not-one)): **session** — sessions, tickets, the arena directory, throttles, the gateway registry, the queues, parties and leases, the score boards — and **events** — the result stream and the lists beside it. With `BACKEND_EVENTS_STORE` unset, one instance is both. The instance named *session* is not a **session**. | `j-redis-service`, `StoreClients` |
@@ -186,7 +188,9 @@ the wire.
 
 | Term | Meaning | Where |
 |---|---|---|
-| **match traffic** | Client ↔ arena. Binary, direct, never through nginx or the gateway. | [02](detailed-design/02-networking.md) |
+| **match traffic** | Client ↔ arena. Binary, never through the gateway. On the site it goes through the **front**'s nginx on 9001, which ends its TLS and passes the bytes to the arena its **TLS name** names, unread (D-82). | [02](detailed-design/02-networking.md) |
+| **TLS name** | An arena's name on the private side of the front, `a1.arena.internal`: a grant's `tlsName`, which the client's handshake sends (SNI) and checks the certificate against, and which the front's map turns into that arena's private address and port. Not in any DNS. | `BACKEND_ADVERTISE_TLS_NAME`, `tlsName`, `$ssl_server_name` |
+| **the backend's root** | The certificate authority of the backend's own, for a site with no domain: its certificate, `ca.pem`, ships in the app, which trusts it alone; its key never goes on a server. It signs the one certificate nginx serves, which names the site's address and every **TLS name** ([operations/06](operations/06-certificates.md)). | `private-ca.sh`, `TrustRoot`, `/etc/backend/tls/ca.pem` |
 | **lobby traffic** | Client ↔ gateway ↔ platform. JSON over WebSocket at `/lobby`, low volume. | `LobbyHandler` |
 | **kill feed** | Who killed whom, as `Kill` events: to the killer in every room, and to every player in a made match; a shape broken is not in it ([01 §9](detailed-design/01-arena.md#the-kill-feed-designed-2026-10-01-plan-item-37), Q-34). | `Wire.EVT_KILL`, `RoomThread.relayKills`, C# `MatchEvent.Victim` |
 | **push** | A lobby message with no `id`, sent by the server unprompted: `evt.session.replaced` by the gateway itself, and `evt.match.found`, `evt.queue.update`, `evt.party.*`, `evt.team.update`, `evt.friend.*` and `evt.inbox` by `platform`, and `evt.tournament.match`, `evt.inbox` and `evt.rewards` by `worker`; and `evt.notice`, an operator's, to everyone on `push:all`, through the gateway that holds the player's connection. A notification: the truth is fetched ([03 §7](detailed-design/03-gateway.md#7-what-must-not-be-lost)). | `evt.*` in [03](detailed-design/03-gateway.md), `LobbyPush`, `push:{gateway}` |
@@ -299,4 +303,4 @@ instance when `BACKEND_EVENTS_STORE` names one; every other key on
 | **`work/`** | The folder inside the checkout, never committed, where everything a development machine writes goes: Maven's settings and local repository, the temporary files, the development MySQL, a run by hand ([D-80](architecture/03-decision-log.md#d-80--a-checkout-builds-tests-runs-and-is-debugged-from-inside-its-own-folder)). `WORK=` moves it. | `dev-env.sh` |
 | **development MySQL** | `vendor/`'s MySQL 8.4 run from `work/mysql` on 127.0.0.1:3314, reading no option file: the tests' `backend_test` and a run by hand's `backend_dev`. Not the machine's own MySQL, which it never touches ([development/03 §3](development/03-build-and-run.md#3-the-tests)). | `dev-mysql.sh` |
 | **run by hand** | The whole backend on one machine from a release, against the development MySQL: the store, the platform, a worker, the gateway, an arena; with debugger ports on `DEBUG=1` ([development/03 §5](development/03-build-and-run.md#5-running-it-by-hand)). | `run-local.sh` |
-| **`backend` zone** | The firewalld zone each production machine adds: the other two machines' private addresses as its sources, with SSH and only the private ports they reach on it (the stores, MySQL). A connection from those addresses is decided by it alone; everyone else falls to `public`, which opens nginx and the arenas ([operations/05 §5](operations/05-ports-and-firewall.md#5-the-firewall-on-rhel-9)). | `firewall-cmd --zone=backend` |
+| **`backend` zone** | The firewalld zone each production machine adds: the other two machines' private addresses as its sources, with SSH and only the private ports they reach on it (the stores, MySQL, the platform, the gateway, the arenas). A connection from those addresses is decided by it alone; everyone else falls to `public`, which opens 443 and 9001, and SSH from the internal network alone ([operations/05 §5](operations/05-ports-and-firewall.md#5-the-firewall-on-rhel-9)). | `firewall-cmd --zone=backend` |

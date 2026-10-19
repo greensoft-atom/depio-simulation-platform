@@ -126,8 +126,12 @@ for the backend, its docs and its client.
   schema changes are forward-only, expand then contract (06 §8).
 - **No third-party Redis server, client library or tool**, tests included; the store is
   j-redis.
-- **Certificate and domain are deferred by the user.** Do not raise them or work on them
-  until the user brings them back.
+- **One public address for the site** (owner, 2026-10-19; C-9, D-82): an IP, no domain, with 80,
+  443 and 9001, forwarded to one machine, the front; the others on the private network alone; SSH
+  from the internal network alone. nginx on the front (every machine set up the same) ends TLS on
+  443 and 9001 and routes match traffic by the arena's TLS name. The certificate comes from the
+  backend's own CA (`private-ca.sh`), whose root the app ships and trusts alone
+  ([operations/06](docs/operations/06-certificates.md)).
 - **Client scope:** the engine-free C# core, the headless driver, and since 2026-10-04 (Q-51,
   plan item 77) the Unity layer as scripts: logic in the core where it can be tested, the
   Unity scripts thin. There is no Unity here: say what was and was not compiled.
@@ -175,6 +179,11 @@ client/unity-package.sh && client/unity-check.sh
 TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]
 # Over TLS, where "untrusted" is a scenario too (without TLS=1 it fails: it needs a certificate)
 TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted
+
+# The certificate scripts' own check (openssl alone, a few seconds), and the front's end to end in Rocky 9.5:
+# firewalld, nginx, two machines, the C# client through 443 and 9001 (Docker, .NET; about ten minutes)
+backend/scripts/check-certificates.sh
+(cd backend && scripts/check-ports-el9.sh)
 
 # The backups' own drill: the stream, dump, copy off the site, weekly proof under writes, a restore to a
 # moment and the refusals, on private MySQL servers (3307 primary, 3309 scratch) seeded from backend_dev

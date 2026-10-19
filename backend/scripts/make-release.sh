@@ -83,7 +83,7 @@ mkdir -p "$OUT/scripts"
 cp scripts/backup-mysql.sh scripts/backup-store.sh scripts/binlog-stream.sh \
     scripts/restore-drill.sh scripts/store-restore-drill.sh scripts/install-certificate.sh \
     scripts/promote-store.sh scripts/promote-mysql.sh scripts/record-backup.sh scripts/restore-proof.sh \
-    scripts/backup-offsite.sh scripts/fetch-offsite.sh "$OUT/scripts/"
+    scripts/backup-offsite.sh scripts/fetch-offsite.sh scripts/private-ca.sh "$OUT/scripts/"
 git rev-parse HEAD > "$OUT/COMMIT" 2>/dev/null || true
 {
     cat "$VENDOR/VERSIONS.md"

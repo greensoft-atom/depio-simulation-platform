@@ -13,7 +13,7 @@ protocol ([02-networking](../detailed-design/02-networking.md)).
 
 | Where | URL |
 |---|---|
-| Production, through nginx (TLS) | `wss://<name>/lobby`, for example `wss://a.example.com/lobby` |
+| Production, through the front's nginx (TLS) | `wss://<the site's address>/lobby`, for example `wss://203.0.113.10/lobby`, the backend's root trusted ([operations/06](../operations/06-certificates.md)) |
 | One machine, straight to `gateway` | `ws://127.0.0.1:8081/lobby` (`GATEWAY_PORT`: 8090 under systemd; the examples ran on 8181) |
 
 No subprotocol, no compression; a query string is accepted and ignored. Anything that is not
@@ -182,7 +182,7 @@ them.
 | `t` | `d` | When | Fetch instead |
 |---|---|---|---|
 | `evt.match.ready` | `{"matchUid","mode","seconds":10}` | the matcher asks about a match: answer within `seconds` | `GET /v1/queue` (`confirming`) |
-| `evt.match.found` | `{"arenaHost","arenaPort","ticketId","tls","mode"}` | all accepted, or a sandbox opened: the grant | `GET /v1/queue` (`matched`) |
+| `evt.match.found` | `{"arenaHost","arenaPort","ticketId","tls","mode"}`, and `"tlsName"` behind the front (01 §6) | all accepted, or a sandbox opened: the grant | `GET /v1/queue` (`matched`) |
 | `evt.queue.update` | `{"state":"queued","mode"}` or `{"state":"none","mode":null}` | the party's leader queued it or took it out; a match called off; dropped from the queue | `GET /v1/queue` |
 | `evt.party.invite` | `{"partyId","from","fromName"}` | invited to a party (60 s to accept) | |
 | `evt.party.update` | the party, or its ended form | a member joined, left or was kicked | `GET /v1/party` |
@@ -192,7 +192,7 @@ them.
 | `evt.friend.accepted` | `{"playerId","name"}` | a request was accepted | `GET /v1/friends` |
 | `evt.inbox` | `{}` | a new inbox item: fetch it | `GET /v1/inbox` |
 | `evt.rewards` | `{"matchUid","mode","placement","coins","xp","ratingDelta","gems","achievements":[],"goals":[],"goalCoins","pass":{"points","tier","coins","gems","items":[]}}` | a match's result was paid | `GET /v1/inventory` |
-| `evt.tournament.match` | `{"tournamentId","round","arenaHost","arenaPort","ticketId","tls","mode"}` | a tournament's match is ready | `GET /v1/tournaments/{id}/match` |
+| `evt.tournament.match` | `{"tournamentId","round","arenaHost","arenaPort","ticketId","tls","mode"}`, and `"tlsName"` behind the front | a tournament's match is ready | `GET /v1/tournaments/{id}/match` |
 | `evt.notice` | `{"text"}` | an operator's notice, to everyone | |
 | `evt.session.revoked` | `{"reason":"banned"}` or `"suspended"` | the account was banned: the connection closes; do not reconnect | |
 | `evt.session.replaced` | `{}` | the player connected elsewhere on this gateway: this connection closes; do not reconnect | |
@@ -238,7 +238,7 @@ then runs everything in §3 and §5 and checks each answer; exit 1 if any differ
 
 ```bash
 node docs/api/lobby-example.mjs http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby
-node docs/api/lobby-example.mjs https://a.example.com wss://a.example.com/lobby
+NODE_EXTRA_CA_CERTS=ca.pem node docs/api/lobby-example.mjs https://203.0.113.10 wss://203.0.113.10/lobby
 # with an operator's notice too: the admin API's URL and secret
 node docs/api/lobby-example.mjs http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby http://127.0.0.1:9120 "$(cat admin-token)"
 ```

@@ -1,4 +1,4 @@
-# nginx, the TLS edge for the lobby and the API on every machine (docs/operations/01-deploy.md §4):
+# nginx, the front for the lobby, the API and match traffic, on every machine (D-82, docs/operations/05):
 # the release's own, /opt/backend/nginx, built for RHEL 9 (docs/detailed-design/09 §5). Not the
 # distribution's package. Its configuration is /etc/backend/nginx/ (the release's nginx-conf/).
 #
@@ -11,7 +11,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-# The master runs as root to bind 80 and 443; its workers run as nginx (nginx.conf's user).
+# The master runs as root to bind 443; its workers run as nginx (nginx.conf's user).
 Type=forking
 PIDFile=/run/backend-nginx/nginx.pid
 RuntimeDirectory=backend-nginx
@@ -26,7 +26,8 @@ ExecReload=/bin/kill -s HUP $MAINPID
 KillSignal=SIGQUIT
 TimeoutStopSec=30
 Restart=on-failure
-LimitNOFILE=65536
+# Two descriptors a connection, every player's on the front (D-82): nginx.conf's worker_rlimit_nofile.
+LimitNOFILE=262144
 
 NoNewPrivileges=yes
 ProtectSystem=strict

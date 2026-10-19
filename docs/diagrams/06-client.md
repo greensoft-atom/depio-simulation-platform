@@ -143,6 +143,7 @@ classDiagram
         +string Host
         +int Port
         +bool Tls
+        +string TlsName
         +int Profile
     }
     class MatchState {
@@ -284,6 +285,7 @@ classDiagram
         +int ArenaPort
         +string TicketId
         +bool Tls
+        +string TlsName
     }
     LobbyClient *-- PartyState
     LobbyClient --> LobbyState
@@ -406,7 +408,7 @@ sequenceDiagram
     participant A as arena
     L->>M: Join with the grant's ticket
     M->>T: a new attempt dials
-    T->>A: TCP connect, then TLS when the grant says
+    T->>A: TCP connect, then TLS when the grant says, as its TlsName
     L->>M: Poll, once a frame
     M->>A: Join, version 4 first, the ticket, the profile
     A-->>T: Welcome with the resume secret and the maze seed

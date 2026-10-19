@@ -13,7 +13,7 @@ Postman collection's run of 2026-10-06 against a stack built from this repositor
 
 | Where | Base URL |
 |---|---|
-| Production, through nginx (TLS) | `https://<name>/v1/...`, for example `https://a.example.com/v1/shop` |
+| Production, through the front's nginx (TLS) | `https://<the site's address>/v1/...`, for example `https://203.0.113.10/v1/shop`; the certificate is the backend's own CA's, so a client trusts its root, `ca.pem` (`curl --cacert ca.pem`; [operations/06](../operations/06-certificates.md)) |
 | One machine, straight to `platform` (tests, the examples below) | `http://127.0.0.1:8080/v1/...` (`PLATFORM_PORT`; the examples ran on 8180) |
 
 nginx proxies `/v1/` and `/lobby` only, so `/health` is not reachable from outside. It also
@@ -555,6 +555,17 @@ valid 60 seconds, and whether to use TLS. The client then opens TCP (TLS if `tls
 `arenaHost:arenaPort` and sends `Join` with the ticket: the arena's own binary protocol,
 [02-networking](../detailed-design/02-networking.md) §3.
 
+**`tlsName`**, when the grant has it: the name the client's TLS handshake gives and checks the
+certificate against, in place of `arenaHost`. Behind the site's front
+([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)) every grant has it: `arenaHost` is the site's
+public address and `arenaPort` 9001, the front's nginx, which ends TLS and passes the connection
+to the arena that name is. A grant without it, a drill's or an arena reached directly, is checked
+against `arenaHost`, as before:
+
+```
+200 {"arenaHost":"203.0.113.10","arenaPort":9001,"ticketId":"<22 characters>","tls":true,"tlsName":"b1.arena.internal"}
+```
+
 The modes: `ffa` (the public arena, by a match request), `duel`, `rffa` (ranked free-for-all),
 `maze` (1 a side); `tvt`, `coop`, `domination`, `tag` (3 a side, a party of up to 3 queues
 together); `teams` (a party of 3 from one team); `sandbox` (a private room, by its own route).
@@ -880,7 +891,7 @@ Bearer. The player's grant for a round's match, while it waits (60 seconds); als
 `evt.tournament.match`.
 
 ```json
-200 {"tournamentId":1,"round":1,"arenaHost":"a.example.com","arenaPort":9001,"ticketId":"<22 characters>","tls":true,"mode":"duel"}
+200 {"tournamentId":1,"round":1,"arenaHost":"203.0.113.10","arenaPort":9001,"ticketId":"<22 characters>","tls":true,"mode":"duel","tlsName":"a1.arena.internal"}
 404 {"code":"no_match","message":"no match waiting for you in it"}
 ```
 

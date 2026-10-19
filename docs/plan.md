@@ -1,10 +1,11 @@
 # Plan and status
 
-What is built, what is next, and in what order. Updated 2026-10-05.
+What is built, what is next, and in what order. Updated 2026-10-19.
 
-**Where it stands (2026-10-05).** Plan items 1 to 80 are done, but for item 7,
-which stays open by design: what is left of it waits on the domain and the CA,
-and on Q-3's hardware. Every component is built and tested: `j-redis-service`
+**Where it stands (2026-10-19).** Plan items 1 to 90 are done, but for item 7,
+which stays open by design: what is left of it waits on Q-3's hardware. Since
+item 90 the site has one public address, and the front's nginx ends TLS for
+everything players reach (D-82). Every component is built and tested: `j-redis-service`
 2.2.1 (229 tests), the backend's ten modules (1 020 tests at item 79) and the
 client's engine-free core with its headless driver (169 tests). The Unity layer
 is written as a package of scripts, compiled against stubs of the Unity API and
@@ -22,8 +23,8 @@ opening the Unity package in the editor, which the owner put off on 2026-10-05; 
 goes (Q-53); a real payment provider (Q-52); and what waits on the owner's
 machines and players (Q-1 to Q-4: the uplink, the share of players in battle,
 measurements on the production hardware, how players cluster); and whether an
-admin panel is wanted, and how (Q-55, put off by the owner on 2026-10-05). The certificate's domain and CA are
-deferred by the owner.
+admin panel is wanted, and how (Q-55, put off by the owner on 2026-10-05). The certificate is settled
+(2026-10-19, D-82): no domain, a CA of the backend's own, TLS ended at the front's nginx.
 
 **How the list came to be ordered.** The audit of 2026-09-23 found that the
 contract between the components had never been executed end to end: nothing
@@ -60,7 +61,7 @@ and fixed-phrase chat
 | `platform` design | **[Written](detailed-design/04-platform-services.md)** and extended module by module in Phase 5 — auth and guests, teams, matchmaking and every queued mode, tournaments, boards and seasons, the economy (shop, items, gems, payments, the season pass, skins), the social layer, the admin API. |
 | `worker` / events design | **[Written](detailed-design/05-worker-and-events.md)** — streams, consumer loop, dead-lettering, result pipeline, scheduled jobs, analytics and the funnel. The worker reads the result stream (item 10). |
 | MySQL persistence design | **[Written](detailed-design/06-persistence-mysql.md)** — schema, transaction patterns, idempotency via natural keys, pooling, retention and growth, backups proved weekly. The schema is one baseline since 2026-10-04, `V1__schema.sql` and `V2__seed.sql` (D-75). |
-| Operations docs | [Mostly written](operations/01-deploy.md) — install, TLS, MySQL, backups and the certificate run for real; the stores' promotion scripted and drilled ([runbook §2](operations/02-runbook.md#2-stateful-primary-failure)), MySQL's too (2026-09-29, rehearsed under load 2026-09-30); backups proved by a weekly restore (item 76); every port and each machine's firewall, run as written ([05](operations/05-ports-and-firewall.md), item 88). What is left is the alert thresholds, which wait on Q-3's hardware ([runbook](operations/02-runbook.md)). |
+| Operations docs | [Mostly written](operations/01-deploy.md) — install, TLS, MySQL, backups and the certificate run for real; the stores' promotion scripted and drilled ([runbook §2](operations/02-runbook.md#2-stateful-primary-failure)), MySQL's too (2026-09-29, rehearsed under load 2026-09-30); backups proved by a weekly restore (item 76); every port and each machine's firewall, run as written ([05](operations/05-ports-and-firewall.md), item 88); the site behind one public address, the front's nginx ending TLS, and the backend's own CA, run as written with the C# client through it ([05](operations/05-ports-and-firewall.md), [06](operations/06-certificates.md), item 90). What is left is the alert thresholds, which wait on Q-3's hardware ([runbook](operations/02-runbook.md)). |
 | Application code | **[backend/](../backend/README.md)**: `common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`, `crypto-examples`. 1 064 tests, 0 compiler warnings (item 86, 2026-10-06). Multi-room arena, largest clean run 1 200 bots, every one sent every snapshot (item 14), and 600 through a failover (item 23); MySQL transactions tested for idempotency and double-spend under concurrency; single-use join tickets; Argon2id login and sessions; register → login → lobby → ticket → play → result persisted → **leaderboard updated**, verified end to end across four processes against real MySQL and real j-redis. |
 | Unity client | **Claude writes it** ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer), 2026-09-27): the engine-free core and a headless driver in [client/](../client/README.md), 148 tests (2026-10-04), driven against the real stack by the live drills. The Unity layer is written as scripts over the core, compiled against stubs and not yet run in Unity (item 77, the owner's Q-51); own-tank prediction, deferred with it on 2026-09-27, was brought back on 2026-10-03 and built (item 70). |
 
@@ -606,7 +607,9 @@ for item 4's "closed alpha" and nothing before it.
 **What is left of item 7 waits on something else** (2026-09-29): the
 certificate on the domain and the CA, alert thresholds on Q-3. (The store's
 promotion, which waited on j-redis 2.2, is done: item 12.) It stays open, and
-continuous.
+continuous. The certificate is settled since 2026-10-19: the site has no domain,
+so a CA of the backend's own certifies its address, and TLS ends at the front's
+nginx ([D-82](architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name), item 90). What is left is the alert thresholds.
 
 #### 8. ~~Fixed-phrase chat, the rest of Phase 3.~~ — **done 2026-09-29**
 
@@ -3282,6 +3285,74 @@ could not be proxied. Of the two ways laid out, they chose one arena a machine.
   - more machines, each with its own 9001;
   - the arena's network threads raised, a code change to measure;
   - nginx's `stream` in front of several arenas, which needs the certificate.
+
+---
+
+#### 90. ~~One public address for the site: nginx in front, ending TLS, routing arenas by name (D-82, T-60).~~ — **done 2026-10-19**
+
+**The owner, 2026-10-19**, answering Q-57: 80, 443 and 9001 are open on one public address for the
+whole site, the other machines hidden behind it; SSH from the internal network. They proposed nginx
+in front of everything and chose: nginx's `stream` routing by the name in the TLS handshake; the
+front one of A, B and C; the front seeing players' own addresses. With no domain, the site is its
+public IP address, and TLS ends at the front's nginx. They asked for tests from the real C# client,
+and for every guide and setting a fresh OS and a fresh developer need, without the network.
+
+- **Design**: [D-82](architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name), replacing D-81: the front
+  ends TLS on 443 (the API and the lobby, to all three machines' platforms and gateways) and on 9001
+  (match traffic, to the arena the handshake's name gives, plaintext on the private network); seven
+  arenas again on private ports; one certificate from a CA of the backend's own, its root shipped in
+  the app. C-9, NFR-3, NFR-5, NFR-8, Q-2 and Q-57 revised; topology, 04 §1 and §3, 07, 09 §5.
+- **The code** (6b94739), each rule test first and its mutants caught:
+  - `BACKEND_TRUSTED_PROXIES`: the platform and the gateway believe `X-Forwarded-For` from the
+    three machines' nginx, so the login limits count players, not the front;
+  - `BACKEND_ADVERTISE_PORT` and `BACKEND_ADVERTISE_TLS_NAME`: an arena on a private port announces
+    9001 and its name; every grant (public, queued, tournament) carries `tlsName`;
+  - the C# client and the bots send and check the name; the client trusts the backend's root alone
+    (`TrustRoot`, netstandard2.1, so Unity has it) for the API, the lobby and matches.
+- **Found by the C# client through the front**: [T-60](defects.md#4-concurrency), a second device
+  through another gateway did not displace the first. Behind the front, which spreads lobby
+  connections over every gateway, that is the rule, not the exception. Fixed with `GETSET` and a
+  push to the old gateway, closing only the connection replaced; two tests, a mutant caught.
+- **Written**:
+  - [operations/06](operations/06-certificates.md), new: the root, the certificate, installing it,
+    the app, renewing, adding an arena, a leaked or lost key, testing, what goes wrong;
+  - [operations/05](operations/05-ports-and-firewall.md) rewritten for the front, and 01 to 04, the
+    install guide (nginx and the certificate, three machines, the firewall with the internal
+    network), the deploy README's catalogues, the scripts README, the API's `tlsName`, 02, 03 §4,
+    08, the headless README, diagrams/07, the glossary;
+  - `deploy/nginx`: `backend-stream.conf` (the map) and `backend-upstreams.conf`, new;
+    `backend.conf` without port 80; the env examples on private addresses;
+  - `scripts/private-ca.sh`, new, shipped in the release; `install-certificate.sh` for the stream's
+    names and the backend's root, and before nginx has ever started;
+  - `vendor/nginx-1.30` rebuilt with `stream` and its TLS, for glibc 2.34.
+- **Checked**:
+  - `check-ports-el9.sh`, in Rocky Linux 9.5 with RHEL 9's firewalld and no network: **156 checks,
+    none failing** ([05 §9](operations/05-ports-and-firewall.md#9-what-was-checked-and-what-was-not)).
+    The front and a second machine; a player trusting the backend's root alone; registrations and
+    the lobby on 443; 9001 by each arena's name, a wrong name and a wrong root refused; **the C#
+    headless driver, 16 scenarios through the front, all passed**; nginx's logs showing each
+    connection at the arena its name gives, and both machines' platforms and gateways serving; the
+    player's address, not the front's, in the login limits' keys; A's platform stopped and B's
+    serving;
+  - `check-install-guide-el9.sh`: the install guide run as written in UBI 9.5 with no network,
+    every block, 0 failed, a registration through nginx `201`, listening on 443 and 9001;
+  - `check-certificates.sh`, new: the two certificate scripts, 25 checks, each refusal; four
+    mutants (a name not checked, the previous files not put back, the key not compared, a root
+    made twice), each caught;
+  - the drills on a release, the arenas reached directly: plaintext, the default scenarios, all
+    passed; over TLS, eight scenarios, one check failed in `party`:
+    [T-61](defects.md#4-concurrency), a party's leader shown queued in no queue when a member
+    left at once, the leader's late answer applied over the newer push. Fixed in the C# core; two
+    tests, test first, two mutants caught; the core's 176 tests pass, and the Unity scripts compile;
+  - the backend's full build before T-60: 1 078 tests, none failing, 0 warnings; after it, the
+    gateway's tests. C# core: 174 tests. The Unity scripts compile against their stubs.
+- **Not checked**:
+  - RHEL 9 itself, real machines, a provider's forwarding, a phone in Unity;
+  - SELinux enforcing;
+  - **the cost of the front**: nginx's TLS for every match byte, and the extra hop, not measured.
+    D-82 estimates the front's links at about 1.5 Gbit/s each way at NFR-3's 50 000 in battle;
+  - the front lost and the provider's forwarding moved to another machine (the runbook's step).
+- **Next**, as item 88 left it: O-40 if the owner agrees, then O-37 and M-6.
 
 ---
 

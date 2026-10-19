@@ -49,7 +49,9 @@ under `background/`.
 | The word the naming rule excludes is never used, anywhere | 2026-09-23 | [README §Naming](../README.md#naming) |
 | Balance (item levels, gems, shop prices, rewards) is chosen by Claude, each number with its reason, without asking | 2026-10-02 | [Q-48](../requirements/01-scope-and-nfrs.md#7-open-questions), 04 §8 |
 | No third-party payment provider and no third-party sign-in for now; the payment flow is simulated | 2026-10-04 | Q-52, D-68 |
-| The certificate and the domain are deferred: not raised, not worked on, until the owner brings them back | 2026-09 | [plan.md](../plan.md), its opening |
+| One public address for the whole site, an IP with no domain, with 80, 443 and 9001, forwarded to one machine, the front; the others on the private network alone; SSH from the internal network alone | 2026-10-19 | C-9, Q-57, D-82, [operations/05](../operations/05-ports-and-firewall.md) |
+| nginx in front, on one of the three machines (every machine set up the same), ends TLS on 443 and 9001 and routes match traffic by the arena's name; the front sees players' own addresses | 2026-10-19 | D-82 |
+| The certificate is from a CA of the backend's own (`private-ca.sh`), its root shipped in the app and trusted alone; no public CA, no domain. (Deferred from 2026-09 until the owner brought it back on 2026-10-19.) | 2026-10-19 | D-82, [operations/06](../operations/06-certificates.md) |
 | No third-party Redis server, client library or tool, tests included: the store is j-redis | 2026-09 | this page (it was in `CLAUDE.md` only); D-6, D-7 |
 | The client: the engine-free C# core, the headless driver, and the Unity layer as thin scripts; nothing is run in Unity here | 2026-10-04 | Q-51, D-73 |
 | The migrations squashed to V1 (schema) and V2 (seed) once, before launch; forward-only from V3 | 2026-10-04 | D-75 |

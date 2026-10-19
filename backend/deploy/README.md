@@ -14,8 +14,9 @@ This page also holds the catalogues that cut across the files: every
 [timer](#timers).
 
 The addresses in the examples are the three machines' private ones: A `10.0.0.1`, B `10.0.0.2`,
-C `10.0.0.3` ([01 §1](../../docs/operations/01-deploy.md#1-what-runs-where)). `a.example.com`
-stands for a machine's public name, which is not chosen yet.
+C `10.0.0.3` ([01 §1](../../docs/operations/01-deploy.md#1-what-runs-where)). `203.0.113.10` stands
+for the site's one public address, which the provider forwards to the front (D-82); the arenas'
+names, `a1.arena.internal` and the rest, are labels nginx routes by, in no DNS.
 
 ## Files
 
@@ -27,9 +28,9 @@ No secrets go in them: the passwords arrive through `LoadCredential=`
 
 | File | Installed as | Read by | Notable values |
 |---|---|---|---|
-| `arena.env.example` | `/etc/backend/arena-<name>.env`, one per arena instance, one instance a machine (D-81) | `backend-arena@<name>` | `ARENA_PORT=9001`, `MAP_SIZE=5700`, `MAX_PLAYERS=150`, `SHAPES=1500`, `MAX_ROOMS=12` (the machine's match traffic, short of the network threads' limit), `MATCH_SECONDS=0` (continuous), `ARENA_BIND=0.0.0.0` (clients dial the arena directly, D-5), `ADVERTISE_HOST=a.example.com`, `STORE_HOST=10.0.0.1`, `STORE_PORT=6379`, `BACKEND_METRICS_ADDR=127.0.0.1:9110` (each instance its own). Commented: `BACKEND_STORE_ADDRESSES=10.0.0.1:6379,10.0.0.2:6379`, `BACKEND_EVENTS_STORE=10.0.0.2:6380,10.0.0.3:6380` |
-| `gateway.env.example` | `/etc/backend/gateway.env` | `backend-gateway` | `GATEWAY_BIND=127.0.0.1`, `GATEWAY_PORT=8090` (nginx's upstream), `PLATFORM_URL=http://127.0.0.1:8080`, store `10.0.0.1:6379`, `BACKEND_METRICS_ADDR=127.0.0.1:9103`, `BACKEND_EDGE_CERTIFICATE=/etc/backend/tls/fullchain.pem` |
-| `platform.env.example` | `/etc/backend/platform.env` | `backend-platform` | `PLATFORM_BIND=127.0.0.1`, `PLATFORM_PORT=8080`, store `10.0.0.1:6379`, `BACKEND_DB_URL=jdbc:mysql://10.0.0.1:3306/backend?sslMode=VERIFY_IDENTITY&trustCertificateKeyStoreUrl=file:/etc/backend/tls/mysql-ca.p12&trustCertificateKeyStoreType=PKCS12`, `BACKEND_DB_USER=backend`, `BACKEND_METRICS_ADDR=127.0.0.1:9101`. Commented: `BACKEND_DB_POOL_SIZE=16`, `BACKEND_ADMIN_ADDR=127.0.0.1:9120`, `BACKEND_PAYMENT_PROVIDER=simulated` |
+| `arena.env.example` | `/etc/backend/arena-<name>.env`, one per arena instance: `a1`, `a2`, `b1` to `b3`, `c1`, `c2` ([D-82](../../docs/architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)) | `backend-arena@<name>` | `ARENA_PORT=9011` (a machine's first; 9012, 9013 the next), `ARENA_BIND=10.0.0.1` (the machine's private address, where the front's nginx reaches it), `ADVERTISE_HOST=203.0.113.10` and `BACKEND_ADVERTISE_PORT=9001` (the site's address and port, what clients dial), `BACKEND_ADVERTISE_TLS_NAME=a1.arena.internal` (each arena its own: nginx routes by it), `MAP_SIZE=5700`, `MAX_PLAYERS=150`, `SHAPES=1500`, `MAX_ROOMS=12`, `MATCH_SECONDS=0` (continuous), `STORE_HOST=10.0.0.1`, `STORE_PORT=6379`, `BACKEND_METRICS_ADDR=127.0.0.1:9110` (each instance its own). Commented: `BACKEND_STORE_ADDRESSES=10.0.0.1:6379,10.0.0.2:6379`, `BACKEND_EVENTS_STORE=10.0.0.2:6380,10.0.0.3:6380` |
+| `gateway.env.example` | `/etc/backend/gateway.env` | `backend-gateway` | `GATEWAY_BIND=10.0.0.1`, `GATEWAY_PORT=8090` (nginx's upstream), `PLATFORM_URL=http://10.0.0.1:8080` (this machine's platform), `BACKEND_TRUSTED_PROXIES=10.0.0.1,10.0.0.2,10.0.0.3`, store `10.0.0.1:6379`, `BACKEND_METRICS_ADDR=127.0.0.1:9103`, `BACKEND_EDGE_CERTIFICATE=/etc/backend/tls/fullchain.pem` |
+| `platform.env.example` | `/etc/backend/platform.env` | `backend-platform` | `PLATFORM_BIND=10.0.0.1` (the machine's private address), `PLATFORM_PORT=8080`, `BACKEND_TRUSTED_PROXIES=10.0.0.1,10.0.0.2,10.0.0.3` (the front's nginx, any of the three), store `10.0.0.1:6379`, `BACKEND_DB_URL=jdbc:mysql://10.0.0.1:3306/backend?sslMode=VERIFY_IDENTITY&trustCertificateKeyStoreUrl=file:/etc/backend/tls/mysql-ca.p12&trustCertificateKeyStoreType=PKCS12`, `BACKEND_DB_USER=backend`, `BACKEND_METRICS_ADDR=127.0.0.1:9101`. Commented: `BACKEND_DB_POOL_SIZE=16`, `BACKEND_ADMIN_ADDR=127.0.0.1:9120`, `BACKEND_PAYMENT_PROVIDER=simulated` |
 | `worker.env.example` | `/etc/backend/worker.env` | every `backend-worker@` on the machine, and `backend-leaderboard-rebuild` | store, `BACKEND_DB_URL` and `BACKEND_DB_USER` as the platform's. Commented: `BACKEND_STORE_ADDRESSES`, `BACKEND_EVENTS_STORE`, `BACKEND_DB_POOL_SIZE=8` |
 | `worker-instance.env.example` | `/etc/backend/worker-<id>.env`, one per worker instance | `backend-worker@<id>`, after `worker.env`, so it wins | `BACKEND_METRICS_ADDR=127.0.0.1:9102` (`c1`; `c2` takes `9112`). Two instances given one port: the second exits 2 |
 | `store.env.example` | `/etc/backend/store-<name>.env`, one per store instance (`session`, `events`) | `backend-store@<name>` | `STORE_HEAP=8g`, both `-Xms` and `-Xmx`; the store's `maxmemory` about 40 % of it, since ZGC makes the same data estimate 25–50 % larger ([01 §3](../../docs/operations/01-deploy.md#3-j-redis-built-and-tested)) |
@@ -98,13 +99,16 @@ The timers are in [Timers](#timers).
 
 ### nginx/
 
-For the release's own nginx, `/opt/backend/nginx`, run by `backend-nginx.service`; all three files go
-in `/etc/backend/nginx/` (the release's `nginx-conf/`).
+For the release's own nginx, `/opt/backend/nginx`, run by `backend-nginx.service`; all five files go
+in `/etc/backend/nginx/` (the release's `nginx-conf/`), the same on every machine, since any may be
+the front ([D-82](../../docs/architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)).
 
 | File | Installed as | Configures |
 |---|---|---|
-| `nginx.conf` | `/etc/backend/nginx/nginx.conf` | The main file, which the distribution's package used to bring: `user nginx` for the workers, `worker_processes auto`, `worker_rlimit_nofile 65536` and `worker_connections 16384` (a lobby connection holds two descriptors, the client's and the gateway's; the unit's `LimitNOFILE` matches), pid in `/run/backend-nginx/`, logs in `/var/log/backend-nginx/`; includes `/opt/backend/nginx/conf/mime.types` and `/etc/backend/nginx/backend.conf` |
-| `backend.conf` | `/etc/backend/nginx/backend.conf`, the machine's name filled in for `a.example.com` | Port 80 (IPv4 and IPv6): the CA's HTTP-01 challenge from `/var/www/acme`, 403 `HTTPS only` for the rest, no redirect. Port 443: TLS 1.2 and 1.3, ECDHE with AES-GCM or ChaCha20 only, session cache `10m` for 1 h, tickets off; certificate `/etc/backend/tls/fullchain.pem`, key `/etc/backend/credentials/privkey.pem`; `client_max_body_size 4k`; `X-Forwarded-For` appended. Routes: `= /lobby` to the gateway (`127.0.0.1:8090`, WebSocket upgrade, 150 s timeouts against the gateway's 120 s); `= /v1/sessions`, `= /v1/accounts`, `= /v1/guests`, `= /v1/accounts/upgrade` to the platform behind `limit_req` (2 a second per address, burst 30, 429); the rest of `/v1/` to the platform (`127.0.0.1:8080`, `keepalive 32`, `keepalive_timeout 20s`); `/` 404 |
+| `nginx.conf` | `/etc/backend/nginx/nginx.conf` | The main file, which the distribution's package used to bring: `user nginx` for the workers, `worker_processes auto`, `worker_rlimit_nofile 262144` and `worker_connections 16384` (every connection holds two descriptors, and the front holds every player's; the unit's `LimitNOFILE` matches), pid in `/run/backend-nginx/`, logs in `/var/log/backend-nginx/` (the access log with `$upstream_addr`, the machine that served); includes `/opt/backend/nginx/conf/mime.types`, `backend.conf`, and `backend-stream.conf` in its `stream` block |
+| `backend.conf` | `/etc/backend/nginx/backend.conf`, the site's public address filled in for `203.0.113.10` | Nothing on port 80 (D-82). Port 443: TLS 1.2 and 1.3, ECDHE with AES-GCM or ChaCha20 only, session cache `10m` for 1 h, tickets off; certificate `/etc/backend/tls/fullchain.pem`, key `/etc/backend/credentials/privkey.pem`; `client_max_body_size 4k`; `X-Forwarded-For` appended. Routes: `= /lobby` to the gateways (WebSocket upgrade, 150 s timeouts against the gateway's 120 s); `= /v1/sessions`, `= /v1/accounts`, `= /v1/guests`, `= /v1/accounts/upgrade` to the platforms behind `limit_req` (2 a second per address, burst 30, 429); the rest of `/v1/` to the platforms; `/` 404 |
+| `backend-upstreams.conf` | `/etc/backend/nginx/backend-upstreams.conf` | The platforms (`10.0.0.1-3:8080`, `keepalive 32`, `keepalive_timeout 20s`) and the gateways (`10.0.0.1-3:8090`, `least_conn`) of all three machines; one that fails is passed over. One machine alone: its own, on `127.0.0.1` (the install guide's §9) |
+| `backend-stream.conf` | `/etc/backend/nginx/backend-stream.conf` | Port 9001 (IPv4 and IPv6): match traffic's TLS ended with the same certificate, TLS 1.2 and 1.3; the map from each arena's name (SNI, `$ssl_server_name`) to its machine's private address and port, `a1.arena.internal 10.0.0.1:9011` and the rest, a name not there closed; `proxy_timeout 60s` against the arena's 30 s; `stream.log`, each connection's name and arena |
 | `backend-platform.conf` | `/etc/backend/nginx/backend-platform.conf` | What every platform location shares: `proxy_pass http://backend_platform`, HTTP/1.1 with keepalive, `X-Forwarded-For` and `Host`, `proxy_read_timeout 15s` |
 
 ### mysql/
@@ -174,6 +178,9 @@ means the process refuses to start and systemd does not restart it.
 | `BACKEND_EVENTS_STORE` | arena, worker | none: results share the `session` store | The `events` store, `host:port` or with its replica `host:port,host:port` | commented in `arena.env.example`, `worker.env.example` |
 | `BACKEND_EVENTS_STORE_PASSWORD_FILE` | arena, worker | none: then `BACKEND_EVENTS_STORE_PASSWORD`, then the session store's password | The `events` store's password, where it differs | not set; a drop-in if needed ([01 §2](../../docs/operations/01-deploy.md#secrets)) |
 | `BACKEND_EVENTS_STORE_PASSWORD` | arena, worker | none | The password itself | not set |
+| `BACKEND_TRUSTED_PROXIES` | platform, gateway | none: loopback alone | The peers whose `X-Forwarded-For` is believed besides loopback, comma-separated IP literals: the front's nginx (D-82). Anything else means exit 2 | `10.0.0.1,10.0.0.2,10.0.0.3` |
+| `BACKEND_ADVERTISE_PORT` | arena | none: the port it listens on | The port the arena announces, the one players dial: the site's 9001 behind the front. Not 1 to 65535 means exit 2 | `arena.env.example`: `9001` |
+| `BACKEND_ADVERTISE_TLS_NAME` | arena | none: its host | The name a client's TLS handshake gives and checks, which the front's nginx routes by; announces TLS, though the arena speaks plaintext. Not a host name, or with a keystore, means exit 2 | `arena.env.example`: `a1.arena.internal` |
 | `BACKEND_METRICS_ADDR` | arena, gateway, platform, worker | none: no metrics server | `host:port` for `GET /metrics`; loopback by convention, not enforced; a port in use means exit 2 | platform `127.0.0.1:9101`, worker `9102`/`9112`, gateway `9103`, arena `9110` |
 | `BACKEND_ADMIN_ADDR` | platform | none: no admin API | The admin API's `host:port`; not loopback means exit 2 | commented in `platform.env.example`: `127.0.0.1:9120` |
 | `BACKEND_ADMIN_TOKEN_FILE` | platform | none; required once `BACKEND_ADMIN_ADDR` is set, else exit 2 | The admin API's bearer secret's file | `platform-admin.conf.example`: `%d/admin-token` |
@@ -191,14 +198,14 @@ file into an empty argument, and an empty number means exit 2.
 
 | Variable | Read by | Default in the code | In the example |
 |---|---|---|---|
-| `ARENA_PORT` | arena | 9001 | 9001 |
+| `ARENA_PORT` | arena | 9001 | 9011 |
 | `MAP_SIZE` | arena | 5700 | 5700 |
 | `MAX_PLAYERS` | arena | 150 | 150 |
 | `SHAPES` | arena | 1500 | 1500 |
-| `MAX_ROOMS` | arena | 4 | 12 (D-81) |
+| `MAX_ROOMS` | arena | 4 | 12 |
 | `MATCH_SECONDS` | arena | 0, continuous | 0 |
-| `ARENA_BIND` | arena; `install-certificate.sh` | `0.0.0.0` | `0.0.0.0` |
-| `ADVERTISE_HOST` | arena; `install-certificate.sh` | `127.0.0.1` | `a.example.com` |
+| `ARENA_BIND` | arena; `install-certificate.sh` | `0.0.0.0` | `10.0.0.1` |
+| `ADVERTISE_HOST` | arena; `install-certificate.sh` | `127.0.0.1` | `203.0.113.10` |
 | `STORE_HOST` | arena, gateway, platform, worker, rebuild | `127.0.0.1` | `10.0.0.1` |
 | `STORE_PORT` | same | 6379 | 6379 |
 | `GATEWAY_BIND` | gateway | `127.0.0.1` | `127.0.0.1` |
@@ -247,7 +254,8 @@ Each script's own settings are in [scripts/README](../scripts/README.md). Those 
 | `MYSQL_FAILOVER_CNF` | `promote-mysql.sh` | `/etc/backend/credentials/mysql-failover.cnf` | by hand |
 | `BACKEND_DB_NAME`, `MYSQL`, `PROMOTE_STALE_SECONDS` | `promote-mysql.sh` | `backend`, `mysql`, 300 | by hand |
 | `MVN`, `JDK` | `make-release.sh` | `mvn`, `vendor/jdk-21` (the JDK whose `jmods/` the runtime is linked from) | by hand; `build-offline.sh` sets `MVN` |
-| `TLS_DIR`, `CREDENTIALS_DIR`, `CONFIG_DIR`, `NGINX_CONF`, `NGINX_TEST`, `NGINX_RELOAD`, `EDGE_PORT`, `CA_FILE`, `WARN_DAYS`, `RENEWED_LINEAGE` | `install-certificate.sh` | see its header | certbot sets `RENEWED_LINEAGE` |
+| `TLS_DIR`, `CREDENTIALS_DIR`, `CONFIG_DIR`, `NGINX_CONF`, `STREAM_CONF`, `NGINX_TEST`, `NGINX_RELOAD`, `NGINX_RUNNING`, `EDGE_PORT`, `STREAM_PORT`, `CA_FILE`, `WARN_DAYS`, `RENEWED_LINEAGE` | `install-certificate.sh` | see its header; `CA_FILE` defaults to `TLS_DIR/ca.pem`, the backend's root, when it is there | not set; certbot would set `RENEWED_LINEAGE` |
+| `ROOT_DAYS`, `DAYS` | `private-ca.sh` | 3650, 398 | how long the root and a certificate are valid ([06](../../docs/operations/06-certificates.md)) |
 
 ### Development, tests and drills
 
@@ -274,26 +282,27 @@ changes: [operations/05](../../docs/operations/05-ports-and-firewall.md).
 
 | Port | Listener | Bound to | Where |
 |---|---|---|---|
-| 80, 443 | nginx | every address, IPv4 and IPv6 | A, B, C |
-| 9001: the machine's one arena (D-81, [05 §3](../../docs/operations/05-ports-and-firewall.md#3-the-arenas-ports)) | arena, match traffic (TLS once a certificate is installed) | `0.0.0.0`, which the native transport takes as every address, IPv4 and IPv6 | A, B, C |
-| 8090 | gateway (`/lobby` behind nginx) | `127.0.0.1` | A, B, C |
-| 8080 | platform (`/v1/` behind nginx; the gateway calls it too) | `127.0.0.1` | A, B, C |
+| 443 | nginx: HTTPS, the API and the lobby to all three machines' platforms and gateways | every address, IPv4 and IPv6 | A, B, C; reached on the front alone (D-82) |
+| 9001 | nginx's `stream`: match traffic's TLS ended, each connection to the arena its name gives | every address, IPv4 and IPv6 | A, B, C; reached on the front alone |
+| 8080 | platform (`/v1/` behind nginx; the gateway calls it too) | the machine's private address | A, B, C |
+| 8090 | gateway (`/lobby` behind nginx) | the machine's private address | A, B, C |
+| 9011, 9012, 9013 | the arenas, one each ([05 §3](../../docs/operations/05-ports-and-firewall.md#3-the-arenas-their-ports-and-their-names)), plaintext behind nginx | the machine's private address | A (2), B (3), C (2) |
 | 9120 | platform's admin API, when named | loopback, enforced | A, B, C |
 | 9101 | platform's metrics | `127.0.0.1` | A, B, C |
 | 9103 | gateway's metrics | `127.0.0.1` | A, B, C |
-| 9110 | the arena's metrics | `127.0.0.1` | A, B, C |
+| 9110, 9111, 9113 | the arenas' metrics, one each (9112 is skipped: a worker's on C) | `127.0.0.1` | A, B, C |
 | 9102, 9112 | workers' metrics (`c1`, `c2`) | `127.0.0.1` | C |
 | 6379 | j-redis `session`: primary on A, replica on B | `127.0.0.1` and the machine's private address ([01 §3](../../docs/operations/01-deploy.md#3-j-redis-built-and-tested)) | A, B |
 | 6380 | j-redis `events`: primary on B, replica on C | the same | B, C |
 | 3306 | MySQL: primary on A, replica on C; TLS required | the private address (`10.0.0.1`, `10.0.0.3`); `mysqlx = OFF`, so nothing on 33060 | A, C |
 | 3309 | the scratch MySQL server the proofs restore onto | `127.0.0.1`; `mysqlx=OFF` | C |
 
-Open to the internet besides these: the system's SSH, which [05 §5](../../docs/operations/05-ports-and-firewall.md#5-the-firewall-on-rhel-9)
-leaves as RHEL has it and says how to limit; cockpit's 9090, which RHEL allows, is closed there.
+Nothing listens on 80. Open to the internet: the front's 443 and 9001 alone; SSH from the internal
+network alone; cockpit's 9090, which RHEL allows, closed ([05 §5](../../docs/operations/05-ports-and-firewall.md#5-the-firewall-on-rhel-9)).
 
-Between the machines: C streams binlogs from A's 3306, and its replica replicates and clones from
-it; each store's replica connects to its primary's port; the copy off the site leaves C by SSH, to
-the host the owner names.
+Between the machines: the front's nginx reaches every platform, gateway and arena; C streams binlogs
+from A's 3306, and its replica replicates and clones from it; each store's replica connects to its
+primary's port; the copy off the site leaves C by SSH, to the host the owner names.
 
 ### Drills and development
 
@@ -327,4 +336,5 @@ All four are `Persistent=true`: a run missed while the machine was down happens 
 | `backend-restore-proof-offsite.timer` | `backend-restore-proof-offsite.service`, the proof from off the site | the first Sunday of each month (`Sun *-*-01..07`) at 05:00 UTC; enabled with the copy off the site |
 
 The binlog stream runs all the time (`backend-binlog-stream.service`). Nothing copies a store on a
-timer (D-31): each has its replica. The certificate's renewal is certbot's own timer.
+timer (D-31): each has its replica. The certificate is renewed by hand once a year, from the
+backend's root ([06 §6](../../docs/operations/06-certificates.md#6-renewing-every-year)).

@@ -83,8 +83,12 @@ the version first in `Join` and `Resume`; `Ping` every 10 s in every state;
 foreground, each message one input that coalesces the two samples since the
 last (the latest move and aim, fire OR-ed), carrying the acknowledgement; `Lifecycle` on every
 background and return; `Leave` to quit; TLS when the grant says, checked against
-the device's trust store and the host the grant names, with nothing pinned
-([03 §2](03-gateway.md#2-position-and-shape)). What this document adds:
+the name the grant gives (`tlsName`, else the host) and with nothing pinned
+([03 §2](03-gateway.md#2-position-and-shape)). Behind the site's front ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)) the
+grant's host is the site's address, its `tlsName` the arena's name, which the handshake sends and
+the front's nginx routes by; and the certificate is checked against the backend's own root, which
+the app ships (`TrustRoot`, [operations/06 §5](../operations/06-certificates.md#5-in-the-app)), in place of
+the device's store. What this document adds:
 
 **A connection that falls silent is lost.** The arena sends fifteen frames a
 second: none for 3 s while the app is in the foreground, the match is joined
@@ -249,8 +253,10 @@ The API is [04's](04-platform-services.md), over HTTPS; the lobby is
 in the backend's [API table](../../backend/README.md#the-platform-api). What the
 client adds:
 
-- **Three endpoints, tried in turn** ([D-13](../architecture/03-decision-log.md#d-13--the-client-holds-an-endpoint-list-no-vip)),
-  `https://` and `wss://` only. `ApiClient` takes the list: an endpoint that
+- **The endpoints, tried in turn** ([D-13](../architecture/03-decision-log.md#d-13--the-client-holds-an-endpoint-list-no-vip)),
+  `https://` and `wss://` only: since D-82 one, the site's address, `https://203.0.113.10`. The
+  backend's root (`TrustRoot`) is trusted for both, through `ApiClient`'s handler and
+  `LobbyClient`'s configure. `ApiClient` takes the list: an endpoint that
   cannot be reached, or whose certificate is refused, moves the call to the
   next, never to plain text, and the one that answered is tried first next
   time. `LobbyClient` takes one address. Trying the lobby's endpoints in turn,
@@ -329,7 +335,17 @@ client adds:
   `OnPartySaid`, one call each, since several can arrive between polls
   ([01 §9](01-arena.md#phrases-designed-2026-09-29-plan-item-8)). A member
   does not queue; the leader does, and each member's `QueueState` follows
-  `evt.queue.update`, as the leader's follows its own answer. A client whose
+  `evt.queue.update`, as the leader's follows its own answer. **A join's answer
+  is applied only while nothing has changed the queue since the join was sent**
+  ([T-61](../defects.md#4-concurrency)): an `evt.queue.update` that arrives
+  first, or a `LeaveQueue`, makes the answer late, and it is dropped. The
+  platform tells the members before it answers the leader, so a member who
+  leaves at once has the party taken out, and the leader told, while the
+  leader's answer may still be on its way; applied last, it would show the
+  leader queued in no queue, waiting for a match that cannot come. The other
+  way, a push already on its way when the player asked, shows "none" while
+  queued: the next tap is refused `already_queued` (`QueueRefusal`), which says
+  so, and a match found arrives anyway. A client whose
   lobby reconnects fetches `GET /v1/party` and `GET /v1/queue` (`ApiClient.Party`
   and `Queue`; the layer above's, not in the package's scripts yet): the pushes are
   notifications, and one missed while away is not sent again. The core reads

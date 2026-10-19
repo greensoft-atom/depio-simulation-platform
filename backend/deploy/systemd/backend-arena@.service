@@ -1,6 +1,6 @@
 # An arena process. The instance is its name, and its settings are in
-# /etc/backend/arena-%i.env (deploy/env/arena.env.example): one a machine (D-81), and any second
-# instance would need a port of its own. Pin each to its own cores with a drop-in, since the core ranges are the
+# /etc/backend/arena-%i.env (deploy/env/arena.env.example): each instance on a machine needs its
+# own port, and its own name (D-82). Pin each to its own cores with a drop-in, since the core ranges are the
 # machine's (architecture/01 §3):
 #   systemctl edit backend-arena@a1   ->   [Service]  CPUAffinity=2-5
 [Unit]

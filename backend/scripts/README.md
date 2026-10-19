@@ -4,9 +4,9 @@ The backend's operational scripts: the release build and its check on RHEL 9, th
 their proofs, the promotions, the certificate, and a drill of the backups. Each script's header is
 its own reference; this page lists them together, with what each needs and what runs it.
 
-The release ships twelve of them in `scripts/`, installed as `/opt/backend/scripts/`
-([make-release.sh](#make-releasesh)); the backup units and certbot's deploy hook run them from
-there. `make-release.sh`, `check-release-el9.sh` and `backup-drill.sh` stay in the source tree.
+The release ships thirteen of them in `scripts/`, installed as `/opt/backend/scripts/`
+([make-release.sh](#make-releasesh)); the backup units run them from there. `make-release.sh`, the
+`check-*.sh` and `backup-drill.sh` stay in the source tree.
 Every setting a script or unit reads is also in the
 [deploy README's catalogue](../deploy/README.md#environment-variables). How they are used:
 [operations/01-deploy](../../docs/operations/01-deploy.md) and the
@@ -18,6 +18,7 @@ Every setting a script or unit reads is also in the
 | [`make-release.sh`](#make-releasesh) | Release | no | hand, on the build machine; `build-offline.sh` |
 | [`check-release-el9.sh`](#check-release-el9sh) | Release | no | hand, on a machine with Docker |
 | [`check-ports-el9.sh`](#check-ports-el9sh) | Release | no | hand, on a machine with Docker |
+| [`check-certificates.sh`](#check-certificatessh) | Certificates | no | hand, on any machine with openssl |
 | [`binlog-stream.sh`](#binlog-streamsh) | Backups | yes | `backend-binlog-stream.service`, always on |
 | [`backup-mysql.sh`](#backup-mysqlsh) | Backups | yes | `backend-mysql-backup.timer`, nightly |
 | [`record-backup.sh`](#record-backupsh) | Backups | yes | the three scripts that record |
@@ -29,7 +30,8 @@ Every setting a script or unit reads is also in the
 | [`store-restore-drill.sh`](#store-restore-drillsh) | Recovery | yes | hand, monthly |
 | [`promote-store.sh`](#promote-storesh) | Failover | yes | hand |
 | [`promote-mysql.sh`](#promote-mysqlsh) | Failover | yes | hand |
-| [`install-certificate.sh`](#install-certificatesh) | Certificates | yes | certbot's deploy hook; hand |
+| [`private-ca.sh`](#private-cash) | Certificates | yes | hand, on the operators' machine that keeps the root |
+| [`install-certificate.sh`](#install-certificatesh) | Certificates | yes | hand, on every machine |
 | [`backup-drill.sh`](#backup-drillsh) | Drills | no | hand, on a development machine |
 
 The machines are A, B and C ([01 §1](../../docs/operations/01-deploy.md#1-what-runs-where));
@@ -115,15 +117,20 @@ scripts/check-release-el9.sh [release-dir]       default: target/release/backend
 ### check-ports-el9.sh
 
 Checks [operations/05](../../docs/operations/05-ports-and-firewall.md), the ports and the firewall,
-as written, for machine A, in Rocky Linux 9.5 (RHEL 9's firewalld) with systemd and no network. A
-release's processes start with the settings the release ships, and must listen where 05 §2 says,
-and nowhere else. Then B, C, a stranger on the private network and a player, each in a network
-namespace of its own, try every port that matters: with the firewall stopped, as RHEL 9 has it, and
-after 05 §5's commands for A, which it takes from the page. Through the opened ports a registration
-and the lobby go through nginx, and the store and MySQL answer B. Then the rules after a restart of
-firewalld, the commands run twice, SSH limited to the operators' address, B's and C's commands, and
-the install guide's §12. It stops at once if firewalld does not start. It ends `---
-<n> failed` and exits non-zero on any failure ([05 §9](../../docs/operations/05-ports-and-firewall.md#9-what-was-checked-and-what-was-not)).
+as written, for the site's front (D-82), in Rocky Linux 9.5 (RHEL 9's firewalld) with systemd and
+no network. Machine A, the front here, runs a release's processes with the settings the release
+ships, and nginx with the shipped configuration and a certificate from `private-ca.sh`, installed by
+`install-certificate.sh`; B runs its platform, gateway and an arena in a network namespace of its
+own. Every listener must be where 05 §2 says, and nowhere else. Then B, C, a machine of the internal
+network and a player, each in a namespace, try every port that matters: with the firewall stopped,
+as RHEL 9 has it, and after 05 §5's commands for A, which it takes from the page. As a player
+trusting the backend's root alone: registrations and the lobby through 443, match TLS through 9001
+by each arena's name (a wrong name and a wrong root refused), and the C# headless driver, published
+for Linux, playing sixteen scenarios through the front. Then what nginx's logs say it routed, the
+player's address in the login limits' keys, A's platform stopped and B's serving, the rules after a
+restart of firewalld, the commands run twice, B's and C's commands, and the install guide's §12. It
+stops at once if firewalld does not start. It ends `--- <n> failed` and exits non-zero on any
+failure ([05 §9](../../docs/operations/05-ports-and-firewall.md#9-what-was-checked-and-what-was-not)).
 
 ```
 scripts/check-ports-el9.sh                     the release in target/release/backend-*/
@@ -131,8 +138,8 @@ scripts/check-ports-el9.sh                     the release in target/release/bac
 
 | | |
 |---|---|
-| Needs | Docker, and the network once, to build its image (`rockylinux/rockylinux:9.5` with firewalld) |
-| Runs | on the build machine, from anywhere; about two minutes once its image is built |
+| Needs | Docker, and the network once, to build its image (`rockylinux/rockylinux:9.5` with firewalld); .NET 8 at `/opt/dotnet` for the C# driver, published self-contained, so the image needs none; `fs.inotify.max_user_watches` high enough for the container's dbus (524288; an editor's watches can use up the default) |
+| Runs | on the build machine, from anywhere; about ten minutes once its image is built |
 
 ## Backups and recovery
 
@@ -378,18 +385,70 @@ promote-mysql.sh <old primary host:port> --demote-old [--stale-ok]
 
 ## Certificates
 
-### install-certificate.sh
+How they are made, installed, trusted by the app and renewed:
+[operations/06](../../docs/operations/06-certificates.md).
+
+### private-ca.sh
+
+The backend's own certificate authority (D-82): the site has no domain, so no public CA certifies
+it. `root` makes the root once, `ca.key` (0600) and `ca.pem`; the app ships `ca.pem` and trusts it
+alone, and the key never goes on a server. `issue` makes a key and a certificate signed by it for
+the names given, each an IP address (the site's public one) or a host name in lower case (an
+arena's TLS name); `names` lists the TLS names in nginx's stream map, for `issue`; `show` prints
+what a certificate names, by whom, until when. EC P-256 keys, SHA-256. Nothing is overwritten: a
+root already there, or a key or certificate already in the output directory, refuses the run.
 
 ```
-install-certificate.sh <fullchain.pem> <privkey.pem> | --check | --placeholder   (or as certbot's --deploy-hook)
+private-ca.sh root  <ca-dir>
+private-ca.sh issue <ca-dir> <out-dir> <address> $(private-ca.sh names /etc/backend/nginx/backend-stream.conf)
+private-ca.sh show  <out-dir>/fullchain.pem
 ```
-
-The certificate is deferred by the owner; the script's header and
-[01 §11](../../docs/operations/01-deploy.md#11-the-certificate) describe it.
 
 | | |
 |---|---|
-| Environment | for the release's nginx: `NGINX_CONF` (default `/etc/backend/nginx/backend.conf`), `NGINX_TEST` (default `/opt/backend/nginx/sbin/nginx -t -q`, after making the directories its unit would), `NGINX_RELOAD` (default `systemctl reload backend-nginx`). The rest are in its header |
+| Environment | `ROOT_DAYS` (3650), the root's validity; `DAYS` (398), a certificate's |
+| Needs | `openssl`, the system's (3.0 on RHEL 9) |
+| Runs | on the operators' machine that keeps the root's key, never a server ([06 §2](../../docs/operations/06-certificates.md#2-making-the-root-once)) |
+
+### install-certificate.sh
+
+```
+install-certificate.sh <fullchain.pem> <privkey.pem> | --check | --placeholder
+```
+
+Checks a certificate the way a device will, then installs it for nginx and reloads it, which drops
+nothing: the key matches, the chain reaches the backend's root (`/etc/backend/tls/ca.pem`, when it
+is there) through the file alone, it is valid now, and it names the site's address (`server_name`)
+and every TLS name in the stream's map. If nginx refuses it, the previous files are put back. Before
+nginx has ever started it installs without the reload. `--check` says what 443 and 9001 serve now,
+for each name, and the days left. An arena that ends TLS itself, without the front, gets a PKCS#12
+keystore. Its header has every setting.
+
+| | |
+|---|---|
+| Environment | for the release's nginx: `NGINX_CONF` (default `/etc/backend/nginx/backend.conf`), `STREAM_CONF` (default `/etc/backend/nginx/backend-stream.conf`), `NGINX_TEST` (default `/opt/backend/nginx/sbin/nginx -t -q`, after making the directories its unit would), `NGINX_RELOAD` (default `systemctl reload backend-nginx`), `NGINX_RUNNING` (default `systemctl is-active --quiet backend-nginx`), `CA_FILE` (default `TLS_DIR/ca.pem` when it is there; else the system's roots). The rest are in its header |
+| Needs | root; `openssl`; the release's nginx |
+| Runs | on every machine, the same certificate on each ([06 §4](../../docs/operations/06-certificates.md#4-installing-it-on-every-machine)) |
+
+### check-certificates.sh
+
+Checks the two scripts above on this machine, with openssl alone and nginx stood in for: the root
+made once and never overwritten, its key private; a certificate for the site's address and the
+seven names in the shipped stream map; refused before anything is installed, a certificate short
+of an arena's name or of the address, one from another root, and a key that is not the
+certificate's; with no root in `TLS_DIR`, the backend's certificate refused against the system's
+roots; installed, the key private; and when nginx refuses the new files, the previous ones put
+back. It ends `--- <n> failed` and exits non-zero on any failure. `CA=` and `IC=` name another
+`private-ca.sh` or `install-certificate.sh`, for a mutation check.
+
+```
+scripts/check-certificates.sh
+```
+
+| | |
+|---|---|
+| Needs | `openssl` |
+| Runs | anywhere, in a few seconds; its files in `TMPDIR`, removed at the end |
 
 ## Drills
 

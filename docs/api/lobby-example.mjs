@@ -7,7 +7,8 @@
 //
 //   node lobby-example.mjs [platformUrl] [lobbyUrl] [adminUrl adminToken]
 //   node lobby-example.mjs http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby
-//   node lobby-example.mjs https://a.example.com wss://a.example.com/lobby
+//   NODE_EXTRA_CA_CERTS=ca.pem node lobby-example.mjs https://203.0.113.10 wss://203.0.113.10/lobby
+//                                       the site, trusting the backend's root (docs/operations/06)
 //
 // It registers two new players (bob_<time>, cy_<time>). Exits 1 if anything answered otherwise.
 

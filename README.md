@@ -67,8 +67,11 @@ copy off the site goes (Q-53), and the certificate's domain and CA
   [docs/development/05-vscode.md](docs/development/05-vscode.md).
 - **Install it on a RHEL 9 server**, from a clone, step by step:
   [docs/operations/03-install-guide.md](docs/operations/03-install-guide.md).
-- **Ports and the firewall**: every port on each machine, who connects to it, and each
-  machine's firewall on RHEL 9: [docs/operations/05-ports-and-firewall.md](docs/operations/05-ports-and-firewall.md).
+- **Ports and the firewall**: the site behind one public address and nginx in front, every
+  port on each machine, who connects to it, and each machine's firewall on RHEL 9:
+  [docs/operations/05-ports-and-firewall.md](docs/operations/05-ports-and-firewall.md).
+- **Certificates**, with no domain: the backend's own CA, the site's certificate, installing and
+  renewing it, and the app trusting it: [docs/operations/06-certificates.md](docs/operations/06-certificates.md).
 - **The JDK, Maven, MySQL and nginx** the repository carries, and how to move
   their versions: [vendor/README.md](vendor/README.md).
 - **Cryptography**: what Java 21 and BouncyCastle give, the rules, and tested

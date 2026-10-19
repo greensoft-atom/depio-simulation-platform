@@ -55,6 +55,14 @@ import org.slf4j.LoggerFactory;
  * </ul>
  *
  * A reader routes a push by the part of the value before {@code #}.
+ *
+ * <h2>Replaced through another gateway (T-60)</h2>
+ *
+ * Behind the front's nginx, two devices on one account land on different gateways as a rule
+ * (D-82). A registration is written with {@code GETSET}, so it learns the one it replaced; when
+ * that one is another gateway's, {@code evt.session.replaced} goes on that gateway's channel with
+ * the replaced value, and that gateway closes its connection only while its registration still
+ * holds that value.
  */
 final class ConnectionRegistry implements AutoCloseable {
 
@@ -79,6 +87,8 @@ final class ConnectionRegistry implements AutoCloseable {
 
     /** The push a displaced connection gets; a client does not reconnect after it. */
     static final String SESSION_REPLACED = "{\"t\":\"evt.session.replaced\",\"d\":{}}";
+    static final String SESSION_REPLACED_TYPE = "evt.session.replaced";
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
     /** A push that ends the connection once written: every session of the player was revoked. */
     static final String SESSION_REVOKED = "evt.session.revoked";
 
@@ -110,9 +120,30 @@ final class ConnectionRegistry implements AutoCloseable {
                     .writeAndFlush(new TextWebSocketFrame(SESSION_REPLACED))
                     .addListener(ChannelFutureListener.CLOSE);
         }
+        String key = KEY_PREFIX + playerId;
         return store.multi()
-                .send("SET", KEY_PREFIX + playerId, mine.value(), "EX", TTL_SECONDS)
-                .exec();
+                .send("GETSET", key, mine.value())
+                .send("EXPIRE", key, TTL_SECONDS)
+                .exec()
+                .thenCompose(replies -> {
+                    // The registration this one replaced: another gateway's is told there (T-60).
+                    com.jredis.common.Reply before = replies.get(0);
+                    String replaced = before == null || before.isNull() ? null : before.asString();
+                    if (replaced == null || LobbyPush.gatewayOf(replaced).equals(gatewayId)) {
+                        return CompletableFuture.completedFuture(null);
+                    }
+                    return store.publish(LobbyPush.channelOf(LobbyPush.gatewayOf(replaced)),
+                            replacedEnvelope(playerId, replaced));
+                });
+    }
+
+    /** What tells another gateway its connection was replaced: the value its registration wrote (T-60). */
+    static String replacedEnvelope(long playerId, String replaced) {
+        com.fasterxml.jackson.databind.node.ObjectNode msg = JSON.createObjectNode().put("t", SESSION_REPLACED_TYPE);
+        msg.putObject("d").put("registration", replaced);
+        com.fasterxml.jackson.databind.node.ObjectNode env = JSON.createObjectNode().put("to", playerId);
+        env.set("msg", msg);
+        return env.toString();
     }
 
     void unregister(long playerId, Channel channel) {
@@ -161,6 +192,22 @@ final class ConnectionRegistry implements AutoCloseable {
         Registration r = local.get(delivery.to());
         if (r == null || !r.channel().isActive()) {
             return false;
+        }
+        if (SESSION_REPLACED_TYPE.equals(delivery.type())) {
+            // Replaced through another gateway (T-60): closed only if it is still the connection replaced.
+            String replaced;
+            try {
+                replaced = JSON.readTree(delivery.message()).path("d").path("registration").asText(null);
+            } catch (java.io.IOException e) {
+                return true;
+            }
+            if (r.value().equals(replaced)) {
+                log.info("player {} connected through another gateway; closing the connection here", delivery.to());
+                r.channel().eventLoop().execute(() -> r.channel()
+                        .writeAndFlush(new TextWebSocketFrame(SESSION_REPLACED))
+                        .addListener(ChannelFutureListener.CLOSE));
+            }
+            return true;
         }
         Pushes pushes = r.channel().pipeline().get(Pushes.class);
         // Banned (04 §10): told why, then closed once that is written, as a replaced one is.

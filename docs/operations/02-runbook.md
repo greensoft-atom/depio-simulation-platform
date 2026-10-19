@@ -230,7 +230,7 @@ it was never refused.
 | Scores missing from the boards (`backend_worker_unranked_total` rose during a store outage) | The results are in MySQL; their scores never reached a board | The same command, once the store answers again. It is safe on a healthy store: it only raises scores, and leaves each board's expiry alone |
 | MySQL primary lost | No logins, and no request that reads or writes it: purchases, progression, profiles, inventories; results wait in the stream and are applied once it is back; matches in progress play on (rehearsed under load, [architecture/02 §6](../architecture/02-availability.md#6-rehearsed-under-load-designed-2026-09-30-plan-item-23)) | Promote its replica ([§2](#2-stateful-primary-failure)): everything committed up to the replication lag is on it. The processes follow by themselves. |
 | MySQL slow | Purchases and progression writes time out | Check for a long transaction before assuming load. |
-| A certificate close to expiry, or `connections_dropped_total{reason="tls_handshake"}` jumping after a change | At expiry, every device refuses that machine's logins and purchases (nginx) or matches (an arena) | `install-certificate.sh --check` on the machine says which port serves what, and why a device would refuse it. `certbot renew --dry-run` says why renewal fails; once renewed, the hook has installed it everywhere and only arenas still need a restart, one at a time ([01 §11](01-deploy.md#11-the-certificate)) |
+| The site's certificate close to expiry, or devices refusing the site after a change | At expiry every device refuses the site: no login, purchase, lobby or match, since the front's nginx ends TLS for all of them | `install-certificate.sh --check` on the front says what 443 and 9001 serve for each name, the days left, and why a device would refuse it. Issue a new certificate from the backend's root and install it on every machine; nginx reloads without dropping anyone, and the arenas need nothing ([06 §6](06-certificates.md#6-renewing-every-year), [§10](06-certificates.md#10-when-something-goes-wrong)) |
 
 **The dead list, by hand**, on the store's machine, the password sent on
 standard input as the scripts send it (never `-a`, which `ps` shows). Run
@@ -323,6 +323,13 @@ SELECT at, action, target, outcome, request FROM admin_audit ORDER BY id DESC LI
 Capacity drops to roughly 30 000 players (N−1). What to do depends on which
 machine:
 
+- **The front, whichever it is** (C in the examples, [D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)): the site's one public
+  address goes nowhere, so nobody reaches it. First, have the provider forward the address's 443
+  and 9001 to another machine. That machine's nginx, configuration, certificate and firewall are
+  ready, since every machine is set up as the front. Check from outside:
+  `openssl s_client -connect <address>:443 -verify_ip <address> -CAfile ca.pem </dev/null` ends
+  `Verify return code: 0 (ok)`. Then the lost machine's own roles, as below.
+
 - **Machine A** — both primaries. Follow [§2](#2-stateful-primary-failure)
   twice: MySQL and j-redis `session`. This is the worst case, and the reason
   both primaries sit together is that it is *one* procedure to rehearse.
@@ -331,8 +338,8 @@ machine:
   rebuilt ([§3](#3-per-component-procedures)), or MySQL brought back from the
   backup machine's copies, or from the copy off the site if C went too
   ([a last-resort restore](#a-last-resort-restore-with-no-source-left)).
-- **Machine B** — the `events` primary, plus its arena. Promote `events`;
-  the arena's matches are lost and players return to the lobby.
+- **Machine B** — the `events` primary, plus three arenas. Promote `events`;
+  the arenas' matches are lost and players return to the lobby.
 - **Machine C** — replicas and workers. No promotion needed. Whatever its
   workers had claimed and not acknowledged stays pending on the stream, and the
   surviving workers claim it once it has been idle a minute
@@ -398,11 +405,12 @@ something scrapes and alerts, the daily checks in §6 are by hand.
 | When | Task |
 |---|---|
 | Daily | On the backup machine, `systemctl status backend-binlog-stream`: the stream records nothing, so nothing else says it stopped (§5). Until alert rules read the backups' metrics (§5), read them by hand: each step's last success and last outcome, `SELECT kind, MAX(finished_at), MAX(IF(ok, finished_at, NULL)) FROM backup_run GROUP BY kind` on the primary (kind 1 the dump, 2 a proof, 3 the copy off the site), or the worker's `backend_backup_*` (01 §7). The store is not copied on a timer ([D-31](../architecture/03-decision-log.md#d-31--the-store-is-not-copied-off-its-machine-on-a-timer-before-replication)); `backup-store.sh` is for a copy by hand, before an upgrade. Log rotation, disk check |
-| Weekly | Restart arenas one at a time during low traffic (one a machine, D-81: while one drains, the other two machines take every new match), which is also when they pick up a renewed certificate. A few minutes before, tell the players: `POST /admin/notice {"text", "reason"}` reaches everyone in the lobby ([04 §10](../detailed-design/04-platform-services.md#the-third-slice-a-notice-to-the-lobby-designed-2026-10-01-plan-item-44)). A stop drains ([01 §8.6](../detailed-design/01-arena.md#86-draining-an-arena-designed-2026-09-29-plan-item-7)): public players go back to the lobby at once with their results, made matches play out, so `systemctl stop` may take up to eleven minutes; the journal says `drained in N s`, or `the drain ran out` if a match was cut short (paid, not rated). Review `WARN` counts; `install-certificate.sh --check` on each machine |
+| Weekly | Restart arenas one at a time during low traffic (while one drains, the others take every new match). A few minutes before, tell the players: `POST /admin/notice {"text", "reason"}` reaches everyone in the lobby ([04 §10](../detailed-design/04-platform-services.md#the-third-slice-a-notice-to-the-lobby-designed-2026-10-01-plan-item-44)). A stop drains ([01 §8.6](../detailed-design/01-arena.md#86-draining-an-arena-designed-2026-09-29-plan-item-7)): public players go back to the lobby at once with their results, made matches play out, so `systemctl stop` may take up to eleven minutes; the journal says `drained in N s`, or `the drain ran out` if a match was cut short (paid, not rated). Review `WARN` counts; `install-certificate.sh --check` on each machine |
 | Per release | Rolling deployment ([01-deploy §5](01-deploy.md#5-rolling-deployment)) |
 | Weekly, by itself | **The restore proof** (`backend-restore-proof.timer`, Sundays 04:00 UTC): the newest dump and the copies restored onto the scratch server, into `backend_proof`, and checked; its outcome recorded in `backup_run` whichever it is. Its alert, or the daily check above, is the check. |
 | Monthly | **The restore drill** (below), by hand, with its exact counts, at a quiet hour; from the copy off the site once there is one (`fetch-offsite.sh`). The store's drill on each store's primary. The proof from off the site also runs by itself, the first Sunday at 05:00 UTC (`backend-restore-proof-offsite.timer`), into `backend_proof_offsite`, never at the same time as the weekly one. |
 | Monthly, by itself too | **Security fixes for what the release carries** (D-77): the operating system's updates no longer reach the Java runtime, MySQL, nginx or the OpenSSL compiled into it. Read the advisories for Temurin 21, MySQL 8.4, nginx and OpenSSL 3.5 (the versions are the release's `VERSIONS.md`); a fix is a new version in `vendor/` (`vendor/VERSIONS.md`, "Moving a version") and a release, rolled out as §5 of the deploy document says. |
+| Yearly, a month before its end | **The site's certificate**: issued again from the backend's root and installed on every machine ([06 §6](06-certificates.md#6-renewing-every-year)). `install-certificate.sh --check` says the days left; the gateway's `backend_gateway_edge_certificate_expiry_timestamp_seconds` too, to alert on under 30 days. |
 | Quarterly | **Rehearse a failover.** A promotion procedure that has never been run is a hypothesis. |
 
 ### Recovering to a moment

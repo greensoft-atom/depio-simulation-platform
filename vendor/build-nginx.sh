@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Compiles nginx for RHEL 9 (glibc 2.34) in a Rocky Linux 9 container, from the sources in src/, with
 # OpenSSL, PCRE2 (and its JIT) and zlib compiled in, and installs it as nginx-1.30/ beside this script
-# (docs/detailed-design/09 §5, D-77). Never compiled on the development machine: its glibc's newer
+# (docs/detailed-design/09 §5, D-77), with the stream module and its TLS for match traffic on
+# 9001 (D-82). Never compiled on the development machine: its glibc's newer
 # symbols would keep the binary from starting on RHEL 9. Needs docker; nothing installed on the host.
 #
 #   vendor/build-nginx.sh
@@ -32,6 +33,7 @@ docker run --rm --name "backend-build-nginx-$$" -v "$HERE/src:/src:ro" -v "$work
         --http-proxy-temp-path=/var/cache/backend-nginx/proxy \
         --user=nginx --group=nginx \
         --with-http_ssl_module --with-http_v2_module \
+        --with-stream --with-stream_ssl_module \
         --without-http_fastcgi_module --without-http_uwsgi_module --without-http_scgi_module \
         --without-http_memcached_module --without-mail_pop3_module --without-mail_imap_module \
         --without-http_auth_basic_module \

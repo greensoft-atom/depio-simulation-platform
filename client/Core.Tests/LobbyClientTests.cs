@@ -115,6 +115,52 @@ namespace Backend.Client.Core.Tests
             }
         }
 
+        /// <summary>
+        /// T-61: the platform tells a party's members before it answers the leader, so a member's leave, and the
+        /// leader's "none", can beat the leader's own answer; applied last, it showed the leader queued in no queue.
+        /// </summary>
+        [Test]
+        public void AJoinsAnswerAfterAQueuePushIsLateAndDropped()
+        {
+            var (server, lobby, socket, _) = Ready();
+            using (server)
+            using (lobby)
+            {
+                lobby.JoinQueue("tvt");
+                JsonValue join = ScriptedLobby.Read(socket);
+                ScriptedLobby.Write(socket, "{\"t\":\"evt.queue.update\",\"d\":{\"state\":\"none\",\"mode\":null}}");
+                ScriptedLobby.Write(socket, "{\"t\":\"queue.join.ok\",\"id\":" + join["id"].AsInt + ",\"d\":{\"state\":\"queued\",\"mode\":\"tvt\"}}");
+                // Read in order: once this is seen, the answer before it has been read too.
+                ScriptedLobby.Write(socket, "{\"t\":\"evt.party.invite\",\"d\":{\"partyId\":\"p\",\"from\":8,\"fromName\":\"b\"}}");
+                Assert.That(PollUntil(lobby, () => lobby.Invitation != null), Is.True);
+                Assert.That(lobby.QueueState, Is.EqualTo("none"), "the push came after the join: the answer is older");
+
+                lobby.JoinQueue("tvt");
+                join = ScriptedLobby.Read(socket);
+                ScriptedLobby.Write(socket, "{\"t\":\"queue.join.ok\",\"id\":" + join["id"].AsInt + ",\"d\":{\"state\":\"queued\",\"mode\":\"tvt\"}}");
+                Assert.That(PollUntil(lobby, () => lobby.QueueState == "queued"), Is.True, "a join answered with nothing between");
+            }
+        }
+
+        [Test]
+        public void AJoinsAnswerAfterALeaveIsLateAndDropped()
+        {
+            var (server, lobby, socket, _) = Ready();
+            using (server)
+            using (lobby)
+            {
+                lobby.JoinQueue("duel");
+                JsonValue join = ScriptedLobby.Read(socket);
+                lobby.LeaveQueue();
+                JsonValue leave = ScriptedLobby.Read(socket);
+                ScriptedLobby.Write(socket, "{\"t\":\"queue.join.ok\",\"id\":" + join["id"].AsInt + ",\"d\":{\"state\":\"queued\",\"mode\":\"duel\"}}");
+                ScriptedLobby.Write(socket, "{\"t\":\"queue.leave.ok\",\"id\":" + leave["id"].AsInt + ",\"d\":{\"state\":\"none\"}}");
+                ScriptedLobby.Write(socket, "{\"t\":\"evt.party.invite\",\"d\":{\"partyId\":\"p\",\"from\":8,\"fromName\":\"b\"}}");
+                Assert.That(PollUntil(lobby, () => lobby.Invitation != null), Is.True);
+                Assert.That(lobby.QueueState, Is.EqualTo("none"), "left after joining: the join's answer is older");
+            }
+        }
+
         [Test]
         public void ADeclinedMatchIsForgottenAndTheQueueSaysNone()
         {

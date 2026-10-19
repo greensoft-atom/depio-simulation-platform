@@ -160,9 +160,16 @@ found no session to end. It is now `invalid_session`, as any unknown token is.
 `evt.session.revoked`, the admin API's ban (04 §10), is written and then closed the same way. **A client that receives it
 does not reconnect**: it was replaced on purpose, and reconnecting would replace
 the other device in turn ([P-19](../defects.md#2-protocol--the-client-contract)).
-As built this holds within one gateway; a second login through another gateway
-leaves the first connection open, receiving nothing, since pushes route to the
-newest registration. Enforcing this at the
+**Across gateways too** (designed 2026-10-19, [T-60](../defects.md#4-concurrency)). Behind the front's
+nginx ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)),
+which spreads lobby connections over every machine's gateway, two devices on one account
+land on different gateways as a rule. The second gateway writes its registration with
+`GETSET`, so it learns the one it replaced. When that one names another gateway, it publishes
+`evt.session.replaced` on that gateway's channel, with the replaced registration's value. That
+gateway closes its connection, telling it why, only while its own registration still holds that
+value. A newer connection to it, which displaced the replaced one meanwhile, is not closed by a
+message about an older one. Until then a second login through another gateway left the first
+connection open, receiving nothing, since pushes route to the newest registration. Enforcing this at the
 gateway rather than in `platform` keeps the invariant next to the thing that
 can actually see both connections.
 

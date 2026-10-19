@@ -1,8 +1,8 @@
 #!/bin/bash
 # Installs a certificate for everything this machine serves to players, after checking it the
-# way a device will (docs/operations/01-deploy.md §11 and §8):
+# way a device will (docs/operations/06-certificates.md, D-82):
 #
-#   install-certificate.sh <fullchain.pem> <privkey.pem>   by hand, from any CA
+#   install-certificate.sh <fullchain.pem> <privkey.pem>   by hand: from scripts/private-ca.sh, or any CA
 #   install-certificate.sh                                 as certbot's --deploy-hook, which
 #                                                          sets RENEWED_LINEAGE
 #   install-certificate.sh --check                         what each port serves right now
@@ -10,9 +10,11 @@
 #                                                          start and answer the CA's first
 #                                                          challenge; devices refuse it
 #
-# nginx (login, purchases, the lobby) gets the PEM files and is reloaded, which drops nothing.
-# The arenas get a PKCS#12 keystore, read at start: each serves the new certificate from its
-# next restart, and this says which still serve the old one.
+# nginx gets the PEM files and is reloaded, which drops nothing: it serves them on 443 (logins,
+# purchases, the lobby) and on 9001 (match traffic, whose TLS it ends, D-82). An arena that ends
+# TLS itself, without the front (no BACKEND_ADVERTISE_TLS_NAME), gets a PKCS#12 keystore, read at
+# start: each serves the new certificate from its next restart, and this says which still serve
+# the old one.
 #
 # Nothing is installed unless all of this holds, since every failure below is otherwise found
 # by players, as a connection their device refuses:
@@ -21,13 +23,15 @@
 #     do not fetch a missing intermediate, so a file holding only the leaf fails on phones
 #     while it works in a desktop browser
 #   - valid now; a warning when fewer than WARN_DAYS remain
-#   - it names every host this machine serves: nginx's server_name and each arena's
-#     ADVERTISE_HOST, by subject alternative name, which is all a device checks
+#   - it names every host this machine serves, by subject alternative name, which is all a
+#     device checks: nginx's server_name (the site's address), every name in the stream's map
+#     (the arenas'), and the ADVERTISE_HOST of each arena that ends TLS itself
 # If nginx then refuses the files, the previous ones are put back.
 #
 # Settings, for a machine laid out differently or a drill: TLS_DIR, CREDENTIALS_DIR,
-# CONFIG_DIR (the arena-*.env files), NGINX_CONF, NGINX_TEST, NGINX_RELOAD, EDGE_PORT,
-# CA_FILE (trust only this root instead of the system's), WARN_DAYS.
+# CONFIG_DIR (the arena-*.env files), NGINX_CONF, STREAM_CONF, NGINX_TEST, NGINX_RELOAD, NGINX_RUNNING,
+# EDGE_PORT, STREAM_PORT, CA_FILE (trust only this root instead of the system's: by default
+# TLS_DIR/ca.pem, the backend's own root, when it is there), WARN_DAYS.
 set -euo pipefail
 umask 077
 
@@ -35,6 +39,7 @@ TLS_DIR=${TLS_DIR:-/etc/backend/tls}
 CREDENTIALS_DIR=${CREDENTIALS_DIR:-/etc/backend/credentials}
 CONFIG_DIR=${CONFIG_DIR:-/etc/backend}
 NGINX_CONF=${NGINX_CONF:-/etc/backend/nginx/backend.conf}
+STREAM_CONF=${STREAM_CONF:-/etc/backend/nginx/backend-stream.conf}
 # nginx -t writes its pid file and makes its temporary directories, in the directories its unit
 # makes (RuntimeDirectory, CacheDirectory): on a machine where the unit has not run, they are made here.
 nginx_test() {
@@ -43,8 +48,11 @@ nginx_test() {
 }
 NGINX_TEST=${NGINX_TEST:-nginx_test}
 NGINX_RELOAD=${NGINX_RELOAD:-systemctl reload backend-nginx}
+NGINX_RUNNING=${NGINX_RUNNING:-systemctl is-active --quiet backend-nginx}
 EDGE_PORT=${EDGE_PORT:-443}
+STREAM_PORT=${STREAM_PORT:-9001}
 CA_FILE=${CA_FILE:-}
+[ -z "$CA_FILE" ] && [ -f "$TLS_DIR/ca.pem" ] && CA_FILE=$TLS_DIR/ca.pem
 WARN_DAYS=${WARN_DAYS:-14}
 
 refuse() { echo "refusing: $*" >&2; exit 1; }
@@ -65,6 +73,15 @@ edge_names() {
         | tr ' ' '\n' | grep -v -e '^$' -e '^_$' -e '^~' | sort -u
 }
 
+# The names nginx's stream routes by, its map's, the default left out (D-82).
+stream_names() {
+    [ -f "$STREAM_CONF" ] || return 0
+    awk '/^map \$ssl_server_name/ { on = 1; next } on && /^}/ { exit }
+         on && $1 != "default" && $1 !~ /^#/ && NF >= 2 { print $1 }' "$STREAM_CONF" | sort -u
+}
+
+is_ip() { [[ $1 =~ ^[0-9.]+$ || $1 == *:* ]]; }
+
 setting() {   # setting <file> <key>: the last KEY=value, quotes removed
     sed -n "s/^$2=//p" "$1" | tail -1 | tr -d "\"'"
 }
@@ -73,9 +90,13 @@ arena_files() {
     compgen -G "$CONFIG_DIR/arena-*.env" || true
 }
 
+# sni <name>: what openssl s_client sends for it; an address goes without a name, as a device sends it.
+sni() { if is_ip "$1"; then echo -noservername; else echo "-servername $1"; fi; }
+
 # served <host> <port> <name>: the certificate a device dialling <name> gets, as PEM, or nothing
 served() {
-    timeout 10 openssl s_client -connect "$1:$2" -servername "$3" </dev/null 2>/dev/null \
+    # shellcheck disable=SC2046
+    timeout 10 openssl s_client -connect "$1:$2" $(sni "$3") </dev/null 2>/dev/null \
         | openssl x509 2>/dev/null || true
 }
 
@@ -102,7 +123,7 @@ earliest() {
 # covers <leaf.pem> <host>
 covers() {
     local how=-checkhost
-    [[ $2 =~ ^[0-9.]+$ || $2 == *:* ]] && how=-checkip
+    is_ip "$2" && how=-checkip
     openssl x509 -in "$1" -noout "$how" "$2" | grep -q ' does match '
 }
 
@@ -173,16 +194,24 @@ install_edge() {
         restore_previous "$fullchain"; restore_previous "$privkey"
         refuse "nginx does not accept it, the previous files are back: $out"
     fi
+    if ! $NGINX_RUNNING; then
+        # The first install, before nginx has ever started: it serves these when it does.
+        echo "nginx: not running; the files are installed, and it serves them when started"
+        return 0
+    fi
     $NGINX_RELOAD || refuse "nginx did not reload. The files are installed: a running nginx still serves the previous certificate, a stopped one will serve these when started"
     local want; want=$(fingerprint < "$WORK/leaf.pem")
-    for name in "${EDGE_NAMES[@]}"; do
+    local port name
+    for pair in "${EDGE_NAMES[@]/#/$EDGE_PORT }" "${STREAM_NAMES[@]/#/$STREAM_PORT }"; do
+        [ -n "$pair" ] || continue
+        port=${pair%% *}; name=${pair#* }
         local got="" tries=0
         while [ "$got" != "$want" ] && [ $((tries++)) -lt 20 ]; do
-            got=$(served 127.0.0.1 "$EDGE_PORT" "$name" | fingerprint 2>/dev/null || true)
+            got=$(served 127.0.0.1 "$port" "$name" | fingerprint 2>/dev/null || true)
             [ "$got" = "$want" ] || sleep 0.5
         done
-        [ "$got" = "$want" ] || refuse "nginx reloaded, but $name on port $EDGE_PORT does not serve the new certificate"
-        echo "nginx: $name serves the new certificate"
+        [ "$got" = "$want" ] || refuse "nginx reloaded, but $name on port $port does not serve the new certificate"
+        echo "nginx: $name on $port serves the new certificate"
     done
 }
 
@@ -200,7 +229,7 @@ install_arenas() {
     put "$WORK/arena.p12" "$keystore" 0600
     echo "arenas: $keystore replaced"
     local want; want=$(fingerprint < "$WORK/leaf.pem")
-    for f in $(arena_files); do
+    for f in "${OWN_TLS_ARENAS[@]}"; do
         local arena host port bind got
         arena=$(basename "$f" .env); arena=${arena#arena-}
         host=$(setting "$f" ADVERTISE_HOST); port=$(setting "$f" ARENA_PORT); bind=$(setting "$f" ARENA_BIND)
@@ -219,8 +248,10 @@ install_arenas() {
 # ---- checking what is served --------------------------------------------------------------
 
 check_served() {   # check_served <label> <host> <port> <name>
-    local out verify end days
-    out=$(timeout 10 openssl s_client -connect "$2:$3" -servername "$4" -verify_hostname "$4" \
+    local out verify end days check=(-verify_hostname "$4")
+    is_ip "$4" && check=(-verify_ip "$4")
+    # shellcheck disable=SC2046
+    out=$(timeout 10 openssl s_client -connect "$2:$3" $(sni "$4") "${check[@]}" \
         -showcerts "${TRUST[@]}" </dev/null 2>&1 || true)
     awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/' <<< "$out" > "$WORK/served.pem"
     if [ ! -s "$WORK/served.pem" ]; then
@@ -236,17 +267,27 @@ check_served() {   # check_served <label> <host> <port> <name>
 # ---- main ---------------------------------------------------------------------------------
 
 mapfile -t EDGE_NAMES < <(edge_names)
+mapfile -t STREAM_NAMES < <(stream_names)
+# The arenas that end TLS themselves: behind the front, one with a TLS name speaks plaintext (D-82).
 ARENA_NAMES=()
-for f in $(arena_files); do ARENA_NAMES+=("$(setting "$f" ADVERTISE_HOST)"); done
-mapfile -t NAMES < <(printf '%s\n' "${EDGE_NAMES[@]}" "${ARENA_NAMES[@]}" | grep -v '^$' | sort -u)
-[ ${#NAMES[@]} -gt 0 ] || refuse "this machine serves no name: no server_name in $NGINX_CONF and no ADVERTISE_HOST in $CONFIG_DIR/arena-*.env"
+OWN_TLS_ARENAS=()
+for f in $(arena_files); do
+    [ -n "$(setting "$f" BACKEND_ADVERTISE_TLS_NAME)" ] && continue
+    ARENA_NAMES+=("$(setting "$f" ADVERTISE_HOST)")
+    OWN_TLS_ARENAS+=("$f")
+done
+mapfile -t NAMES < <(printf '%s\n' "${EDGE_NAMES[@]}" "${STREAM_NAMES[@]}" "${ARENA_NAMES[@]}" | grep -v '^$' | sort -u)
+[ ${#NAMES[@]} -gt 0 ] || refuse "this machine serves no name: no server_name in $NGINX_CONF, no name in $STREAM_CONF's map and no arena of its own TLS in $CONFIG_DIR/arena-*.env"
 
 if [ "${1:-}" = "--check" ]; then
     failed=0
     for name in "${EDGE_NAMES[@]}"; do
-        check_served nginx 127.0.0.1 "$EDGE_PORT" "$name" || failed=1
+        check_served "nginx $EDGE_PORT" 127.0.0.1 "$EDGE_PORT" "$name" || failed=1
     done
-    for f in $(arena_files); do
+    for name in "${STREAM_NAMES[@]}"; do
+        check_served "nginx $STREAM_PORT" 127.0.0.1 "$STREAM_PORT" "$name" || failed=1
+    done
+    for f in "${OWN_TLS_ARENAS[@]}"; do
         arena=$(basename "$f" .env); bind=$(setting "$f" ARENA_BIND)
         [[ -z $bind || $bind == 0.0.0.0 || $bind == :: ]] && bind=127.0.0.1
         check_served "arena ${arena#arena-}" "$bind" "$(setting "$f" ARENA_PORT)" "$(setting "$f" ADVERTISE_HOST)" || failed=1
@@ -260,7 +301,11 @@ fi
 if [ "${1:-}" = "--placeholder" ]; then
     [ ! -e "$TLS_DIR/fullchain.pem" ] || refuse "$TLS_DIR/fullchain.pem exists; a placeholder only goes where there is none"
     [ ${#EDGE_NAMES[@]} -gt 0 ] || refuse "no server_name in $NGINX_CONF"
-    san=$(printf 'DNS:%s,' "${EDGE_NAMES[@]}")
+    san=""
+    for n in "${EDGE_NAMES[@]}" "${STREAM_NAMES[@]}"; do
+        [ -n "$n" ] || continue
+        if is_ip "$n"; then san+="IP:$n,"; else san+="DNS:$n,"; fi
+    done
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 7 \
         -subj "/CN=placeholder" -addext "subjectAltName=${san%,}" \
         -keyout "$WORK/key.pem" -out "$WORK/cert.pem" 2>/dev/null
@@ -287,5 +332,5 @@ flock -n 9 || refuse "another install is running"
 check_certificate "$FULLCHAIN" "$PRIVKEY"
 echo "checked: $(openssl x509 -in "$WORK/leaf.pem" -noout -subject -enddate | tr '\n' ' ')for ${NAMES[*]}"
 [ ${#EDGE_NAMES[@]} -gt 0 ] && install_edge "$FULLCHAIN" "$PRIVKEY"
-[ ${#ARENA_NAMES[@]} -gt 0 ] && install_arenas "$FULLCHAIN" "$PRIVKEY"
+[ ${#OWN_TLS_ARENAS[@]} -gt 0 ] && install_arenas "$FULLCHAIN" "$PRIVKEY"
 exit 0

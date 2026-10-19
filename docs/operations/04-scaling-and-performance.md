@@ -17,17 +17,19 @@ the older ones are cited with their date and source.
 
 | Part | Holds state | Grows with | Add capacity by | Limit as built | Cost, measured |
 |---|---|---|---|---|---|
-| `arena` | its rooms (a match lives in one process) | players in battle | rooms per arena, then machines: one arena a machine, on its one public match port ([D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)) | about **2 300 players a process**: its two network threads (§2.5) | **0.24 cores a full room** of 150 (0.13 network, 0.10 simulation), level-1 rooms; more as rooms mature (2026-10-06) |
-| `gateway` | its lobby connections | players connected | one per machine, behind that machine's nginx | ~17 000 connections a gateway by design; **not measured** | 14 MB live heap in a 300-bot soak (2026-10-01) |
-| `platform` | none (the store and MySQL hold it) | logins, API calls | one per machine, behind nginx | password hashing, 8 at a time: **~57 logins a second** a process | 62–88 ms a hash |
+| `arena` | its rooms (a match lives in one process) | players in battle | rooms per arena, arenas per machine (a private port and a name each, behind the front: [D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)), machines | about **2 300 players a process**: its two network threads (§2.5) | **0.24 cores a full room** of 150 (0.13 network, 0.10 simulation), level-1 rooms; more as rooms mature (2026-10-06) |
+| `gateway` | its lobby connections | players connected | one per machine, all three behind the front's nginx, which gives each new connection to the gateway holding the fewest | ~17 000 connections a gateway by design; **not measured** | 14 MB live heap in a 300-bot soak (2026-10-01) |
+| `platform` | none (the store and MySQL hold it) | logins, API calls | one per machine, all three behind the front's nginx | password hashing, 8 at a time: **~57 logins a second** a process | 62–88 ms a hash |
 | `worker` | none (a consumer group) | match results a second | `backend-worker@<id>` instances | MySQL's commit | **10–16 results a second** a worker (2026-09-30) |
 | j-redis `session` | sessions, tickets, the arena directory, queues, parties, boards | everything | a bigger machine (one primary; the replica is for failover) | one command thread; `maxmemory` 3 GB | not measured trustworthily on this VM (§4.6) |
 | j-redis `events` | the result stream, a day of it | results a second | a bigger heap | `maxmemory` 3 GB holds a day of results up to **~19 000 players** (O-37) | ~530 bytes a result |
 | MySQL | the system of record | results, purchases, logins | a bigger machine (one primary; the replica is for failover and backups) | `max_connections` 151 | 35 ms a result alone; 104 a second from 8 threads |
-| nginx | none | TLS for the lobby and the API | one per machine | `worker_connections` 16 384 | |
+| nginx | none | TLS for the API, the lobby and match traffic, all of it on the front | one, the front's; every machine's set up the same, so another can take over | `worker_connections` 16 384 a worker, two for each connection it passes on; 262 144 descriptors | **not measured**: TLS for every match byte, about 1.5 Gbit/s each way at 50 000 in battle (D-82) |
 
-Match traffic never passes through nginx or the gateway ([D-5](../architecture/03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)):
-a client connects straight to the arena its grant names.
+Match traffic never passes through the gateway. On the site it passes through the front's nginx,
+which ends its TLS and hands the bytes, unread, to the arena the grant's `tlsName` names
+([D-5](../architecture/03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)
+as [D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name) revised it).
 
 ## 2. The match tier: arenas
 
@@ -59,20 +61,22 @@ and would add a hop to the traffic that can least afford one (about 1.1 Gbit/s a
 A TCP connection is told apart by both ends' addresses and ports, so one listening port takes
 as many connections as the process can serve: the limits are CPU, the network and file
 descriptors (the unit's `LimitNOFILE=65536`). Each arena instance has its own port
-(`ARENA_PORT`, 9001 in the example) and its own metrics port, and advertises
-`ADVERTISE_HOST:ARENA_PORT`. A machine runs one, as it has one public port for match traffic
-([D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)): `a1` on A, `b1` on B, `c1` on C, each a `backend-arena@<name>` unit with its
-`/etc/backend/arena-<name>.env`. The design had seven, two or three a machine.
+(`ARENA_PORT`, 9011 for a machine's first) and its own metrics port, on the machine's private
+address. Behind the front ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)) every arena announces the site's address and 9001, and a
+name of its own, `BACKEND_ADVERTISE_TLS_NAME`, by which the front's nginx passes each connection to
+it. The design's seven: `a1`, `a2` on A, `b1` to `b3` on B, `c1`, `c2` on C, each a
+`backend-arena@<name>` unit with its `/etc/backend/arena-<name>.env` ([05 §3](05-ports-and-firewall.md#3-the-arenas-their-ports-and-their-names)).
 
 ### 2.3 Settings that size an arena
 
 | Setting (`arena-<name>.env`) | Example | What it does |
 |---|---|---|
-| `ARENA_PORT` | 9001 | the port clients dial; each instance its own |
-| `MAX_ROOMS` | 12 | rooms in this process, public and made together; each room a thread. 12 of 150 are 1 800 players, short of the network threads' lower measured limit, 2 100 (§2.5): the machine's one arena carries its match traffic (D-81) |
+| `ARENA_PORT` | 9011 | the private port the front's nginx reaches it on; each instance its own |
+| `MAX_ROOMS` | 12 | rooms in this process, public and made together; each room a thread. 12 of 150 are 1 800 players, short of the network threads' lower measured limit, 2 100 (§2.5) |
 | `MAX_PLAYERS` | 150 | players a public room |
 | `MAP_SIZE`, `SHAPES` | 5 700, 1 500 | the room's world; the density the bandwidth budget assumes |
-| `ADVERTISE_HOST` | `a.example.com` | the machine's public name, which a TLS certificate names |
+| `ADVERTISE_HOST`, `BACKEND_ADVERTISE_PORT` | `203.0.113.10`, 9001 | the site's public address and port, what clients dial |
+| `BACKEND_ADVERTISE_TLS_NAME` | `a1.arena.internal` | the name the client gives, which nginx routes by and the certificate names |
 | `BACKEND_METRICS_ADDR` | `127.0.0.1:9110` | each instance its own |
 | (unit) heap | `-Xms6g -Xmx6g` | one arena's live heap is ~43 MB at full rooms (2026-10-01): the heap is for headroom and ZGC |
 
@@ -82,37 +86,50 @@ descriptors (the unit's `LimitNOFILE=65536`). Each arena instance has its own po
 [01 §5](01-deploy.md#5-rolling-deployment)). Each full room costs about 0.24 cores
 (§4.1); stop well short of the network threads' limit (§2.5).
 
-**Another arena on a machine** needs a public port of its own, which the three a machine has
-(C-9) do not leave: D-81 runs one. If the owner allows one more port, `a2` beside `a1`:
+**Another arena on a machine**, `a3` beside `a1` and `a2`. No public port: it is reached through
+9001 by its name. Four steps:
 
-```console
-cp /etc/backend/arena-a1.env /etc/backend/arena-a2.env
-sed -i -e 's/^ARENA_PORT=.*/ARENA_PORT=9002/' \
-       -e 's/^BACKEND_METRICS_ADDR=.*/BACKEND_METRICS_ADDR=127.0.0.1:9111/' /etc/backend/arena-a2.env
-systemctl enable --now backend-arena@a2
-firewall-cmd --permanent --add-port=9002/tcp && firewall-cmd --reload
-```
+1. Its settings, on A:
 
-Check that it is live: `GET /admin/arenas` lists `a2` with port 9002 within a few
+   ```console
+   cp /etc/backend/arena-a1.env /etc/backend/arena-a3.env
+   sed -i -e 's/^ARENA_PORT=.*/ARENA_PORT=9013/' \
+          -e 's/^BACKEND_ADVERTISE_TLS_NAME=.*/BACKEND_ADVERTISE_TLS_NAME=a3.arena.internal/' \
+          -e 's/^BACKEND_METRICS_ADDR=.*/BACKEND_METRICS_ADDR=127.0.0.1:9113/' /etc/backend/arena-a3.env
+   firewall-cmd --permanent --zone=backend --add-port=9013/tcp && firewall-cmd --reload
+   ```
+
+2. Its name in nginx's map, on every machine, then a reload:
+
+   ```console
+   sed -i 's/^    default .*/    a3.arena.internal  10.0.0.1:9013;\n&/' /etc/backend/nginx/backend-stream.conf
+   systemctl reload backend-nginx
+   ```
+
+3. The site's certificate, issued again with the new name and installed on every machine
+   ([06 §3, §4](06-certificates.md#3-issuing-the-sites-certificate)).
+4. The arena started: `systemctl enable --now backend-arena@a3`.
+
+Check that it is live: `GET /admin/arenas` lists `a3` within a few
 seconds ([api/03](../api/03-admin-api.md)), and the platform starts sending players to it at
 once. Pick a metrics port no other process on the machine uses: the examples give the platform
 9101, the gateway 9103, the workers 9102 and 9112, the arenas 9110 onwards, numbered by the
-arena's number on its machine ([05 §3](05-ports-and-firewall.md#3-the-arenas-ports)). A drop-in under
+arena's number on its machine ([05 §3](05-ports-and-firewall.md#3-the-arenas-their-ports-and-their-names)). A drop-in under
 `backend-arena@.service.d/` (the heap on a small machine, a credential) applies to every
-instance, the new one included. If the arenas serve TLS, the new one takes the machine's
-keystore as the others do ([01 §8](01-deploy.md#8-tls-for-match-traffic)).
+instance, the new one included.
 
 **Another machine.** Install it as the [install guide](03-install-guide.md) does, with the
 store and MySQL addresses of the existing ones (its "Three machines" section), its arena
 named for it (`d1`: **an arena's name must be unique across the fleet**, or two
-overwrite each other's directory entry), and `ADVERTISE_HOST` its own public name. Its arena
-registers in the same store and is used at once; no other machine changes. Under D-81 this is
-how match capacity grows past one arena's.
+overwrite each other's directory entry), each arena's TLS name in every machine's map and on the
+site's certificate (05 §3, 06 §7), and the machine's address as a source in every `backend` zone
+(05 §5). Its arenas register in the same store and are used at once.
 
 **Taking an arena out.** `systemctl stop backend-arena@a2` drains it: no new player or match
 is sent there, the public rooms stop and pay what their players are owed, made matches are
 allowed to finish, up to 11 minutes ([01-arena §8.6](../detailed-design/01-arena.md)). Its
-entry lapses from the directory; then close its port.
+entry lapses from the directory; then take its line out of the map and its port out of the
+`backend` zone.
 
 ### 2.5 The limit of one arena process
 
@@ -120,8 +137,9 @@ An arena has two network threads (Netty's event loops, fixed in the code) for ev
 connection's TLS, framing and writes. On 2026-10-06 they used **0.52 cores for 600 players**,
 three quarters of it the kernel's; at that rate the two are full near **2 300 players**,
 whatever `MAX_ROOMS` says. The 2026-09-30 load run put it near 2 100. So beyond about 15 rooms
-of 150, add arenas, not rooms; under D-81 that means machines, since each arena needs a public
-port. Raising the thread count is a code change, not made or measured.
+of 150, add arenas, not rooms. Raising the thread count is a code change, not made or measured.
+Behind the front the arena speaks plaintext, nginx doing the TLS, so its threads do the framing
+and the writes alone: what that changes was not measured.
 
 ### 2.6 Checked 2026-10-06: two arenas, two ports
 

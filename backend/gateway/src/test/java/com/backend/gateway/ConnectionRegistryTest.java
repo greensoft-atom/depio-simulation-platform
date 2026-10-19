@@ -156,4 +156,53 @@ class ConnectionRegistryTest {
         told.release();
         org.assertj.core.api.Assertions.assertThat(first.isActive()).isFalse();
     }
+
+    /** What the gateway's subscription hears on its channel, as GatewayServer listens. */
+    private java.util.concurrent.LinkedBlockingQueue<byte[]> listen(String gateway) throws Exception {
+        java.util.concurrent.LinkedBlockingQueue<byte[]> heard = new java.util.concurrent.LinkedBlockingQueue<>();
+        client.pubSub().subscribe(com.backend.handoff.LobbyPush.channelOf(gateway), (ch, message) -> heard.add(message))
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+        return heard;
+    }
+
+    @Test
+    @Timeout(20)
+    @DisplayName("a second login through another gateway tells the first connection there why it is closed (T-60)")
+    void replacedAcrossGateways() throws Exception {
+        java.util.concurrent.LinkedBlockingQueue<byte[]> toG1 = listen("g1");
+        EmbeddedChannel first = new EmbeddedChannel();
+        g1.register(ADA, first).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        g2.register(ADA, new EmbeddedChannel()).get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        byte[] heard = toG1.poll(5, java.util.concurrent.TimeUnit.SECONDS);
+        assertThat(heard).as("g1 told its connection was replaced").isNotNull();
+        assertThat(g1.deliver(com.backend.handoff.LobbyPush.Delivery.parse(heard))).isTrue();
+        first.runPendingTasks();
+        io.netty.handler.codec.http.websocketx.TextWebSocketFrame told = first.readOutbound();
+        assertThat(told).as("a reason, not a bare close").isNotNull();
+        assertThat(told.text()).isEqualTo(ConnectionRegistry.SESSION_REPLACED);
+        told.release();
+        assertThat(first.isActive()).isFalse();
+        assertThat(entry()).as("the newest registration stays").startsWith("g2#");
+    }
+
+    @Test
+    @Timeout(20)
+    @DisplayName("a replacement told late leaves a newer connection at the old gateway alone (T-60)")
+    void aLateReplacementSparesANewerConnection() throws Exception {
+        java.util.concurrent.LinkedBlockingQueue<byte[]> toG1 = listen("g1");
+        g1.register(ADA, new EmbeddedChannel()).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        g2.register(ADA, new EmbeddedChannel()).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        byte[] heard = toG1.poll(5, java.util.concurrent.TimeUnit.SECONDS);
+        assertThat(heard).isNotNull();
+        // Before the message is heard, the player comes back to g1: a connection newer than the one replaced.
+        EmbeddedChannel newer = new EmbeddedChannel();
+        g1.register(ADA, newer).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        g1.deliver(com.backend.handoff.LobbyPush.Delivery.parse(heard));
+        newer.runPendingTasks();
+        assertThat((Object) newer.readOutbound()).as("told nothing").isNull();
+        assertThat(newer.isActive()).as("still open").isTrue();
+        assertThat(toG1.poll(500, java.util.concurrent.TimeUnit.MILLISECONDS))
+                .as("a login on the gateway that already holds the player tells it nothing over the store").isNull();
+    }
 }

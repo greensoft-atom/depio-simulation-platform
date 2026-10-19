@@ -47,7 +47,7 @@ tar -xzf /check/repository.tar.gz -C /srv/depio-simulation-platform
 GUIDE=/srv/depio-simulation-platform/docs/operations/03-install-guide.md
 
 # The guide's steps as one script: its bash blocks in order. After the first (the values), this
-# check's own: a test name, a small buffer pool. After the one that installs the units, the container's
+# check's own: loopback for the address, a small buffer pool. After the one that installs the units, the container's
 # credentials.
 awk '
     BEGIN { print "set -euo pipefail" }
@@ -56,7 +56,7 @@ awk '
     on && /^```bash/ { inb = 1; n++; useradd = 0; print "echo \"=== step " n "\""; next }
     on && inb && /^```/ {
         inb = 0
-        if (n == 1) print "export NAME=install.check MYSQL_BUFFER_POOL=256M " ENVIRON["GUIDE_VALUES"]
+        if (n == 1) print "export ADDRESS=127.0.0.1 MYSQL_BUFFER_POOL=256M " ENVIRON["GUIDE_VALUES"]
         if (useradd) print "container_credentials"
         next
     }

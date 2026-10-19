@@ -12,57 +12,60 @@ ports and timers.
 ## The three machines
 
 What runs where, with the ports each listener takes, as
-[01 §1](../operations/01-deploy.md#1-what-runs-where) and the `deploy/env/` examples set it. Every
-process uses the `session` store's primary; the arenas and workers also use the `events` store's;
-`platform` and `worker` use the MySQL primary. Each process is given both addresses of a store and
-both MySQL hosts, so the replicas drawn here are where a failover moves those lines. nginx, MySQL
-and the stores are the release's own, not the distribution's, each run by its unit from
-`/opt/backend` (D-77, [09](../detailed-design/09-release-and-packaging.md)).
+[01 §1](../operations/01-deploy.md#1-what-runs-where) and the `deploy/env/` examples set it. The site
+has one public address, which the provider forwards to one machine, the front, C here
+([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)).
+Its nginx ends TLS on 443 and 9001 and passes everything over the private network: the API and the
+lobby to every machine's platform and gateway, each match connection to the arena its handshake names.
+Every machine runs the same nginx, so any can be the front. Every process uses the `session` store's
+primary; the arenas and workers also use the `events` store's; `platform` and `worker` use the MySQL
+primary. Each process is given both addresses of a store and both MySQL hosts, so the replicas drawn
+here are where a failover moves those lines. nginx, MySQL and the stores are the release's own, not
+the distribution's, each run by its unit from `/opt/backend` (D-77,
+[09](../detailed-design/09-release-and-packaging.md)).
 
 ```mermaid
 flowchart LR
-    client["client device"]
+    client["client device<br/>trusts the backend's root"]
+    forward["the site's public address<br/>443 and 9001, forwarded"]
     offsite["off-site host, named by the owner (Q-53)"]
     subgraph MA["Machine A, 10.0.0.1"]
-        Anginx["nginx 80, 443<br/>backend-nginx"]
-        Agw["gateway 127.0.0.1:8090"]
-        Apf["platform 127.0.0.1:8080"]
-        Aar["arena a1<br/>0.0.0.0, 9001"]
+        Agw["gateway 10.0.0.1:8090"]
+        Apf["platform 10.0.0.1:8080"]
+        Aar["arenas a1, a2<br/>10.0.0.1:9011, 9012"]
         Amy["MySQL primary 3306<br/>backend-mysql"]
         Ases["j-redis session primary 6379<br/>backend-store@session"]
     end
     subgraph MB["Machine B, 10.0.0.2"]
-        Bnginx["nginx 80, 443<br/>backend-nginx"]
-        Bgw["gateway 127.0.0.1:8090"]
-        Bpf["platform 127.0.0.1:8080"]
-        Bar["arena b1<br/>0.0.0.0, 9001"]
+        Bgw["gateway 10.0.0.2:8090"]
+        Bpf["platform 10.0.0.2:8080"]
+        Bar["arenas b1, b2, b3<br/>10.0.0.2:9011 to 9013"]
         Bses["j-redis session replica 6379<br/>backend-store@session"]
         Bev["j-redis events primary 6380<br/>backend-store@events"]
     end
-    subgraph MC["Machine C, 10.0.0.3"]
-        Cnginx["nginx 80, 443<br/>backend-nginx"]
-        Cgw["gateway 127.0.0.1:8090"]
-        Cpf["platform 127.0.0.1:8080"]
-        Car["arena c1<br/>0.0.0.0, 9001"]
+    subgraph MC["Machine C, 10.0.0.3, the front"]
+        Cnginx["nginx 443 and 9001, ends TLS<br/>backend-nginx, on every machine"]
+        Cgw["gateway 10.0.0.3:8090"]
+        Cpf["platform 10.0.0.3:8080"]
+        Car["arenas c1, c2<br/>10.0.0.3:9011, 9012"]
         Cwk["workers c1, c2"]
         Cmy["MySQL replica 3306<br/>backend-mysql"]
         Cev["j-redis events replica 6380<br/>backend-store@events"]
         Cbk["backups: binlog stream, dumps, proofs<br/>scratch MySQL 127.0.0.1:3309, backend-scratch-mysql"]
     end
-    client -->|"HTTPS and WSS"| Anginx
-    client -->|"HTTPS and WSS"| Bnginx
-    client -->|"HTTPS and WSS"| Cnginx
-    client -->|"match traffic, direct"| Aar
-    client -->|"match traffic, direct"| Bar
-    client -->|"match traffic, direct"| Car
-    Anginx --> Agw
-    Anginx --> Apf
-    Agw --> Apf
-    Bnginx --> Bgw
-    Bnginx --> Bpf
-    Bgw --> Bpf
-    Cnginx --> Cgw
+    client -->|"HTTPS, WSS, match TLS"| forward
+    forward --> Cnginx
+    Cnginx -->|"/v1/, /lobby"| Apf
+    Cnginx --> Agw
+    Cnginx --> Bpf
+    Cnginx --> Bgw
     Cnginx --> Cpf
+    Cnginx --> Cgw
+    Cnginx -->|"9001, by the arena's name"| Aar
+    Cnginx --> Bar
+    Cnginx --> Car
+    Agw --> Apf
+    Bgw --> Bpf
     Cgw --> Cpf
     Amy -->|"replication, GTIDs, TLS"| Cmy
     Ases -->|"replication"| Bses
@@ -73,26 +76,26 @@ flowchart LR
 
 ## nginx's routes
 
-One nginx per machine, in front of that machine's gateway and platform only; match traffic never
-passes it (D-5). From `deploy/nginx/backend.conf` and its snippet `backend-platform.conf`.
+nginx on the front, the same on every machine: 443 for the API and the lobby, 9001 for match
+traffic, TLS ended on both with the one certificate from the backend's own CA
+([operations/06](../operations/06-certificates.md)). From `deploy/nginx/backend.conf`, its snippet
+`backend-platform.conf`, `backend-upstreams.conf` and `backend-stream.conf`. Nothing listens on 80.
 
 ```mermaid
 flowchart LR
     dev["client device"]
-    p80["port 80"]
-    p443["port 443, TLS 1.2 and 1.3"]
-    acme["/.well-known/acme-challenge/<br/>files in /var/www/acme"]
-    refuse["anything else on 80<br/>403 HTTPS only, no redirect"]
+    p443["port 443, TLS 1.2 and 1.3<br/>the site's address on the certificate"]
+    p9001["port 9001, TLS 1.2 and 1.3<br/>every arena's name on the certificate"]
     lobby["= /lobby"]
     auth["= /v1/sessions, = /v1/accounts,<br/>= /v1/guests, = /v1/accounts/upgrade<br/>limit_req 2 a second, burst 30"]
     v1["/v1/, the rest"]
     other["anything else on 443<br/>404"]
-    gw["gateway 127.0.0.1:8090<br/>WebSocket, 150 s timeouts"]
-    pf["platform 127.0.0.1:8080<br/>keepalive 32, 15 s read timeout"]
-    dev --> p80
+    gw["the three gateways, :8090<br/>least_conn, WebSocket, 150 s timeouts"]
+    pf["the three platforms, :8080<br/>keepalive 32, 15 s read timeout"]
+    map["the map: the handshake's name<br/>to its machine and port"]
+    arena["that arena, plaintext<br/>a name not in the map: closed"]
     dev --> p443
-    p80 --> acme
-    p80 --> refuse
+    dev --> p9001
     p443 --> lobby
     p443 --> auth
     p443 --> v1
@@ -100,7 +103,9 @@ flowchart LR
     lobby --> gw
     auth --> pf
     v1 --> pf
-    gw -->|"PLATFORM_URL"| pf
+    gw -->|"PLATFORM_URL, its own machine's"| pf
+    p9001 --> map
+    map --> arena
 ```
 
 ## The release

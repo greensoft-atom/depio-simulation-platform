@@ -156,6 +156,7 @@ namespace Backend.Client.Core
         {
             if (State != LobbyState.Ready) throw new InvalidOperationException("the lobby is not ready");
             QueueState = "none";
+            _queueJoinId = 0;                                   // a join's answer still to come is older (T-61)
             Send("queue.leave", null);
         }
 
@@ -310,6 +311,9 @@ namespace Backend.Client.Core
                 // The leader queued the party, or someone took it out. Matched wins, as for the reply:
                 // a match is the member's own from then on, whatever the queue says after.
                 if (QueueState != "matched") QueueState = d["state"].AsString ?? "none";
+                // A join's answer still to come is older: the platform tells a party's members before it answers
+                // the leader, so a member's leave can come first (T-61).
+                _queueJoinId = 0;
                 Ready = null;                                   // the match asked about was called off, or found
                 OnPush?.Invoke(t, d);
             }
