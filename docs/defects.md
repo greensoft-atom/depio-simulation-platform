@@ -1224,6 +1224,12 @@ deploy/README had not followed D-80, and left ports unsaid:
 **Fixed:** the catalogue corrected, and the arenas' numbering in operations/05 §3 (9112 skipped,
 as a worker's on C).
 
+**DOC-28, found 2026-10-19, FIXED the same day** (plan item 89). The scaling guide's §2.4 said
+`GET /admin/arenas` lists a new arena as `arena-a3`. It lists an arena by its unit's instance
+name, `a3`: the unit passes `%i` as the name, and the admin API answers that name
+(`AdminServer`). `check-ports-el9.sh` reads `a1` there. **Fixed:** in the same sentence, rewritten
+for D-81.
+
 ---
 
 ## 8. What this changes

@@ -122,6 +122,11 @@ image, which is RHEL 9's own userspace (plan item 80).
   IPv6, so a match on `127.0.0.1:8080` finds nothing, and an arena's `0.0.0.0` is `*:9001`, both
   families, reachable over IPv6 too. The store's unit sets `preferIPv4Stack` and shows plain
   IPv4 (2026-10-19, `check-ports-el9.sh`).
+- **A privileged container's systemd shares the host root's inotify watches**, and on the
+  development VM VS Code's file watchers hold nearly all 65 536: the container's `dbus-broker`
+  failed with `fatal error: -28` (ENOSPC), so firewalld never started, after a release rebuild
+  gave VS Code more files to watch. Count them per process in `/proc/<pid>/fdinfo`. The owner
+  allowed `sysctl -w fs.inotify.max_user_watches=524288`, until the next reboot (2026-10-19).
 - **`firewall-cmd` refuses `--add-service` and `--add-port` in one command**, and applies none
   of it; several of one option are fine. The install guide's firewall step did that, and no one
   had run it (O-42, 2026-10-19).

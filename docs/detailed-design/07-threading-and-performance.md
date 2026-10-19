@@ -360,6 +360,9 @@ Budget heap for it rather than discovering it under load.
 Under G1 the reason was also to keep heaps small enough to collect quickly;
 ZGC removes that half of the argument, but not the half that matters — one
 fatal error should take down one arena's rooms, not all of them (NFR-8).
+Since [D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)
+a machine runs one arena, as it has one public port for match traffic, and gives that up
+within a machine.
 
 `platform` and `worker` (4 GB): the same collector flags, plus virtual threads
 for request handling. `platform` is not latency-critical in the tick sense, but

@@ -2196,3 +2196,53 @@ machine's MySQL.
 - **Port 3314** must be free, or another named by `MYSQL_PORT`; and four more for a run by hand.
 - **The development VM's own JDK, Maven and `~/.m2`** are no longer how this repository is built,
   even there: one way, the one a clone has.
+
+### D-81 — Three public ports a machine, so one arena on each
+
+**Decided 2026-10-19** by the owner (plan item 89, constraint
+[C-9](../requirements/01-scope-and-nfrs.md#3-constraints)): a machine may have few public ports,
+80, 443 and one more, 9001; private ports are not limited. Asked how players are then to reach
+the arenas, the owner chose one arena a machine over a TCP proxy in front of several.
+
+**Decision.**
+- **Each machine runs one arena**, `backend-arena@a1` on A, `@b1` on B, `@c1` on C, on 9001,
+  with its metrics on `127.0.0.1:9110`. Its rooms carry the machine's match traffic:
+  `MAX_ROOMS=12` in the example, 12 rooms of 150 being 1 800 players. That is short of the
+  lower of the two measured limits of one arena's network threads, 2 100
+  ([operations/04 §2.5](../operations/04-scaling-and-performance.md#25-the-limit-of-one-arena-process)),
+  as 04 §2.4 says to stay. Raise it towards 14 once the production machines measure it (Q-3).
+- **Players reach three ports a machine**: 443 for the API and the lobby, 80 for the
+  certificate's challenge, 9001 for the arena. Match traffic still goes straight to the arena
+  ([D-5](#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)).
+- **Not taken: nginx's `stream` module in front of several arenas.** A TCP proxy can route only
+  by what the TLS handshake names (`ssl_preread`), since the platform hands each player one
+  arena and a made match's players must all reach it. That needs:
+  - TLS on match traffic, so the certificate;
+  - the platform naming the arena in its grant, and the client sending that name;
+  - nginx rebuilt with the module: the release's has none (`nginx -V`).
+
+  Every match byte would also take one more hop, at a cost not measured. It stays possible
+  later, beside this decision.
+
+**Why.** It is the one way that works with the code as it is, with TLS or without: nothing to
+build, nothing in the client, D-5 kept.
+
+**Cost.**
+- **A crash takes its machine's matches**, not a third of them
+  ([NFR-8](../requirements/01-scope-and-nfrs.md#4-non-functional-requirements)). The other two
+  machines go on, and the players return to the lobby.
+- **A restart of the arena takes new matches off its machine** while it drains, for up to
+  eleven minutes ([01-arena §8.6](../detailed-design/01-arena.md)).
+- **One arena is the machine's match capacity**: 1 800 players in battle as set, and 2 100 to
+  2 300 at most, where its network threads fill, whatever its cores. On three machines that is
+  5 400 as set and 6 300 to 6 900 at most; after one is lost, 3 600 and 4 200 to 4 600.
+  - The launch's 10 000 fits while no more than about half of them are in battle at once
+    (5 400; [Q-2](../requirements/01-scope-and-nfrs.md#7-open-questions), not known).
+  - NFR-3's 50 000 and NFR-5's 30 000 after a machine's loss, both unproven already
+    ([architecture/01 §3](01-system-topology.md#3-capacity-model)), cannot be reached in battle
+    this way. Each needs one of: the arena's network threads raised (a code change, neither
+    made nor measured), the `stream` option above, or more machines, each with its own 9001.
+- **The arena's cores are more than it can use**: 12 full rooms cost about 2.9 cores (0.24 a
+  room), against the 8 to 12 the topology gives each machine's arenas.
+- **12 rooms in one arena were not run full**: the 2 100 is the load run's measure of the
+  network threads (2026-09-30), and the largest clean run is 1 200 bots.

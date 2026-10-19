@@ -224,9 +224,10 @@ Every unit `active`, and `201`. Each unit's log: `journalctl -u backend-platform
 
 ## 12. Open the firewall
 
-Players reach nginx (443, and 80 for the certificate's challenge) and the arena
-(`ARENA_PORT`, 9001); nothing else is reachable from outside. Each further arena on the
-machine opens its own port ([scaling §2.4](04-scaling-and-performance.md#24-adding-capacity)).
+Players reach nginx (443, and 80 for the certificate's challenge) and the machine's one arena
+(`ARENA_PORT`, 9001); nothing else is reachable from outside. Three public ports a machine is the
+owner's limit, and the reason a machine runs one arena
+([D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)).
 
 <!-- firewall one machine -->
 ```console
@@ -261,7 +262,7 @@ The same steps on each, with these differences (01 §1, architecture/01 §2):
 |---|---|---|---|
 | MySQL | primary (§6, with TLS: 01 §9) | none | replica ([01 §9, the replica](01-deploy.md#the-replica-on-c-plan-item-13-d-35)) |
 | Stores | `session` primary | `session` replica, `events` primary | `events` replica (01 §3) |
-| nginx, platform, gateway, arenas | yes | yes | yes |
+| nginx, platform, gateway, one arena (`a1`, `b1`, `c1`: D-81) | yes | yes | yes |
 | worker | | | yes |
 | Backups and their proof | | | yes (01 §10) |
 

@@ -27,7 +27,7 @@ No secrets go in them: the passwords arrive through `LoadCredential=`
 
 | File | Installed as | Read by | Notable values |
 |---|---|---|---|
-| `arena.env.example` | `/etc/backend/arena-<name>.env`, one per arena instance | `backend-arena@<name>` | `ARENA_PORT=9001` (each instance its own), `MAP_SIZE=5700`, `MAX_PLAYERS=150`, `SHAPES=1500`, `MAX_ROOMS=4`, `MATCH_SECONDS=0` (continuous), `ARENA_BIND=0.0.0.0` (clients dial the arena directly, D-5), `ADVERTISE_HOST=a.example.com`, `STORE_HOST=10.0.0.1`, `STORE_PORT=6379`, `BACKEND_METRICS_ADDR=127.0.0.1:9110` (each instance its own). Commented: `BACKEND_STORE_ADDRESSES=10.0.0.1:6379,10.0.0.2:6379`, `BACKEND_EVENTS_STORE=10.0.0.2:6380,10.0.0.3:6380` |
+| `arena.env.example` | `/etc/backend/arena-<name>.env`, one per arena instance, one instance a machine (D-81) | `backend-arena@<name>` | `ARENA_PORT=9001`, `MAP_SIZE=5700`, `MAX_PLAYERS=150`, `SHAPES=1500`, `MAX_ROOMS=12` (the machine's match traffic, short of the network threads' limit), `MATCH_SECONDS=0` (continuous), `ARENA_BIND=0.0.0.0` (clients dial the arena directly, D-5), `ADVERTISE_HOST=a.example.com`, `STORE_HOST=10.0.0.1`, `STORE_PORT=6379`, `BACKEND_METRICS_ADDR=127.0.0.1:9110` (each instance its own). Commented: `BACKEND_STORE_ADDRESSES=10.0.0.1:6379,10.0.0.2:6379`, `BACKEND_EVENTS_STORE=10.0.0.2:6380,10.0.0.3:6380` |
 | `gateway.env.example` | `/etc/backend/gateway.env` | `backend-gateway` | `GATEWAY_BIND=127.0.0.1`, `GATEWAY_PORT=8090` (nginx's upstream), `PLATFORM_URL=http://127.0.0.1:8080`, store `10.0.0.1:6379`, `BACKEND_METRICS_ADDR=127.0.0.1:9103`, `BACKEND_EDGE_CERTIFICATE=/etc/backend/tls/fullchain.pem` |
 | `platform.env.example` | `/etc/backend/platform.env` | `backend-platform` | `PLATFORM_BIND=127.0.0.1`, `PLATFORM_PORT=8080`, store `10.0.0.1:6379`, `BACKEND_DB_URL=jdbc:mysql://10.0.0.1:3306/backend?sslMode=VERIFY_IDENTITY&trustCertificateKeyStoreUrl=file:/etc/backend/tls/mysql-ca.p12&trustCertificateKeyStoreType=PKCS12`, `BACKEND_DB_USER=backend`, `BACKEND_METRICS_ADDR=127.0.0.1:9101`. Commented: `BACKEND_DB_POOL_SIZE=16`, `BACKEND_ADMIN_ADDR=127.0.0.1:9120`, `BACKEND_PAYMENT_PROVIDER=simulated` |
 | `worker.env.example` | `/etc/backend/worker.env` | every `backend-worker@` on the machine, and `backend-leaderboard-rebuild` | store, `BACKEND_DB_URL` and `BACKEND_DB_USER` as the platform's. Commented: `BACKEND_STORE_ADDRESSES`, `BACKEND_EVENTS_STORE`, `BACKEND_DB_POOL_SIZE=8` |
@@ -174,7 +174,7 @@ means the process refuses to start and systemd does not restart it.
 | `BACKEND_EVENTS_STORE` | arena, worker | none: results share the `session` store | The `events` store, `host:port` or with its replica `host:port,host:port` | commented in `arena.env.example`, `worker.env.example` |
 | `BACKEND_EVENTS_STORE_PASSWORD_FILE` | arena, worker | none: then `BACKEND_EVENTS_STORE_PASSWORD`, then the session store's password | The `events` store's password, where it differs | not set; a drop-in if needed ([01 §2](../../docs/operations/01-deploy.md#secrets)) |
 | `BACKEND_EVENTS_STORE_PASSWORD` | arena, worker | none | The password itself | not set |
-| `BACKEND_METRICS_ADDR` | arena, gateway, platform, worker | none: no metrics server | `host:port` for `GET /metrics`; loopback by convention, not enforced; a port in use means exit 2 | platform `127.0.0.1:9101`, worker `9102`/`9112`, gateway `9103`, arena `9110` onwards |
+| `BACKEND_METRICS_ADDR` | arena, gateway, platform, worker | none: no metrics server | `host:port` for `GET /metrics`; loopback by convention, not enforced; a port in use means exit 2 | platform `127.0.0.1:9101`, worker `9102`/`9112`, gateway `9103`, arena `9110` |
 | `BACKEND_ADMIN_ADDR` | platform | none: no admin API | The admin API's `host:port`; not loopback means exit 2 | commented in `platform.env.example`: `127.0.0.1:9120` |
 | `BACKEND_ADMIN_TOKEN_FILE` | platform | none; required once `BACKEND_ADMIN_ADDR` is set, else exit 2 | The admin API's bearer secret's file | `platform-admin.conf.example`: `%d/admin-token` |
 | `BACKEND_ADMIN_TOKEN` | platform | none | The secret itself | not set |
@@ -195,7 +195,7 @@ file into an empty argument, and an empty number means exit 2.
 | `MAP_SIZE` | arena | 5700 | 5700 |
 | `MAX_PLAYERS` | arena | 150 | 150 |
 | `SHAPES` | arena | 1500 | 1500 |
-| `MAX_ROOMS` | arena | 4 | 4 |
+| `MAX_ROOMS` | arena | 4 | 12 (D-81) |
 | `MATCH_SECONDS` | arena | 0, continuous | 0 |
 | `ARENA_BIND` | arena; `install-certificate.sh` | `0.0.0.0` | `0.0.0.0` |
 | `ADVERTISE_HOST` | arena; `install-certificate.sh` | `127.0.0.1` | `a.example.com` |
@@ -275,13 +275,13 @@ changes: [operations/05](../../docs/operations/05-ports-and-firewall.md).
 | Port | Listener | Bound to | Where |
 |---|---|---|---|
 | 80, 443 | nginx | every address, IPv4 and IPv6 | A, B, C |
-| 9001, 9002, 9003: one per arena, by its number on the machine ([05 §3](../../docs/operations/05-ports-and-firewall.md#3-the-arenas-ports)) | arena, match traffic (TLS once a certificate is installed) | `0.0.0.0`, which the native transport takes as every address, IPv4 and IPv6 | A (2), B (3), C (2) |
+| 9001: the machine's one arena (D-81, [05 §3](../../docs/operations/05-ports-and-firewall.md#3-the-arenas-ports)) | arena, match traffic (TLS once a certificate is installed) | `0.0.0.0`, which the native transport takes as every address, IPv4 and IPv6 | A, B, C |
 | 8090 | gateway (`/lobby` behind nginx) | `127.0.0.1` | A, B, C |
 | 8080 | platform (`/v1/` behind nginx; the gateway calls it too) | `127.0.0.1` | A, B, C |
 | 9120 | platform's admin API, when named | loopback, enforced | A, B, C |
 | 9101 | platform's metrics | `127.0.0.1` | A, B, C |
 | 9103 | gateway's metrics | `127.0.0.1` | A, B, C |
-| 9110, 9111, 9113 | arenas' metrics, one per arena (9112 is skipped: a worker's on C) | `127.0.0.1` | A, B, C |
+| 9110 | the arena's metrics | `127.0.0.1` | A, B, C |
 | 9102, 9112 | workers' metrics (`c1`, `c2`) | `127.0.0.1` | C |
 | 6379 | j-redis `session`: primary on A, replica on B | `127.0.0.1` and the machine's private address ([01 §3](../../docs/operations/01-deploy.md#3-j-redis-built-and-tested)) | A, B |
 | 6380 | j-redis `events`: primary on B, replica on C | the same | B, C |

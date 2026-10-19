@@ -17,7 +17,7 @@ the older ones are cited with their date and source.
 
 | Part | Holds state | Grows with | Add capacity by | Limit as built | Cost, measured |
 |---|---|---|---|---|---|
-| `arena` | its rooms (a match lives in one process) | players in battle | rooms per arena, arenas per machine (one port each), machines | about **2 300 players a process**: its two network threads (§2.5) | **0.24 cores a full room** of 150 (0.13 network, 0.10 simulation), level-1 rooms; more as rooms mature (2026-10-06) |
+| `arena` | its rooms (a match lives in one process) | players in battle | rooms per arena, then machines: one arena a machine, on its one public match port ([D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)) | about **2 300 players a process**: its two network threads (§2.5) | **0.24 cores a full room** of 150 (0.13 network, 0.10 simulation), level-1 rooms; more as rooms mature (2026-10-06) |
 | `gateway` | its lobby connections | players connected | one per machine, behind that machine's nginx | ~17 000 connections a gateway by design; **not measured** | 14 MB live heap in a 300-bot soak (2026-10-01) |
 | `platform` | none (the store and MySQL hold it) | logins, API calls | one per machine, behind nginx | password hashing, 8 at a time: **~57 logins a second** a process | 62–88 ms a hash |
 | `worker` | none (a consumer group) | match results a second | `backend-worker@<id>` instances | MySQL's commit | **10–16 results a second** a worker (2026-09-30) |
@@ -60,16 +60,16 @@ A TCP connection is told apart by both ends' addresses and ports, so one listeni
 as many connections as the process can serve: the limits are CPU, the network and file
 descriptors (the unit's `LimitNOFILE=65536`). Each arena instance has its own port
 (`ARENA_PORT`, 9001 in the example) and its own metrics port, and advertises
-`ADVERTISE_HOST:ARENA_PORT`; a machine runs several. The design has seven: `a1`, `a2` on A,
-`b1` to `b3` on B, `c1`, `c2` on C, each a `backend-arena@<name>` unit with its
-`/etc/backend/arena-<name>.env`.
+`ADVERTISE_HOST:ARENA_PORT`. A machine runs one, as it has one public port for match traffic
+([D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)): `a1` on A, `b1` on B, `c1` on C, each a `backend-arena@<name>` unit with its
+`/etc/backend/arena-<name>.env`. The design had seven, two or three a machine.
 
 ### 2.3 Settings that size an arena
 
 | Setting (`arena-<name>.env`) | Example | What it does |
 |---|---|---|
 | `ARENA_PORT` | 9001 | the port clients dial; each instance its own |
-| `MAX_ROOMS` | 4 | rooms in this process, public and made together; each room a thread |
+| `MAX_ROOMS` | 12 | rooms in this process, public and made together; each room a thread. 12 of 150 are 1 800 players, short of the network threads' lower measured limit, 2 100 (§2.5): the machine's one arena carries its match traffic (D-81) |
 | `MAX_PLAYERS` | 150 | players a public room |
 | `MAP_SIZE`, `SHAPES` | 5 700, 1 500 | the room's world; the density the bandwidth budget assumes |
 | `ADVERTISE_HOST` | `a.example.com` | the machine's public name, which a TLS certificate names |
@@ -82,17 +82,18 @@ descriptors (the unit's `LimitNOFILE=65536`). Each arena instance has its own po
 [01 §5](01-deploy.md#5-rolling-deployment)). Each full room costs about 0.24 cores
 (§4.1); stop well short of the network threads' limit (§2.5).
 
-**Another arena on a machine**, for example `a3` beside `a1` and `a2`:
+**Another arena on a machine** needs a public port of its own, which the three a machine has
+(C-9) do not leave: D-81 runs one. If the owner allows one more port, `a2` beside `a1`:
 
 ```console
-cp /etc/backend/arena-a1.env /etc/backend/arena-a3.env
-sed -i -e 's/^ARENA_PORT=.*/ARENA_PORT=9003/' \
-       -e 's/^BACKEND_METRICS_ADDR=.*/BACKEND_METRICS_ADDR=127.0.0.1:9113/' /etc/backend/arena-a3.env
-systemctl enable --now backend-arena@a3
-firewall-cmd --permanent --add-port=9003/tcp && firewall-cmd --reload
+cp /etc/backend/arena-a1.env /etc/backend/arena-a2.env
+sed -i -e 's/^ARENA_PORT=.*/ARENA_PORT=9002/' \
+       -e 's/^BACKEND_METRICS_ADDR=.*/BACKEND_METRICS_ADDR=127.0.0.1:9111/' /etc/backend/arena-a2.env
+systemctl enable --now backend-arena@a2
+firewall-cmd --permanent --add-port=9002/tcp && firewall-cmd --reload
 ```
 
-Check that it is live: `GET /admin/arenas` lists `arena-a3` with port 9003 within a few
+Check that it is live: `GET /admin/arenas` lists `a2` with port 9002 within a few
 seconds ([api/03](../api/03-admin-api.md)), and the platform starts sending players to it at
 once. Pick a metrics port no other process on the machine uses: the examples give the platform
 9101, the gateway 9103, the workers 9102 and 9112, the arenas 9110 onwards, numbered by the
@@ -102,12 +103,13 @@ instance, the new one included. If the arenas serve TLS, the new one takes the m
 keystore as the others do ([01 §8](01-deploy.md#8-tls-for-match-traffic)).
 
 **Another machine.** Install it as the [install guide](03-install-guide.md) does, with the
-store and MySQL addresses of the existing ones (its "Three machines" section), its arenas
-named for it (`d1`, `d2`: **an arena's name must be unique across the fleet**, or two
-overwrite each other's directory entry), and `ADVERTISE_HOST` its own public name. Its arenas
-register in the same store and are used at once; no other machine changes.
+store and MySQL addresses of the existing ones (its "Three machines" section), its arena
+named for it (`d1`: **an arena's name must be unique across the fleet**, or two
+overwrite each other's directory entry), and `ADVERTISE_HOST` its own public name. Its arena
+registers in the same store and is used at once; no other machine changes. Under D-81 this is
+how match capacity grows past one arena's.
 
-**Taking an arena out.** `systemctl stop backend-arena@a3` drains it: no new player or match
+**Taking an arena out.** `systemctl stop backend-arena@a2` drains it: no new player or match
 is sent there, the public rooms stop and pay what their players are owed, made matches are
 allowed to finish, up to 11 minutes ([01-arena §8.6](../detailed-design/01-arena.md)). Its
 entry lapses from the directory; then close its port.
@@ -118,8 +120,8 @@ An arena has two network threads (Netty's event loops, fixed in the code) for ev
 connection's TLS, framing and writes. On 2026-10-06 they used **0.52 cores for 600 players**,
 three quarters of it the kernel's; at that rate the two are full near **2 300 players**,
 whatever `MAX_ROOMS` says. The 2026-09-30 load run put it near 2 100. So beyond about 15 rooms
-of 150, add arenas, not rooms. Raising the thread count is a code change, not made or
-measured.
+of 150, add arenas, not rooms; under D-81 that means machines, since each arena needs a public
+port. Raising the thread count is a code change, not made or measured.
 
 ### 2.6 Checked 2026-10-06: two arenas, two ports
 

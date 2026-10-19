@@ -331,8 +331,8 @@ machine:
   rebuilt ([§3](#3-per-component-procedures)), or MySQL brought back from the
   backup machine's copies, or from the copy off the site if C went too
   ([a last-resort restore](#a-last-resort-restore-with-no-source-left)).
-- **Machine B** — the `events` primary, plus three arenas. Promote `events`;
-  the arenas' matches are lost and players return to the lobby.
+- **Machine B** — the `events` primary, plus its arena. Promote `events`;
+  the arena's matches are lost and players return to the lobby.
 - **Machine C** — replicas and workers. No promotion needed. Whatever its
   workers had claimed and not acknowledged stays pending on the stream, and the
   surviving workers claim it once it has been idle a minute

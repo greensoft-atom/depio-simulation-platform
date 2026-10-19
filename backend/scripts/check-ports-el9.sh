@@ -53,6 +53,15 @@ for _ in $(seq 60); do
 done
 systemctl enable --now firewalld > /dev/null 2>&1
 for _ in $(seq 60); do [ "$(firewall-cmd --state 2> /dev/null)" = running ] && break; sleep 1; done
+if [ "$(firewall-cmd --state 2> /dev/null)" != running ]; then
+    # Without it nothing below can judge a firewall. Seen once: the host's inotify watches used up
+    # (fs.inotify.max_user_watches), which the container's root shares, so the system bus failed.
+    echo "--- firewalld did not start, so the check cannot judge the firewall:"
+    systemctl --failed --no-legend | sed 's/^/      /'
+    journalctl -b --no-pager -u dbus-broker | grep -m1 'fatal error' | sed 's/^/      /'
+    echo "--- 1 failed"
+    exit 1
+fi
 echo "--- $(cat /etc/rocky-release), $(rpm -q firewalld); firewalld $(firewall-cmd --state)"
 echo "--- as RHEL 9 has it: default zone $(firewall-cmd --get-default-zone), its services: $(firewall-cmd --zone=public --list-services)"
 echo "--- the local ports outgoing connections take: $(cat /proc/sys/net/ipv4/ip_local_port_range)"
@@ -127,14 +136,12 @@ J=("$R/runtime/bin/java" -Xms256m -Xmx512m --add-opens java.base/java.nio=ALL-UN
 nohup "${J[@]}" -Djava.net.preferIPv4Stack=true -jar "$R/jredis/lib/j-redis-server.jar" \
     /etc/backend/store-session.conf > "$L/store.log" 2>&1 &
 
-# The settings, from the shipped examples as an operator fills them: the admin API named; a2 as §3 says;
-# C's first worker.
+# The settings, from the shipped examples as an operator fills them: the admin API named; the
+# machine's one arena (D-81); C's first worker.
 cp "$R/env/platform.env.example" /etc/backend/platform.env
 sed -i 's/^#BACKEND_ADMIN_ADDR=/BACKEND_ADMIN_ADDR=/' /etc/backend/platform.env
 cp "$R/env/gateway.env.example" /etc/backend/gateway.env
 cp "$R/env/arena.env.example" /etc/backend/arena-a1.env
-sed -e 's/^ARENA_PORT=.*/ARENA_PORT=9002/' -e 's/^BACKEND_METRICS_ADDR=.*/BACKEND_METRICS_ADDR=127.0.0.1:9111/' \
-    "$R/env/arena.env.example" > /etc/backend/arena-a2.env
 cp "$R/env/worker.env.example" /etc/backend/worker.env
 cp "$R/env/worker-instance.env.example" /etc/backend/worker-c1.env
 envfile() {   # as systemd's EnvironmentFile= reads these: NAME=value lines, the value as it is
@@ -184,7 +191,6 @@ wait_for 127.0.0.1:8080 "$L/platform.log"
 (worker c1) > "$L/worker.log" 2>&1 &
 (gateway) > "$L/gateway.log" 2>&1 &
 (arena a1) > "$L/arena-a1.log" 2>&1 &
-(arena a2) > "$L/arena-a2.log" 2>&1 &
 
 # nginx, the release's, with the shipped configuration; a throwaway certificate for its name.
 cp "$R"/nginx-conf/*.conf /etc/backend/nginx/
@@ -195,20 +201,20 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=a.example.com" -add
 nohup ncat -lk 22 > /dev/null 2>&1 &                          # the stand-in for sshd
 nohup ip netns exec player ncat -lk 198.51.100.7 4444 > /dev/null 2>&1 &    # somewhere outside, for A to reach
 
-for a in 0.0.0.0:80 [::]:80 0.0.0.0:443 [::]:443 0.0.0.0:22 '*:9001' '*:9002' 10.0.0.1:3306 \
+for a in 0.0.0.0:80 [::]:80 0.0.0.0:443 [::]:443 0.0.0.0:22 '*:9001' 10.0.0.1:3306 \
          10.0.0.1:6379 127.0.0.1:6379 127.0.0.1:8080 127.0.0.1:8090 127.0.0.1:9101 127.0.0.1:9103 \
-         127.0.0.1:9110 127.0.0.1:9111 127.0.0.1:9120 127.0.0.1:9102 127.0.0.1:3309; do
+         127.0.0.1:9110 127.0.0.1:9120 127.0.0.1:9102 127.0.0.1:3309; do
     wait_for "$a" "$L/$(case $a in *:80|*:443) echo nginx ;; *:9001|*:9110) echo arena-a1 ;;
-        *:9002|*:9111) echo arena-a2 ;; *:3306) echo backend.cnf ;; *:3309) echo scratch-my.cnf ;;
+        *:3306) echo backend.cnf ;; *:3309) echo scratch-my.cnf ;;
         *:6379) echo store ;; *:8090|*:9103) echo gateway ;; *:9102) echo worker ;; *) echo platform ;; esac).log"
 done
 sleep 3
 
 echo "--- listening (ss -ltnp), the stand-in for sshd left out:"
 ss -Hltnp | awk '$4 !~ /:22$/ { split($6, p, "\""); printf "      %-22s %s\n", $4, p[2] }' | sort -t: -k2 -n
-for a in 0.0.0.0:80 [::]:80 0.0.0.0:443 [::]:443 '*:9001' '*:9002' 10.0.0.1:3306 10.0.0.1:6379 \
+for a in 0.0.0.0:80 [::]:80 0.0.0.0:443 [::]:443 '*:9001' 10.0.0.1:3306 10.0.0.1:6379 \
          127.0.0.1:6379 127.0.0.1:8080 127.0.0.1:8090 127.0.0.1:9101 127.0.0.1:9103 127.0.0.1:9110 \
-         127.0.0.1:9111 127.0.0.1:9120 127.0.0.1:9102 127.0.0.1:3309 0.0.0.0:22 [::]:22; do
+         127.0.0.1:9120 127.0.0.1:9102 127.0.0.1:3309 0.0.0.0:22 [::]:22; do
     echo "$a"
 done | sort > "$L/expected"
 seen > "$L/seen"
@@ -216,6 +222,8 @@ extra=$(comm -13 "$L/expected" "$L/seen" | tr '\n' ' ')
 missing=$(comm -23 "$L/expected" "$L/seen" | tr '\n' ' ')
 expect "listening beyond §2's" "" "$extra"
 expect "§2's not listening" "" "$missing"
+expect "the machine's one arena, its rooms as the example sets them" "maxRooms 12" \
+    "$(grep -o 'maxRooms [0-9]*' "$L/arena-a1.log" | head -1)"
 
 probe() {   # probe <namespace, or - for A itself> <host> <port>: open, or what bash's connect said
     local out rc
@@ -229,7 +237,7 @@ probe() {   # probe <namespace, or - for A itself> <host> <port>: open, or what 
 O=open; N="No route to host"; N6="Permission denied"; C="Connection refused"
 MATRIX=(
     "player 198.51.100.1 443|$O|$N|$O"   "player 198.51.100.1 80|$O|$N|$O"
-    "player 198.51.100.1 9001|$O|$N|$O"  "player 198.51.100.1 9002|$O|$N|$O"
+    "player 198.51.100.1 9001|$O|$N|$O"  "player 198.51.100.1 9002|$C|$N|$N"
     "player 198.51.100.1 22|$O|$O|$O"    "player 198.51.100.1 8080|$C|$N|$N"
     "player 198.51.100.1 9120|$C|$N|$N"  "player 10.0.0.1 6379|$O|$N|$N"
     "player 10.0.0.1 3306|$O|$N|$N"
@@ -273,7 +281,7 @@ echo "--- the zones:"
 firewall-cmd --get-active-zones | sed 's/^/      /'
 firewall-cmd --zone=backend --list-all | sed 's/^/      /'
 expect "the public zone's services" "cockpit dhcpv6-client http https ssh" "$(firewall-cmd --zone=public --list-services)"
-expect "the public zone's ports" "9001-9002/tcp" "$(firewall-cmd --zone=public --list-ports)"
+expect "the public zone's ports" "9001/tcp" "$(firewall-cmd --zone=public --list-ports)"
 
 echo "--- through the opened ports, the processes themselves answer:"
 code=$(ip netns exec player curl -sk --max-time 10 --resolve a.example.com:443:198.51.100.1 -o /dev/null -w '%{http_code}' \
@@ -291,7 +299,7 @@ greeting=$(ip netns exec b ncat -w 3 10.0.0.1 3306 < /dev/null 2> /dev/null | tr
 [ -n "$greeting" ] && ok "B to MySQL: its greeting, $greeting" || fail "B to MySQL: no greeting"
 T="Authorization: Bearer $(cat /etc/backend/credentials/admin-token)"
 arenas=$(curl -s --max-time 5 -H "$T" http://127.0.0.1:9120/admin/arenas)
-for a in a1:9001 a2:9002; do
+for a in a1:9001; do
     if grep -q "\"${a%%:*}\"" <<< "$arenas" && grep -q "${a##*:}" <<< "$arenas"; then
         ok "the admin API lists arena ${a%%:*} on ${a##*:}"
     else
@@ -314,8 +322,8 @@ for m in B C; do
     block "$m" > "$L/firewall-$m.sh"
     bash "$L/firewall-$m.sh" 2>&1 | sort | uniq -c | sed 's/^/      /'
     case $m in
-        B) want_src="10.0.0.1 10.0.0.3"; want_ports="6379/tcp 6380/tcp"; want_public="9001-9003/tcp" ;;
-        C) want_src="10.0.0.1 10.0.0.2"; want_ports="6380/tcp 3306/tcp"; want_public="9001-9002/tcp" ;;
+        B) want_src="10.0.0.1 10.0.0.3"; want_ports="6379/tcp 6380/tcp"; want_public="9001/tcp" ;;
+        C) want_src="10.0.0.1 10.0.0.2"; want_ports="6380/tcp 3306/tcp"; want_public="9001/tcp" ;;
     esac
     expect "$m: the backend zone's sources" "$(words $want_src)" "$(words $(firewall-cmd --zone=backend --list-sources))"
     expect "$m: its ports" "$(words $want_ports)" "$(words $(firewall-cmd --zone=backend --list-ports))"

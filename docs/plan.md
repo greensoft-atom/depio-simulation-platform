@@ -3234,6 +3234,48 @@ and in detail, written down.
 
 ---
 
+#### 89. ~~Three public ports a machine: one arena on each (D-81, C-9, DOC-28).~~ — **done 2026-10-19**
+
+**The owner, 2026-10-19:** a machine can have few public ports, 80, 443 and perhaps 9001; private
+ports are fine. They had planned nginx as the reverse proxy for everything, and feared raw TCP
+could not be proxied. Of the two ways laid out, they chose one arena a machine.
+
+- **Found** answering them:
+  - nginx proxies raw TCP only with its `stream` module, which the release's nginx is built
+    without (`nginx -V`);
+  - even with it, nginx could route a connection only by the names in a TLS handshake: the
+    platform hands each player one arena, and a made match's players must all reach it;
+  - the arena uses a client's address in its logs alone, so a proxy would have cost nothing
+    there.
+- **Design**:
+  - [D-81](architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)
+    and constraint C-9;
+  - NFR-8's row, Q-2's and Q-3's;
+  - topology §1 to §3, and 07 §5's note.
+- **Changed**:
+  - the arena's example: one a machine, `MAX_ROOMS=12`, 1 800 players, short of the network
+    threads' 2 100;
+  - the arena unit's comment;
+  - operations 01 to 05, the deploy README and diagrams/07.
+- **Checked**: `check-ports-el9.sh` on a release rebuilt with the new example: 118 checks, none
+  failing; 9001 alone open to players, 9002 refused; the arena started with 12 rooms. Two new
+  mutants caught: the public ports back to 9001-9002, and the rooms back to 4.
+- **On the way**: the check had run on a machine without firewalld once, because the VM's inotify
+  watches were used up by VS Code (working-here §4). It now stops, saying so, when firewalld does
+  not start. The owner allowed the limit raised until the next reboot.
+- **Found on the way**: DOC-28, the admin API's name for an arena in the scaling guide.
+- **Not measured**: one arena with 12 full rooms. The 2 100 is the load run's measure of the
+  network threads (2026-09-30), and the largest clean run is 1 200 bots.
+- **The owner's, open**: the capacity this leaves, 5 400 players in battle on three machines as
+  set. The launch's 10 000 fits only if no more than about half are in battle (Q-2). Past that,
+  in order of cost:
+  - more rooms, towards 14, once measured;
+  - more machines, each with its own 9001;
+  - the arena's network threads raised, a code change to measure;
+  - nginx's `stream` in front of several arenas, which needs the certificate.
+
+---
+
 ### Completed 2026-09-23
 
 1. **The public arena runs continuously.** Ten bots, ten open-match records,

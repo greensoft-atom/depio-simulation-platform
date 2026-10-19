@@ -21,7 +21,7 @@ distributed transactions, tracing — are permanent ([D-4](03-decision-log.md#d-
 
 | Process | Shape | Owns | Scales on | Instances |
 |---|---|---|---|---|
-| `arena` | CPU-bound, latency-critical, stateful | live rooms; never touches MySQL | players in battle | 7 (2–3 per machine) |
+| `arena` | CPU-bound, latency-critical, stateful | live rooms; never touches MySQL | players in battle | 3, one a machine: a machine has one public port for match traffic ([D-81](03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)); 7 in the design before |
 | `gateway` | IO-bound, many idle connections, thin | client lobby connections, auth handshake, routing | concurrent players | 3 (1 per machine) |
 | `platform` | request/response, DB-bound | all platform modules | lobby traffic | 3 (1 per machine) |
 | `worker` | throughput-bound, async | results, rewards, tournaments, analytics | event rate | 2, or as many as the result rate needs ([05 §1](../detailed-design/05-worker-and-events.md#1-why-a-stream-and-not-a-queue): about 10 results a second each on the development machine) |
@@ -53,7 +53,7 @@ one fatal error takes down one arena's rooms, not all of them (NFR-8).
 | gateway | 2c / 4G | 2c / 4G | 2c / 4G |
 | platform | 2c / 4G | 2c / 4G | 2c / 4G |
 | worker | — | — | ×2, 4c / 4G |
-| arena | ×2, 8c / 16G | ×3, 12c / 24G | ×2, 8c / 16G |
+| arena | ×1 (D-81), 8c / 16G | ×1 (D-81), 12c / 24G | ×1 (D-81), 8c / 16G |
 | MySQL | **primary** 6c / 20G | — | replica 3c / 20G |
 | j-redis `session` | **primary** 2c / 8G | replica 1c / 8G | — |
 | j-redis `events` | — | **primary** 2c / 8G | replica 1c / 8G |
@@ -66,7 +66,10 @@ evict a session, and so the two fail independently
 ([D-7](03-decision-log.md#d-7--two-j-redis-instances-not-one)).
 
 Allocations are ceilings, not steady-state usage: the arena's 28 allocated
-cores carry a ~25-core load at full occupancy.
+cores carry a ~25-core load at full occupancy. **Since D-81 each machine runs one
+arena**, set for 1 800 players in battle (12 rooms) and capped by its two network threads
+near 2 100 to 2 300, about 2.9 cores of rooms at full: the cores past those wait on the
+thread count being raised, a code change not made.
 
 **Open: the launch on two machines.** The launch target is 5 000–10 000
 players on two machines with replication (the scope decision of 2026-09-23,
@@ -149,7 +152,10 @@ input (T-54).
 
 At 50 000 that is ~80 arena cores and ~22 arena processes, against the 28 allocated and the 7
 named here. At the launch's 10 000 it is ~16 cores and 5 processes. Q-3 settles which on the
-production hardware.
+production hardware. **Under D-81's one arena a machine**, three machines carry 5 400 players
+in battle as set, 6 300 to 6 900 at most: the launch's 10 000 while no more than about half
+are in battle (Q-2), and not the 50 000 without the network threads raised, a proxy in front
+of several arenas, or more machines (D-81's cost).
 
 **Provision 10 GbE.** 1.1 Gbit/s sustained on a 1 Gbit uplink leaves nothing for
 bursts and would run at 85 % of line rate at peak.

@@ -56,8 +56,9 @@ These apply to every process type and are settled:
   `backend-arena@a1` on two machines overwrite each other's entry, and a stop
   of one withdraws the other's. The worker's is its consumer in the result
   stream's group (`worker-<id>`). Prefixing the machine's letter keeps them
-  apart: arenas `a1`, `a2` on A, `b1` to `b3` on B, `c1`, `c2` on C, and
-  `backend-worker@c1`, `@c2`.
+  apart: the arenas `a1` on A, `b1` on B, `c1` on C (one a machine:
+  [D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)),
+  and `backend-worker@c1`, `@c2`.
 - **Versioned directories with a symlink**: `/opt/backend-<version>/` with
   `/opt/backend` pointing at the current one, so a rollback is a symlink swap.
   This is the layout j-redis already uses.

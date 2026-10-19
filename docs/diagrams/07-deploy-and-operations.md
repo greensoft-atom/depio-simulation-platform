@@ -27,7 +27,7 @@ flowchart LR
         Anginx["nginx 80, 443<br/>backend-nginx"]
         Agw["gateway 127.0.0.1:8090"]
         Apf["platform 127.0.0.1:8080"]
-        Aar["arenas a1, a2<br/>0.0.0.0, 9001 and up"]
+        Aar["arena a1<br/>0.0.0.0, 9001"]
         Amy["MySQL primary 3306<br/>backend-mysql"]
         Ases["j-redis session primary 6379<br/>backend-store@session"]
     end
@@ -35,7 +35,7 @@ flowchart LR
         Bnginx["nginx 80, 443<br/>backend-nginx"]
         Bgw["gateway 127.0.0.1:8090"]
         Bpf["platform 127.0.0.1:8080"]
-        Bar["arenas b1 to b3<br/>0.0.0.0, 9001 and up"]
+        Bar["arena b1<br/>0.0.0.0, 9001"]
         Bses["j-redis session replica 6379<br/>backend-store@session"]
         Bev["j-redis events primary 6380<br/>backend-store@events"]
     end
@@ -43,7 +43,7 @@ flowchart LR
         Cnginx["nginx 80, 443<br/>backend-nginx"]
         Cgw["gateway 127.0.0.1:8090"]
         Cpf["platform 127.0.0.1:8080"]
-        Car["arenas c1, c2<br/>0.0.0.0, 9001 and up"]
+        Car["arena c1<br/>0.0.0.0, 9001"]
         Cwk["workers c1, c2"]
         Cmy["MySQL replica 3306<br/>backend-mysql"]
         Cev["j-redis events replica 6380<br/>backend-store@events"]
