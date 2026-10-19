@@ -321,6 +321,9 @@ The ordering follows from the availability tiers in
    end, then stop. This is the slow step, and the reason `TimeoutStopSec` is
    generous: twelve minutes, for eleven of drain
    ([01 §8.6](../detailed-design/01-arena.md#86-draining-an-arena-designed-2026-09-29-plan-item-7)).
+   With one arena a machine
+   ([D-81](../architecture/03-decision-log.md#d-81--three-public-ports-a-machine-so-one-arena-on-each)),
+   while one drains its machine takes no new match, and the other two take them all.
 5. Stateful roles (MySQL, j-redis) only during a maintenance window, since
    promotion is manual
    ([D-8](../architecture/03-decision-log.md#d-8--failover-is-scripted-not-automatic)).
