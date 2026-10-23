@@ -552,17 +552,17 @@ an embedded j-redis. The live drill (`client/headless-drill.sh`, see the
 
 | Test class | Tests | What it covers |
 |---|---|---|
-| `net/PlatformHttpServerTest` | 80 | every route over HTTP against real MySQL and j-redis: answers, codes, the body limit, exact paths, addresses behind nginx, the store failing |
+| `net/PlatformHttpServerTest` | 83 | every route over HTTP against real MySQL and j-redis: answers, codes, the body limit, exact paths, addresses behind nginx and the forwarded ones the front's nginx is believed for (D-82), a grant's TLS name, the store failing |
 | `MatchmakerTest` | 43 | lining up every mode's sides, the confirm step's every path, races between matchers (T-16, T-32 to T-34), tournament calls, the lease, the metrics; a made match's grant and push carrying the arena's TLS name (D-82) |
+| `net/AdminServerTest` | 22 | every admin call, its audit and its refusals; starting only when named, with a secret, on loopback |
 | `AuthServiceTest` | 15 | register, login, sessions, bans and suspensions, the decoy hash, rehashing, the upgrade's checks |
-| `net/AdminServerTest` | 15 | every admin call, its audit and its refusals; starting only when named, with a secret, on loopback |
 | `PartiesTest` | 11 | invitations, accepting, leaving, kicking, versions (D-74), races |
 | `DisplayNameTest` | 10 | the name rules |
 | `PasswordHasherTest` | 8 | Argon2id, its stored form, the line's bounds |
+| `PlatformToArenaTest` | 7 | register, log in, ticket and play against a real arena; a seat promised with its ticket and dropped once counted (D-79), a burst spread over the arenas (T-59), a ticket used once, no session, no arena, an arena that stops announcing |
 | `ItemsTest` | 7 | `items.json`'s rules and the release's items |
 | `CatalogueTest` | 6 | `shop.json`'s rules and the release's offers |
 | `LoginThrottleTest` | 5 | both limits, IPv6 per /64, the store failing |
-| `PlatformToArenaTest` | 5 | register, log in, ticket and play against a real arena |
 | `PacksTest` | 4 | `packs.json`'s rules and the release's packs |
 | `AskThrottleTest`, `PassServiceTest`, `PaymentServiceTest` | 1 each | the hourly limit; the pass's items exist; the provider's setting |
 

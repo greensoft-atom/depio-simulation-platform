@@ -3446,6 +3446,24 @@ None was reachable in play (read again 2026-10-04); each is now as its documents
 
 ---
 
+#### 94. ~~The modules' README test lists, level and checked (DOC-29).~~ — **done 2026-10-23**
+
+- **Brought level**: the rows behind from before this session, in `arena` (`MatchFrameHandlerTest`,
+  `RoomRegistryTest`) and `platform` (`PlatformHttpServerTest`, `AdminServerTest`,
+  `PlatformToArenaTest`), each with what its count had missed; item 92 had done item 90's.
+- **Checked by the build**: `tools`' `ReadmeTestListsTest` compares each module's README with its
+  test sources, the class named and, where the row gives one, its number of tests. It first failed
+  on its own missing row; a count off by one, a row removed and a row naming no class were each
+  caught. The rule is in CLAUDE.md and working-here §1.
+- **Corrected**: item 92's first count of DOC-29 had called 21 of `persistence`'s classes, and some of
+  `platform`'s and `worker`'s, missing: their tables name several classes to a row.
+- **Checked**: the check alone, and `build-offline.sh` with every test, passed.
+- **The register**: nothing open. What is left waits on the owner: Q-58 (the `events` store past
+  20 000 players), Q-53 (where the backups' copy off the site goes), Q-52 (a real payment provider),
+  Q-1 to Q-4 (the production machines and players), and Q-54 and Q-55, put off.
+
+---
+
 ### Completed 2026-09-23
 
 1. **The public arena runs continuously.** Ten bots, ten open-match records,

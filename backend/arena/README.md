@@ -305,10 +305,10 @@ tick or the payload is measured with `tools/TickBenchmark`
 | `MatchResultPublisherTest` | 12 | The spool with the store down and back, a refusing disk, closing with and without the store, a result after close, the stream trimmed to a day, the replica wait, replay order |
 | `TrafficControlTest` | 12 | Stepping down and up through a simulated link: far but roomy links left alone, slow ones stepped down and kept fresh, probes backing off, the ceiling held |
 | `SnapshotRoundTripTest` | 10 | The real encoder's bytes decoded by `protocol`'s reader: every position agrees, at 15 frames in 25 ticks, across gaps, respawns and input wrap-around, in a busy room, with names and the own handle |
+| `MatchFrameHandlerTest` | 9 | The claim finished on the connection's thread, store failures, the rate limit's backlog and flood, the join deadline, the unwritable spell; a kick closing a connection it cannot be written to; a client of protocol 1 told to update; a player noted for the announcement once a place is sought (D-79) |
 | `ArenaTlsTest` | 8 | Keystores loaded and refused, certificate names covered, names given as bytes skipped |
-| `MatchFrameHandlerTest` | 8 | The claim finished on the connection's thread, store failures, the rate limit's backlog and flood, the join deadline, the unwritable spell |
 | `WavesTest` | 6 | Co-op's waves, the Guardian, enraging, the tenth wave |
-| `RoomRegistryTest` | 4 | Room placement, a match's room made by its first ticket, the announced capacity, room names |
+| `RoomRegistryTest` | 5 | Room placement, a match's room made by its first ticket, the announced capacity, room names; places reserved counted with those taken (D-79) |
 | `ArenaMainTest` | 4 | `BACKEND_ADVERTISE_PORT` and `BACKEND_ADVERTISE_TLS_NAME` read; a port that is not one, a name a handshake cannot carry, and a name beside the arena's own keystore, each refusing the start (D-82) |
 | `ClientViewTest` | 3 | A handle stands for one incarnation; `inputTicks`; when a motion rule is told |
 | `RoomTallyIntegrationTest` | 3 | Kills and assists from a real room reach the result |

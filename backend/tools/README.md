@@ -201,6 +201,7 @@ and freed between two rounds does not read as growth.
 | Test class | Tests | What it covers |
 |---|---|---|
 | `ApplyBenchmarkTest` | 1 | The benchmarks run only on a database named `*_test`, and never on a primary-and-replica URL |
+| `ReadmeTestListsTest` | 1 | Every module's README names each of its test classes, with the number of tests where its row gives one: a test added without its row fails the build (DOC-29) |
 | `SoakJudgeTest` | 13 | Each rule passing and failing at its edge; only the judged window counting; unreadable samples, failed scans and too few samples failing; the sampler's line format |
 
 ```bash

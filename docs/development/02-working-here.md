@@ -30,7 +30,9 @@ under `background/`.
      or the bandwidth could move.
   6. The documents current: the design, [plan.md](../plan.md), the
      [defect register](../defects.md) (every defect found gets an ID), the
-     [glossary](../glossary.md), and a question (Q-*n*) for what is the owner's.
+     [glossary](../glossary.md), a question (Q-*n*) for what is the owner's, and a
+     new test's row in its module's README, with its count: the build fails without
+     it (`tools`' `ReadmeTestListsTest`, DOC-29).
   7. Committed and pushed per unit, through the word check
      ([Naming](../README.md#naming)).
 - **After a fix, the whole test suite of each module it touched**, not the one

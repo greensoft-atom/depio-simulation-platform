@@ -4,8 +4,8 @@ Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
 re-ordered around it rather than the other way round. **Open as of 2026-10-23:**
-DOC-29 (the modules' test lists behind their code); O-37 is fixed by configuration, its choice
-past 20 000 players the owner's (Q-58). Every other entry is fixed,
+nothing; O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
+Every entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
 **Ids.** P protocol (§2), D data and the result pipeline (§3), M simulation
@@ -1290,20 +1290,24 @@ name, `a3`: the unit passes `%i` as the name, and the admin API answers that nam
 (`AdminServer`). `check-ports-el9.sh` reads `a1` there. **Fixed:** in the same sentence, rewritten
 for D-81.
 
-**DOC-29, found 2026-10-23, OPEN** (plan item 92). The modules' READMEs list their test classes
-with a count each, and the lists had fallen behind the code. Compared, class by class, with the
-`@Test` methods in the sources:
-- **Behind since item 90 (D-82, T-60), fixed in this item:** `ArenaAnnouncerTest` (1 for 2), `ConnectionRegistryTest`
-  (7 for 9), `FrameLimitTest` (5 for 6), `MatchmakerTest` (42 for 43), `ArenaDirectoryTest` (13 for
-  14), and no row for `ArenaMainTest` or for `common`'s `TrustedProxies` and its test.
-- **Behind from before, left as they are:** `MatchFrameHandlerTest` (8 for 9) and `RoomRegistryTest`
-  (4 for 5) in `arena`, `PlatformToArenaTest` (5 for 7) in `platform`; and classes with no row at
-  all: 21 of `persistence`'s, `platform`'s `PassServiceTest`, `AskThrottleTest`,
-  `PaymentServiceTest`, `AdminServerTest` and `PlatformHttpServerTest`, and `worker`'s
-  `EloRatingTest`, `AccountLevelsTest` and `BackupWatchTest`.
+**DOC-29, found 2026-10-23, FIXED the same day** (plan items 92 and 94). The modules' READMEs list
+their test classes, most with a count each, and the lists had fallen behind the code. Compared,
+class by class, with the `@Test` methods in the sources:
+- **Behind since item 90 (D-82, T-60), brought level in item 92:** `ArenaAnnouncerTest` (1 for 2),
+  `ConnectionRegistryTest` (7 for 9), `FrameLimitTest` (5 for 6), `MatchmakerTest` (42 for 43),
+  `ArenaDirectoryTest` (13 for 14), and no row for `ArenaMainTest` or for `common`'s
+  `TrustedProxies` and its test.
+- **Behind from before, brought level in item 94:** `MatchFrameHandlerTest` (8 for 9) and
+  `RoomRegistryTest` (4 for 5) in `arena`; `PlatformHttpServerTest` (80 for 83, 2 of them item
+  90's), `AdminServerTest` (15 for 22) and `PlatformToArenaTest` (5 for 7) in `platform`. Item 92's
+  first count also listed 21 of `persistence`'s classes and some of `platform`'s and `worker`'s
+  as missing: wrongly, those tables name several classes to a row, or a class with its package.
 
-A unit that adds a test updates its module's row; nothing checks it. To close it: the rows
-brought level, and a check that compares them, in the build or a script.
+A unit that added a test was to update its module's row, and nothing checked it. **Fixed:** the
+rows level, and `tools`' `ReadmeTestListsTest`, run by every build: each module's README names
+each of its test classes, with the number of tests where its row gives one. It first failed on
+its own missing row; a count off by one, a row removed and a row naming no class were each
+caught.
 
 ---
 
