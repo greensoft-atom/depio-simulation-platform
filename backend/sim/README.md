@@ -151,7 +151,7 @@ the same machine ([tools](../tools/README.md#tickbenchmark)).
 | `KillAttributionTest` | 9 | Credit by tag and generation when a shooter's slot has been reused |
 | `MazeGeneratorTest` | 4 | Determinism, 81 and 65 walls, every cell reachable, the golden vector `maze-2026.txt` the C# client reads |
 | `PhraseTableTest` | 4 | The shipped sixteen, `contains`, fixed JSON bytes and CRC-32, lists refused |
-| `ProgressionTest` | 14 | Experience over several levels, the top level, spending points and caps, dirty recomputation |
+| `ProgressionTest` | 15 | Experience over several levels, the top level, experience saturating rather than wrapping (M-6), spending points and caps, dirty recomputation |
 | `RecoveryTest` | 3 | The quiet half minute and what restarts it |
 | `RoomTest` | 8 | Slot reuse and id lists, the pool refusing to grow, the spatial hash |
 | `SetLevelTest` | 5 | The sandbox's level power |

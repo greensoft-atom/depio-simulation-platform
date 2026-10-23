@@ -3429,6 +3429,23 @@ configuration or environment.
 
 ---
 
+#### 93. ~~M-6's three latent leftovers.~~ — **done 2026-10-23**
+
+None was reachable in play (read again 2026-10-04); each is now as its documents say.
+- **Experience saturates** at 2 147 483 647 instead of wrapping negative (`TankStats.addXp`; 01 §4).
+  Test first: it saw the counter wrap to −2 147 482 659; the old line put back as a mutant, caught.
+- **A tank's `Entity.damage`**, written at spawn and read by nothing (contact with a tank reads its
+  body damage from its stats), is no longer written; the field says whose it is.
+- **`lifetimeTicks`**: documented as it is. A bullet's, a trap's and a missile's always count down,
+  since a barrel refuses a lifetime below 1; −1 is a drone's or a minion's, honoured by their own
+  update. Making the bullets' loop honour −1 would add a branch per bullet per tick for a case
+  that cannot arise.
+- **Checked**: `sim`'s 170 tests; `build-offline.sh` with every test, the arena's among them, passed. No tick measurement: nothing on the tick's path changed
+  (experience is added on a kill, the removed write was at spawn, the rest is comments).
+- **Next**: DOC-29.
+
+---
+
 ### Completed 2026-09-23
 
 1. **The public arena runs continuously.** Ten bots, ten open-match records,

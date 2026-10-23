@@ -347,6 +347,11 @@ whether the *pace* is right is a question for somebody who has played a match,
 and the table exists so that answering it is a data change rather than a
 release.
 
+**Experience stops at 2 147 483 647** rather than wrapping to a negative number
+(`TankStats.addXp`, M-6, 2026-10-23). Nothing in play comes near: level 45 is at
+23 000. A wrapped counter would have shown the client a negative experience and
+rebated a respawn a quarter of it; a kill was safe, paying at least its floor.
+
 Shapes are where nearly all early experience comes from, so the spread of them
 is the early pacing curve:
 

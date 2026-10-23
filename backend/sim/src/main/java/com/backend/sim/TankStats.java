@@ -143,7 +143,7 @@ public final class TankStats {
         if (amount <= 0) {
             return 0;
         }
-        xp += amount;
+        xp = (int) Math.min(Integer.MAX_VALUE, (long) xp + amount);   // saturates rather than wraps (M-6)
         int gained = 0;
         while (level < levels.maxLevel() && xp >= levels.xpRequired(level + 1)) {
             level++;

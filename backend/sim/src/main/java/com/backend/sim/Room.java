@@ -1235,7 +1235,6 @@ public final class Room {
         e.mass = TANK_MASS;
         e.maxHp = stats.value(Stat.MAX_HEALTH);
         e.hp = e.maxHp;
-        e.damage = stats.value(Stat.BODY_DAMAGE);
         // A random initial heading. Without it every tank starts at angle 0 and
         // accelerates identically, so the whole room moves in lockstep — which makes
         // collisions unrepresentative and leaves relative positions constant.

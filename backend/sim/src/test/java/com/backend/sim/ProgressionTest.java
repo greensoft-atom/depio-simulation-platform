@@ -52,6 +52,20 @@ class ProgressionTest {
     }
 
     @Test
+    @DisplayName("experience stops at the most an int holds rather than wrapping negative (M-6)")
+    void experienceSaturates() {
+        TankStats s = new TankStats();
+
+        s.addXp(Integer.MAX_VALUE - 10, LEVELS);
+        s.addXp(1_000, LEVELS);
+
+        assertThat(s.xp).isEqualTo(Integer.MAX_VALUE);
+        assertThat(s.level).isEqualTo(LEVELS.maxLevel());
+        s.addXp(Integer.MAX_VALUE, LEVELS);
+        assertThat(s.xp).isEqualTo(Integer.MAX_VALUE);
+    }
+
+    @Test
     @DisplayName("a point is spent only when there is one, and never past the cap")
     void spendingIsBounded() {
         TankStats s = new TankStats();

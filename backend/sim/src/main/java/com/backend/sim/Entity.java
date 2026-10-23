@@ -96,8 +96,14 @@ public final class Entity {
     public float viewShiftX, viewShiftY;
 
     // combat
+    /** {@code damage}: what a bullet, a shape or a unit does on contact; a tank's is its stats' (Room.bodyDamage). */
     public float hp, maxHp, damage;
-    public int lifetimeTicks;      // bullets only; -1 means no expiry
+    /**
+     * Ticks left. A bullet's, a trap's and a missile's always count down: a barrel refuses a lifetime
+     * below 1. -1 is a drone's or a minion's that lasts until used up (NO_EXPIRY), honoured by their own
+     * update; a bullet never carries it.
+     */
+    public int lifetimeTicks;
     public int reloadTicks;        // tanks only
     /**
      * Tanks only: the volley in progress (01 §4). The barrels still to fire, one bit each in
