@@ -76,6 +76,9 @@ public final class WorkerMain {
             log.warn("no BACKEND_DB_PASSWORD_FILE or BACKEND_DB_PASSWORD; using the development"
                     + " database password");
         }
+        long streamRetention = MatchResultStream.retentionFromEnvironment(System.getenv());
+        log.info("the result stream kept {} h ({}: the same on every arena and worker, D-83)",
+                streamRetention / 3_600_000, MatchResultStream.RETENTION_SETTING);
 
         JRedisClient store = StoreClients.open(storeHost, storePort, "worker");
         // The result queue is on the events instance (D-7); leaderboards stay on the session one.
@@ -86,7 +89,8 @@ public final class WorkerMain {
         MatchResultRepository results =
                 new MatchResultRepository(db.dataSource(),
                 AccountLevels::levelFor, EloRating::deltas, com.backend.persistence.DailyGoals::of);
-        MatchResultStream queue = new MatchResultStream(events, workerId, MatchResultStream.DEFAULT_CLAIM_IDLE_MILLIS);
+        MatchResultStream queue = new MatchResultStream(events, workerId, MatchResultStream.DEFAULT_CLAIM_IDLE_MILLIS,
+                streamRetention);
         // One for the process, so what it could not deliver is counted in one place (O-6).
         LobbyPush push = new LobbyPush(store);
         MatchResultConsumer consumer = new MatchResultConsumer(queue, results,

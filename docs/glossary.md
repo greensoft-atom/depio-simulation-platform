@@ -1,7 +1,7 @@
 # Glossary
 
 Every term this system uses, what it means, and where it appears. Updated
-2026-10-19.
+2026-10-23.
 
 This exists because the same idea kept acquiring second names, and two of them
 had genuinely collided — "session" meant both an authenticated lobby session
@@ -183,6 +183,7 @@ the wire.
 | **pending** (entry) | Delivered to a worker by the stream's group and not yet acknowledged. It stays with that worker until acknowledged or taken over. | `XPENDING`, `backend_worker_pending` |
 | **take over** | Claim for this worker an entry pending on another, once untouched for a minute: how a retired worker's entries are finished. | `XAUTOCLAIM`, `MatchResultStream.claimIdle` |
 | **result inbox** | The list `q:match-result`, kept after the move to a stream so that producers of the list release, and an operator putting dead entries back, still work. Drained into the stream by every worker (D-53). Called "the inbox" in 05 and the runbook, where nothing else is meant; not a player's **inbox**. | `MatchResultStream.drainInbox` |
+| **stream retention** | How long the result stream `s:match-result` keeps a result, read or not: `BACKEND_RESULT_RETENTION_HOURS`, 24 unless set, the same on every arena and worker. It sizes the `events` store and is the longest outage of the workers or MySQL without loss ([D-83](architecture/03-decision-log.md#d-83--the-result-streams-retention-is-a-setting-and-the-events-store-is-sized-by-a-table)). Not **day-N retention**, nor the 90 days MySQL keeps match history. | `MatchResultStream.retentionFromEnvironment` |
 
 ## 6. On the wire
 

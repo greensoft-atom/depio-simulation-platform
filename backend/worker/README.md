@@ -246,6 +246,7 @@ xp locked plus the xp gained.
 | `BACKEND_STORE_ADDRESSES` | the command line's host and port | The session store, primary and replica, `host:port,host:port` | `handoff/StoreClients` |
 | `BACKEND_STORE_PASSWORD_FILE`, `BACKEND_STORE_PASSWORD` | none | The store's password | `StoreClients` |
 | `BACKEND_EVENTS_STORE` | the session store | The events store, which holds the result stream | `StoreClients` |
+| `BACKEND_RESULT_RETENTION_HOURS` | 24 | Hours the result stream keeps an entry, 1 to 168, the same as every arena's (D-83): a worker adds what it moves from the inbox, and so trims | `MatchResultStream` |
 | `BACKEND_EVENTS_STORE_PASSWORD_FILE`, `BACKEND_EVENTS_STORE_PASSWORD` | the store's password | The events store's password | `StoreClients` |
 | `BACKEND_METRICS_ADDR` | unset: no metrics server | Where `/metrics` is served; 9102 and 9112 for the two workers on a machine | `common/MetricsServer` |
 

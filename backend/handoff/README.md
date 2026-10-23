@@ -265,15 +265,16 @@ Each test class runs an embedded j-redis; nothing outside the JVM is needed.
 | Class | Tests | What it covers |
 |---|---|---|
 | `LeaderboardStoreTest` | 17 | `GT` under redelivery and reordering; the day and week a result belongs to; expiry, and a late result that does not revive a board; a refused write reported; top, ties, around-me, missing names, renames, board names |
-| `ArenaDirectoryTest` | 13 | Announce, list, pick, full arenas, expired entries pruned, malformed entries ignored, withdraw, TLS. A made match's arena by free rooms; the promise held until announced; eight choosers racing for one last room never given it twice. A burst of 600 seats spread 300 and 300 over two arenas by their promises; a seat's promise one a player, dropped by the announcement that counts them, lapsing with the ticket (T-59, D-79) |
+| `ArenaDirectoryTest` | 14 | Announce, list, pick, full arenas, expired entries pruned, malformed entries ignored, withdraw, TLS. A made match's arena by free rooms; the promise held until announced; eight choosers racing for one last room never given it twice. A burst of 600 seats spread 300 and 300 over two arenas by their promises; a seat's promise one a player, dropped by the announcement that counts them, lapsing with the ticket (T-59, D-79); the TLS name an arena behind the front announces (D-82) |
 | `StoreClientsTest` | 13 | The password sent; none for a store that wants one refused, with one address or both, naming the right store's setting; the events store shared or its own; a malformed address refused, spaces around a comma read; following a promotion; an unreachable store not refused; `INFO replication` parsed and measured against a real replica |
 | `TicketStoreTest` | 9 | Issue and claim with every field; bonus and skin rules; single use, sixteen racing claims with one winner; unknown, expired and half-written tickets |
 | `SessionStoreTest` | 8 | Create and resolve; unknown, empty and corrupt; revoke and `revokeAll`; a token not as minted names no key (S-20); token uniqueness; spread lifetimes |
 | `LobbyPushTest` | 5 | The envelope round trip, anything else refused, routing by the part before `#`, the unheard count, a player not held |
 | `MatchModeTest` | 5 | Domination, tag, maze and sandbox as decided; which modes are made, and what a room holds |
+| `MatchResultStreamTest` | 4 | The retention read from `BACKEND_RESULT_RETENTION_HOURS` and refused outside 1 to 168; an arena's add and a worker's move from the inbox, each trimming by it (D-83) |
 | `TournamentGrantsTest` | 1 | A grant and the call kept for the ticket's life and read back |
 
-`MatchResultStream`, `MatchResultQueue` and `MatchResultCodec` are tested where they are used:
+`MatchResultStream`'s retention is tested here; it, `MatchResultQueue` and `MatchResultCodec` are tested where they are used:
 `worker`'s `MatchResultPipelineTest` and `LeaderboardRebuildTest`, and `arena`'s
 `MatchResultPublisherTest`. `SandboxHolds` and `MatchArrivals` are tested in `arena`'s
 `ArenaServerTest`, and the platform and worker tests.

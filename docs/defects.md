@@ -4,8 +4,9 @@ Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
 re-ordered around it rather than the other way round. **Open as of 2026-10-23:**
-M-6's three latent leftovers (L, none reachable in play) and O-37 (M, the
-`events` store's memory past ~19 000 players, plan item 84). Every other entry is fixed,
+M-6's three latent leftovers (L, none reachable in play) and DOC-29 (the modules' test lists
+behind their code); O-37 is fixed by configuration, its choice past 20 000 players the owner's
+(Q-58). Every other entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
 **Ids.** P protocol (§2), D data and the result pipeline (§3), M simulation
@@ -881,14 +882,23 @@ moment before the dump now fails if the comparison is put back.
   tests, four mutants caught; on the release, with j-redis killed, the listing and a notice
   answered 503 so. The `sessions_not_ended` path is as it was: the push and the kick need the
   store that has just failed.
-- **O-37 (M), found 2026-10-06, OPEN (scaling, plan item 84, from documented numbers). The
-  `events` store's `maxmemory` holds a day of results only to about 19 000 players.** The
+- **O-37 (M), found 2026-10-06, FIXED 2026-10-23 (plan item 92, D-83; the choice past 20 000
+  players is Q-58). The `events` store's `maxmemory` holds a day of results only to about 19 000
+  players.** The
   result stream keeps 24 hours (D-26), ~530 bytes a result: 1.6 GB at 10 000 players, 7.8 GB at
   the design's 50 000. The shipped store has an 8 GB heap and `maxmemory 3gb`, so past ~19 000
   players a day's results no longer fit; under `noeviction` the arenas' result writes are then
   refused, and they hold the results in their spools. Not reached at launch (5 000 to 10 000).
   Before it: a bigger heap and `maxmemory` for the `events` instance, or a shorter retention
   (operations/04 §3.4). Not measured: the arithmetic from D-26 and the shipped configuration.
+
+  **Fixed** at the owner's asking, by configuration: the hours kept are a setting,
+  `BACKEND_RESULT_RETENTION_HOURS` (1 to 168, default 24), read by the arenas and the workers,
+  which both add to the stream and so trim it, each logging the value at its start; and
+  operations/04 §3.4 gives the heap and `maxmemory` for a number of players and hours, with
+  whether they fit the 64 GB machines. Four tests, test first; five mutants caught. On 64 GB a day
+  of results fits to about 20 000 players; past it, more memory or fewer hours is the owner's
+  (Q-58).
 - **O-38 (H), found 2026-10-17, FIXED the same day (plan item 87, D-80). `build-offline.sh` with
   its tests failed on any machine but the development VM, in a way that read as a download
   error.** The database tests of `persistence`, `worker` and `platform` default to
@@ -1280,6 +1290,21 @@ as a worker's on C).
 name, `a3`: the unit passes `%i` as the name, and the admin API answers that name
 (`AdminServer`). `check-ports-el9.sh` reads `a1` there. **Fixed:** in the same sentence, rewritten
 for D-81.
+
+**DOC-29, found 2026-10-23, OPEN** (plan item 92). The modules' READMEs list their test classes
+with a count each, and the lists had fallen behind the code. Compared, class by class, with the
+`@Test` methods in the sources:
+- **Behind since item 90 (D-82, T-60), fixed in this item:** `ArenaAnnouncerTest` (1 for 2), `ConnectionRegistryTest`
+  (7 for 9), `FrameLimitTest` (5 for 6), `MatchmakerTest` (42 for 43), `ArenaDirectoryTest` (13 for
+  14), and no row for `ArenaMainTest` or for `common`'s `TrustedProxies` and its test.
+- **Behind from before, left as they are:** `MatchFrameHandlerTest` (8 for 9) and `RoomRegistryTest`
+  (4 for 5) in `arena`, `PlatformToArenaTest` (5 for 7) in `platform`; and classes with no row at
+  all: 21 of `persistence`'s, `platform`'s `PassServiceTest`, `AskThrottleTest`,
+  `PaymentServiceTest`, `AdminServerTest` and `PlatformHttpServerTest`, and `worker`'s
+  `EloRatingTest`, `AccountLevelsTest` and `BackupWatchTest`.
+
+A unit that adds a test updates its module's row; nothing checks it. To close it: the rows
+brought level, and a check that compares them, in the build or a script.
 
 ---
 

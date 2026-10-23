@@ -2366,3 +2366,43 @@ not at each arena. It replaces D-81, whose premise, three public ports on each m
   raised to 262 144.
 - **The platforms and gateways listen on the private network**, reachable from the other two
   machines alone, by the firewall.
+
+### D-83 — The result stream's retention is a setting, and the events store is sized by a table
+
+**Decided 2026-10-23** (plan item 92, [O-37](../defects.md#6-operations)), the owner asking for the
+store's size and the retention to be set in the configuration. The size already was: the heap,
+`STORE_HEAP`, and the cap, `maxmemory`, are the `events` instance's own files. The retention was a
+constant in the code, 24 hours ([Q-9](../requirements/01-scope-and-nfrs.md#7-open-questions)).
+
+**Decision.**
+- **`BACKEND_RESULT_RETENTION_HOURS`**, whole hours from 1 to 168, default 24: how long
+  `s:match-result` keeps an entry, read or not. Anything else refuses the start (exit 2).
+- **Every process that adds to the stream reads it**: the arenas, which add each result, and the
+  workers, which add what they move from the inbox list. Each add trims everything older, so the
+  shortest value set anywhere is the stream's: the same value goes in `arena-<name>.env` on every
+  machine and in `worker.env`. Each process logs the value at its start.
+- **It is also how long an outage can last without loss.** A result not applied within it, the
+  workers or MySQL down that long, is trimmed and lost, counted by
+  `backend_worker_trimmed_unapplied_total`. 24 hours outlasts a day's outage; 6 hours, six.
+- **The memory follows from the players and the hours**: about 160 MB of results a day for every
+  1 000 players (~530 bytes a result, D-26, not measured on the production load). `maxmemory`
+  should hold that with a fifth to spare, under the store's 80 % alert, and the heap be
+  `maxmemory` ÷ 0.4 for ZGC. The table is [operations/04 §3.4](../operations/04-scaling-and-performance.md#34-j-redis).
+
+**Why.**
+- **The owner asked** for both in the configuration.
+- **One number decides two things**, memory and outage tolerance, and only the operator knows the
+  site's players and how fast someone answers a page at night.
+
+**Cost.**
+- **On 64 GB machines a day of results does not fit at the design's 50 000 players**: a 25 GB heap
+  for the `events` store on B, and the same for its replica on C, where the arenas, the platform, the
+  gateway, two workers, MySQL's replica and the backups' scratch server already take about 46 GB, before the JVMs' own overhead.
+  Past about 20 000 players the choice is more memory on B and C, or fewer hours:
+  [Q-58](../requirements/01-scope-and-nfrs.md#7-open-questions).
+- **A wrong value on one process shortens the window for all**: the start's log line is the
+  check.
+
+**Not chosen.** Trimming only what every group has applied, so that memory follows the backlog and
+not the hours: a different design, which would need the oldest pending entry of both groups at
+every trim. Not needed while the table fits.

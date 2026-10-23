@@ -5,7 +5,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
+import com.backend.common.RefusedConfiguration;
 import com.jredis.client.JRedisClient;
 import com.jredis.client.JRedisServerException;
 import com.jredis.client.Streams;
@@ -37,8 +39,11 @@ public final class MatchResultStream {
     public static final String GROUP = "rewards";
     /** The one field an entry has: the envelope {@link MatchResultCodec} writes. */
     public static final String FIELD = "e";
-    /** How long the stream keeps an entry, read or not (Q-9, recommended). */
-    public static final long RETENTION_MILLIS = 24L * 60 * 60 * 1000;
+    /** How long the stream keeps an entry, read or not, unless set (Q-9, recommended). */
+    public static final long DEFAULT_RETENTION_MILLIS = 24L * 60 * 60 * 1000;
+    /** The setting, read by every process that adds to the stream: the shortest set anywhere wins (D-83). */
+    public static final String RETENTION_SETTING = "BACKEND_RESULT_RETENTION_HOURS";
+    private static final int MOST_RETENTION_HOURS = 168;
     /** How long an entry is pending, untouched, before any worker may take it over. */
     public static final long DEFAULT_CLAIM_IDLE_MILLIS = 60_000;
     private static final int CLAIM_BATCH = 64;
@@ -50,26 +55,63 @@ public final class MatchResultStream {
     private final String consumer;
     private final MatchResultQueue lists;
     private final long claimIdleMillis;
+    private final long retentionMillis;
 
     /** For a producer: an arena. */
     public MatchResultStream(JRedisClient client) {
-        this(client, MatchResultQueue.DEFAULT_WORKER_ID, DEFAULT_CLAIM_IDLE_MILLIS);
+        this(client, DEFAULT_RETENTION_MILLIS);
+    }
+
+    /** For a producer, keeping {@code retentionMillis}: an arena (D-83). */
+    public MatchResultStream(JRedisClient client, long retentionMillis) {
+        this(client, MatchResultQueue.DEFAULT_WORKER_ID, DEFAULT_CLAIM_IDLE_MILLIS, retentionMillis);
     }
 
     public MatchResultStream(JRedisClient client, String workerId, long claimIdleMillis) {
+        this(client, workerId, claimIdleMillis, DEFAULT_RETENTION_MILLIS);
+    }
+
+    /** For a worker, which adds what it moves from the inbox, so trims as an arena does (D-83). */
+    public MatchResultStream(JRedisClient client, String workerId, long claimIdleMillis, long retentionMillis) {
         this.client = client;
         this.lists = new MatchResultQueue(client, workerId);
         this.consumer = workerId;
         this.claimIdleMillis = claimIdleMillis;
+        this.retentionMillis = retentionMillis;
+    }
+
+    /**
+     * The retention {@value #RETENTION_SETTING} names, whole hours from 1 to 168; unset or empty,
+     * {@link #DEFAULT_RETENTION_MILLIS}. Anything else is refused: a process that guessed would trim
+     * every other one's results by its guess.
+     */
+    public static long retentionFromEnvironment(Map<String, String> env) {
+        String value = env.get(RETENTION_SETTING);
+        if (value == null || value.isEmpty()) {
+            return DEFAULT_RETENTION_MILLIS;
+        }
+        if (value.matches("[0-9]{1,3}")) {
+            int hours = Integer.parseInt(value);
+            if (hours >= 1 && hours <= MOST_RETENTION_HOURS) {
+                return TimeUnit.HOURS.toMillis(hours);
+            }
+        }
+        throw new RefusedConfiguration(RETENTION_SETTING + " must be whole hours, 1 to " + MOST_RETENTION_HOURS
+                + ", not '" + value + "'");
+    }
+
+    /** How long this process trims the stream to. */
+    public long retentionMillis() {
+        return retentionMillis;
     }
 
     public String consumer() {
         return consumer;
     }
 
-    /** Producer side: added, and the stream trimmed to {@link #RETENTION_MILLIS}. */
+    /** Producer side: added, and the stream trimmed to this process's retention. */
     public String publish(String payload, long nowMillis) {
-        String oldest = Math.max(0, nowMillis - RETENTION_MILLIS) + "-0";
+        String oldest = Math.max(0, nowMillis - retentionMillis) + "-0";
         return await(client.xadd(KEY, XAddArgs.minId(oldest).approximately(), "*", FIELD, payload));
     }
 

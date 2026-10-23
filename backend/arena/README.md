@@ -89,6 +89,7 @@ the drain. See [operations/01](../../docs/operations/01-deploy.md).
 | `BACKEND_STORE_PASSWORD_FILE`, `BACKEND_STORE_PASSWORD` | unset: no AUTH, with a warning | the store's password |
 | `BACKEND_EVENTS_STORE` | unset: the session store | `host:port[,host:port]`, the instance the results go to; two addresses also make the publisher wait for the replica |
 | `BACKEND_EVENTS_STORE_PASSWORD_FILE`, `BACKEND_EVENTS_STORE_PASSWORD` | the store's password | |
+| `BACKEND_RESULT_RETENTION_HOURS` | 24 | hours the result stream keeps an entry, 1 to 168, else exit 2; each add trims what is older, so the same on every arena and worker (D-83) |
 | `-Dlogback.configurationFile` | `common/logback.xml`: INFO, queued, to standard output | an operator's own logging configuration |
 
 The store is read through `handoff/StoreClients` and secrets through
@@ -308,12 +309,13 @@ tick or the payload is measured with `tools/TickBenchmark`
 | `MatchFrameHandlerTest` | 8 | The claim finished on the connection's thread, store failures, the rate limit's backlog and flood, the join deadline, the unwritable spell |
 | `WavesTest` | 6 | Co-op's waves, the Guardian, enraging, the tenth wave |
 | `RoomRegistryTest` | 4 | Room placement, a match's room made by its first ticket, the announced capacity, room names |
+| `ArenaMainTest` | 4 | `BACKEND_ADVERTISE_PORT` and `BACKEND_ADVERTISE_TLS_NAME` read; a port that is not one, a name a handshake cannot carry, and a name beside the arena's own keystore, each refusing the start (D-82) |
 | `ClientViewTest` | 3 | A handle stands for one incarnation; `inputTicks`; when a motion rule is told |
 | `RoomTallyIntegrationTest` | 3 | Kills and assists from a real room reach the result |
 | `DominationTest` | 3 | Dominators placed and captured; the 60 s hold |
 | `MotionVectorTest` | 2 | The golden vector `motion-2026.txt` the client's prediction must reproduce bit for bit; the move bits as a direction |
 | `TagTest` | 2 | Conversions; one team; head counts |
-| `ArenaAnnouncerTest` | 1 | Announcements carry the rooms; operators' commands reach them |
+| `ArenaAnnouncerTest` | 2 | Announcements carry the rooms; operators' commands reach them; behind the front, the public address, port and TLS name, and TLS announced though the arena speaks none (D-82) |
 | `ConnectionTest` | 1 | A burst of point requests is held to 10 |
 | `RoomThreadTimersTest` | 1 | The simulation timed apart from the whole tick |
 

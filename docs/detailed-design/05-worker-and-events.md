@@ -26,7 +26,7 @@ re-derived the coin balances exactly. What it lacked, and the stream gives:
 | Several consumer groups | One consumer | One group; analytics and moderation can each read the same entries as a group of their own, once they exist |
 | Replay from an offset | None: a reward bug would have to be repaired in SQL | Within the 24 hours kept; beyond that, from MySQL ([Q-9](../requirements/01-scope-and-nfrs.md#7-open-questions)) |
 | Per-group pending list | One processing list per worker, `q:match-result:processing:{workerId}`: a retired worker's needed someone to know it was dead | Pending entries per consumer; any worker takes over those idle a minute |
-| Retention by age | None; the queue drains | 24 hours, read or not |
+| Retention by age | None; the queue drains | 24 hours, read or not, unless set (`BACKEND_RESULT_RETENTION_HOURS`, §2) |
 
 The stream is `s:` and the lists stay `q:`, so the change of meaning shows in
 the name.
@@ -57,7 +57,7 @@ dead entries back on the queue still works. An entry moved twice, after a
 crash between the add and the remove, is applied once: the apply is
 idempotent (§3).
 
-**What a trim can take.** The stream is trimmed to 24 hours whether or not an
+**What a trim can take.** The stream is trimmed to its retention, 24 hours unless set (§2), whether or not an
 entry was read. An entry pending longer than that, whose worker has failed on
 it for a day, is gone from the stream. The next re-drive's take-over
 (`XAUTOCLAIM`) finds it gone, whatever its idle time, and the store drops it
@@ -155,7 +155,7 @@ boards and the stream, as in it: where to look first if it must go faster.
 
 | Stream | Producer | Consumers | Retention | Loss tolerance |
 |---|---|---|---|---|
-| `s:match-result` | arena | `rewards`, `analytics` | 24 hours, as built (a week would not fit in memory: [D-26](../defects.md#3-data-and-the-result-pipeline)) | **None.** Progression and currency depend on it. |
+| `s:match-result` | arena, and a worker moving the inbox | `rewards`, `analytics` | 24 hours unless set, below (a week would not fit in memory: [D-26](../defects.md#3-data-and-the-result-pipeline)) | **None.** Progression and currency depend on it. |
 | `s:match-event` | arena | `analytics`, `moderation` | 24 hours | Tolerable. Kill feeds and captures. |
 | `s:platform` | platform | `analytics` | 7 days | Low. Purchases, team changes, tournament transitions. |
 | `s:audit` | platform | `audit` | 90 days | **None.** Admin actions and bans. |
@@ -164,6 +164,14 @@ boards and the stream, as in it: where to look first if it must go faster.
 j-redis keeps a stream in memory, and a week of `s:match-result` is about 54 GB at
 the design's load. 24 hours is recommended, replay beyond it reading MySQL
 ([Q-9](../requirements/01-scope-and-nfrs.md#7-open-questions)).
+
+**The hours are a setting** ([D-83](../architecture/03-decision-log.md#d-83--the-result-streams-retention-is-a-setting-and-the-events-store-is-sized-by-a-table),
+designed 2026-10-23, plan item 92): `BACKEND_RESULT_RETENTION_HOURS`, 1 to 168, default 24,
+read by every process that adds to `s:match-result`, the arenas and the workers, since each add
+trims everything older and the shortest value wins. It bounds two things at once: the store's
+memory, about 160 MB a day for every 1 000 players, and how long the workers or MySQL may be down
+before a result is trimmed unapplied (`backend_worker_trimmed_unapplied_total`). A value outside
+the range refuses the start (exit 2); each process logs the value it uses.
 
 Partitioning is by **player id** where ordering matters, so a single player's
 events are processed in order even though the stream as a whole is not

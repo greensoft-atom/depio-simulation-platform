@@ -3396,6 +3396,39 @@ and for every guide and setting a fresh OS and a fresh developer need, without t
 
 ---
 
+#### 92. ~~The result stream's retention as a setting, and the `events` store sized by a table (O-37, D-83).~~ — **done 2026-10-23**
+
+**The owner, 2026-10-23:** the `events` store's size and the retention adjustable in the
+configuration or environment.
+
+- **Found**: the size already was (`STORE_HEAP`, `maxmemory`, the instance's own files); the hours
+  were a constant, and not the arenas' alone: a worker adds what it moves from the inbox list, so
+  it trims too. On 64 GB machines a day of results fits to about 20 000 players; at 50 000 it
+  needs a 25 GB heap on B and on C, where C's other processes already take some 46 GB.
+- **Design**: [D-83](architecture/03-decision-log.md#d-83--the-result-streams-retention-is-a-setting-and-the-events-store-is-sized-by-a-table), 05 §2, and the open choice past 20 000
+  players, [Q-58](requirements/01-scope-and-nfrs.md#7-open-questions): more memory on B and C, or
+  fewer hours, with the outage it then allows. Recommended: decide when the store's memory alert
+  first fires.
+- **Built**: `BACKEND_RESULT_RETENTION_HOURS`, 1 to 168, default 24, read by the arena and the
+  worker before they connect; anything else refuses the start (exit 2); each logs the value used.
+- **Test first**: four tests in `handoff`: the setting read and refused, an arena's add and a
+  worker's move each trimming by it, on a real store. Five mutants caught: the trim ignoring the
+  setting, the worker's constructor dropping it, each bound loosened, an empty value refused.
+- **Written**: [operations/04 §3.4](operations/04-scaling-and-performance.md#34-j-redis)'s table
+  (players, hours, `maxmemory`, the heap, whether it fits) and how to change each; the env
+  examples, the deploy README's catalogue, the arena's and the worker's READMEs, the runbook's
+  memory and trim rows, the glossary (**stream retention**, apart from day-N retention).
+- **Checked live**, on a release rebuilt with it: a drill with the setting at 6, `play duel`, all
+  passed, the arena and the worker each logging `the result stream kept 6 h`; an arena given 0
+  and a worker given 169 each refused, exit 2, naming the setting. `build-offline.sh` with every test passed, about 40 minutes.
+- **Not measured**: the sizes are arithmetic from a result's measured ~530 bytes and the shipped
+  settings, not the production load; a JVM's use beyond its heap is estimated.
+- **Found on the way**: DOC-29, the modules' README test lists behind their code; the rows
+  behind since item 90 brought level, the older ones recorded.
+- **Next**: M-6, then DOC-29.
+
+---
+
 ### Completed 2026-09-23
 
 1. **The public arena runs continuously.** Ten bots, ten open-match records,

@@ -22,6 +22,7 @@ compiles against it, and each process brings its own.
 | `Arguments` | `integer` and `decimal` at a position, a default when absent, `RefusedConfiguration` when present and not a number | arena, gateway, platform, worker |
 | `RefusedConfiguration` | The process cannot run with these settings. Every main exits 2 for it, and the units list 2 in `RestartPreventExitStatus` | every main, handoff, persistence |
 | `Logs` | `flush()`: writes out what the log queue still holds and stops logging; the last call of a shutdown, and before `System.exit` | arena, gateway, platform, worker |
+| `TrustedProxies` | `fromEnvironment(env)`: `BACKEND_TRUSTED_PROXIES`, IP literals only, else `RefusedConfiguration`; `trusts(peer)`: loopback or one named, whose `X-Forwarded-For` is then believed (D-82) | gateway, platform |
 | `IntList` | A growable `int` array without boxing, its array exposed for the tick loop | sim, arena |
 | `Xorshift` | xorshift128+, seeded through SplitMix64; one per room, never shared between threads | sim, tools |
 | `PhaseTimer` | Per-phase nanosecond histograms for a tick loop, with a p99 against a budget | sim, arena, tools |
@@ -85,6 +86,7 @@ mvn -pl common test -Dtest=MetricsTest
 |---|---|---|
 | `MetricsTest` | 4 | The text format (help, type, sorting, escaping); a histogram's cumulative buckets, sum and count; a throwing supplier; the server serving `/metrics` when configured and not at all when not |
 | `LoggingTest` | 3 | A journal that stops reading does not stop the thread that logs; stopping the logging writes out the queue; `Logs.flush` before a halt |
+| `TrustedProxiesTest` | 3 | Unset, loopback alone; the named addresses and no other; anything but IP literals refused, nothing looked up in DNS |
 | `ArgumentsTest` | 3 | A missing argument takes its default; an empty or malformed one refuses to start, naming it |
 | `SecretsTest` | 2 | The file wins, loses one line ending and is never printed; an unreadable or empty file refuses the configuration |
 

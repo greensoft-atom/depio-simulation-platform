@@ -89,12 +89,16 @@ public final class ArenaMain {
         String bindHost = Arguments.text(args, 10, "bind address", "0.0.0.0");
         String advertiseHost = Arguments.text(args, 11, "advertised host", "127.0.0.1");
 
+        long retention = MatchResultStream.retentionFromEnvironment(System.getenv());
+        log.info("the result stream kept {} h ({}: the same on every arena and worker, D-83)",
+                retention / 3_600_000, MatchResultStream.RETENTION_SETTING);
+
         JRedisClient store = StoreClients.open(storeHost, storePort, "arena");
         // Results go to the events instance (D-7); the same client when there is only one.
         JRedisClient events = StoreClients.openEvents(store, "arena-events");
 
         MatchResultPublisher publisher = new MatchResultPublisher(
-                new MatchResultStream(events), Path.of(spoolDir), StoreClients.eventsReplicated());
+                new MatchResultStream(events, retention), Path.of(spoolDir), StoreClients.eventsReplicated());
         publisher.start();
 
         MatchRules rules = matchSeconds > 0

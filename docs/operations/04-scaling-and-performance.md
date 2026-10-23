@@ -227,8 +227,44 @@ failover ([D-7](../architecture/03-decision-log.md#d-7--two-j-redis-instances-no
 executes commands on one thread, so it grows by a faster core and more memory, not by more
 instances. **The `events` store keeps a day of results** (~530 bytes each): 1.6 GB at 10 000
 players, 7.8 GB at 50 000. The shipped `maxmemory` is 3 GB, of an 8 GB heap: enough to about
-**19 000 players** (O-37). Before then, raise its heap and `maxmemory` together
-(`store-events.env`, `store-events.conf`, about 40 % of the heap) or shorten the retention.
+**19 000 players**, and its 80 % alert fires at about 15 000 (O-37). Both numbers are settings
+([D-83](../architecture/03-decision-log.md#d-83--the-result-streams-retention-is-a-setting-and-the-events-store-is-sized-by-a-table)):
+
+- **the size**: `STORE_HEAP` in `/etc/backend/store-events.env` and `maxmemory` in
+  `/etc/backend/store-events.conf`, about 40 % of the heap, on B (the primary) and C (its replica);
+- **the hours kept**: `BACKEND_RESULT_RETENTION_HOURS`, 1 to 168, default 24, in every
+  `arena-<name>.env` and in `worker.env`, the same everywhere, since every add trims and the
+  shortest wins. Each arena and worker logs the value at its start: `the result stream kept 24 h`.
+
+**What a number of players needs**, about 160 MB of results a day for every 1 000 players, with a
+fifth to spare under the 80 % alert, and the heap at 2.5 times `maxmemory` for ZGC. Arithmetic
+from the measured size of a result, not measured on the production load:
+
+| Players | Hours kept | Results held | `maxmemory` | `STORE_HEAP` | Fits B and C at 64 GB |
+|---|---|---|---|---|---|
+| 10 000 | 24 | 1.6 GB | `3gb`, as shipped | `8g`, as shipped | yes |
+| 15 000 | 24 | 2.4 GB | `3gb`: its alert | `8g` | yes |
+| 20 000 | 24 | 3.2 GB | `4gb` | `10g` | yes, closely |
+| 30 000 | 24 | 4.8 GB | `6gb` | `15g` | no |
+| 50 000 | 24 | 7.8 GB | `10gb` | `25g` | no: 96 GB would |
+| 25 000 | 12 | 2.0 GB | `3gb` | `8g` | yes |
+| 50 000 | 6 | 2.0 GB | `3gb` | `8g` | yes |
+
+On C the arenas (12 GB), the platform and the gateway (6), two workers (3), MySQL's replica (about
+20) and the backups' scratch server (about 5) take some 46 GB before the `events` replica, and each
+JVM uses more than its heap. Which way to go past 20 000, more memory or fewer hours, is the
+owner's: [Q-58](../requirements/01-scope-and-nfrs.md#7-open-questions). **The hours are also how
+long the workers or MySQL may be down before results are lost**, trimmed unapplied and counted by
+`backend_worker_trimmed_unapplied_total`: 6 hours of retention means an outage of 6 hours costs
+results.
+
+**Changing them:**
+1. The size: the replica's files first, `systemctl restart backend-store@events` on C, then on B.
+   While B's restarts, arenas keep their results in their spools and send them when it is back.
+2. The hours: the same value in every `arena-<name>.env` and `worker.env`, then the arenas
+   restarted one at a time ([runbook §6](02-runbook.md#6-routine)) and the workers. Shorter takes
+   effect at the first restarted process's next add, for the whole stream. Longer takes effect only
+   once every process has it: what was trimmed meanwhile is not back.
 
 ## 4. Performance: what is measured
 

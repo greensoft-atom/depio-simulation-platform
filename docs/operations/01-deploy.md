@@ -467,8 +467,9 @@ with it, 03 §5);
 days;
 `backend_worker_failed_total` rising for more than a few minutes (an entry the
 worker keeps failing on is retried, not dead-lettered, 05 §4);
-`backend_worker_trimmed_unapplied_total` above 0 (a result lost: pending a whole
-day, then trimmed; its ID is in the worker's log);
+`backend_worker_trimmed_unapplied_total` above 0 (a result lost: pending longer
+than the stream keeps one, `BACKEND_RESULT_RETENTION_HOURS`, then trimmed; its ID is
+in the worker's log);
 `backend_arena_results_unreplicated_total` rising (the `events` replica is down or
 behind: results live on one machine until it is back);
 `backend_worker_ledger_mismatches` above 0, or
