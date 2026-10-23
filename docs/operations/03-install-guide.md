@@ -281,6 +281,7 @@ machine's commands, and every port is in [05](05-ports-and-firewall.md).
 
 | To | Where |
 |---|---|
+| Start, stop or restart one service, or reload nginx after a change | [07](07-start-stop-restart.md) |
 | Deploy a new version | build again (§3), then [01 §5](01-deploy.md#5-rolling-deployment): unpack beside, switch the symlink, restart in order |
 | Back up the database, and prove the backups | [01 §10](01-deploy.md#10-copies-off-the-databases-machine): the binlog stream, the dumps, the weekly proof (on C, or this machine on its own) |
 | Handle a failure | the [runbook](02-runbook.md): triage, the store's and MySQL's failover, restores |

@@ -5,8 +5,9 @@
 # Their logs, pids and files are in work/run.
 #
 #   ./run-local.sh start [store platform worker gateway arena]   all five unless some are named
+#   ./run-local.sh stop [process ...] | restart [process ...]    likewise; the MySQL is left running
 #   ./run-local.sh bots [count] [seconds]                        bots play through it (20 for 15 s)
-#   ./run-local.sh status | stop                                 stop leaves the MySQL running
+#   ./run-local.sh status
 #
 # Ports, each refused if taken: STORE_PORT 6380, PLATFORM_PORT 8080, GATEWAY_PORT 8081, ARENA_PORT
 # 9001. DEBUG=1: each Java process waits for no one but listens for a debugger, the platform on
@@ -74,6 +75,27 @@ start_one() {
     echo "$p: up${port:+ on 127.0.0.1:$port}$dbg (log $L/$p.log)"
 }
 
+stop_one() {
+    local p=$1
+    running "$p" || { echo "$p: not running"; return; }
+    kill "$(cat "$L/$p.pid")"
+    for _ in $(seq 30); do running "$p" || break; sleep 1; done
+    if running "$p"; then echo "$p: still running after 30 s, pid $(cat "$L/$p.pid")" >&2
+    else rm -f "$L/$p.pid"; echo "$p: stopped"; fi
+}
+
+# Refuses a name that is not one of the five; run in the script's own shell, so that its exit is the script's.
+known() {
+    local p
+    for p in "$@"; do case " $ALL " in *" $p "*) ;; *) echo "no process $p: $ALL" >&2; exit 2 ;; esac; done
+}
+# The processes named, in the order $1 gives (start's or stop's); all of them when none is.
+named() {
+    local order=$1 p; shift
+    for p in $order; do case " ${*:-$ALL} " in *" $p "*) echo "$p" ;; esac; done
+}
+STOP_ORDER="arena gateway worker platform store"
+
 case "${1:-}" in
 start)
     [ -n "$R" ] || { echo "no release in backend/target/release: ./build-offline.sh first" >&2; exit 1; }
@@ -92,13 +114,17 @@ status)
     done
     "$B/dev-mysql.sh" status || true ;;
 stop)
-    for p in arena gateway worker platform store; do
-        running "$p" || continue
-        kill "$(cat "$L/$p.pid")"
-        for _ in $(seq 30); do running "$p" || break; sleep 1; done
-        if running "$p"; then echo "$p: still running after 30 s, pid $(cat "$L/$p.pid")" >&2
-        else rm -f "$L/$p.pid"; echo "$p: stopped"; fi
-    done ;;
+    shift; known "$@"
+    for p in $(named "$STOP_ORDER" "$@"); do stop_one "$p"; done ;;
+restart)
+    shift; known "$@"
+    [ -n "$R" ] || { echo "no release in backend/target/release: ./build-offline.sh first" >&2; exit 1; }
+    procs=$(named "$ALL" "$@")
+    for p in $(named "$STOP_ORDER" "$@"); do stop_one "$p"; done
+    mkdir -p "$L"
+    case " $(echo $procs) " in *" platform "*|*" worker "*) "$B/dev-mysql.sh" start ;; esac
+    for p in $procs; do start_one "$p"; done ;;
 *)
-    echo "usage: $0 start [process ...] | bots [count] [seconds] | status | stop" >&2; exit 2 ;;
+    echo "usage: $0 start [process ...] | stop [process ...] | restart [process ...] | bots [count] [seconds] | status" >&2
+    exit 2 ;;
 esac

@@ -166,6 +166,7 @@ for the backend, its docs and its client.
 
 # The whole backend from the release, on the development MySQL; DEBUG=1 for debugger ports
 ./run-local.sh start && ./run-local.sh bots && ./run-local.sh stop
+./run-local.sh restart platform                     # one alone; stop arena likewise (operations/07)
 
 # Client core tests (look for "Total tests:")
 cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test --logger "console;verbosity=normal"

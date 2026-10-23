@@ -3464,6 +3464,32 @@ None was reachable in play (read again 2026-10-04); each is now as its documents
 
 ---
 
+#### 95. ~~How to start, stop and restart each service (operations/07).~~ — **done 2026-10-23**
+
+**The owner, 2026-10-23:** how to start, stop and restart each service, MySQL, nginx and the Java
+ones: nginx after a change of its configuration, MySQL alone.
+
+- **Written**: [operations/07](operations/07-start-stop-restart.md): each unit, where it runs, its
+  settings and what a change takes; nginx reloaded, not restarted, and why; MySQL, a store, the
+  platform, the gateway, a worker and an arena alone, and what players notice; a machine stopped and
+  started in order; the same on a development machine. Linked from the indexes, the install guide
+  and development/03 §5.
+- **Found writing it**: systemd matches a pattern only against units in memory, so
+  `systemctl start 'backend-arena@*'` after a stop started nothing (RHEL 9's systemd 252): the page
+  names each machine's units to start. And a restart of nginx on the front cuts every match after
+  the unit's 30 s, past an arena's 10 s of grace: a maintenance window's, which the page says.
+- **Built**: `run-local.sh stop` and `restart` by name (`./run-local.sh restart platform`), as `start`
+  already was; a name not one of the five refused (exit 2).
+- **Checked**: `check-units-el9.sh` runs the page's commands in UBI 9.5 under systemd 252: a broken
+  nginx configuration refused by the reload while the old one served, MySQL and the store each
+  restarted with the platform serving again unrestarted, the pattern stop, and the start by name;
+  20 + 8 checks, none failing. On this machine: MySQL and the store each restarted under a running
+  backend, a registration served at once and four matches applied after; `run-local.sh`'s every new
+  path driven.
+- **Not checked**: a restart of nginx on a loaded front; the three machines.
+
+---
+
 ### Completed 2026-09-23
 
 1. **The public arena runs continuously.** Ten bots, ten open-match records,

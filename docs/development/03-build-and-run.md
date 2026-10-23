@@ -234,11 +234,17 @@ the store, the platform, a worker, the gateway and an arena, against the
 development MySQL's `backend_dev`, which is started if it is not running.
 
 ```bash
-./run-local.sh start          # or some: ./run-local.sh start store platform
-./run-local.sh bots           # twenty bots for fifteen seconds; or: bots 100 30
+./run-local.sh start             # or some: ./run-local.sh start store platform
+./run-local.sh bots              # twenty bots for fifteen seconds; or: bots 100 30
 ./run-local.sh status
-./run-local.sh stop           # the development MySQL keeps running: ./dev-mysql.sh stop
+./run-local.sh restart platform  # one alone, the others untouched; all: ./run-local.sh restart
+./run-local.sh stop arena        # one alone; all: ./run-local.sh stop
+./run-local.sh stop              # the development MySQL keeps running: ./dev-mysql.sh stop
 ```
+
+A process restarted alone picks up what changed for it: a new release, or settings given
+to the command. Each service on a server, and on this machine, is in
+[operations/07](../operations/07-start-stop-restart.md).
 
 The bots play as a client does: they register, log in, open the lobby, ask for a
 match and join the arena they are given. The run ends with `welcomes 20

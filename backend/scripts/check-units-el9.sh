@@ -173,6 +173,40 @@ grep -q '"a1.arena.internal" 127.0.0.1:9011 ' /var/log/backend-nginx/stream.log 
 systemctl reload backend-nginx && sleep 1 && [ "$(systemctl is-active backend-nginx)" = active ] && ok "reloaded (tested first)" \
     || bad "reload"
 
+echo "--- operations/07 as written: reloads, restarts, patterns"
+register() {   # register <name>: the registration's status through nginx, retried for 15 s
+    local code
+    for _ in $(seq 15); do
+        code=$(curl -s --cacert /tmp/ca/ca.pem -o /dev/null -w "%{http_code}" -X POST -H 'Content-Type: application/json' \
+            -d "{\"username\":\"$1\",\"password\":\"hunter2-hunter2\"}" https://127.0.0.1/v1/accounts)
+        [ "$code" = 201 ] && break
+        sleep 1
+    done
+    echo "$code"
+}
+cp /etc/backend/nginx/backend-upstreams.conf /tmp/upstreams.good
+echo 'upstream broken {' >> /etc/backend/nginx/backend-upstreams.conf
+if systemctl reload backend-nginx 2> /dev/null; then bad "nginx reloaded a configuration it cannot read"
+else ok "a broken configuration: the reload refused"; fi
+[ "$(systemctl is-active backend-nginx)" = active ] && [ "$(register unitsseven1)" = 201 ] \
+    && ok "and the old one still serving: a registration, 201" || bad "nginx after a refused reload"
+cp /tmp/upstreams.good /etc/backend/nginx/backend-upstreams.conf
+systemctl reload backend-nginx && ok "the configuration put back, reloaded" || bad "the reload after the fix"
+systemctl restart backend-mysql
+code=$(register unitsseven2)
+[ "$code" = 201 ] && [ "$(systemctl is-active backend-platform)" = active ] \
+    && ok "MySQL restarted alone: the platform, not restarted, registers again: $code" || bad "after MySQL's restart: $code"
+systemctl restart backend-store@session
+code=$(register unitsseven3)
+[ "$code" = 201 ] && ok "the store restarted alone: a registration, $code" || bad "after the store's restart: $code"
+systemctl stop 'backend-arena@*' 'backend-worker@*'
+[ "$(systemctl is-active backend-arena@a1)" != active ] && [ "$(systemctl is-active backend-worker@c1)" != active ] \
+    && ok "a pattern stops what runs: the arena and the worker stopped" || bad "the stop by pattern"
+systemctl start 'backend-arena@*' 2> /dev/null
+echo "  ..   a pattern to start: the arena $(systemctl is-active backend-arena@a1)"
+systemctl start backend-arena@a1 backend-worker@c1
+active backend-arena@a1 30 && active backend-worker@c1 30 && ok "named, they start" || bad "the start by name"
+
 echo "--- stopping"
 for u in backend-nginx backend-arena@a1 backend-worker@c1 backend-gateway backend-platform backend-store@session backend-mysql; do
     systemctl stop "$u"; s=$(systemctl show -p Result --value "$u"); [ "$s" = success ] && ok "$u stopped: $s" || bad "$u stopped: $s"

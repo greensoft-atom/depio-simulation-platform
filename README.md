@@ -70,6 +70,9 @@ copy off the site goes (Q-53), and the certificate's domain and CA
 - **Ports and the firewall**: the site behind one public address and nginx in front, every
   port on each machine, who connects to it, and each machine's firewall on RHEL 9:
   [docs/operations/05-ports-and-firewall.md](docs/operations/05-ports-and-firewall.md).
+- **Start, stop and restart each service**, on a server and on a development machine: nginx
+  reloaded after a change, MySQL alone, an arena drained:
+  [docs/operations/07-start-stop-restart.md](docs/operations/07-start-stop-restart.md).
 - **Certificates**, with no domain: the backend's own CA, the site's certificate, installing and
   renewing it, and the app trusting it: [docs/operations/06-certificates.md](docs/operations/06-certificates.md).
 - **The JDK, Maven, MySQL and nginx** the repository carries, and how to move
