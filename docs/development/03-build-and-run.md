@@ -220,6 +220,9 @@ port; give this one another port instead.
 
 ## 4. A release
 
+After a change to the code, what to rebuild, try, ship and restart:
+[07](07-after-a-code-change.md).
+
 `build-offline.sh` leaves it in `backend/target/release/`: a directory and its
 `.tar.gz`, with its own Java runtime, j-redis, MySQL and nginx
 ([09 §4](../detailed-design/09-release-and-packaging.md#4-the-release)); its

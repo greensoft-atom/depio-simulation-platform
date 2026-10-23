@@ -3490,6 +3490,23 @@ ones: nginx after a change of its configuration, MySQL alone.
 
 ---
 
+#### 96. ~~After a code change: build, test, run, ship (development/07, DOC-30).~~ — **done 2026-10-23**
+
+**The owner, 2026-10-23:** what to do after a change to the Java code, the arena's, the gateway's,
+the platform's, or the persistence's; and whether any document says so.
+
+- **Found**: the pieces were in four places (development/03, operations/01 §5, 06 §8 and working-here
+  §1), with nothing saying which processes a module reaches. And DOC-30: two of operations/01's
+  steps had not followed D-82.
+- **Written**: [development/07](development/07-after-a-code-change.md): each module and the processes
+  it runs in, read from the release's `lib/` directories; a change built with what uses it (`-amd`,
+  checked: `handoff` brings `arena`, `platform`, `worker`, `gateway` and `tools`), released and run
+  by hand; shipped and restarted in order; what two releases must share during the restarts; a
+  migration, from its file to its deploy; a change to the wire. Linked from both READMEs,
+  development/03 §4 and operations/01 §5.
+
+---
+
 ### Completed 2026-09-23
 
 1. **The public arena runs continuously.** Ten bots, ten open-match records,

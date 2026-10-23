@@ -311,6 +311,9 @@ non-forward-secret suites. The certificate is §11.
 
 ## 5. Rolling deployment
 
+Which processes a change reaches, and a change to the schema or the wire:
+[development/07](../development/07-after-a-code-change.md).
+
 On each machine the new release is unpacked beside the running one and
 switched to by the symlink (§2): `tar -xzf backend-<version>.tar.gz -C /opt`;
 any unit, drop-in or nginx file that changed is copied from the release's
@@ -343,7 +346,8 @@ first worker restarted applies a release's migrations while the platforms of
 the release before still run on them. That is why migrations are forward-only,
 expand then contract (06 §8). A rollback is the symlink put back and the same
 restarts; the schema stays where the release took it. Check each step as §7
-says: `curl http://127.0.0.1:8080/health` on the machine, the journal, the
+says: `curl http://10.0.0.1:8080/health` on the machine, at its own private address, where the
+platform listens since D-82; the journal, the
 metrics.
 
 **The release that puts results on a stream** (2026-09-29, plan item 10) needs
@@ -430,9 +434,13 @@ unit **3.1 (OK)**, down from 9.0 before the sandbox.
    (`CPUAffinity=`), since the core ranges belong to the machine. The backup
    machine's units and timers are §10's.
 6. **nginx and the certificate.** The release's `nginx-conf/*.conf` into
-   `/etc/backend/nginx/`, the machine's name filled in, then §11; enable
+   `/etc/backend/nginx/`, the same on every machine: the site's public address in `backend.conf`'s
+   `server_name`, and the three machines' private addresses in `backend-upstreams.conf` and
+   `backend-stream.conf`'s map (D-82, [05 §3](05-ports-and-firewall.md)); then the certificate,
+   §11 and [06](06-certificates.md); enable
    `backend-nginx`.
-7. **Check.** `curl http://127.0.0.1:8080/health` on the machine; the journal of
+7. **Check.** `curl http://10.0.0.1:8080/health` on the machine, at its own private address
+   (D-82); the journal of
    each unit (`journalctl -u backend-arena@a1`) shows INFO lines and no ERROR.
 
 **Metrics** are served in the Prometheus text format at `GET /metrics`, on the

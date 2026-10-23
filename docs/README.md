@@ -72,6 +72,7 @@ Then the detailed design of whatever you are working on.
 | [04 — Cryptography](development/04-crypto.md)         | What Java 21 and BouncyCastle give, the rules and traps, and the tested examples in `backend/crypto-examples`                                     | 35 tests, checked against `openssl` both ways, 2026-10-05               |
 | [05 — VS Code](development/05-vscode.md)              | The Java extensions installed offline, and each committed setting in `.vscode/` with its reason: import, JDK, tests, debugging | the import proved offline with the language server, 2026-10-17; VS Code's window not run |
 | [06 — Questions and answers](development/06-questions-and-answers.md) | The owner's questions setting up an offline machine, each answered in full: the plugin errors, the `/opt` and `/tmp` paths, `dev-env.sh` line by line, the MySQL, exceptions in tests, testing each interface, VS Code | each command run as written, 2026-10-17 to 2026-10-19 |
+| [07 — After a code change](development/07-after-a-code-change.md) | Which processes a change to each module reaches; building, releasing and trying it on a development machine; shipping it to the servers and restarting in order; what old and new must share during the restarts; a change to the schema (Flyway, expand then contract) or to the wire |
 
 ### API
 

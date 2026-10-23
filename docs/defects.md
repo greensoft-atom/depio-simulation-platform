@@ -1309,6 +1309,12 @@ each of its test classes, with the number of tests where its row gives one. It f
 its own missing row; a count off by one, a row removed and a row naming no class were each
 caught.
 
+**DOC-30, found 2026-10-23, FIXED the same day** (plan item 96). Two of operations/01's steps had not
+followed D-82: the health check after a deploy and after installing a machine was `curl
+http://127.0.0.1:8080/health`, where the platform no longer listens (it binds the machine's private
+address), and installing a machine filled "the machine's name" into nginx's files, where the site's
+address and the three machines' private ones go. **Fixed:** both steps, found writing
+[development/07](development/07-after-a-code-change.md).
 ---
 
 ## 8. What this changes

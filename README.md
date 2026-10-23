@@ -61,6 +61,9 @@ copy off the site goes (Q-53), and the certificate's domain and CA
 
 ## Guides
 
+- **After changing the code**: which processes a change reaches, trying it on a development
+  machine, shipping it to the servers, and a change to the schema or the wire:
+  [docs/development/07-after-a-code-change.md](docs/development/07-after-a-code-change.md).
 - **Build, test, run and debug** the backend from a clone, offline, everything
   inside its folder: [docs/development/03-build-and-run.md](docs/development/03-build-and-run.md).
 - **VS Code**: the Java extensions installed offline, and the committed settings:
