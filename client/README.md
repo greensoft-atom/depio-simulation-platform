@@ -116,8 +116,8 @@ walkover party decline rffa coop banned notice removed phrase`, and
 
 Ports: 6390 j-redis (6392 its replica), 8093 platform, 8094 gateway, 9011 the
 arena, 9195 platform's metrics, 9196 platform's admin API, 9197 the arena's
-metrics, 9198 the gateway's, 9199 the worker's; MySQL 3306, and 3307 and 3308
-for `MYSQL_FAILOVER`. Logs go to a directory under `TMPDIR`, which the script
+metrics, 9198 the gateway's, 9199 the worker's; MySQL 3314, the development MySQL
+(`dev-mysql.sh`, started when it is not running), and 3307 and 3308 for `MYSQL_FAILOVER`. Logs go to a directory under `TMPDIR`, which the script
 names first. After the run it prints the matcher's metrics, the gateway's
 latency to platform, the arena's log, and the database's view of the last
 match of each mode.

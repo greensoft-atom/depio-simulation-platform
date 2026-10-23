@@ -455,7 +455,8 @@ scripts/check-certificates.sh
 ### backup-drill.sh
 
 A live drill of the backups on MySQL servers of its own: a primary on 3307 (binary log, GTIDs),
-seeded with a copy of `SEED_DB` from the development server on 3306, and a scratch server on 3309.
+seeded with a copy of `SEED_DB` from the development MySQL (3314; started when it is not running,
+and stopped after), and a scratch server on 3309.
 It runs each backup script as production does and checks what each must do and what each must
 refuse: the stream copying; the dump, recorded; a mistake at a known moment; the copy off the site,
 encrypted, into a directory standing in for the host; the proof while a writer keeps writing; a
@@ -472,7 +473,7 @@ RELEASE=backend/target/release/backend-<version> TMPDIR=<scratch directory> back
 
 | | |
 |---|---|
-| Environment | `TMPDIR` (default `/tmp`), where its working directory goes. `SEED_DB` (default `backend_dev`) and `SEED_PASSWORD` (default `backend-dev-password`), the development database and the `backend` user's password on 3306. `RELEASE`, a release directory: its `mysql/`, MySQL 8.4, runs the drill's own servers and is first on `PATH` for the scripts; unset, or a release without one, the machine's |
+| Environment | `TMPDIR` (default `/tmp`), where its working directory goes. `SEED_DB` (default `backend_dev`) and `SEED_PASSWORD` (default `backend-dev-password`), the development MySQL's database and its `backend` user's password; `MYSQL_PORT` (3314), its port. `RELEASE`, a release directory: its `mysql/`, MySQL 8.4, runs the drill's own servers and is first on `PATH` for the scripts; unset, or a release without one, the machine's |
 | Needs | `mysqld`, `mysql`, `mysqldump`, `mysqlbinlog` (the release's with `RELEASE`, else `/usr/sbin/mysqld` and the machine's tools), `openssl`, `rsync`; ports 3307 and 3309 free (`MYSQL_FAILOVER` in `client/headless-drill.sh` uses 3307 too: not both at once); the seed database at the current schema, which has `backup_run` |
 | Runs | on a development machine only |
 

@@ -109,7 +109,7 @@ the API (a second for requests in flight), the pool and the store, then flushes 
 
 | Variable | Default | Meaning | Read at |
 |---|---|---|---|
-| `BACKEND_DB_URL` | `jdbc:mysql://127.0.0.1:3306/backend_dev?useSSL=false&allowPublicKeyRetrieval=true` | the database; two hosts name a primary and its replica | `persistence/DatabaseSettings` |
+| `BACKEND_DB_URL` | `jdbc:mysql://127.0.0.1:3314/backend_dev?useSSL=false&allowPublicKeyRetrieval=true`, the development MySQL (O-40) | the database; two hosts name a primary and its replica | `persistence/DatabaseSettings` |
 | `BACKEND_DB_USER` | `backend` | | `DatabaseSettings` |
 | `BACKEND_DB_PASSWORD_FILE` | none | a file holding the password; wins over the next | `DatabaseSettings`, `common/Secrets` |
 | `BACKEND_DB_PASSWORD` | the development password, with a warning | | `DatabaseSettings` |

@@ -114,7 +114,9 @@ data and socket, so it never meets that server.
 
 How to run it, stop it and restart it, step by step, is §3.1.
 
-The tests read `JDBC_URL`, which `dev-env.sh` points at `backend_test` there.
+The tests read `JDBC_URL`, which `dev-env.sh` points at `backend_test` there. Unset, as
+when a test runs from an editor that has not sourced `dev-env.sh`, it is the same database
+(`DatabaseSettings.TEST_URL`, O-40).
 `DB_USER` and `DB_PASSWORD` default to `backend` and `backend-dev-password`. They
 wipe the database they are given, which must end in `_test`. So never point
 `JDBC_URL` at a server whose `backend_test` you want kept. Port 3314 taken?
@@ -405,12 +407,14 @@ vendor/jdk-21/bin/jcmd $(cat work/run/arena.pid) GC.heap_info
 
 The drills are the live tests that drive a release with the headless client.
 They need the .NET 8 SDK and the client built
-(`cd client && dotnet build Headless`), which the repository does not carry. They
-also expect a MySQL on 3306 holding `backend_dev`, as the development VM has
-([02 §3](02-working-here.md#3-the-development-machine)), and start their own
-servers on ports 3307 to 3309, 6390 to 6392, 8093 and 8094, 9011 and 9195 to 9199.
-So they are the development VM's tools and not yet a clone's: on a machine whose
-3306 is another MySQL, do not run them.
+(`cd client && dotnet build Headless`), which the repository does not carry. Their
+database is `backend_dev` on the development MySQL (§3.1), which each starts when it
+is not running and stops after; the machine's own MySQL on 3306 is never touched
+(O-40). A run by hand uses `backend_dev` too, so do not run both at once: a drill's
+`season` scenario ends the current season for both. They start their own servers on
+ports 3307 to 3309, 6390 to 6392, 8093 and 8094, 9011 and 9195 to 9199.
+`backup-drill.sh` seeds from `backend_dev`, so it needs a drill or a run by hand
+first to have made its schema; it says so if not.
 
 ```bash
 TMPDIR=<a scratch directory> RELEASE=$PWD/backend/target/release/backend-0.1.0-SNAPSHOT \

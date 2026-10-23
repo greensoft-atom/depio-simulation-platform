@@ -21,6 +21,7 @@ import com.backend.handoff.TicketStore;
 import com.backend.persistence.AccountRepository;
 import com.backend.persistence.BoostRepository;
 import com.backend.persistence.Database;
+import com.backend.persistence.DatabaseSettings;
 import com.backend.persistence.EconomyRepository;
 import com.backend.persistence.EquipmentRepository;
 import com.backend.persistence.TeamRepository;
@@ -58,8 +59,7 @@ import org.junit.jupiter.api.Timeout;
  */
 class PlatformHttpServerTest {
 
-    private static final String URL = System.getenv().getOrDefault("JDBC_URL",
-            "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true");
+    private static final String URL = System.getenv().getOrDefault("JDBC_URL", DatabaseSettings.TEST_URL);
     private static final String USER = System.getenv().getOrDefault("DB_USER", "backend");
     private static final String PASSWORD = System.getenv().getOrDefault("DB_PASSWORD",
             "backend-dev-password");

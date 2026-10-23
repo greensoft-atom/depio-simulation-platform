@@ -75,7 +75,7 @@ carries ([03 §1](03-build-and-run.md#1-what-you-need-and-what-the-repository-to
 | The development MySQL | 127.0.0.1:3314 | `vendor/`'s 8.4, its files in `work/mysql` (`dev-mysql.sh`): the tests' and the benchmarks' |
 | The JDK and Maven, committed | `vendor/jdk-21`, `vendor/maven-3.9` | the same versions, usable as they are; `build-offline.sh` builds with them alone, no network ([09 §3](../detailed-design/09-release-and-packaging.md#3-the-build-from-the-repository-alone)) |
 | .NET 8 SDK | `/opt/dotnet` | for `client/`; NuGet.org is reachable. Not in `vendor/`: the owner chose the backend only (D-77) |
-| MySQL | 127.0.0.1:3306 | 8.0.46 from the distribution; databases `backend_dev` (the drills') and `backend_test`, user `backend` / `backend-dev-password` |
+| MySQL | 127.0.0.1:3306 | 8.0.46 from the distribution; databases `backend_dev` and `backend_test`, user `backend` / `backend-dev-password`. Used by nothing here since O-40 (2026-10-23): the tests, the drills and a run by hand use the development MySQL on 3314 |
 | Docker | `/usr/bin/docker` | other users' containers too: name ours distinctly, remove them after |
 | The internet | reachable | Maven Central, NuGet.org, GitHub, the vendors' downloads |
 

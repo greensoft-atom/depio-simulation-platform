@@ -3,10 +3,9 @@
 Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
-re-ordered around it rather than the other way round. **Open as of 2026-10-17:**
-M-6's three latent leftovers (L, none reachable in play), O-37 (M, the
-`events` store's memory past ~19 000 players, plan item 84) and O-40 (M, the
-processes' and tests' default database is still 127.0.0.1:3306). Every other entry is fixed,
+re-ordered around it rather than the other way round. **Open as of 2026-10-23:**
+M-6's three latent leftovers (L, none reachable in play) and O-37 (M, the
+`events` store's memory past ~19 000 players, plan item 84). Every other entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
 **Ids.** P protocol (§2), D data and the result pipeline (§3), M simulation
@@ -925,14 +924,23 @@ moment before the dump now fails if the comparison is put back.
   - no `~/.m2` was made;
   - outside the checkout, only the JVM's own `/tmp/hsperfdata_dev/` was written;
   - `work/` came to 360 MB.
-- **O-40 (M), found 2026-10-17, OPEN. The processes' and the tests' own defaults still name
-  127.0.0.1:3306.** `DatabaseSettings.DEV_URL` (`backend_dev`) and the 29 test classes' `JDBC_URL`
+- **O-40 (M), found 2026-10-17, FIXED 2026-10-23 (plan item 91, the owner agreeing). The
+  processes' and the tests' own defaults still named 127.0.0.1:3306.** `DatabaseSettings.DEV_URL` (`backend_dev`) and the 29 test classes' `JDBC_URL`
   default are the development VM's MySQL. Every script and VS Code configuration of D-80 names
   the development MySQL instead. A process started another way does reach 3306, for example
   with VS Code's "Run" link above `main`. On the owner's machine that is their MySQL 5, which
   refuses the development user. The drills rely on the default, and need .NET and that 3306
   database anyway (development/03 §7). The fix is the defaults moved to 3314 and the drills
-  with them, one change, not yet made.
+  with them, one change.
+
+  **Fixed:** `DatabaseSettings.DEV_URL` names `backend_dev` on 127.0.0.1:3314, and the tests'
+  default is one constant beside it, `DatabaseSettings.TEST_URL` (`backend_test` there), which
+  each of the 29 classes now reads in place of its own copy. A test holds both, test first: it
+  failed on 3306, and a mutant of each default, put back to 3306, was caught. Run with
+  `JDBC_URL` unset, a database test opened 46 connections on 3314 and none on 3306. The drills
+  use `backend_dev` on 3314, name it to their processes rather than rely on a release's default,
+  and start the development MySQL when it is not running; `backup-drill.sh` seeds from it, and
+  refuses a seed with no schema, saying how to make one (D-80's note).
 - **O-41 (L), found 2026-10-19, FIXED the same day (plan item 87). A run by hand had too few
   rooms for the API's own scenario.** `run-local.sh` gave its arena 2 rooms, the number the
   guide's old commands used: the public area's and one more. After `docs/api/lobby-example.mjs`

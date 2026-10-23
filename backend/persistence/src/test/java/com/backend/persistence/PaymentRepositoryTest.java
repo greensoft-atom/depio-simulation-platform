@@ -20,8 +20,7 @@ import org.junit.jupiter.api.Test;
 /** Gems for money (docs 04 §8, revenue, D-68): an order its provider confirms, against a real MySQL. */
 class PaymentRepositoryTest {
 
-    private static final String URL = System.getenv().getOrDefault("JDBC_URL",
-            "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true");
+    private static final String URL = System.getenv().getOrDefault("JDBC_URL", DatabaseSettings.TEST_URL);
     private static final String USER = System.getenv().getOrDefault("DB_USER", "backend");
     private static final String PASSWORD = System.getenv().getOrDefault("DB_PASSWORD",
             "backend-dev-password");

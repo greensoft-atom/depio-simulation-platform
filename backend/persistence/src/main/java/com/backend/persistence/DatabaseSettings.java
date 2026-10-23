@@ -25,8 +25,15 @@ import com.backend.common.Secrets;
  */
 public record DatabaseSettings(String url, String user, String password, String passwordSource, int poolSize) {
 
+    /**
+     * Unset, the repository's development MySQL ({@code dev-mysql.sh}, D-80), never the machine's own
+     * on 3306, which may be another server altogether (O-40).
+     */
     static final String DEV_URL =
-            "jdbc:mysql://127.0.0.1:3306/backend_dev?useSSL=false&allowPublicKeyRetrieval=true";
+            "jdbc:mysql://127.0.0.1:3314/backend_dev?useSSL=false&allowPublicKeyRetrieval=true";
+    /** The database tests' server when {@code JDBC_URL} is unset: they wipe it, so its name ends in {@code _test}. */
+    public static final String TEST_URL =
+            "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true";
     static final String DEV_USER = "backend";
     static final String DEV_PASSWORD = "backend-dev-password";
     static final String DEV_SOURCE = "the development default";

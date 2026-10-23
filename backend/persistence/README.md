@@ -258,16 +258,16 @@ every local user could read it with `ps`:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `BACKEND_DB_URL` | `jdbc:mysql://127.0.0.1:3306/backend_dev?useSSL=false&allowPublicKeyRetrieval=true` | The JDBC URL; two hosts, `host:port,host:port`, for the primary and its replica |
+| `BACKEND_DB_URL` | `jdbc:mysql://127.0.0.1:3314/backend_dev?useSSL=false&allowPublicKeyRetrieval=true`, the development MySQL (O-40) | The JDBC URL; two hosts, `host:port,host:port`, for the primary and its replica |
 | `BACKEND_DB_USER` | `backend` | The user |
 | `BACKEND_DB_PASSWORD_FILE` | — | **Preferred**: a file holding the password, one trailing line ending ignored. Named and unreadable or empty stops the process |
 | `BACKEND_DB_PASSWORD` | the development password, with a warning | The password, when no file is named |
 | `BACKEND_DB_POOL_SIZE` | the process's own | 1 to 100; anything else refuses the configuration, exit 2 |
 
 The tests read `JDBC_URL`, `DB_USER` and `DB_PASSWORD`, defaulting to
-`jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true`,
-`backend` and `backend-dev-password`. `dev-env.sh`, `build-offline.sh` and VS Code's settings set
-`JDBC_URL` to the development MySQL's `backend_test` on 127.0.0.1:3314 instead (D-80).
+`jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true` (`DatabaseSettings.TEST_URL`),
+`backend` and `backend-dev-password`: the development MySQL's `backend_test`, which `dev-env.sh`,
+`build-offline.sh` and VS Code's settings name too (D-80, O-40).
 
 ## Tests
 

@@ -3367,6 +3367,35 @@ and for every guide and setting a fresh OS and a fresh developer need, without t
 
 ---
 
+#### 91. ~~The built-in defaults, and the drills, on the development MySQL (O-40).~~ — **done 2026-10-23**
+
+**The owner, 2026-10-23:** agreed to move the defaults and the drills to the repository's MySQL.
+
+- **Design**: [D-80](architecture/03-decision-log.md#d-80--a-checkout-builds-tests-runs-and-is-debugged-from-inside-its-own-folder)'s
+  note: the processes' default (`DatabaseSettings.DEV_URL`) and the tests' (`DatabaseSettings.TEST_URL`, one
+  constant where 29 classes had a copy each) name 127.0.0.1:3314; the drills use `backend_dev` there,
+  starting the development MySQL when it is not running.
+- **Test first**: `DatabaseSettingsTest` holds both defaults; it failed on 3306, then passed. A mutant
+  of each, put back to 3306, was caught.
+- **Changed**: the two defaults, the 29 test classes, `client/headless-drill.sh` (its database
+  named to its processes, as a release older than this one still defaults to 3306) and
+  `backup-drill.sh` (seeded from 3314, refusing a seed with no schema), and the docs that named
+  3306: CLAUDE.md and working-here, development/03 §3 and §7, the READMEs' settings and ports, the
+  glossary.
+- **Checked**:
+  - a database test run with `JDBC_URL` unset: 46 connections on 3314, none on 3306;
+  - with the development MySQL stopped first, each drill started it, passed, and stopped it, and 3306
+    saw no connection but the counting one: `play duel party tournament season equip`, all passed;
+    `MYSQL_FAILOVER=1` with `play duel tournament`, its three rounds passed; the backup drill passed,
+    seeded from a far smaller `backend_dev` (17 players, 28 ledger rows) than 3306's had been;
+  - `build-offline.sh` with every test, the 29 classes on the shared default: passed, about 45
+    minutes on the loaded VM (22 four days before).
+- **Not checked**: a machine whose 3306 is a MySQL 5 (here a MySQL 8.0, counted, not stopped).
+- **Next**: O-37, the `events` store's size and its retention, which the owner asked to have in
+  the configuration (2026-10-23); then M-6.
+
+---
+
 ### Completed 2026-09-23
 
 1. **The public arena runs continuously.** Ten bots, ten open-match records,

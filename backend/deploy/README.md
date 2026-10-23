@@ -167,7 +167,7 @@ means the process refuses to start and systemd does not restart it.
 
 | Variable | Read by | Default | Meaning | Set in deploy |
 |---|---|---|---|---|
-| `BACKEND_DB_URL` | platform, worker, leaderboard rebuild | `jdbc:mysql://127.0.0.1:3306/backend_dev?useSSL=false&allowPublicKeyRetrieval=true`, the development database | The JDBC URL; both hosts, primary and replica, after a replica is made ([01 §9](../../docs/operations/01-deploy.md#9-mysql)) | `platform.env.example`, `worker.env.example` |
+| `BACKEND_DB_URL` | platform, worker, leaderboard rebuild | `jdbc:mysql://127.0.0.1:3314/backend_dev?useSSL=false&allowPublicKeyRetrieval=true`, the development MySQL's database (O-40) | The JDBC URL; both hosts, primary and replica, after a replica is made ([01 §9](../../docs/operations/01-deploy.md#9-mysql)) | `platform.env.example`, `worker.env.example` |
 | `BACKEND_DB_USER` | same | `backend` | The database user | same |
 | `BACKEND_DB_PASSWORD_FILE` | same | none: then `BACKEND_DB_PASSWORD`, then the development password with a warning | The database password's file | `backend-platform`, `backend-worker@`, `backend-leaderboard-rebuild`: `%d/db-password` |
 | `BACKEND_DB_PASSWORD` | same | none | The password itself | not set |
@@ -261,7 +261,7 @@ Each script's own settings are in [scripts/README](../scripts/README.md). Those 
 
 | Variable | Read by | Default |
 |---|---|---|
-| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | the persistence, worker and platform tests | `jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true`, `backend`, `backend-dev-password`; `dev-env.sh` sets `JDBC_URL` to the development MySQL's, on `MYSQL_PORT` |
+| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | the persistence, worker and platform tests | `jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true`, `backend`, `backend-dev-password`: the development MySQL's (O-40); `dev-env.sh` sets `JDBC_URL` to it on `MYSQL_PORT` |
 | `BACKEND_BOT_PROFILE`, `BACKEND_BOT_STAYS`, `BACKEND_BOT_VIA`, `BACKEND_BOT_TRUSTSTORE`, `BACKEND_BOT_TRUSTSTORE_PASSWORD` | `tools/BotClient` | none ([01 §8](../../docs/operations/01-deploy.md#8-tls-for-match-traffic)) |
 | `BACKEND_DRILL_SQL`, `BACKEND_ADMIN_URL`, `BACKEND_ADMIN_TOKEN` | the headless client | set by `client/headless-drill.sh` |
 | `TMPDIR`, `SEED_DB`, `SEED_PASSWORD` | `backup-drill.sh` | `/tmp`, `backend_dev`, `backend-dev-password` |
@@ -317,8 +317,7 @@ primary's port; the copy off the site leaves C by SSH, to the host the owner nam
 | 9197, 9198, 9199 | the arena's, the gateway's and the worker's metrics | `client/headless-drill.sh` |
 | 3307, 3308 | MySQL primary and replica (`MYSQL_FAILOVER`) | `client/headless-drill.sh` |
 | 3307, 3309 | MySQL primary and scratch server | `backup-drill.sh` (not at the same time as `MYSQL_FAILOVER`) |
-| 3306 | the development VM's MySQL 8.0 (`backend_dev`) | both drills; still the tests' own default when `dev-env.sh` is not sourced (O-40) |
-| 3314 | the development MySQL, `vendor/`'s 8.4 (`backend_test`, `backend_dev`) | `dev-mysql.sh`: the tests through `dev-env.sh`, the benchmarks, `run-local.sh` (D-80) |
+| 3314 | the development MySQL, `vendor/`'s 8.4 (`backend_test`, `backend_dev`) | `dev-mysql.sh`: the tests, the benchmarks, `run-local.sh` and both drills, which start it when it is not running; the processes' and the tests' built-in defaults (D-80, O-40). Nothing here uses a machine's own 3306 |
 | 6380, 8080, 8081, 9001 | j-redis, platform, gateway, arena | `run-local.sh`, and the by-hand example in [backend/README](../README.md#running-it) |
 | 5005 to 5009 | the debugger, one per process | `DEBUG=1 ./run-local.sh start` |
 

@@ -18,8 +18,7 @@ import org.junit.jupiter.api.Test;
 /** What a player wears (docs 04 §8, "Equipment"), against a real MySQL as the rest of this module. */
 class EquipmentRepositoryTest {
 
-    private static final String URL = System.getenv().getOrDefault("JDBC_URL",
-            "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true");
+    private static final String URL = System.getenv().getOrDefault("JDBC_URL", DatabaseSettings.TEST_URL);
     private static final String USER = System.getenv().getOrDefault("DB_USER", "backend");
     private static final String PASSWORD = System.getenv().getOrDefault("DB_PASSWORD",
             "backend-dev-password");

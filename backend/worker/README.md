@@ -239,7 +239,7 @@ xp locked plus the xp gained.
 
 | Variable | Default | Meaning | Read by |
 |---|---|---|---|
-| `BACKEND_DB_URL` | `jdbc:mysql://127.0.0.1:3306/backend_dev?useSSL=false&allowPublicKeyRetrieval=true` | The database; two hosts for the primary and its replica | `persistence/DatabaseSettings` |
+| `BACKEND_DB_URL` | `jdbc:mysql://127.0.0.1:3314/backend_dev?useSSL=false&allowPublicKeyRetrieval=true`, the development MySQL (O-40) | The database; two hosts for the primary and its replica | `persistence/DatabaseSettings` |
 | `BACKEND_DB_USER` | `backend` | Its user | `DatabaseSettings` |
 | `BACKEND_DB_PASSWORD_FILE`, `BACKEND_DB_PASSWORD` | the development password, with a warning | Its password; the file preferred, and a named file that cannot be read stops the start | `DatabaseSettings`, `common/Secrets` |
 | `BACKEND_DB_POOL_SIZE` | 8 (the rebuild 2) | The pool, 1 to 100 | `DatabaseSettings` |

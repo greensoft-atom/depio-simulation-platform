@@ -20,8 +20,7 @@ import org.junit.jupiter.api.Test;
  */
 class PrimaryDataSourceTest {
 
-    private static final String URL = System.getenv().getOrDefault("JDBC_URL",
-            "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true");
+    private static final String URL = System.getenv().getOrDefault("JDBC_URL", DatabaseSettings.TEST_URL);
     /** The test server, as the URL names it: JDBC_URL may name another than 127.0.0.1:3306 (T-58). */
     private static final String SERVER = URL.replaceFirst("^jdbc:mysql://([^/]+)/.*$", "$1");
     private static final String USER = System.getenv().getOrDefault("DB_USER", "backend");

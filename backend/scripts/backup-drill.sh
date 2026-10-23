@@ -1,6 +1,8 @@
 #!/bin/bash
 # A live drill of the backups (06 §10, D-71), on MySQL servers of its own: a primary on 3307 (binary
-# log, GTIDs) seeded with a copy of SEED_DB on 3306 (default backend_dev), and a scratch server on
+# log, GTIDs) seeded with a copy of SEED_DB (default backend_dev) on the development MySQL (dev-mysql.sh,
+# 127.0.0.1:3314 or MYSQL_PORT; started for the drill when it is not running, and stopped after; never
+# the machine's own on 3306, O-40), and a scratch server on
 # 3309 (no binary log), what the proof restores onto. It runs each script as production does, and
 # checks what each must do and what each must refuse:
 #
@@ -10,7 +12,7 @@
 #   site; and refusals - a gap in the copies, a dump whose gems do not reconcile, a proof whose replay
 #   stops short of what was committed.
 #
-#   backup-drill.sh            work in a new directory under TMPDIR; SEED_PASSWORD for 3306's backend
+#   backup-drill.sh            work in a new directory under TMPDIR; SEED_PASSWORD for the seed's backend
 set -euo pipefail
 # RELEASE=<dir>: the release's MySQL, server and tools, for the drill's own servers and the scripts
 # (docs/detailed-design/09 §6); without it, the machine's.
@@ -26,6 +28,7 @@ PIDS=()
 cleanup() {
     for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null || true; done
     wait 2>/dev/null || true
+    if [ "${DEV_MYSQL_STARTED:-0}" = 1 ]; then "$HERE/../../dev-mysql.sh" stop > /dev/null 2>&1 || true; fi
 }
 trap cleanup EXIT
 FAILS=0
@@ -54,7 +57,16 @@ msql 3307 "CREATE DATABASE $DB;
     GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, RELOAD, REPLICATION CLIENT ON *.* TO 'backup'@'%';
     CREATE USER 'binlog'@'%' IDENTIFIED BY 'binlog-drill';
     GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'binlog'@'%'"
-mysqldump -h 127.0.0.1 -P 3306 --protocol=TCP -u backend -p"${SEED_PASSWORD:-backend-dev-password}" --single-transaction \
+SEED_PORT=${MYSQL_PORT:-3314}
+if ! "$HERE/../../dev-mysql.sh" status > /dev/null 2>&1; then
+    "$HERE/../../dev-mysql.sh" start > "$W/dev-mysql.log" 2>&1 || { cat "$W/dev-mysql.log"; exit 1; }
+    DEV_MYSQL_STARTED=1
+fi
+seed() { mysql -h 127.0.0.1 -P "$SEED_PORT" --protocol=TCP -u backend -p"${SEED_PASSWORD:-backend-dev-password}" -N -B "$@"; }
+[ "$(seed -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '${SEED_DB:-backend_dev}'
+               AND table_name = 'backup_run'" 2>/dev/null)" = 1 ] \
+    || { echo "${SEED_DB:-backend_dev} on 127.0.0.1:$SEED_PORT has no schema yet: a drill or ./run-local.sh start makes it" >&2; exit 1; }
+mysqldump -h 127.0.0.1 -P "$SEED_PORT" --protocol=TCP -u backend -p"${SEED_PASSWORD:-backend-dev-password}" --single-transaction \
     --set-gtid-purged=OFF --no-tablespaces "${SEED_DB:-backend_dev}" 2>/dev/null | mysql --protocol=TCP -h 127.0.0.1 -P 3307 -u root "$DB"
 msql 3307 "GRANT INSERT ON $DB.backup_run TO 'backup'@'%'"
 cnf backup backup backup-drill 3307

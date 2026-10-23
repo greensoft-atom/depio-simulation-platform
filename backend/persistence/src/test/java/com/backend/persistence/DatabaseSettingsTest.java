@@ -66,6 +66,15 @@ class DatabaseSettingsTest {
     }
 
     @Test
+    @DisplayName("the defaults are the repository's development MySQL on 3314, never what answers on 3306 (O-40)")
+    void defaultsAreTheDevelopmentMysql() {
+        assertThat(DatabaseSettings.from(Map.of()).url())
+                .isEqualTo("jdbc:mysql://127.0.0.1:3314/backend_dev?useSSL=false&allowPublicKeyRetrieval=true");
+        assertThat(DatabaseSettings.TEST_URL)
+                .isEqualTo("jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true");
+    }
+
+    @Test
     @DisplayName("the pool is sized by BACKEND_DB_POOL_SIZE, for the database's host, else the process's own default (06 §7)")
     void poolSize() {
         assertThat(DatabaseSettings.from(Map.of()).poolSizeOr(16)).isEqualTo(16);

@@ -145,7 +145,8 @@ for the backend, its docs and its client.
   as the only repository, `work/m2`, `work/tmp`), the tests use the development MySQL
   (`dev-mysql.sh`, 3314), a run by hand is `run-local.sh` (6380, 8080, 8081, 9001; debugger
   5005 to 5009). Nothing in `/tmp`, `~/.m2` or `/opt` is needed by a clone; the drills, which
-  need .NET and this VM's MySQL on 3306, are the exception (03 §7).
+  need .NET, are the exception (03 §7). The built-in defaults name the development MySQL too
+  (O-40): a process with no `BACKEND_DB_URL`, a test with no `JDBC_URL`, and the drills.
 - Push to `main`; never rewrite pushed history. Temporary files go in the session scratchpad.
 
 ## Commands
@@ -206,9 +207,10 @@ java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.RankBenchma
      "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 200000 5000 21
 ```
 
-MySQL: the tests and the benchmarks use the development MySQL (`./dev-mysql.sh start`,
-127.0.0.1:3314, `vendor/`'s 8.4, its files in `work/mysql`); the drills use this VM's own MySQL 8.0
-on 127.0.0.1:3306, database `backend_dev`. Both: user `backend` / `backend-dev-password`.
+MySQL: the tests, the benchmarks, a run by hand and the drills use the development MySQL
+(`./dev-mysql.sh start`, 127.0.0.1:3314, `vendor/`'s 8.4, its files in `work/mysql`): the tests
+`backend_test`, the rest `backend_dev`, user `backend` / `backend-dev-password`. The drills start it
+when it is not running. This VM's own MySQL 8.0 on 3306 is no longer used (O-40).
 
 **Committing.** The word check runs over the staged lines, the staged file names and the
 message, and blocks the commit on any hit (`g[a]me` so this file passes its own check):

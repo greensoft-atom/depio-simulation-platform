@@ -52,7 +52,9 @@
 #                                                     while the worker is stopped, and fail that
 #
 # Needs: the backend release (backend/scripts/make-release.sh; RELEASE= for a copy of one), the
-# headless client built (dotnet build), python3 and the MySQL the backend's tests use. A release
+# headless client built (dotnet build), python3 and the development MySQL (dev-mysql.sh, 127.0.0.1:3314
+# or MYSQL_PORT), started for the drill when it is not running and stopped after; its database is
+# backend_dev, a run by hand's too, so the two are not run at once (D-80, O-40). A release
 # carries its own runtime, j-redis and MySQL (docs/detailed-design/09 §4), and the drill takes them
 # from it, its own MySQL servers included; JAVA, JREDIS_JAR, JREDIS_CLI_JAR and MYSQLD_BIN name
 # others. An older release without them: a JDK 21 (/opt/jdk21), j-redis-service built, and
@@ -81,7 +83,8 @@ echo "logs in $D"
 # directory, and every sample of the store starts the command-line client afresh (T-31).
 cp "$JREDIS" "$JREDIS_CLI" "$D/"; JREDIS=$D/${JREDIS##*/}; JREDIS_CLI=$D/${JREDIS_CLI##*/}
 PIDS=()
-cleanup() { for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-}; do kill "$p" 2>/dev/null; done; sleep 2; for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-}; do kill -9 "$p" 2>/dev/null; done; }
+cleanup() { for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-}; do kill "$p" 2>/dev/null; done; sleep 2; for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-}; do kill -9 "$p" 2>/dev/null; done
+           [ "${DEV_MYSQL_STARTED:-0}" = 1 ] && "$B/dev-mysql.sh" stop > /dev/null 2>&1; }
 trap cleanup EXIT
 # NFR-2's p50 and p95 per profile from a scrape of the arena: a histogram's buckets come in its
 # labels' string order, so they are sorted by their bound first (02 §13).
@@ -120,13 +123,21 @@ if [ "${TLS:-0}" = 1 ]; then
   TRUST=(--trust "$T/arena.crt" --wrong-trust "$T/other.crt")
 fi
 
-DBPORT=3306
+# The drill's database: backend_dev on the development MySQL, never the machine's own on 3306 (O-40).
+DEV_DBPORT=${MYSQL_PORT:-3314}
+DBPORT=$DEV_DBPORT
+if ! "$B/dev-mysql.sh" status > /dev/null 2>&1; then
+  "$B/dev-mysql.sh" start > "$D/dev-mysql.log" 2>&1 || { cat "$D/dev-mysql.log"; exit 1; }
+  DEV_MYSQL_STARTED=1
+fi
 FAILOVER=${FAILOVER:-0}
 case $FAILOVER in 0|1|demote) ;; *) echo "FAILOVER is 1 or demote"; exit 2 ;; esac
 [ "$FAILOVER" = demote ] && [ -n "${BOTS:-}" ] && { echo "FAILOVER=demote runs the scenarios, not the bots"; exit 2; }
 MYSQL_FAILOVER=${MYSQL_FAILOVER:-0}
 case $MYSQL_FAILOVER in 0|1|demote|freeze) ;; *) echo "MYSQL_FAILOVER is 1, demote or freeze"; exit 2 ;; esac
 [ "$MYSQL_FAILOVER" = freeze ] && [ -n "${BOTS:-}" ] && { echo "MYSQL_FAILOVER=freeze runs the scenarios, not the bots"; exit 2; }
+# Named, not left to the processes' default, which a release older than O-40's still has at 3306.
+[ "$MYSQL_FAILOVER" = 0 ] && export BACKEND_DB_URL="jdbc:mysql://127.0.0.1:$DBPORT/backend_dev?useSSL=false&allowPublicKeyRetrieval=true"
 if [ "$MYSQL_FAILOVER" != 0 ]; then
   # MySQL's primary and its GTID replica, servers of the drill's own; the backend given both hosts,
   # the replica first, so that choosing the writable one is what is tested (D-35). The replica is
@@ -241,7 +252,7 @@ if [ "${TAKEOVER:-0}" = 1 ]; then kill -STOP "${PIDS[4]}"; echo "--- worker-dril
 # teams them as a test's fixture does, straight to the drill's database, its primary of the moment.
 # In UTC, as the processes write: a server on local time stamps a fixture hours off (T-46).
 drill_sql() {
-  local port=$DBPORT; [ "$MYSQL_FAILOVER" != 0 ] && [ "$port" = 3306 ] && port=3307
+  local port=$DBPORT; [ "$MYSQL_FAILOVER" != 0 ] && [ "$port" = "$DEV_DBPORT" ] && port=3307
   printf '#!/bin/sh\nexec mysql -h127.0.0.1 -P%s --protocol=TCP -ubackend -p"%s" backend_dev -N -B -e "SET time_zone = '"'+00:00'"'; $1"\n' \
     "$port" "${BACKEND_DB_PASSWORD:-backend-dev-password}" > "$D/drill-sql.sh"
   chmod +x "$D/drill-sql.sh"

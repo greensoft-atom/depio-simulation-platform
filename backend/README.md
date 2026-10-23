@@ -191,9 +191,9 @@ production broke.
 
 That is the development MySQL ([build and run §3](../docs/development/03-build-and-run.md#3-the-tests)):
 the first start makes `backend_test`, `backend_dev` and the user `backend` / `backend-dev-password`,
-and `dev-env.sh` points the tests' `JDBC_URL` at it. Without `JDBC_URL` the tests go to
-127.0.0.1:3306, where the development VM's own MySQL 8.0 is; `DB_USER` and `DB_PASSWORD` override
-the rest. Flyway migrates the
+and `dev-env.sh` points the tests' `JDBC_URL` at it. Without `JDBC_URL` the tests go to the
+same database (`DatabaseSettings.TEST_URL`, O-40), never to whatever answers on 3306;
+`DB_USER` and `DB_PASSWORD` override the rest. Flyway migrates the
 schema before each test class. On 2026-10-05 they were also run against a server from the
 release's MySQL 8.4 ([09 §7](../docs/detailed-design/09-release-and-packaging.md#7-how-it-is-verified)).
 

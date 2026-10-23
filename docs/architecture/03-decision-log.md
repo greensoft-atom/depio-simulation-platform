@@ -2205,6 +2205,16 @@ machine's MySQL.
 - **The development VM's own JDK, Maven and `~/.m2`** are no longer how this repository is built,
   even there: one way, the one a clone has.
 
+**Completed 2026-10-23** ([O-40](../defects.md#6-operations), agreed by the owner): the built-in
+defaults follow. A process given no `BACKEND_DB_URL` reaches `backend_dev` on the development
+MySQL (`DatabaseSettings.DEV_URL`), and a database test given no `JDBC_URL` reaches
+`backend_test` there (`DatabaseSettings.TEST_URL`, one constant that every such test reads, where
+29 had a copy each). Neither names 127.0.0.1:3306 any more, whatever answers there. The drills
+move with them: `client/headless-drill.sh` uses `backend_dev` on 3314, and `backup-drill.sh`
+seeds from it. Each starts the development MySQL when it is not running and stops it after. A
+drill and a run by hand share `backend_dev`, so they are not run at once: a drill's `season`
+scenario ends the current season for both.
+
 ### D-81 — Three public ports a machine, so one arena on each
 
 **Superseded by [D-82](#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)** the same day: the three ports are the whole site's, on one address,

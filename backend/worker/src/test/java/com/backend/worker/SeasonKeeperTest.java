@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 import com.backend.handoff.LobbyPush;
 import com.backend.persistence.AccountRepository;
 import com.backend.persistence.Database;
+import com.backend.persistence.DatabaseSettings;
 import com.backend.persistence.EconomyRepository;
 import com.backend.persistence.InboxRepository;
 import com.backend.persistence.SeasonRepository;
@@ -31,8 +32,7 @@ import org.junit.jupiter.api.Test;
 /** The season job (docs 04 §7, 05 §9, D-63): an ended season's places, gems and reset, once whoever runs it. */
 class SeasonKeeperTest {
 
-    private static final String URL = System.getenv().getOrDefault("JDBC_URL",
-            "jdbc:mysql://127.0.0.1:3306/backend_test?useSSL=false&allowPublicKeyRetrieval=true");
+    private static final String URL = System.getenv().getOrDefault("JDBC_URL", DatabaseSettings.TEST_URL);
     private static final String USER = System.getenv().getOrDefault("DB_USER", "backend");
     private static final String PASSWORD = System.getenv().getOrDefault("DB_PASSWORD",
             "backend-dev-password");
