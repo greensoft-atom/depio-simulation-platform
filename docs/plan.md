@@ -3585,6 +3585,16 @@ was reverted uncommitted, and the rule recorded. Then: "complete and robust as i
   security review (the owner's cost), a soft launch. Q-59 (the app's updates) and Q-53 (the backups' copy
   off the site) are the owner's, open.
 
+#### 101. ~~A co-op test cut by the arena's idle rule on a loaded build (T-62).~~ — **done 2026-10-24**
+
+`ArenaServerTest.theDeadComeBackAtTheNextWave`'s clients read frames for up to ten waves and sent
+nothing; the arena closes a client silent for 30 s, which a loaded build reached. Fixed by construction:
+the test's arena cuts a client silent for four seconds, and its clients ping every second and a half on
+their own clock, as the real one does every ten. Checked: without pings the client was cut at 4 s, twice;
+a first fix that pinged only when a read found nothing was cut too (a client receiving snapshots never
+waits; its sending is what the rule judges); with pings on a clock, three runs of 19 s each, and
+`build-offline.sh` clean.
+
 ---
 
 ### Completed 2026-09-23

@@ -3027,6 +3027,10 @@ class ArenaServerTest {
         try (ArenaServer server = new ArenaServer(tickets, 2_000f, 2_048, 20, 60, 2, 3,
                 MatchRules.open("arena-test"), published::add)) {
             server.registry().adjustMade = r -> r.withJoinWindow(25);
+            // A client silent for four seconds is cut, not thirty: the waves are five apart, so a client that
+            // only reads is cut by construction, and the test holds only because its clients ping while they
+            // wait, as the real one does every 10 s. On a loaded build the thirty were reached too (T-62).
+            server.limits(new MatchFrameHandler.Limits(10_000, 4_000, 5_000));
             int port = server.start(0);
             String uid = com.backend.handoff.Ulid.generate();
             try (TestClient a = new TestClient(port); TestClient b = new TestClient(port)) {
@@ -3035,9 +3039,11 @@ class ArenaServerTest {
                 b.join(coopTicket(uid, 9212));
                 Welcome.of(readReply(b));
                 // A player dead until the next wave is sent nothing but events: silent for the five
-                // seconds between waves and more, which a five-second read took for a dead server.
-                a.soTimeout(30_000);
-                b.soTimeout(30_000);
+                // seconds between waves and more, which a five-second read took for a dead server. So a
+                // read that finds nothing in two seconds is not the end: the client pings, as a real one
+                // does, and reads again; the arena would otherwise cut it as silent (T-62).
+                a.soTimeout(2_000);
+                b.soTimeout(2_000);
                 RoomThread room = roomOf(server, uid);
                 // 0: A dies to the first wave while B lives far off; then the wave is cleared.
                 // 1: waiting for the second wave to bring A back. 2: B goes to die too.
@@ -3098,13 +3104,35 @@ class ArenaServerTest {
                 };
                 boolean overA = false;
                 boolean overB = false;
+                // Each client pings every second and a half whatever it receives, as the real one does on its
+                // own clock: a client that only receives is silent to the arena's idle rule all the same.
+                long pingedA = System.nanoTime();
+                long pingedB = pingedA;
                 for (int i = 0; i < 2_000 && !(overA && overB); i++) {
                     if (!overA) {
-                        byte[] f = a.readFrame();
+                        if (System.nanoTime() - pingedA > 1_500_000_000L) {
+                            a.ping(i);
+                            pingedA = System.nanoTime();
+                        }
+                        byte[] f;
+                        try {
+                            f = a.readFrame();
+                        } catch (java.net.SocketTimeoutException waiting) {
+                            continue;
+                        }
                         overA = (f[0] & 0xFF) == Wire.MSG_KICK && (f[1] & 0xFF) == Wire.KICK_MATCH_OVER;
                     }
                     if (!overB) {
-                        byte[] f = b.readFrame();
+                        if (System.nanoTime() - pingedB > 1_500_000_000L) {
+                            b.ping(i);
+                            pingedB = System.nanoTime();
+                        }
+                        byte[] f;
+                        try {
+                            f = b.readFrame();
+                        } catch (java.net.SocketTimeoutException waiting) {
+                            continue;
+                        }
                         overB = (f[0] & 0xFF) == Wire.MSG_KICK && (f[1] & 0xFF) == Wire.KICK_MATCH_OVER;
                     }
                 }

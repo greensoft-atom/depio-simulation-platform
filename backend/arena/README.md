@@ -299,7 +299,7 @@ tick or the payload is measured with `tools/TickBenchmark`
 
 | Test class | Tests | What it covers |
 |---|---|---|
-| `ArenaServerTest` | 99 | End to end over a plain socket: joins and tickets, leave and resume, every lifecycle and mode, deaths and respawns, the rebate, phrases, the kill feed, profiles, failures, the watchdog, drain and shutdown, operators, the sandbox, the motion events |
+| `ArenaServerTest` | 99 | End to end over a plain socket, the clients pinging on their own clock where they wait (T-62): joins and tickets, leave and resume, every lifecycle and mode, deaths and respawns, the rebate, phrases, the kill feed, profiles, failures, the watchdog, drain and shutdown, operators, the sandbox, the motion events |
 | `SnapshotEncoderTest` | 23 | The entity budget and priority, handle 1 for the own tank, handles not reused before their removal is acknowledged, predicted entities never updated, creates re-sent only to a client that stopped acknowledging, levels, classes, radii, traps as units, the protection and hidden flags, zoom, skins, a mobile frame inside the byte budget |
 | `MatchTallyTest` | 18 | One entry across a leave and a return, kills, assists, score, placements by score, by kills, by team and by dominators held, shared placements, open sessions and checkpoints, a match nobody played |
 | `MatchResultPublisherTest` | 12 | The spool with the store down and back, a refusing disk, closing with and without the store, a result after close, the stream trimmed to a day, the replica wait, replay order |
