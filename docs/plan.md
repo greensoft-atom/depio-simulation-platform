@@ -3576,7 +3576,7 @@ was reverted uncommitted, and the rule recorded. Then: "complete and robust as i
   129 s later with its labels, one notification at the drill's receiver, the `ALERT` line in the
   platform's log, a round of 0.15 s with four targets, then silenced (201, listed as silenced).
   `check-units-el9.sh` in UBI 9.5: the same under systemd, listed after 134 s, in the journal, and
-  resolved within 15 s of the worker's start. `build-offline.sh` passed. Not checked: three machines'
+  resolved within 15 s of the worker's start. `build-offline.sh`: every test but one passed; `ArenaServerTest.theDeadComeBackAtTheNextWave`, untouched by this item, erred once and passed alone (T-62, to fix next; commit 6cbfb02's message says the build passed, which it did not). Not checked: three machines'
   watches on a real private network (the peers' `/health` and the once-for-the-site sending are
   WatchTest's, on one host), and a real webhook receiver.
 - **Open**: Q-60, the webhook's address (or e-mail through the owner's relay with the bundle's
