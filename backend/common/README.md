@@ -17,6 +17,7 @@ compiles against it, and each process brings its own.
 | Class | What it does | Used by |
 |---|---|---|
 | `Metrics` | A process's metrics: counters, gauges, labelled counters, labelled histograms and labelled gauges, each a supplier read at scrape time; `jvm()`; `render()` in the text format 0.0.4 | arena, gateway, platform, worker, handoff |
+| `MetricsText` | Reads the text format back into samples, a name, its labels and a value, for the platform's watch (04 §12); a line it cannot read is skipped | platform |
 | `MetricsServer` | Serves `render()` at `GET /metrics` when `BACKEND_METRICS_ADDR` names an address | arena, gateway, platform, worker |
 | `Secrets` | `read(env, NAME)`: `NAME_FILE` (a file holding it) wins over `NAME` (the value); the value is never printed | handoff, persistence, platform, arena |
 | `Arguments` | `integer` and `decimal` at a position, a default when absent, `RefusedConfiguration` when present and not a number | arena, gateway, platform, worker |
@@ -84,6 +85,7 @@ mvn -pl common test -Dtest=MetricsTest
 
 | Class | Tests | What it covers |
 |---|---|---|
+| `MetricsTextTest` | 5 | what `render()` writes read back whole, a histogram's buckets, sum and count included; every value the format allows; labels holding punctuation; a line it cannot read skipped, the rest kept; nothing read as nothing |
 | `MetricsTest` | 4 | The text format (help, type, sorting, escaping); a histogram's cumulative buckets, sum and count; a throwing supplier; the server serving `/metrics` when configured and not at all when not |
 | `LoggingTest` | 3 | A journal that stops reading does not stop the thread that logs; stopping the logging writes out the queue; `Logs.flush` before a halt |
 | `TrustedProxiesTest` | 3 | Unset, loopback alone; the named addresses and no other; anything but IP literals refused, nothing looked up in DNS |

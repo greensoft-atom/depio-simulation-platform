@@ -57,6 +57,7 @@ under `background/`.
 | nginx in front, on one of the three machines (every machine set up the same), ends TLS on 443 and 9001 and routes match traffic by the arena's name; the front sees players' own addresses | 2026-10-19 | D-82 |
 | The certificate is from a CA of the backend's own (`private-ca.sh`), its root shipped in the app and trusted alone; no public CA, no domain. (Deferred from 2026-09 until the owner brought it back on 2026-10-19.) | 2026-10-19 | D-82, [operations/06](../operations/06-certificates.md) |
 | No third-party Redis server, client library or tool, tests included: the store is j-redis | 2026-09 | this page (it was in `CLAUDE.md` only); D-6, D-7 |
+| No third-party service or daemon of any kind beyond MySQL and nginx, installed or bundled: monitoring and alerting are the backend's own code (Prometheus, Alertmanager and node_exporter refused even bundled); libraries as jars stay allowed | 2026-10-24 | C-6, Q-60, plan item 100 |
 | The client: the engine-free C# core, the headless driver, and the Unity layer as thin scripts; nothing is run in Unity here | 2026-10-04 | Q-51, D-73 |
 | The migrations squashed to V1 (schema) and V2 (seed) once, before launch; forward-only from V3 | 2026-10-04 | D-75 |
 | A result under five seconds counts for nothing but its row and a rated match's rating; a walkover is no win | 2026-10-05 | D-76 |
@@ -165,6 +166,11 @@ image, which is RHEL 9's own userspace (plan item 80).
   a release is checked in UBI 9 with nothing installed by
   `backend/scripts/check-release-el9.sh`
   ([09 §7](../detailed-design/09-release-and-packaging.md#7-how-it-is-verified)).
+- **A mutant that "survives" because no test ran.** A mutation harness that reads
+  "Failures: 0" as survival calls a run in which nothing ran a survivor too: three
+  engine mutants "survived" while a test file written ahead of its classes kept the
+  module's tests from compiling (item 100, 2026-10-24). A harness reads the tests-run
+  count, and treats none, or a compilation error, as invalid, never as a result.
 - **`pkill -f` / `pgrep -f` match the shell running them** when the pattern is in
   the command line: use the bracket trick, `pkill -f "[A]renaMain"`. And match a
   class's **full name**: `WorkerMain` alone also matches VS Code's own worker

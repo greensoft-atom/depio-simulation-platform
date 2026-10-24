@@ -85,7 +85,8 @@ for the backend, its docs and its client.
      the decision log when a choice is made) before any code.
   2. **Test first.** Write the test, watch it fail for the right reason, then implement.
   3. **Mutation check.** Break each new rule on purpose and confirm a test catches it. A
-     surviving mutant means a missing test; add it. Build `clean` afterwards: the restored
+     surviving mutant means a missing test; add it. A run in which no test ran (a compilation
+     error, elsewhere too) is invalid, not a survivor. Build `clean` afterwards: the restored
      source is older than the mutant's class, which Maven keeps.
   4. **Live drill** when the behaviour crosses processes: `client/headless-drill.sh` against
      the real stack from a release.
@@ -128,6 +129,11 @@ for the backend, its docs and its client.
   schema changes are forward-only, expand then contract (06 §8).
 - **No third-party Redis server, client library or tool**, tests included; the store is
   j-redis.
+- **No third-party service or daemon of any kind beyond MySQL and nginx**, whether installed from the
+  OS or bundled in the release (owner, 2026-10-24, refusing Prometheus, Alertmanager and node_exporter
+  even bundled): monitoring, alerting and everything else operational is the backend's own code.
+  Libraries embedded as jars stay allowed (C-6). Never propose Prometheus, Grafana, Loki, HAProxy,
+  keepalived or their kind; build the smallest equivalent of our own instead.
 - **One public address for the site** (owner, 2026-10-19; C-9, D-82): an IP, no domain, with 80,
   443 and 9001, forwarded to one machine, the front; the others on the private network alone; SSH
   from the internal network alone. nginx on the front (every machine set up the same) ends TLS on
@@ -186,6 +192,8 @@ client/unity-package.sh && client/unity-check.sh
 TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]
 # Over TLS, where "untrusted" is a scenario too (without TLS=1 it fails: it needs a certificate)
 TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted
+# The watch on, a webhook receiver of the drill's: the worker killed after the scenarios, TargetDown listed and sent (08)
+WATCH=1 TMPDIR=<scratchpad> client/headless-drill.sh play
 
 # The certificate scripts' own check (openssl alone, a few seconds), and the front's end to end in Rocky 9.5:
 # firewalld, nginx, two machines, the C# client through 443 and 9001 (Docker, .NET; about ten minutes)

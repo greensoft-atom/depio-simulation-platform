@@ -66,6 +66,7 @@ active backend-mysql && ok "active (Type=notify): $($R/mysql/bin/mysql -S /run/b
 $R/mysql/bin/mysql -S /run/backend-mysql/mysqld.sock -u root -e "CREATE DATABASE backend;
     CREATE USER backend@'127.0.0.1' IDENTIFIED BY 'dbpw'; GRANT ALL ON backend.* TO backend@'127.0.0.1'"
 echo dbpw > /etc/backend/credentials/db-password; echo storepw > /etc/backend/credentials/store-password
+echo admintoken > /etc/backend/credentials/admin-token
 chmod 0600 /etc/backend/credentials/*
 
 echo "--- backend-store@session"
@@ -86,17 +87,22 @@ STORE_PORT=6379
 BACKEND_DB_URL=jdbc:mysql://127.0.0.1:3306/backend?useSSL=false&allowPublicKeyRetrieval=true
 BACKEND_DB_USER=backend
 BACKEND_PAYMENT_PROVIDER=simulated
+BACKEND_METRICS_ADDR=127.0.0.1:9101
+BACKEND_ADMIN_ADDR=127.0.0.1:9120
+BACKEND_WATCH_TARGETS=platform=127.0.0.1:9101,gateway=127.0.0.1:9103,arena=127.0.0.1:9110,worker=127.0.0.1:9102
+BACKEND_WATCH_MACHINE=one
 EOF
 # systemd in a container cannot mount the private directory LoadCredential delivers into (it stays
 # empty and root's): the secrets come as files the user may read, by a drop-in, for this test only.
 # On a host it works for a non-root user (checked on systemd 255; RHEL 9's 252 uses the same ACLs).
 install -d -o backend -m 0500 /etc/backend/test-credentials
-install -o backend -m 0400 /etc/backend/credentials/db-password /etc/backend/credentials/store-password /etc/backend/test-credentials/
+install -o backend -m 0400 /etc/backend/credentials/db-password /etc/backend/credentials/store-password /etc/backend/credentials/admin-token /etc/backend/test-credentials/
 for u in backend-platform backend-gateway backend-worker@ backend-arena@; do
     mkdir -p "/etc/systemd/system/$u.service.d"
     printf '[Service]\nEnvironment=BACKEND_DB_PASSWORD_FILE=/etc/backend/test-credentials/db-password\nEnvironment=BACKEND_STORE_PASSWORD_FILE=/etc/backend/test-credentials/store-password\n' \
         > "/etc/systemd/system/$u.service.d/test-credentials.conf"
 done
+printf '[Service]\nEnvironment=BACKEND_ADMIN_TOKEN_FILE=/etc/backend/test-credentials/admin-token\n' > /etc/systemd/system/backend-platform.service.d/test-admin.conf
 systemctl daemon-reload
 systemctl start backend-platform
 for i in $(seq 90); do curl -s -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
@@ -110,12 +116,14 @@ GATEWAY_PORT=8090
 PLATFORM_URL=http://127.0.0.1:8080
 STORE_HOST=127.0.0.1
 STORE_PORT=6379
+BACKEND_METRICS_ADDR=127.0.0.1:9103
 EOF
 cat > /etc/backend/worker.env <<EOF
 STORE_HOST=127.0.0.1
 STORE_PORT=6379
 BACKEND_DB_URL=jdbc:mysql://127.0.0.1:3306/backend?useSSL=false&allowPublicKeyRetrieval=true
 BACKEND_DB_USER=backend
+BACKEND_METRICS_ADDR=127.0.0.1:9102
 EOF
 cat > /etc/backend/arena-a1.env <<EOF
 ARENA_PORT=9011
@@ -130,6 +138,7 @@ BACKEND_ADVERTISE_PORT=9001
 BACKEND_ADVERTISE_TLS_NAME=a1.arena.internal
 STORE_HOST=127.0.0.1
 STORE_PORT=6379
+BACKEND_METRICS_ADDR=127.0.0.1:9110
 EOF
 systemctl start backend-gateway backend-worker@c1 backend-arena@a1
 sleep 20
@@ -206,6 +215,21 @@ systemctl start 'backend-arena@*' 2> /dev/null
 echo "  ..   a pattern to start: the arena $(systemctl is-active backend-arena@a1)"
 systemctl start backend-arena@a1 backend-worker@c1
 active backend-arena@a1 30 && active backend-worker@c1 30 && ok "named, they start" || bad "the start by name"
+
+echo "--- the watch (04 §12, D-86): the worker stopped, TargetDown listed by the admin API within three minutes, gone once it is back"
+admin() { curl -s -H "Authorization: Bearer admintoken" "http://127.0.0.1:9120/admin/$1"; }
+systemctl stop backend-worker@c1
+T0=$(date +%s)
+until admin alerts | grep -q '"name":"TargetDown"'; do [ $(( $(date +%s) - T0 )) -gt 180 ] && break; sleep 5; done
+admin alerts | grep -q '"name":"TargetDown"' \
+    && ok "TargetDown listed after $(( $(date +%s) - T0 )) s: $(admin alerts | grep -o '"labels":{[^}]*}' | head -1)" \
+    || { bad "no TargetDown listed after 180 s: $(admin alerts | cut -c1-200)"; journalctl -u backend-platform --no-pager | grep -iE "watch|ALERT" | tail -5; }
+journalctl -u backend-platform --no-pager | grep -q "ALERT firing TargetDown" && ok "and in the platform's journal" || bad "no ALERT line in the platform's journal"
+systemctl start backend-worker@c1
+T0=$(date +%s)
+while admin alerts | grep -q '"name":"TargetDown"'; do [ $(( $(date +%s) - T0 )) -gt 60 ] && break; sleep 5; done
+admin alerts | grep -q '"name":"TargetDown"' && bad "TargetDown still listed 60 s after the worker's start" \
+    || ok "resolved within $(( $(date +%s) - T0 )) s of the worker's start"
 
 echo "--- backend-nginx-logs: nginx's logs rotated as the unit runs it (D-85, O-45)"
 systemctl enable backend-nginx-logs.timer 2> /dev/null && systemctl list-timers --all --no-pager | grep -q backend-nginx-logs \

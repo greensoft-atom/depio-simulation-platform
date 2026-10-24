@@ -2741,3 +2741,93 @@ ticket claims** (2026-09-29): `backend_platform_open_tickets_issued_total` and
 claim_failed): tickets issued less joins with a ticket is what never arrived,
 over an hour or so, since a ticket lives sixty seconds. Room fill is the
 arena's `backend_arena_players` by room, already built.
+
+## 12. The watch: monitoring and alerts (designed 2026-10-24, plan item 100)
+
+The backend's own monitoring
+([D-86](../architecture/03-decision-log.md#d-86--monitoring-is-the-backends-own-a-watch-in-every-platform-the-runbooks-rules-in-code-alerts-in-the-store-sent-by-webhook)),
+a component of the platform process, `platform/watch`: every machine's platform reads what its machine
+exposes, evaluates the runbook's rules, keeps the alerts where every machine can list them, and sends
+them. The operator's view is [operations/08](../operations/08-monitoring.md).
+
+### What it reads, every 15 s
+
+| Source | How | Setting |
+|---|---|---|
+| this machine's processes' metrics | `GET /metrics` on each loopback address, parsed from the text format (`common/MetricsText`); a target not answering within 2 s is a failed scrape, and `up` 0 | `BACKEND_WATCH_TARGETS`: `job=host:port` pairs, comma-separated; `arena` and `worker` repeat; the platform names its own too. Unset: the watch is off, and says so at start |
+| this machine's file systems | `FileStore` of each path: `machine_disk_free_bytes{mount}`, `machine_disk_size_bytes{mount}`, one series a distinct file system | `BACKEND_WATCH_DISKS`, paths, default `/,/var/lib,/var/log,/opt/backend` |
+| this machine's memory and load | `OperatingSystemMXBean`: `machine_memory_free_bytes`, `machine_memory_size_bytes`, `machine_load_1m`, `machine_cores` | none |
+| the other machines | `GET /health` on each peer's platform, 2 s: `peer_up{peer}` 1 or 0 | `BACKEND_WATCH_PEERS`: `name=host:port` pairs |
+
+The series a rule needs are kept for an hour (240 samples each) in a ring per series; the rest are
+read and dropped. The machine's own name on every alert is `BACKEND_WATCH_MACHINE`, or the hostname.
+
+### The rules
+
+One class a rule, each `name`, `summary`, `runbook` and `evaluate(series, now) → the labels of each
+series firing`, with its wait (`for`). The thresholds are [runbook §5](../operations/02-runbook.md#5-what-to-watch)'s
+and [01 §7](../operations/01-deploy.md#7-installing-a-machine)'s, and change there and here together:
+
+| Alert | Condition | For |
+|---|---|---|
+| `TargetDown` | a scrape failed (`up` 0), job not a peer | 2 min |
+| `PeerUnreachable` | a peer's `/health` failed | 2 min |
+| `StoreConnectionDown`, `EventsStoreConnectionDown` | `backend_store_connected`, `backend_events_store_connected` 0 | 1 min |
+| `StoreWithoutReplica`, `EventsStoreWithoutReplica` | `…_replicas` 0 | 1 min |
+| `StoreReplicaSilent`, `EventsStoreReplicaSilent` | `…_replica_ack_seconds` > 30 | at once |
+| `GatewaySubscriptionDown` | `backend_gateway_store_subscribed` 0 | 1 min |
+| `PushesUnheard` | `backend_platform_pushes_unheard_total` rose in 10 min | at once |
+| `ResultSetAside` | `backend_worker_dead_letter_depth` > 0 | at once |
+| `ResultsBacklogGrowing` | `backend_worker_queue_depth` > 100 and higher than 10 min ago | 10 min |
+| `WorkerFailing` | `backend_worker_failed_total` rising over 5 min | 5 min |
+| `ResultTrimmedUnapplied` | `backend_worker_trimmed_unapplied_total` rose in the hour | at once |
+| `ResultsUnreplicated` | `backend_arena_results_unreplicated_total` rising over 10 min | 10 min |
+| `TournamentsStalling` | `backend_worker_tournament_failures_total` rose by more than 5 in 30 min | 5 min |
+| `MysqlReplicaLagging`, `MysqlReplicaDown` | `backend_mysql_replica_lag_seconds` > 30; `backend_mysql_replica_up` 0 | 2 min |
+| `LedgerMismatch`, `LedgerCheckStale` | `backend_worker_ledger_mismatches` > 0; the check older than 2 days | at once |
+| `HasherLineFull` | `backend_platform_hasher_line` ≥ 168 | 1 min |
+| `TickSlow` | `backend_arena_tick_p99_seconds` > 0.015 | 5 min |
+| `ArenaCrashLoop` | `backend_process_uptime_seconds` of an arena fell twice in the hour | at once |
+| `DiskFilling`, `DiskFillsWithinAWeek` | free under 20 % of size; a straight line through the hour's free bytes reaches 0 within 7 days | 5 min; 1 h |
+| `MemoryLow` | free under 10 % of total | 10 min |
+| `BackupDumpStale`, `BackupProofStale`, `BackupOffsiteStale`, `BackupFailed` | `backend_backup_succeeded_timestamp_seconds{kind}` older than 26 h, 8 days, 26 h; `backend_backup_failed` 1 | at once; 1 h |
+| `RestoreTooSlow` | `backend_backup_restore_seconds` > 7 200 | at once |
+| `TableTooBig`, `RetentionSlow` | `match_player` past 500 million rows; a retention run over 1 800 s | at once |
+| `CertificateExpiring` | an arena's or the gateway's certificate expiry within 14 days | at once |
+
+Each rule's test feeds it a sequence of scrapes and expects it firing at its threshold and its wait and
+not before (`RulesTest`), as `promtool test rules` would; a rule's threshold is a constant in its class.
+
+### Alerts: pending, firing, resolved, sent
+
+- **State**: a rule's series firing for less than its wait is *pending*; for its wait or longer, *firing*;
+  a firing alert whose condition stops holding is *resolved* on that round and forgotten after it is
+  sent. The fingerprint is the alert's name and labels (`job`, `instance`, `mount`, `peer`, …), with the
+  machine's name.
+- **In the store**: each firing alert as `alert:{machine}:{fingerprint}` (a hash: `name`, `labels`,
+  `summary`, `runbook`, `since`, `machine`), set with a 60 s expiry each round, so a platform that dies
+  takes its alerts away within a minute, while the others raise `PeerUnreachable` for it.
+- **Listed**: `GET /admin/alerts` scans `alert:*` and returns every machine's firing alerts, with
+  `silenced` where a silence covers one ([api/03](../api/03-admin-api.md)).
+- **Silenced**: `POST /admin/silences {"alertname", "hours", "reason"}` writes `silence:{alertname}` with
+  that expiry, audited (D-30); `GET /admin/silences`; `DELETE /admin/silences/{alertname}`. A silenced
+  alert is listed, logged, and not sent.
+- **Logged**: `ALERT firing {name} {labels}: {summary}` and `ALERT resolved …` at WARN, in the
+  platform's journal.
+- **Sent**: when `BACKEND_ALERT_WEBHOOK_URL` (or `_FILE`) is set, a `POST` of
+  `{"status": "firing"|"resolved", "machine", "alerts": [{"name", "labels", "summary", "runbook", "since"}]}`
+  for what changed this round, and again every `BACKEND_ALERT_REPEAT_HOURS` (default 4, 1 to 24) for
+  what still fires; 10 s to answer, three tries a minute apart; a failure logged and counted. **Once for
+  the site**: before sending, `SET alert:sent:{fingerprint}:{status} NX EX <repeat>`; the platform that
+  gets it sends, the others count a `duplicate`. A `PeerUnreachable` for C raised by A and B is thus sent
+  once.
+- **Its own metrics**: `backend_watch_scrapes_total{job, outcome}`, `backend_watch_alerts_firing`,
+  `backend_watch_notifications_total{outcome}` (`sent`, `failed`, `duplicate`, `silenced`),
+  `backend_watch_round_seconds`.
+
+### What it costs
+
+A round is one HTTP request a target on loopback and a few system calls, well under a second; the
+series kept are the rules' alone, a few hundred doubles each: measured in `WatchTest` and reported in
+08. The watch's thread is its own, scheduled with a fixed delay; a round that throws is logged and the
+next runs.

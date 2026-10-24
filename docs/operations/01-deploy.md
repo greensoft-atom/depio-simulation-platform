@@ -498,12 +498,13 @@ advancing); and the backups' and the growth's, which
 [runbook](02-runbook.md#3-per-component-procedures) says what to
 do).
 
-**What ships for watching, and what does not.** Each process serves its
-metrics on loopback (above), and the worker reports the backups from
-`backup_run`. No scraper, scrape configuration or alert rules are in the
-release: the thresholds here and in runbook §5 are what the rules of whoever
-scrapes these machines should say. Until something scrapes and alerts, the
-daily checks are by hand (runbook §6). The API's
+**What watches.** Each process serves its metrics on loopback (above), and the worker
+reports the backups from `backup_run`. Every platform's watch reads its machine's every 15 s,
+with the machine's disks and memory and the other machines' `/health`, evaluates the runbook's
+§5 as rules, and puts what fires on the admin API, in its journal and, once the owner names
+one (Q-60), at the webhook ([08](08-monitoring.md), 04 §12, D-86): nothing is installed or
+bundled for it (C-6). Until a webhook is named, alerts are read on a machine and the daily
+checks (runbook §6) stand. The API's
 latency by route and matchmaking's waits by mode are histograms
 ([04 §11](../detailed-design/04-platform-services.md#11-what-to-measure)), and so
 are the gateway's calls to platform by route, its connections' unwritable

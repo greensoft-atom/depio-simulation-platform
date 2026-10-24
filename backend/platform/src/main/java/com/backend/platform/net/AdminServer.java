@@ -65,11 +65,15 @@ public final class AdminServer implements AutoCloseable {
     private final com.backend.persistence.StatsRepository stats;
     private final com.backend.persistence.SeasonRepository seasons;
     private final Clock clock;
+    private final com.backend.platform.watch.AlertStore alerts;
+    /** The watch's rules by name: what a silence may name (04 §12). */
+    private static final java.util.Set<String> RULE_NAMES = com.backend.platform.watch.Rules.all().stream()
+            .map(com.backend.platform.watch.Rule::name).collect(java.util.stream.Collectors.toUnmodifiableSet());
 
     private AdminServer(HttpServer server, byte[] secret, ArenaDirectory arenas, AdminRepository admin,
                         SessionStore sessions, LobbyPush push, TournamentRepository tournaments,
                         com.backend.persistence.StatsRepository stats, com.backend.persistence.SeasonRepository seasons,
-                        Clock clock) {
+                        com.backend.platform.watch.AlertStore alerts, Clock clock) {
         this.server = server;
         this.secret = secret;
         this.arenas = arenas;
@@ -79,6 +83,7 @@ public final class AdminServer implements AutoCloseable {
         this.tournaments = tournaments;
         this.stats = stats;
         this.seasons = seasons;
+        this.alerts = alerts;
         this.clock = clock;
     }
 
@@ -87,7 +92,7 @@ public final class AdminServer implements AutoCloseable {
                                                 AdminRepository admin, SessionStore sessions, LobbyPush push,
                                                 TournamentRepository tournaments,
                                                 com.backend.persistence.StatsRepository stats,
-                                                com.backend.persistence.SeasonRepository seasons, Clock clock) {
+                                                com.backend.persistence.SeasonRepository seasons, com.backend.platform.watch.AlertStore alerts, Clock clock) {
         String addr = env.get("BACKEND_ADMIN_ADDR");
         if (addr == null || addr.isBlank()) {
             return null;
@@ -114,7 +119,7 @@ public final class AdminServer implements AutoCloseable {
             HttpServer server = HttpServer.create(new InetSocketAddress(host, port), 16);
             server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
             AdminServer started = new AdminServer(server, token.value().getBytes(StandardCharsets.UTF_8),
-                    arenas, admin, sessions, push, tournaments, stats, seasons, clock);
+                    arenas, admin, sessions, push, tournaments, stats, seasons, alerts, clock);
             server.createContext("/admin/", started::handle);
             server.start();
             log.info("admin API on {}", server.getAddress());
@@ -163,6 +168,12 @@ public final class AdminServer implements AutoCloseable {
                 listSeasons(ex);
             } else if (path.equals("/admin/seasons/end")) {
                 endSeason(ex);
+            } else if (path.equals("/admin/alerts")) {
+                listAlerts(ex);
+            } else if (path.equals("/admin/silences")) {
+                silences(ex);
+            } else if (path.startsWith("/admin/silences/")) {
+                unsilence(ex, path.substring("/admin/silences/".length()));
             } else if (path.startsWith("/admin/payments/")) {
                 refund(ex, path.substring("/admin/payments/".length()).split("/"));
             } else {
@@ -689,6 +700,87 @@ public final class AdminServer implements AutoCloseable {
             out.put("until", Instant.ofEpochMilli(until).toString());
         }
         answer(ex, 200, out);
+    }
+
+    /** {@code GET /admin/alerts}: every machine's firing alerts, from the store, each with whether a silence covers it (04 §12). */
+    private void listAlerts(HttpExchange ex) throws IOException, SQLException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            ex.getResponseHeaders().set("Allow", "GET");
+            answer(ex, 405, error("method_not_allowed", "use GET"));
+            return;
+        }
+        admin.audit("alerts", "alerts", null, "ok");
+        var json = JSON.createObjectNode();
+        var list = json.putArray("alerts");
+        for (var stored : alerts.list()) {
+            var a = stored.alert();
+            var row = list.addObject().put("name", a.name());
+            var labels = row.putObject("labels");
+            a.labels().forEach(labels::put);
+            row.put("summary", a.summary()).put("runbook", a.runbook())
+                    .put("since", Instant.ofEpochMilli(a.sinceMillis()).toString()).put("silenced", stored.silenced());
+        }
+        answer(ex, 200, json);
+    }
+
+    /** {@code GET /admin/silences}, and {@code POST} {@code {"alertname", "hours", "reason"}}: 1 to 168 hours, audited (04 §12). */
+    private void silences(HttpExchange ex) throws IOException, SQLException {
+        switch (ex.getRequestMethod()) {
+            case "GET" -> {
+                admin.audit("silences", "silences", null, "ok");
+                var json = JSON.createObjectNode();
+                var list = json.putArray("silences");
+                for (var s : alerts.silences()) {
+                    list.addObject().put("alertname", s.alertname()).put("until", Instant.ofEpochMilli(s.untilMillis()).toString())
+                            .put("reason", s.reason());
+                }
+                answer(ex, 200, json);
+            }
+            case "POST" -> {
+                String body = read(ex);
+                JsonNode json = parse(body);
+                String name = json.path("alertname").asText("").strip();
+                if (!RULE_NAMES.contains(name)) {
+                    admin.audit("silence", name.isEmpty() ? null : name, body, "refused_no_such_alert");
+                    answer(ex, 400, error("no_such_alert", "alertname is one of the watch's alerts (docs/operations/08-monitoring.md §3)"));
+                    return;
+                }
+                JsonNode hours = json.path("hours");
+                if (!hours.isIntegralNumber() || hours.asLong() < 1 || hours.asLong() > 168) {
+                    admin.audit("silence", name, body, "refused_invalid_hours");
+                    answer(ex, 400, error("invalid_hours", "hours is a whole number, 1 to 168"));
+                    return;
+                }
+                if (!hasReason(ex, "silence", name, body)) {
+                    return;
+                }
+                long now = clock.millis();
+                alerts.silence(name, hours.asLong(), json.path("reason").asText().strip(), now);
+                admin.audit("silence", name, body, "silenced");
+                answer(ex, 201, JSON.createObjectNode().put("alertname", name)
+                        .put("until", Instant.ofEpochMilli(now + hours.asLong() * 3_600_000L).toString()));
+            }
+            default -> {
+                ex.getResponseHeaders().set("Allow", "GET, POST");
+                answer(ex, 405, error("method_not_allowed", "use GET or POST"));
+            }
+        }
+    }
+
+    /** {@code DELETE /admin/silences/{alertname}}: the silence lifted, audited. */
+    private void unsilence(HttpExchange ex, String name) throws IOException, SQLException {
+        if (!"DELETE".equals(ex.getRequestMethod())) {
+            ex.getResponseHeaders().set("Allow", "DELETE");
+            answer(ex, 405, error("method_not_allowed", "use DELETE"));
+            return;
+        }
+        if (alerts.unsilence(name)) {
+            admin.audit("unsilence", name, null, "lifted");
+            answer(ex, 200, JSON.createObjectNode().put("alertname", name).put("lifted", true));
+        } else {
+            admin.audit("unsilence", name, null, "refused_no_such_silence");
+            answer(ex, 404, error("no_such_silence", "no silence for " + name));
+        }
     }
 
     private static String read(HttpExchange ex) throws IOException {

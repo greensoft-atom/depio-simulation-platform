@@ -42,6 +42,7 @@ All in `com.backend.platform`.
 | start | `PlatformMain` | reads the settings, builds every part, binds, starts the matcher and the metrics and admin listeners |
 | HTTP | `net/PlatformHttpServer` | the public API: routing, the bearer token, the body limit, every answer and its status, the API's metrics |
 | HTTP | `net/AdminServer` | the operator's API, on its own loopback listener, behind a shared secret, every call audited |
+| Watch | `watch/Watch`, `watch/Rules`, `watch/AlertEngine`, `watch/AlertStore`, `watch/Notifier`, `watch/MachineProbe`, `watch/WatchSettings` | this machine's monitoring (04 §12, D-86): its processes' metrics, disks and memory and the other machines' platforms read every 15 s; the runbook's §5 as rules with their waits; alerts in the store, on the admin API, in the journal and at the webhook, once for the site |
 | HTTP | `net/ApiMessages`, `net/Json` | the request and response records; one `ObjectMapper` that ignores unknown fields |
 | accounts | `AuthService` | register, login, guests (made, logged in, upgraded), rename, the session behind a token |
 | accounts | `PasswordHasher` | Argon2id, m=19 MiB, t=2, p=1; eight hashing at once and a line of 160 behind them |
@@ -119,6 +120,12 @@ the API (a second for requests in flight), the pool and the store, then flushes 
 | `BACKEND_METRICS_ADDR` | unset: no listener | `host:port` for `GET /metrics` | `common/MetricsServer` |
 | `BACKEND_ADMIN_ADDR` | unset: no admin API | `host:port`, a loopback address | `net/AdminServer` |
 | `BACKEND_ADMIN_TOKEN_FILE`, `BACKEND_ADMIN_TOKEN` | required when `BACKEND_ADMIN_ADDR` is set | the admin API's shared secret; the file wins | `AdminServer` |
+| `BACKEND_WATCH_TARGETS` | unset: the watch is off | this machine's processes' metrics, `job=host:port` pairs (08 §2); a pair not of that shape is exit 2 | `watch/WatchSettings` |
+| `BACKEND_WATCH_PEERS` | none | the other machines' platforms, `name=host:port`, their `/health` read | `watch/WatchSettings` |
+| `BACKEND_WATCH_DISKS` | `/,/var/lib,/var/log,/opt/backend` | the paths whose file systems are watched | `watch/WatchSettings` |
+| `BACKEND_WATCH_MACHINE` | the hostname | this machine's name on its alerts | `watch/WatchSettings` |
+| `BACKEND_ALERT_WEBHOOK_URL`, `_FILE` | none: listed and logged alone | where alerts are `POST`ed (08 §4); not http(s) is exit 2 | `watch/WatchSettings`, `watch/Notifier` |
+| `BACKEND_ALERT_REPEAT_HOURS` | 4 | how often a firing alert is sent again, 1 to 24; else exit 2 | `watch/WatchSettings` |
 | `BACKEND_PAYMENT_PROVIDER` | unset: payments off | `simulated`, the only provider, which grants gems to whoever asks: development and drills only | `PaymentService` |
 
 No system property is read by this module's code. The unit sets
@@ -554,7 +561,10 @@ an embedded j-redis. The live drill (`client/headless-drill.sh`, see the
 |---|---|---|
 | `net/PlatformHttpServerTest` | 87 | every route over HTTP against real MySQL and j-redis: answers, codes, the body limit, exact paths, addresses behind nginx and the forwarded ones the front's nginx is believed for (D-82), a grant's TLS name, the store failing; an account deleted, a guest's, one finished after a store's failure, its guesses counted as logins (D-84) |
 | `MatchmakerTest` | 43 | lining up every mode's sides, the confirm step's every path, races between matchers (T-16, T-32 to T-34), tournament calls, the lease, the metrics; a made match's grant and push carrying the arena's TLS name (D-82) |
-| `net/AdminServerTest` | 22 | every admin call, its audit and its refusals; starting only when named, with a secret, on loopback |
+| `net/AdminServerTest` | 23 | every admin call, its audit and its refusals; starting only when named, with a secret, on loopback; alerts listed from the store with their silences, a silence made, listed and lifted, each audited, and its refusals (04 §12) |
+| `watch/RulesTest` | 15 | the runbook's §5 as rules: each fires at its threshold and after its wait, fed rounds 15 s apart, and not before; resolution; every rule named and documented |
+| `watch/WatchTest` | 5 | the watch against scripted targets and a real j-redis: a round read, a rule fired with its labels, the alert stored, sent and resolved; a target down and a peer unreachable, raised by two machines and sent once; silences and the repeat; a dead webhook tried again; no webhook, and the machine's own samples |
+| `watch/WatchSettingsTest` | 4 | every setting read, the defaults, the webhook from a file, and each refusal |
 | `AuthServiceTest` | 15 | register, login, sessions, bans and suspensions, the decoy hash, rehashing, the upgrade's checks |
 | `PartiesTest` | 11 | invitations, accepting, leaving, kicking, versions (D-74), races |
 | `DisplayNameTest` | 10 | the name rules |

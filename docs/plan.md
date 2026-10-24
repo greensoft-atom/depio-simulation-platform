@@ -3553,13 +3553,37 @@ seventh (the live logs matched by the prune) after the check gained an old empty
 `nginx` writing the fresh `access.log` after the reopen. Found: no metric watches a disk, so the
 runbook now says what item 100 must alert on, and `df` is in its daily routine; DOC-32 fixed.
 
-#### 100. Monitoring and alerts (the owner agreed, 2026-10-24) — waits on Q-60.
+#### 100. ~~Monitoring and alerts, the backend's own (D-86).~~ — **done 2026-10-24**
 
-Prometheus and Alertmanager in the release, the runbook's alerts as their rules, two machines
-collecting; where alerts go is the owner's (Q-60). Then the readiness review's other steps, in its
-order: a rehearsal on the three machines, a load test from outside through the front (Q-3), an outside
-security review (the owner's cost), a soft launch. Q-59 (the app's updates) and Q-53 (the backups'
-copy off the site) are the owner's, open.
+**The owner, 2026-10-24:** agreed to monitoring, then, with Prometheus, Alertmanager and node_exporter
+designed and vendored, said no third-party services of any kind, bundled or installed (C-6); everything
+was reverted uncommitted, and the rule recorded. Then: "complete and robust as its own scope".
+
+- **Designed**: D-86 and [04 §12](detailed-design/04-platform-services.md#12-the-watch-monitoring-and-alerts-designed-2026-10-24-plan-item-100):
+  a watch in every platform; the runbook's §5 as rules with thresholds and waits; alerts pending,
+  firing, resolved; in the store a minute at a time, on the admin API, in the journal, at a webhook once
+  for the site; silences; the peers' `/health` on a port already open, so a lost machine is seen by two.
+- **Built**: `common/MetricsText`; `platform/watch` (`Watch`, `WatchSettings`, `Rules` with 34 rules,
+  `AlertEngine`, `History`, `AlertStore`, `Notifier`, `MachineProbe`); `GET /admin/alerts`,
+  `/admin/silences`; the drill's `WATCH=1`; `check-units-el9.sh`'s watch section;
+  [operations/08](operations/08-monitoring.md).
+- **Checked**: tests first, then the code, each watched failing for its reason: `MetricsTextTest` (5),
+  `RulesTest` (15, every rule at its threshold and wait and not before, as `promtool test rules` would),
+  `WatchSettingsTest` (4), `WatchTest` (5, against scripted targets and a real j-redis), `AdminServerTest`'s
+  alerts and silences; 26 mutants, every one caught, after a harness fix (three engine mutants had
+  "survived" a run in which nothing compiled; a run with no tests is now invalid, working-here §4). The
+  drill's `WATCH=1`: on the release's stack, the worker killed, `TargetDown` listed by the admin API
+  129 s later with its labels, one notification at the drill's receiver, the `ALERT` line in the
+  platform's log, a round of 0.15 s with four targets, then silenced (201, listed as silenced).
+  `check-units-el9.sh` in UBI 9.5: the same under systemd, listed after 134 s, in the journal, and
+  resolved within 15 s of the worker's start. `build-offline.sh` passed. Not checked: three machines'
+  watches on a real private network (the peers' `/health` and the once-for-the-site sending are
+  WatchTest's, on one host), and a real webhook receiver.
+- **Open**: Q-60, the webhook's address (or e-mail through the owner's relay with the bundle's
+  `javax.mail`, a later slice), and who answers at night. Then the readiness review's other steps, in its
+  order: a rehearsal on the three machines, a load test from outside through the front (Q-3), an outside
+  security review (the owner's cost), a soft launch. Q-59 (the app's updates) and Q-53 (the backups' copy
+  off the site) are the owner's, open.
 
 ---
 

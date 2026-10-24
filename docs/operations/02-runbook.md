@@ -359,9 +359,12 @@ matchmaking rather than letting every room overfill.
 
 Alert on the first group; look at the second when investigating. Each alert's
 metric and threshold are in [01 §7](01-deploy.md#7-installing-a-machine).
-These are what alert rules should say: none ship with the release, which
-serves the metrics on each machine's loopback and no more (01 §7). Until
-something scrapes and alerts, the daily checks in §6 are by hand.
+These are the watch's rules ([08](08-monitoring.md), D-86), one each with its
+threshold and its wait: every platform evaluates them every 15 s over its
+machine's metrics, lists what fires on the admin API (`GET /admin/alerts`),
+writes it to its journal, and sends it to the webhook once the owner names one
+(Q-60); until then the alerts are read on a machine, and the daily checks in §6
+stand.
 
 **Alert:**
 

@@ -365,8 +365,8 @@ another machine.
 | MySQL connections | `Threads_connected` against `max_connections` | above 80 % |
 | Data a player | `backend_arena_connection_bytes_per_second{profile}` | p95 drifting toward NFR-2's 15 MB/hour |
 
-No scraper or alert rules ship yet ([runbook §5](02-runbook.md#5-what-to-watch)); these are
-what they should say.
+The watch's rules are the runbook's §5 ([08](08-monitoring.md), D-86); the signals above
+are read by hand for now, and are what rules for them would say.
 
 ## 7. Measuring again
 

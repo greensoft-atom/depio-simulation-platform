@@ -293,6 +293,9 @@ instance when `BACKEND_EVENTS_STORE` names one; every other key on
 
 | Term | Meaning | Where |
 |---|---|---|
+| **watch** | The platform's monitoring, in every platform process: every 15 s this machine's processes' metrics, its disks and memory, the other machines' platforms by `/health`; the runbook's §5 as rules; what fires to the store, the admin API, the journal and the webhook ([D-86](architecture/03-decision-log.md#d-86--monitoring-is-the-backends-own-a-watch-in-every-platform-the-runbooks-rules-in-code-alerts-in-the-store-sent-by-webhook), [operations/08](operations/08-monitoring.md)) | `platform/watch`, `BACKEND_WATCH_*` |
+| **alert** | A rule's condition held for its wait: *pending* until then, *firing* after, *resolved* when it stops holding. Named by the rule, labelled by the series (`machine`, `job`, `instance`, …); kept in the store a minute at a time, listed by the admin API, sent once for the site | `Alert`, `alert:{fingerprint}`, `GET /admin/alerts` |
+| **silence** | An alert's name kept listed but unsent for 1 to 168 hours, with a reason, audited; for a maintenance known to fire it | `silence:{alertname}`, `/admin/silences` |
 | **core** (client) | The client's engine-free library: the wire, the world, the match connection, the lobby, the API, the own tank's prediction, and what a frame draws. Tested on the development machine against the golden vectors and the real servers ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer)). | `Backend.Client.Core`, `client/Core` |
 | **Unity layer** | The thin scripts over the core that draw, read touches, report the app's lifecycle and keep the account: a Unity package, compiled here against stubs and not run in Unity (D-73). | `Backend.Client.Unity`, `client/Unity/com.backend.client` |
 | **headless client** | The core driven without Unity, by a program that plays scenarios against a running stack. | `client/Headless` |

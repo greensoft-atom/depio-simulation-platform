@@ -72,9 +72,9 @@ Every machine runs nginx, so that any can be the front; only the front's is reac
 | 8090 | the gateway (`backend-gateway`): the lobby, plain WebSocket | the machine's private address | the front's nginx | `GATEWAY_BIND`, `GATEWAY_PORT` in `gateway.env`; `backend-upstreams.conf` |
 | 9011, 9012, and 9013 on B | the arenas (`backend-arena@<name>`): match traffic, plain TCP behind nginx. One port each, §3 | the machine's private address | the front's nginx | `ARENA_PORT`, `ARENA_BIND` in `arena-<name>.env`; `backend-stream.conf`'s map |
 | 9120 | the platform's admin API, only when it is named (unset, there is none) | loopback, enforced: any other address and the platform refuses to start (exit 2) | an operator on the machine, or over SSH: `ssh -L 9120:127.0.0.1:9120 <machine>` ([api/03](../api/03-admin-api.md)) | `BACKEND_ADMIN_ADDR` in `platform.env`, with the drop-in `platform-admin.conf.example` for its secret |
-| 9101 | the platform's metrics, `GET /metrics` | `127.0.0.1` | this machine's scraper (none ships yet: 01 §7) | `BACKEND_METRICS_ADDR` in `platform.env` |
-| 9103 | the gateway's metrics | `127.0.0.1` | the scraper | `BACKEND_METRICS_ADDR` in `gateway.env` |
-| 9110, 9111, and 9113 on B | the arenas' metrics, one per arena (§3) | `127.0.0.1` | the scraper | `BACKEND_METRICS_ADDR` in `arena-<name>.env` |
+| 9101 | the platform's metrics, `GET /metrics` | `127.0.0.1` | this machine's platform's watch ([08](08-monitoring.md)) | `BACKEND_METRICS_ADDR` in `platform.env` |
+| 9103 | the gateway's metrics | `127.0.0.1` | the watch | `BACKEND_METRICS_ADDR` in `gateway.env` |
+| 9110, 9111, and 9113 on B | the arenas' metrics, one per arena (§3) | `127.0.0.1` | the watch | `BACKEND_METRICS_ADDR` in `arena-<name>.env` |
 
 The gateway's default port in the code is 8081, but the shipped settings give it 8090, and
 nginx's upstreams name 8090: a gateway started by hand without `GATEWAY_PORT` would not be the
@@ -87,7 +87,7 @@ one nginx sends the lobby to.
 | **6379**/tcp | j-redis `session`: sessions, tickets, the arena directory, leaderboards, the pushes' and commands' channels. The primary on A, its replica on B | A, B | `127.0.0.1` and the machine's private address (01 §3) | every platform, gateway and arena on A, B and C, and the workers on C (each is given both addresses, and asks each which is the primary: D-34); on A, B's replica, which replicates from it; the store's scripts, on its machine by `127.0.0.1`, and a promotion from B | `port` and `bind` in `/etc/backend/store-session.conf` |
 | **6380**/tcp | j-redis `events`: the match results' stream (D-7). The primary on B, its replica on C | B, C | `127.0.0.1` and the private address | the arenas on A, B and C and the workers on C (both addresses each); on B, C's replica, which replicates from it; a promotion from C | `port` and `bind` in `/etc/backend/store-events.conf` |
 | **3306**/tcp | MySQL (`backend-mysql`), TLS required. The primary on A, its replica on C | A, C | the private address alone, not `127.0.0.1` (`bind-address`) | every platform on A, B and C, and the workers on C (each given both hosts asks each which is writable: 06 §10); on C, the replica (replication, and the clone that made it), the binlog stream, the nightly dump and the proofs, all from A's | `bind-address` in `/etc/backend/mysql/backend.cnf`; no `port` line, so MySQL's default, 3306 |
-| 9102, 9112 | the workers' metrics, `backend-worker@c1` and `@c2` | C | `127.0.0.1` | the scraper | `BACKEND_METRICS_ADDR` in `/etc/backend/worker-<id>.env` |
+| 9102, 9112 | the workers' metrics, `backend-worker@c1` and `@c2` | C | `127.0.0.1` | the watch | `BACKEND_METRICS_ADDR` in `/etc/backend/worker-<id>.env` |
 | 3309 | the scratch MySQL the weekly and monthly proofs restore onto (01 §10) | C | `127.0.0.1` | the proofs, on C | `port` and `bind-address` in `/etc/backend/scratch-my.cnf` |
 
 On the database's machine, root uses MySQL through its socket,
@@ -151,7 +151,7 @@ It listens on a private port of its own, since 9001 is nginx's on every machine:
 - The gateway connects to its own machine's platform, on that machine's private address.
 - The front's nginx connects to its own machine's platform, gateway and arenas the same way, by the
   private address. That is loopback traffic, which the firewall lets through.
-- The scraper, when there is one, connects to the metrics ports. An operator on the machine, or
+- The platform's watch connects to the metrics ports ([08](08-monitoring.md)). An operator on the machine, or
   through an SSH tunnel, connects to 9120.
 - The store's backup and its restore drill (`backup-store.sh`, `store-restore-drill.sh`) connect to
   `127.0.0.1` on the store's port. The proofs on C connect to `127.0.0.1:3309`.
@@ -164,6 +164,7 @@ It listens on a private port of its own, since 9001 is nginx's on every machine:
 |---|---|---|---|
 | the front's nginx | A, B and C | 8080, 8090 | the API and the lobby, passed on; a machine that fails is passed over |
 | the front's nginx | each arena's machine | 9011 to 9013 | match traffic, by the arena's name |
+| each platform's watch | the other two machines | 8080 | `GET /health`, so a machine lost is seen by the two others ([08](08-monitoring.md), D-86); on a port already open |
 | A, B, C: platform, gateway, arenas; C: workers | A and B | 6379 | the `session` store, its primary and its replica |
 | A, B, C: arenas; C: workers | B and C | 6380 | the `events` store, its primary and its replica |
 | A, B, C: platform; C: workers | A and C | 3306 | MySQL, its primary and its replica |
@@ -385,7 +386,7 @@ other.
 | The gateway's, 8090 | `GATEWAY_PORT` in `gateway.env`; the three `server …:8090` lines in `backend-upstreams.conf`, on every machine; the `backend` zone's port | restart the gateway; reload nginx |
 | An arena's, 9011 to 9013 | its `ARENA_PORT`; its line in `backend-stream.conf`'s map, on every machine; the `backend` zone's port on its machine | restart that arena (it drains first: 01 §5); reload nginx |
 | An arena's name | its `BACKEND_ADVERTISE_TLS_NAME`; its line in the map, on every machine; the site's certificate, issued again with it ([06](06-certificates.md)) | install the certificate; restart that arena; reload nginx |
-| A metrics port | its `BACKEND_METRICS_ADDR` alone, unique on the machine; and the scraper's configuration, when there is one | restart that process |
+| A metrics port | its `BACKEND_METRICS_ADDR` alone, unique on the machine; and `BACKEND_WATCH_TARGETS` in `platform.env`, whose watch reads it ([08](08-monitoring.md)), with a platform restart | restart that process |
 | The admin API's | `BACKEND_ADMIN_ADDR`, loopback only; and the port in the SSH tunnel | restart the platform |
 | A store's, 6379 or 6380 | `port` in that store's configuration on both machines, primary and replica; the replica's `replicaof`; on every machine, `STORE_PORT` and `BACKEND_STORE_ADDRESSES` (6379) or `BACKEND_EVENTS_STORE` (6380) in every `.env` file that has them; the `backend` zone's port on both store machines; the port argument of the store's scripts (`backup-store.sh`'s third, the restore drill's second, the old primary's `host:port` given to `promote-store.sh`) | restart the stores, then every process |
 | MySQL's, 3306 | a `port` line in `backend.cnf`, on A and C; every `BACKEND_DB_URL`; a `port=` line in the backups' option files (`mysql-backup.cnf`, `mysql-binlog.cnf`); the replica's `SOURCE_PORT` and `clone_valid_donor_list`; the old primary's `host:port` given to `promote-mysql.sh`; the `backend` zone's port on A and C | restart MySQL, then the platforms and the workers |

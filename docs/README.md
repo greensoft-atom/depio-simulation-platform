@@ -94,6 +94,7 @@ Then the detailed design of whatever you are working on.
 | [05 — Ports and the firewall](operations/05-ports-and-firewall.md) | The site behind one public address and the front's nginx; every port on each of the three machines: what listens, on which address, who connects and from where, what names it; the arenas' names; each machine's firewalld commands; checking; changing a port; development's and the drills' ports apart | run as written by `check-ports-el9.sh` |
 | [06 — Certificates](operations/06-certificates.md) | The backend's own CA, for a site with no domain: making the root, issuing the site's certificate, installing it on every machine, the app trusting the root alone, renewing, adding an arena, a leaked or lost key, testing, what goes wrong | run by `check-certificates.sh` and `check-ports-el9.sh` |
 | [07 — Start, stop, restart](operations/07-start-stop-restart.md) | Each service's unit, where it runs, its settings and what a change of them takes; nginx reloaded, MySQL or a store restarted alone, an arena drained; every machine stopped and started in order; the same on a development machine | run as written by `check-units-el9.sh` |
+| [08 — Monitoring](operations/08-monitoring.md) | The watch in every platform: what it reads and alerts on, where alerts go, reading and silencing them; the backend's own, no third-party service |
 
 ### Project
 

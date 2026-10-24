@@ -148,6 +148,8 @@ public final class PlatformMain {
         log.info("X-Forwarded-For believed from {}", proxies);
         // The listeners' settings first, metrics' and the admin API's: a bad one is refused (exit 2) before the
         // public API serves anything, not after (the platform review, 2026-10-04).
+        // The watch's settings too (04 §12, D-86): a target it cannot read is refused here, not at its first round.
+        com.backend.platform.watch.WatchSettings watchSettings = com.backend.platform.watch.WatchSettings.fromEnvironment(System.getenv());
         Metrics metrics = new Metrics();
         metrics.jvm();
         StoreClients.registerMetrics(metrics, store);
@@ -157,7 +159,8 @@ public final class PlatformMain {
                 new AdminRepository(db.dataSource()), new SessionStore(store), push,
                 new com.backend.persistence.TournamentRepository(db.dataSource()),
                 new com.backend.persistence.StatsRepository(db.dataSource()),
-                new com.backend.persistence.SeasonRepository(db.dataSource()), java.time.Clock.systemUTC());
+                new com.backend.persistence.SeasonRepository(db.dataSource()),
+                new com.backend.platform.watch.AlertStore(store), java.time.Clock.systemUTC());
         int bound = server.start();
 
         // Every platform runs one; whichever holds the lease matches (04 §4).
@@ -176,6 +179,18 @@ public final class PlatformMain {
         metrics.counter("backend_platform_pushes_unheard_total",
                 "Pushes to a player registered on a gateway whose channel nobody heard (03 §5).", push::unheard);
         matchmaker.registerMetrics(metrics);
+        // The watch (04 §12, D-86): this machine's processes, its disks and memory, the other machines' platforms, the
+        // runbook's rules; what fires to the store, the journal and the webhook. Off without targets, which the log says.
+        final com.backend.platform.watch.Watch watch = watchSettings.enabled()
+                ? new com.backend.platform.watch.Watch(watchSettings, store, System::currentTimeMillis,
+                        java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(2)).build())
+                : null;
+        if (watch != null) {
+            watch.registerMetrics(metrics);
+            watch.start();
+        } else {
+            log.info("the watch is off: {} is unset (docs/operations/08-monitoring.md)", com.backend.platform.watch.WatchSettings.TARGETS);
+        }
 
         CountDownLatch done = new CountDownLatch(1);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -184,6 +199,9 @@ public final class PlatformMain {
             }
             if (adminServer != null) {
                 adminServer.close();
+            }
+            if (watch != null) {
+                watch.close();
             }
             matchmaker.close();
             server.close();

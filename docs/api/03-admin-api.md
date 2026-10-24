@@ -265,6 +265,32 @@ POST /admin/seasons/end
 Again before the next season starts:
 `409 {"code":"already_ended","message":"the season has ended; the worker is closing it"}`.
 
+### `GET /admin/alerts`: what the watches are raising
+
+Every machine's firing alerts, from the shared store ([08 §5](../operations/08-monitoring.md#5-reading-and-silencing-alerts), 04 §12): each with its labels (`machine`, `job`, `instance`, `mount`, `room`, `peer`, `kind` as it has them), the runbook's words, when its condition first held, and whether a silence covers it.
+
+```json
+200 {"alerts":[{"name":"TargetDown","labels":{"instance":"127.0.0.1:9102","job":"worker","machine":"C"},
+  "summary":"A process's metrics cannot be read: it is down, or its port is wrong",
+  "runbook":"docs/operations/02-runbook.md#5-what-to-watch","since":"2026-10-24T14:02:15Z","silenced":false}]}
+```
+
+### `GET /admin/silences`, `POST /admin/silences`: an alert kept unsent
+
+`POST` `{"alertname", "hours", "reason"}`: the alert of that name stays listed, marked `silenced`, and is not sent, for 1 to 168 hours. Refused: a name that is no alert of the watch's (400 `no_such_alert`; the names are [08 §3](../operations/08-monitoring.md#3-the-alerts)'s), hours not a whole number from 1 to 168 (400 `invalid_hours`), no reason (400 `no_reason`).
+
+```json
+201 {"alertname":"MysqlReplicaDown","until":"2026-10-24T16:02:15Z"}
+200 {"silences":[{"alertname":"MysqlReplicaDown","until":"2026-10-24T16:02:15Z","reason":"restarting MySQL on A"}]}
+```
+
+### `DELETE /admin/silences/{alertname}`: the silence lifted
+
+```json
+200 {"alertname":"MysqlReplicaDown","lifted":true}
+404 {"code":"no_such_silence","message":"no silence for MysqlReplicaDown"}
+```
+
 ## 5. What it does not do
 
 No call lists or searches players, cancels a tournament, or rebuilds a board (that is the

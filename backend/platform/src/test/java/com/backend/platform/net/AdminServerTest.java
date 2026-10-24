@@ -77,7 +77,7 @@ class AdminServerTest {
                 new ArenaDirectory(jredis), new AdminRepository(db.dataSource()), sessions, new LobbyPush(jredis),
                 new com.backend.persistence.TournamentRepository(db.dataSource()),
                 new com.backend.persistence.StatsRepository(db.dataSource()),
-                new com.backend.persistence.SeasonRepository(db.dataSource()), java.time.Clock.systemUTC());
+                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC());
         base = "http://127.0.0.1:" + admin.port();
     }
 
@@ -171,7 +171,7 @@ class AdminServerTest {
                 new ArenaDirectory(dead), new AdminRepository(db.dataSource()), new SessionStore(dead), new LobbyPush(dead),
                 new com.backend.persistence.TournamentRepository(db.dataSource()),
                 new com.backend.persistence.StatsRepository(db.dataSource()),
-                new com.backend.persistence.SeasonRepository(db.dataSource()), java.time.Clock.systemUTC())) {
+                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC())) {
             HttpResponse<String> answer = HTTP.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + down.port()
                             + "/admin/players/" + id + "/ban")).header("Authorization", "Bearer " + SECRET)
                     .POST(HttpRequest.BodyPublishers.ofString("{\"reason\":\"cheating\"}")).build(),
@@ -192,7 +192,7 @@ class AdminServerTest {
                 new ArenaDirectory(dead), new AdminRepository(db.dataSource()), sessionStore, new LobbyPush(dead),
                 new com.backend.persistence.TournamentRepository(db.dataSource()),
                 new com.backend.persistence.StatsRepository(db.dataSource()),
-                new com.backend.persistence.SeasonRepository(db.dataSource()), java.time.Clock.systemUTC());
+                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC());
     }
 
     private static HttpResponse<String> callOn(AdminServer server, String method, String path, String body) throws Exception {
@@ -650,11 +650,11 @@ class AdminServerTest {
     @Test
     @DisplayName("started only when named; named, it needs its secret and a loopback address")
     void configuration() {
-        assertThat(AdminServer.startIfConfigured(Map.of(), null, null, null, null, null, null, null, null)).isNull();
+        assertThat(AdminServer.startIfConfigured(Map.of(), null, null, null, null, null, null, null, null, null)).isNull();
         assertThatThrownBy(() -> AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", "127.0.0.1:0"),
-                null, null, null, null, null, null, null, null)).isInstanceOf(RefusedConfiguration.class).hasMessageContaining("BACKEND_ADMIN_TOKEN");
+                null, null, null, null, null, null, null, null, null)).isInstanceOf(RefusedConfiguration.class).hasMessageContaining("BACKEND_ADMIN_TOKEN");
         assertThatThrownBy(() -> AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", "0.0.0.0:0",
-                "BACKEND_ADMIN_TOKEN", SECRET), null, null, null, null, null, null, null, null))
+                "BACKEND_ADMIN_TOKEN", SECRET), null, null, null, null, null, null, null, null, null))
                 .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("loopback");
     }
 
@@ -696,7 +696,7 @@ class AdminServerTest {
                 new ArenaDirectory(jredis), new AdminRepository(gone), sessions, new LobbyPush(jredis),
                 new com.backend.persistence.TournamentRepository(db.dataSource()),
                 new com.backend.persistence.StatsRepository(db.dataSource()),
-                new com.backend.persistence.SeasonRepository(db.dataSource()), java.time.Clock.systemUTC());
+                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC());
         java.util.concurrent.LinkedBlockingQueue<String> heard = new java.util.concurrent.LinkedBlockingQueue<>();
         JRedisClient gateway = store.newClient();
         try {
@@ -755,5 +755,58 @@ class AdminServerTest {
         assertThat(payments.debtOf(id)).isZero();
         assertThat(audited(Long.toString(id))).containsExactly("refund-debt refused_no_reason", "refund-debt cleared",
                 "refund-debt cleared");
+    }
+
+    @Test
+    @DisplayName("alerts listed from the store with their silences; a silence made, listed and lifted, each audited; the refusals (04 §12)")
+    void alertsAndSilences() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var alerts = new com.backend.platform.watch.AlertStore(jredis);
+        alerts.publish(List.of(new com.backend.platform.watch.Alert("ResultSetAside",
+                Map.of("job", "worker", "instance", "127.0.0.1:9102", "machine", "C"), "A match result was set aside",
+                "docs/operations/02-runbook.md#3-per-component-procedures", 1_700_000_000_000L)), List.of());
+        HttpResponse<String> listed = call("GET", "/admin/alerts", null, SECRET);
+        assertThat(listed.statusCode()).as(listed.body()).isEqualTo(200);
+        var first = mapper.readTree(listed.body()).get("alerts").get(0);
+        assertThat(first.get("name").asText()).isEqualTo("ResultSetAside");
+        assertThat(first.at("/labels/machine").asText()).isEqualTo("C");
+        assertThat(first.get("summary").asText()).isEqualTo("A match result was set aside");
+        assertThat(first.get("since").asText()).isEqualTo("2023-11-14T22:13:20Z");
+        assertThat(first.get("silenced").asBoolean()).isFalse();
+        HttpResponse<String> wrong = call("PUT", "/admin/alerts", "{}", SECRET);
+        assertThat(wrong.statusCode()).isEqualTo(405);
+        assertThat(wrong.headers().firstValue("Allow")).hasValue("GET");
+
+        for (String[] bad : new String[][] {
+                {"{\"alertname\":\"Nope\",\"hours\":1,\"reason\":\"x\"}", "no_such_alert"},
+                {"{\"alertname\":\"ResultSetAside\",\"hours\":0,\"reason\":\"x\"}", "invalid_hours"},
+                {"{\"alertname\":\"ResultSetAside\",\"hours\":169,\"reason\":\"x\"}", "invalid_hours"},
+                {"{\"alertname\":\"ResultSetAside\",\"hours\":1.5,\"reason\":\"x\"}", "invalid_hours"},
+                {"{\"alertname\":\"ResultSetAside\",\"hours\":1}", "no_reason"}}) {
+            HttpResponse<String> refused = call("POST", "/admin/silences", bad[0], SECRET);
+            assertThat(refused.statusCode()).as(bad[0]).isEqualTo(400);
+            assertThat(mapper.readTree(refused.body()).get("code").asText()).as(bad[0]).isEqualTo(bad[1]);
+        }
+        assertThat(alerts.silences()).isEmpty();
+
+        HttpResponse<String> made = call("POST", "/admin/silences",
+                "{\"alertname\":\"ResultSetAside\",\"hours\":2,\"reason\":\"maintenance\"}", SECRET);
+        assertThat(made.statusCode()).as(made.body()).isEqualTo(201);
+        assertThat(mapper.readTree(made.body()).get("alertname").asText()).isEqualTo("ResultSetAside");
+        assertThat(mapper.readTree(made.body()).get("until").asText()).endsWith("Z");
+        assertThat(mapper.readTree(call("GET", "/admin/alerts", null, SECRET).body()).at("/alerts/0/silenced").asBoolean()).isTrue();
+        var silences = mapper.readTree(call("GET", "/admin/silences", null, SECRET).body()).get("silences");
+        assertThat(silences).hasSize(1);
+        assertThat(silences.get(0).get("alertname").asText()).isEqualTo("ResultSetAside");
+        assertThat(silences.get(0).get("reason").asText()).isEqualTo("maintenance");
+
+        HttpResponse<String> lifted = call("DELETE", "/admin/silences/ResultSetAside", null, SECRET);
+        assertThat(lifted.statusCode()).as(lifted.body()).isEqualTo(200);
+        assertThat(alerts.silences()).isEmpty();
+        HttpResponse<String> again = call("DELETE", "/admin/silences/ResultSetAside", null, SECRET);
+        assertThat(again.statusCode()).isEqualTo(404);
+        assertThat(mapper.readTree(again.body()).get("code").asText()).isEqualTo("no_such_silence");
+        assertThat(audited("ResultSetAside")).containsSubsequence("silence silenced", "unsilence lifted", "unsilence refused_no_such_silence");
+        assertThat(audited("alerts")).contains("alerts ok");
     }
 }

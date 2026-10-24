@@ -46,6 +46,10 @@
 #   BOTS=<n>:<s> WORKERS=<k> client/headless-drill.sh the workers' rate (plan item 26): k workers ready,
 #                                                     paused while the bots play, resumed together once
 #                                                     they have left; the backlog's stays timed
+#   WATCH=1 client/headless-drill.sh play             the platform's watch on (04 §12, D-86), a webhook receiver
+#                                                     of the drill's; after the scenarios the worker is killed and
+#                                                     TargetDown must be listed by the admin API and sent within
+#                                                     three minutes, then silenced; not with TAKEOVER
 #   TAKEOVER=1 client/headless-drill.sh play          the worker killed with the results in flight,
 #                                                     and a second worker taking them over (05);
 #                                                     with play, as the others check their pay
@@ -232,10 +236,27 @@ with zipfile.ZipFile(jar) as z:
 EOF
   CONTENT="$D/content:"
 fi
-BACKEND_ADMIN_ADDR=127.0.0.1:9196 BACKEND_ADMIN_TOKEN=drill-admin-secret BACKEND_METRICS_ADDR=127.0.0.1:9195 BACKEND_PAYMENT_PROVIDER=simulated $J $OPENS -cp "$CONTENT$R/lib/platform/*" com.backend.platform.PlatformMain 127.0.0.1 8093 127.0.0.1 6390 > "$D/platform.log" 2>&1 & PIDS+=($!)
+# The watch (WATCH=1): this stack's four processes by their metrics ports, alerts to the drill's receiver on 9194.
+WATCH_ENV=()
+if [ "${WATCH:-0}" = 1 ]; then
+  WATCH_ENV=(BACKEND_WATCH_TARGETS=platform=127.0.0.1:9195,gateway=127.0.0.1:9198,arena=127.0.0.1:9197,worker=127.0.0.1:9199
+             BACKEND_WATCH_MACHINE=drill BACKEND_ALERT_WEBHOOK_URL=http://127.0.0.1:9194/hook)
+fi
+env "${WATCH_ENV[@]}" BACKEND_ADMIN_ADDR=127.0.0.1:9196 BACKEND_ADMIN_TOKEN=drill-admin-secret BACKEND_METRICS_ADDR=127.0.0.1:9195 BACKEND_PAYMENT_PROVIDER=simulated $J $OPENS -cp "$CONTENT$R/lib/platform/*" com.backend.platform.PlatformMain 127.0.0.1 8093 127.0.0.1 6390 > "$D/platform.log" 2>&1 & PIDS+=($!)
 BACKEND_METRICS_ADDR=127.0.0.1:9198 $J $OPENS -cp "$R/lib/gateway/*" com.backend.gateway.GatewayMain 127.0.0.1 8094 http://127.0.0.1:8093 127.0.0.1 6390 \
    gateway-drill > "$D/gateway.log" 2>&1 & PIDS+=($!)
 BACKEND_METRICS_ADDR=127.0.0.1:9199 $J $OPENS -cp "$R/lib/worker/*" com.backend.worker.WorkerMain 127.0.0.1 6390 worker-drill > "$D/worker.log" 2>&1 & PIDS+=($!)
+if [ "${WATCH:-0}" = 1 ]; then       # the webhook's receiver: every body posted, one a line, after the five processes (their pids are indexed)
+  python3 -c '
+import http.server, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode()
+        open(sys.argv[1], "a").write(body.replace("\n", " ") + "\n")
+        self.send_response(200); self.end_headers()
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", 9194), H).serve_forever()' "$D/webhook.log" & PIDS+=($!)
+fi
 for i in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8093/health && break; sleep 1; done
 sleep 3
 for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null || echo "process $p died during start-up"; done
@@ -704,6 +725,26 @@ if [ "${TAKEOVER:-0}" = 1 ]; then
   IN=$(mysql -h127.0.0.1 -P"$DBPORT" --protocol=TCP -ubackend -p"${BACKEND_DB_PASSWORD:-backend-dev-password}" backend_dev -N -e "
     SELECT COUNT(*) FROM matches WHERE match_uid IN ('$(printf '%s\n' $UIDS | paste -sd, | sed "s/,/','/g")')" 2>/dev/null)
   echo "in MySQL: $IN of $N"; [ "$IN" = "$N" ] && [ "$N" -gt 0 ] || { echo "TAKEOVER FAILED"; STATUS=1; }
+fi
+if [ "${WATCH:-0}" = 1 ]; then
+  echo "--- the watch (04 §12, D-86): the worker killed, TargetDown listed by the admin API and sent to the webhook within three minutes, then silenced"
+  admin() { curl -s -H "Authorization: Bearer drill-admin-secret" "http://127.0.0.1:9196/admin/$1"; }
+  kill -9 "${PIDS[4]}"; echo "worker-drill killed ($(date +%T))"
+  T0=$(date +%s)
+  until admin alerts | grep -q '"name":"TargetDown"'; do
+    if [ $(( $(date +%s) - T0 )) -gt 180 ]; then echo "WATCH FAILED: no TargetDown listed after 180 s: $(admin alerts | cut -c1-300)"; STATUS=1; break; fi
+    sleep 5
+  done
+  echo "TargetDown listed after $(( $(date +%s) - T0 )) s: $(admin alerts | grep -o '"labels":{[^}]*}' | head -1)"
+  sleep 3
+  grep -q TargetDown "$D/webhook.log" 2>/dev/null && echo "and sent to the webhook: $(grep -o '"status":"[a-z]*"' "$D/webhook.log" | head -1), $(grep -c . "$D/webhook.log") notification(s) in all" \
+    || { echo "WATCH FAILED: nothing at the webhook"; STATUS=1; }
+  echo "ALERT lines in the platform's log: $(grep -c "ALERT firing TargetDown" "$D/platform.log")"
+  curl -s http://127.0.0.1:9195/metrics | grep -E '^backend_watch_(scrapes_total|alerts_firing|notifications_total|round_seconds)' | sed 's/^/  /'
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer drill-admin-secret" -H 'Content-Type: application/json' \
+    -d '{"alertname":"TargetDown","hours":1,"reason":"drill"}' http://127.0.0.1:9196/admin/silences)
+  [ "$code" = 201 ] && admin alerts | grep -q '"silenced":true' && echo "silenced through the admin API: 201, listed as silenced" \
+    || { echo "WATCH FAILED: the silence answered $code, listed: $(admin alerts | cut -c1-200)"; STATUS=1; }
 fi
 echo "--- the matcher's view: platform's metrics, scraped"
 curl -s http://127.0.0.1:9195/metrics | grep -E '^backend_platform_(matches_made_total|confirms_total|queue_players|queue_wait_seconds_(sum|count)|request_seconds_count|(open|match)_tickets_issued_total)' || echo "(no scrape)"

@@ -2493,3 +2493,64 @@ where D-84 had said "until rotated".
 - **Left as they are**: MySQL's own error log in `/var/log/backend-mysql/`, errors and start-up lines
   alone, kilobytes a day; the Java services', which go to the journal, bounded by systemd's
   `SystemMaxUse` (its default a tenth of the file system, 4 GB at most).
+
+### D-86 — Monitoring is the backend's own: a watch in every platform, the runbook's rules in code, alerts in the store, sent by webhook
+
+**Decided 2026-10-24** (plan item 100). The owner agreed to monitoring and, the same day, refused
+third-party services for it, Prometheus and its kind included, even bundled in the release
+([C-6](../requirements/01-scope-and-nfrs.md#3-constraints)): what watches the site is the backend's own
+code, complete within its scope. Each process already serves its metrics on loopback in a text format,
+and the runbook's §5 says what should alert on them; nothing read them.
+
+**Decision.**
+- **A watch in every platform process**, since one runs on every machine: every 15 s it reads
+  - this machine's processes' `/metrics` on loopback, named in `BACKEND_WATCH_TARGETS`
+    (`platform=127.0.0.1:9101,gateway=…,arena=…`), the platform's own included;
+  - this machine itself: each file system `BACKEND_WATCH_DISKS` names (free against size), its
+    memory (free against total) and its load against its cores, from the JDK alone;
+  - the other machines' platforms, `BACKEND_WATCH_PEERS` (`B=10.0.0.2:8080,…`), by `GET /health` over the
+    private network, on a port already open to the other two machines: a machine lost is seen by the two
+    others, and no port is added.
+- **The runbook's §5 as rules in Java**, each with its threshold and its wait, in one class a rule, from
+  `TargetDown` to `DiskFillsWithinAWeek`; the watch keeps an hour of each series a rule reads, no more, so
+  that "rising for ten minutes" and "twice in an hour" can be asked. An alert is pending while its
+  condition holds for less than its wait, firing after it, resolved once it stops holding.
+- **Alerts live in the session store** while they fire (`alert:{machine}:{fingerprint}`, refreshed each
+  round, gone 60 s after the platform that raised them stops), **are listed by the admin API**
+  (`GET /admin/alerts`, from every machine at once), **and written to the journal** as they fire and
+  resolve. **Silences** (`POST /admin/silences`, hours and a reason, audited) keep an alert listed but
+  unsent during maintenance.
+- **Sent by a webhook**, `BACKEND_ALERT_WEBHOOK_URL`, an HTTPS `POST` of the alerts as JSON when one
+  fires or resolves, and again every `BACKEND_ALERT_REPEAT_HOURS` (4) while it fires; retried three times;
+  **once for the site**, not once a machine: the sender takes `alert:sent:{fingerprint}` in the store
+  (`SET NX`) first, and the two others see it taken. Unset, alerts are listed and logged alone, which is
+  the state until the owner names a destination (Q-60). E-mail through the owner's relay, with the
+  bundle's `javax.mail`, follows when wanted.
+- **The watch reports on itself**: scrapes by outcome, alerts firing, notifications by outcome, which
+  the peers read as any metric.
+
+**Why.**
+- **The owner's rule**, and nothing to install, bundle or move a version of: the platform, a scheduler
+  thread and the JDK's HTTP client.
+- **Every machine, not one**: a watch on C alone sees nothing when C is lost. Three watches each hold
+  their machine's hour of series (a few hundred, derived; measured in the tests), and nothing is added
+  to what a machine failure means.
+- **Rules in code, tested**: a threshold that lives only in a document drifts (O-1); each rule has a
+  test that feeds it series and expects it to fire at its threshold and wait, and not before, as
+  `promtool test rules` would have.
+- **A webhook first**: the JDK alone, and most chat tools and paging services take one.
+
+**Cost.**
+- **It is ours to keep**: a parser for the metrics text, the rule engine, the state machine, the
+  sender; about as much code as a mode of play, every line tested. Nothing can be looked up in a
+  manual.
+- **No graphs.** The runbook's "investigate with" still reads the metrics by hand (`curl` on the
+  machine); an hour of history is in the watch and no more. A page of the last hour on the admin API
+  is a possible later slice.
+- **The platform does one more thing**, a few hundred HTTP requests a minute on loopback and a few
+  thousand doubles kept; its share is measured in the tests and reported.
+- **Alerts reach no one until Q-60 is answered**: listed and logged, nowhere else.
+
+**Not chosen.** Prometheus, Alertmanager and node_exporter in the release (designed, vendored and
+reverted the same day on the owner's rule); the journal alone (no "for five minutes", no rate); a watch
+in the worker (on C alone).
