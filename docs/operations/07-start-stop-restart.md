@@ -69,7 +69,9 @@ measured.
 
 A new certificate needs neither: `install-certificate.sh` reloads nginx itself
 ([06 §4](06-certificates.md#4-installing-it-on-every-machine)). Its logs are in `/var/log/backend-nginx/`:
-`error.log`, `access.log`, and `stream.log` for match traffic.
+`error.log`, `access.log`, and `stream.log` for match traffic, rotated nightly by
+`backend-nginx-logs.timer` and kept 14 days (`KEEP_DAYS` in its unit, D-85); the timer needs no
+restart, and `systemctl start backend-nginx-logs` rotates them now.
 
 ### MySQL alone
 

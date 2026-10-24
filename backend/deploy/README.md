@@ -68,7 +68,8 @@ made at install ([01 §7](../../docs/operations/01-deploy.md#7-installing-a-mach
 |---|---|---|---|
 | `backend-store@.service` | `/opt/backend/jredis/lib/j-redis-server.jar` on `/opt/backend/runtime`, as `jredis`; instance `%i` = the store's name, `session` or `events` ([01 §3](../../docs/operations/01-deploy.md#3-j-redis-built-and-tested)) | `/etc/backend/store-%i.conf`, from the release's `jredis/conf/j-redis.conf`; the heap from `store-%i.env` | `-Xms` and `-Xmx` `${STORE_HEAP}`, ZGC; data in `/var/lib/backend-store/%i` and logs in `/var/log/backend-store/%i`, both 0700, `UMask=0077` (the data holds every live session token); restarts on failure but not on exit 1, 2 or 3 (its configuration, its data directory locked, its data not loadable); `LimitNOFILE=65536`; a `CPUAffinity=` drop-in, as the arenas' |
 | `backend-mysql.service` | `/opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/mysql/backend.cnf`, as `mysql`; on A, and on C for the replica | `backend.cnf` ([mysql/](#mysql)) | `Type=notify`: started means ready for connections; data in `/var/lib/backend-mysql` (`StateDirectory`, 0750), socket and pid file in `/run/backend-mysql/`, error log in `/var/log/backend-mysql/`; `TimeoutStartSec=infinity` (crash recovery takes as long as it takes), `TimeoutStopSec=15min`; restarts on failure but not on exit 1; `LimitNOFILE=10000` |
-| `backend-nginx.service` | `/opt/backend/nginx/sbin/nginx`: the master as root, which binds 80 and 443, the workers as `nginx` | `/etc/backend/nginx/nginx.conf` ([nginx/](#nginx)) | `Type=forking`; `nginx -t` before a start, and a reload is `nginx -t` then `HUP`, so a broken file is refused and no connection dropped; stopped with `SIGQUIT`, the workers finishing what they serve; logs in `/var/log/backend-nginx/`; `LimitNOFILE=65536` |
+| `backend-nginx.service` | `/opt/backend/nginx/sbin/nginx`: the master as root, which binds 443 and 9001 (D-82), the workers as `nginx` | `/etc/backend/nginx/nginx.conf` ([nginx/](#nginx)) | `Type=forking`; `nginx -t` before a start, and a reload is `nginx -t` then `HUP`, so a broken file is refused and no connection dropped; stopped with `SIGQUIT`, the workers finishing what they serve; logs in `/var/log/backend-nginx/`, rotated by `backend-nginx-logs.timer`; `LimitNOFILE=262144`, two descriptors a player's connection |
+| `backend-nginx-logs.service` | `rotate-nginx-logs.sh`, once: nginx's logs renamed with a UTC stamp, nginx told to reopen them, the renamed ones compressed, those older than `KEEP_DAYS` deleted (D-85) | `LOG_DIR`, `PID_FILE`, `KEEP_DAYS=14` (1 to 365) in the unit | started by its timer; root, as nginx's master is, under the backup units' sandbox, writing in `/var/log/backend-nginx` alone |
 
 `backend-mysql` and `backend-nginx` run with `ProtectSystem=full` (not `strict`), `PrivateTmp`,
 `PrivateDevices` and `NoNewPrivileges`; `backend-store@` sets no sandboxing beyond its private
@@ -326,10 +327,11 @@ All bind `127.0.0.1`. 6381 and 8082 belong to other processes on the development
 
 ## Timers
 
-All four are `Persistent=true`: a run missed while the machine was down happens at the next start.
+All five are `Persistent=true`: a run missed while the machine was down happens at the next start.
 
 | Timer | Starts | Schedule |
 |---|---|---|
+| `backend-nginx-logs.timer` | `backend-nginx-logs.service`, nginx's logs rotated, 14 days kept (D-85) | 00:05 UTC every day, within 5 minutes after, on every machine |
 | `backend-mysql-backup.timer` | `backend-mysql-backup.service`, the nightly dump | 03:30 UTC every day, within 15 minutes after (`RandomizedDelaySec=15min`) |
 | `backend-backup-offsite.timer` | `backend-backup-offsite.service`, the copy off the site | hourly, within 5 minutes after; enabled once the owner names the host (Q-53) |
 | `backend-restore-proof.timer` | `backend-restore-proof.service`, the weekly proof | Sundays at 04:00 UTC |

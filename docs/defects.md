@@ -4,7 +4,7 @@ Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
 re-ordered around it rather than the other way round. **Open as of 2026-10-24:**
-O-45 (nginx's logs never rotated, item 99); O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
+nothing; O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
 Every entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
@@ -1022,15 +1022,20 @@ moment before the dump now fails if the comparison is put back.
 
 ---
 
-**O-45, found 2026-10-24, OPEN** (reviewing plan item 97; to be fixed in item 99). nginx's logs are never
-rotated or deleted. The release's nginx is not the system's package, so it brings no logrotate entry,
+**O-45, found 2026-10-24, FIXED the same day** (found reviewing plan item 97, fixed in item 99, D-85).
+nginx's logs were never rotated or deleted. The release's nginx is not the system's package, so it brings no logrotate entry,
 and nothing in `deploy/` or the scripts rotates `/var/log/backend-nginx/access.log`, `stream.log` or
 `error.log`. At 10 000 players asking the API once in 10 seconds each, `access.log` gains about a
 thousand lines a second, some 13 GB a day at its ~150 bytes a line (derived, not measured), until the
 disk is full, and on A that disk may be MySQL's. And each line keeps a player's address for good,
-where D-84 says logs keep them "until rotated". To close it: rotation and a retention in days, by a
-timer of the release's own (rename, `nginx -s reopen`, delete past the retention), checked as
-written.
+where D-84 says logs keep them "until rotated". **Fixed:** `rotate-nginx-logs.sh`, run nightly by
+`backend-nginx-logs.timer` on every machine: each log renamed with a UTC stamp, the master sent `USR1`,
+the renamed files compressed, those older than `KEEP_DAYS` (14 in the unit, 1 to 365) deleted.
+Checked by `check-nginx-logs.sh` with the release's nginx on a loopback port (first failing with no
+script; seven mutants, the seventh, the live logs matched by the prune, caught once the check had an
+old empty log) and by `check-units-el9.sh` in UBI 9.5: the timer enabled, the service under its sandbox,
+the workers as `nginx` writing the fresh `access.log` after the reopen. Found while fixing it: nothing
+alerts on a disk (runbook §5 now says what should, for plan item 100) and DOC-32.
 
 ## 7. Documentation
 
@@ -1325,6 +1330,10 @@ http://127.0.0.1:8080/health`, where the platform no longer listens (it binds th
 address), and installing a machine filled "the machine's name" into nginx's files, where the site's
 address and the three machines' private ones go. **Fixed:** both steps, found writing
 [development/07](development/07-after-a-code-change.md).
+
+**DOC-32, found 2026-10-24, FIXED the same day** (plan item 99). `backend/deploy/README.md`'s row for
+`backend-nginx.service` still said the master binds 80 and 443 with `LimitNOFILE=65536`; since D-82 it
+binds 443 and 9001, and the unit says 262144. Found adding the rotation unit's row beside it; fixed.
 
 **DOC-31, found 2026-10-24, FIXED the same day** (found in plan item 97, fixed in item 98). The client's tests are listed
 in [client/Core.Tests/README.md](../client/Core.Tests/README.md), a count of `[Test]` methods a file,

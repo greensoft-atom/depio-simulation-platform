@@ -190,6 +190,7 @@ TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted
 # The certificate scripts' own check (openssl alone, a few seconds), and the front's end to end in Rocky 9.5:
 # firewalld, nginx, two machines, the C# client through 443 and 9001 (Docker, .NET; about ten minutes)
 backend/scripts/check-certificates.sh
+backend/scripts/check-nginx-logs.sh                 # nginx's log rotation, the release's nginx on a loopback port
 (cd backend && scripts/check-ports-el9.sh)
 
 # The backups' own drill: the stream, dump, copy off the site, weekly proof under writes, a restore to a

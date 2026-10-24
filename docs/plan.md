@@ -3542,11 +3542,16 @@ assembly by reflection, as the modules' lists are by the build (DOC-29). Checked
 two missing rows, then on its own draft (it missed `[TestCaseSource]`, so NUnit's builder interfaces do
 the sorting now); four mutants caught; the whole client suite 178 of 178.
 
-#### 99. nginx's logs rotated and kept a number of days (O-45).
+#### 99. ~~nginx's logs rotated and kept a number of days (O-45, D-85).~~ — **done 2026-10-24**
 
-A timer of the release's own on every machine: each log renamed daily, nginx told to reopen, those past
-the retention deleted, the retention a setting (14 days recommended: long enough to look into an
-incident, short enough that players' addresses are not kept for good). Checked as written in RHEL 9.
+`backend-nginx-logs.timer` on every machine, 00:05 UTC: `rotate-nginx-logs.sh` renames each log that
+holds anything with a UTC stamp, has nginx reopen (`USR1`), compresses the renamed files and deletes
+those older than `KEEP_DAYS`, 14 in the unit. Checked: `check-nginx-logs.sh` with the release's nginx on
+a loopback port, 11 of 11, first failing with no script; seven mutants, six caught at once and the
+seventh (the live logs matched by the prune) after the check gained an old empty log; and
+`check-units-el9.sh` in UBI 9.5, the timer enabled, the service under its sandbox, the workers as
+`nginx` writing the fresh `access.log` after the reopen. Found: no metric watches a disk, so the
+runbook now says what item 100 must alert on, and `df` is in its daily routine; DOC-32 fixed.
 
 #### 100. Monitoring and alerts (the owner agreed, 2026-10-24) — waits on Q-60.
 

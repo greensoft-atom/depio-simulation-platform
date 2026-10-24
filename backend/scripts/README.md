@@ -19,6 +19,8 @@ Every setting a script or unit reads is also in the
 | [`check-release-el9.sh`](#check-release-el9sh) | Release | no | hand, on a machine with Docker |
 | [`check-ports-el9.sh`](#check-ports-el9sh) | Release | no | hand, on a machine with Docker |
 | [`check-certificates.sh`](#check-certificatessh) | Certificates | no | hand, on any machine with openssl |
+| [`rotate-nginx-logs.sh`](#rotate-nginx-logssh) | Logs | yes | `backend-nginx-logs.timer`, nightly, on every machine |
+| [`check-nginx-logs.sh`](#check-nginx-logssh) | Logs | no | hand, on a machine with a release and curl |
 | [`binlog-stream.sh`](#binlog-streamsh) | Backups | yes | `backend-binlog-stream.service`, always on |
 | [`backup-mysql.sh`](#backup-mysqlsh) | Backups | yes | `backend-mysql-backup.timer`, nightly |
 | [`record-backup.sh`](#record-backupsh) | Backups | yes | the three scripts that record |
@@ -449,6 +451,48 @@ scripts/check-certificates.sh
 |---|---|
 | Needs | `openssl` |
 | Runs | anywhere, in a few seconds; its files in `TMPDIR`, removed at the end |
+
+### rotate-nginx-logs.sh
+
+Rotates nginx's logs ([D-85](../../docs/architecture/03-decision-log.md#d-85--nginxs-logs-rotated-by-a-timer-of-the-releases-own-and-kept-a-number-of-days),
+O-45): each of `access.log`, `stream.log` and `error.log` in `LOG_DIR` that holds anything is renamed
+with a UTC stamp (`access.log.20261024T000500Z`); nginx's master, the process `PID_FILE` names, is sent
+`USR1` so that it and its workers open fresh files, and given a second to; the renamed files are
+compressed (`.gz`); rotated files older than `KEEP_DAYS` are deleted. An empty log is left alone, however
+old; the live logs are never deleted; nginx not running, the logs are rotated without a signal. Exit 2 on a
+`KEEP_DAYS` that is not whole days from 1 to 365, before anything is renamed. Run by
+`backend-nginx-logs.timer` at 00:05 UTC on every machine, as root under the backup units' sandbox.
+
+```
+LOG_DIR=/var/log/backend-nginx PID_FILE=/run/backend-nginx/nginx.pid KEEP_DAYS=14 scripts/rotate-nginx-logs.sh
+systemctl start backend-nginx-logs        # the same, now, on a machine
+```
+
+| | |
+|---|---|
+| Needs | `gzip`, `find` (RHEL 9's base) |
+| Runs | on every machine, nightly; a second or two |
+
+### check-nginx-logs.sh
+
+Checks `rotate-nginx-logs.sh` on this machine, with the release's nginx on a loopback port (18080, or
+`PORT`) and a log directory of its own: a request logged; the logs renamed with a UTC stamp, compressed,
+the line in them; the next request in a fresh `access.log`, so nginx reopened; a rotated file past
+`KEEP_DAYS` deleted and a newer one kept; an empty log left alone, however old; `KEEP_DAYS=0` and `14.5`
+refused with nothing rotated; nginx stopped, the logs rotated all the same. Its nginx's worker runs as
+root, since a temporary directory under root's is closed to any other user; the workers as `nginx`
+reopening under `LogsDirectory=` are `check-units-el9.sh`'s to check, with the unit and its timer. It
+ends `--- <n> failed` and exits non-zero on any failure. `ROTATE=` names another `rotate-nginx-logs.sh`,
+for a mutation check.
+
+```
+scripts/check-nginx-logs.sh [release-dir]
+```
+
+| | |
+|---|---|
+| Needs | a release (`make-release.sh`), `curl` |
+| Runs | on this machine, in a few seconds; its files in `TMPDIR`, removed at the end |
 
 ## Drills
 

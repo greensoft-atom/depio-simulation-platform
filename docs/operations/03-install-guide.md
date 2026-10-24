@@ -227,6 +227,7 @@ In this order; each unit also starts by itself at boot from now on.
 systemctl enable --now backend-store@session
 systemctl enable --now backend-platform           # migrates the empty database at its first start
 systemctl enable --now backend-gateway backend-worker@c1 backend-arena@a1 backend-nginx
+systemctl enable --now backend-nginx-logs.timer     # nginx's logs rotated nightly, 14 days kept (D-85)
 ```
 
 ## 11. Check it

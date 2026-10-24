@@ -276,6 +276,16 @@ package. Checked 2026-10-05 in UBI 9.5 with nothing installed: proxying to the
 platform over HTTP and HTTPS (TLS 1.3), and `nginx -t` on the shipped
 configuration.
 
+**Its logs**, `/var/log/backend-nginx/access.log`, `stream.log` (match traffic's routing) and
+`error.log`, are rotated nightly by `backend-nginx-logs.timer`, enabled on every machine
+([D-85](../architecture/03-decision-log.md#d-85--nginxs-logs-rotated-by-a-timer-of-the-releases-own-and-kept-a-number-of-days)):
+`rotate-nginx-logs.sh` renames each with a UTC stamp, has nginx reopen them (`USR1`), compresses the
+renamed ones and deletes those older than `KEEP_DAYS`, 14 in the unit (1 to 365; `systemctl edit` to
+change it). The front's `access.log` grows about a thousand lines a second at 10 000 players, so
+without it the disk fills, and players' addresses are kept for good. Checked as written by
+`backend/scripts/check-nginx-logs.sh` (the release's nginx on a loopback port, a few seconds) and under
+systemd's sandbox by `check-units-el9.sh`.
+
 **The configuration is `backend/deploy/nginx/`**, installed to
 `/etc/backend/nginx/` (the release's `nginx-conf/`): `nginx.conf`, the main file,
 which the distribution's package used to bring; `backend.conf`, the HTTPS server;
@@ -438,7 +448,7 @@ unit **3.1 (OK)**, down from 9.0 before the sandbox.
    `server_name`, and the three machines' private addresses in `backend-upstreams.conf` and
    `backend-stream.conf`'s map (D-82, [05 §3](05-ports-and-firewall.md)); then the certificate,
    §11 and [06](06-certificates.md); enable
-   `backend-nginx`.
+   `backend-nginx`, and `backend-nginx-logs.timer`, which rotates its logs nightly (above).
 7. **Check.** `curl http://10.0.0.1:8080/health` on the machine, at its own private address
    (D-82); the journal of
    each unit (`journalctl -u backend-arena@a1`) shows INFO lines and no ERROR.

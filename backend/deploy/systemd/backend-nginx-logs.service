@@ -1,0 +1,37 @@
+# Rotates nginx's logs (docs/operations/01-deploy.md §7, D-85, O-45): each log renamed with a UTC stamp,
+# nginx told to reopen them, the renamed files compressed, and rotated files older than KEEP_DAYS deleted.
+# Run nightly by backend-nginx-logs.timer on every machine, since every one runs nginx (D-82); the front's
+# access.log grows about a thousand lines a second at 10 000 players. KEEP_DAYS, 1 to 365: 14 is long
+# enough to look into an incident, and does not keep players' addresses for good.
+[Unit]
+Description=backend: nginx's logs rotated, KEEP_DAYS of them kept
+After=backend-nginx.service
+
+[Service]
+Type=oneshot
+# Root, as nginx's master is: the log files are its, and the signal goes to it.
+Environment=LOG_DIR=/var/log/backend-nginx
+Environment=PID_FILE=/run/backend-nginx/nginx.pid
+Environment=KEEP_DAYS=14
+ExecStart=/opt/backend/scripts/rotate-nginx-logs.sh
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/log/backend-nginx
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=

@@ -1,0 +1,14 @@
+# Runs backend-nginx-logs.service nightly; Persistent catches up a run missed while the machine was
+# down.
+[Unit]
+Description=backend: nginx's logs rotated nightly
+
+[Timer]
+# UTC, as the other timers are (O-18); five minutes past midnight, and a few more at random so the
+# three machines do not rotate in step.
+OnCalendar=*-*-* 00:05:00 UTC
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

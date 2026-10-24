@@ -4,7 +4,7 @@
 #
 # Install: the system user (useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin
 # nginx), /etc/backend/nginx/{nginx.conf,backend.conf,backend-platform.conf}, then
-# systemctl enable --now backend-nginx.
+# systemctl enable --now backend-nginx, and backend-nginx-logs.timer, which rotates its logs (D-85).
 [Unit]
 Description=backend: nginx, the TLS edge for the lobby and the API
 After=network-online.target

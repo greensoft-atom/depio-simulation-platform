@@ -2455,3 +2455,41 @@ the right to have what identifies them erased, and nothing in the backend could.
   `Deleted player`. A match under way when the account is deleted is applied to the erased row when
   it ends, and can put `Deleted player` on that day's score board (D-60 reads the name from MySQL).
 - **No undo.** A player who deletes by mistake starts again.
+
+### D-85 — nginx's logs rotated by a timer of the release's own, and kept a number of days
+
+**Decided 2026-10-24** (plan item 99, [O-45](../defects.md#6-operations)). The release's nginx wrote
+`/var/log/backend-nginx/access.log`, `stream.log` and `error.log`, and nothing rotated or deleted them:
+not the system's logrotate, which has no entry for a server the distribution did not install, and not
+the release. The front's `access.log` gains about a thousand lines a second at 10 000 players, some
+13 GB a day (derived from a request every 10 s a player and ~150 bytes a line; not measured), until
+the disk is full; on A that disk may be MySQL's. And every line kept a player's address for good,
+where D-84 had said "until rotated".
+
+**Decision.**
+- **`backend-nginx-logs.timer` on every machine**, nightly at 00:05 UTC, runs `rotate-nginx-logs.sh`:
+  each log that holds anything is renamed with a UTC stamp; the master is sent `USR1`, on which it
+  and its workers open fresh files; a second later the renamed files are compressed; rotated files
+  older than `KEEP_DAYS` are deleted. An empty log is left alone, however old; nginx not running,
+  the logs are rotated all the same.
+- **`KEEP_DAYS` in the unit, 1 to 365: 14.** Anything else refuses the run (exit 2) before a file is
+  renamed.
+- **As root, since the master is**, under the backup units' sandbox, writing in `/var/log/backend-nginx`
+  alone.
+
+**Why.**
+- **Nothing installed as a package** (Q-56): a timer and a script in the release, as the backups are.
+- **Not the journal for the access logs**: journald rate-limits and drops a writer at a thousand lines
+  a second, and the lines are a routing record, `stream.log` above all.
+- **14 days** reads an incident reported days later, and does not keep players' addresses for good.
+- **`USR1` and the second** are nginx's own way to rotate.
+
+**Cost.**
+- **Disk, on the front**: about 1.3 GB a day compressed at 10 000 players (access logs compress about
+  ten to one; derived, not measured), 18 GB at 14 days; five times that at 50 000. Nothing alerts on a
+  disk today: the monitoring to come (plan item 100) must, and until then `df` is in the runbook's
+  daily routine (§5, §6).
+- **Midnight splits a night's incident across two files.**
+- **Left as they are**: MySQL's own error log in `/var/log/backend-mysql/`, errors and start-up lines
+  alone, kilobytes a day; the Java services', which go to the journal, bounded by systemd's
+  `SystemMaxUse` (its default a tenth of the file system, 4 GB at most).

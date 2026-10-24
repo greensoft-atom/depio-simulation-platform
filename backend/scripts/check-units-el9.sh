@@ -37,7 +37,7 @@ echo "--- $(cat /etc/redhat-release), systemd $(systemctl --version | head -1 | 
 echo "--- users and files, as the deploy document says"
 for u in backend nginx jredis; do useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin "$u"; done
 useradd --system --home-dir /var/lib/backend-mysql --shell /usr/sbin/nologin mysql
-cp /deploy/systemd/*.service /etc/systemd/system/
+cp /deploy/systemd/*.service /deploy/systemd/*.timer /etc/systemd/system/
 mkdir -p /etc/backend/mysql /etc/backend/nginx /etc/backend/tls /etc/backend/credentials
 chmod 0700 /etc/backend/credentials
 # The database: the example, with what this test lacks taken out - a CA (MySQL's own certificates
@@ -206,6 +206,23 @@ systemctl start 'backend-arena@*' 2> /dev/null
 echo "  ..   a pattern to start: the arena $(systemctl is-active backend-arena@a1)"
 systemctl start backend-arena@a1 backend-worker@c1
 active backend-arena@a1 30 && active backend-worker@c1 30 && ok "named, they start" || bad "the start by name"
+
+echo "--- backend-nginx-logs: nginx's logs rotated as the unit runs it (D-85, O-45)"
+systemctl enable backend-nginx-logs.timer 2> /dev/null && systemctl list-timers --all --no-pager | grep -q backend-nginx-logs \
+    && ok "the timer enabled, listed" || bad "the timer: $(systemctl status backend-nginx-logs.timer 2>&1 | tail -3)"
+touch -d "20 days ago" /var/log/backend-nginx/access.log.20261004T000500Z.gz
+if systemctl start backend-nginx-logs.service; then
+    ok "the service ran under its sandbox: $(journalctl -u backend-nginx-logs --no-pager -o cat | grep -E 'reopen|rotated|deleted' | paste -sd ';' | cut -c1-110)"
+else
+    bad "backend-nginx-logs"; journalctl -u backend-nginx-logs --no-pager | tail -6
+fi
+rotated=$(ls /var/log/backend-nginx/access.log.*Z.gz 2> /dev/null | grep -v 20261004 | head -1)
+[ -n "$rotated" ] && zcat "$rotated" | grep -q 'POST /v1/accounts' && ok "access.log renamed, compressed, the registrations in it" \
+    || bad "no rotated access.log: $(ls /var/log/backend-nginx | paste -sd ' ')"
+[ -e /var/log/backend-nginx/access.log.20261004T000500Z.gz ] && bad "a rotated file past KEEP_DAYS kept" || ok "one past KEEP_DAYS deleted"
+[ "$(register unitslogs)" = 201 ] && sleep 1 && grep -q 'POST /v1/accounts' /var/log/backend-nginx/access.log \
+    && ok "the workers, as $(stat -c %U /var/log/backend-nginx/access.log), write the fresh access.log after the reopen" \
+    || bad "the fresh access.log after the reopen: $(ls -la /var/log/backend-nginx/access.log 2>&1) $(tail -2 /var/log/backend-nginx/error.log)"
 
 echo "--- stopping"
 for u in backend-nginx backend-arena@a1 backend-worker@c1 backend-gateway backend-platform backend-store@session backend-mysql; do
