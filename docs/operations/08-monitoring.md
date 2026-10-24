@@ -48,7 +48,7 @@ the action are the runbook's:
 | Alert | It means | Runbook |
 |---|---|---|
 | `TargetDown` | a process's metrics cannot be read: it is down, or its port is wrong | [§5](02-runbook.md#5-what-to-watch) |
-| `PeerUnreachable` | another machine's platform cannot be reached: the machine, its platform or the private network | [§1](02-runbook.md#1-machine-failure) |
+| `PeerUnreachable` | another machine's platform cannot be reached: the machine, its platform or the private network | [§1](02-runbook.md#4-whole-machine-loss) |
 | `StoreConnectionDown`, `EventsStoreConnectionDown`, `StoreWithoutReplica`, `EventsStoreWithoutReplica`, `StoreReplicaSilent`, `EventsStoreReplicaSilent` | a store lost, or its replica | [§2](02-runbook.md#2-stateful-primary-failure) |
 | `MysqlReplicaLagging`, `MysqlReplicaDown` | the MySQL replica behind, or unreadable | [§2](02-runbook.md#2-stateful-primary-failure) |
 | `GatewaySubscriptionDown`, `PushesUnheard` | pushes to a gateway's lobbies are lost | [§5](02-runbook.md#5-what-to-watch) |

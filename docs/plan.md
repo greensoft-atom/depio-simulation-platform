@@ -3608,6 +3608,17 @@ kept for ever, listed oldest first, the time as a number; the drill's `WATCH=1` 
 listed after 131 s, sent, silenced, and `GET /admin/watch` showing the platform, gateway and arena up and the worker
 down, a round of 0.10 s; `build-offline.sh` clean.
 
+#### 103. ~~The rehearsal on the owner's three machines, written as a checklist (operations/09).~~ — **done 2026-10-24**
+
+Every step of the readiness review's rehearsal in order, each with its expected outcome and what to record:
+the install by the guide, the smoke through the front, the watch end to end, the failovers, the backups,
+the load test from outside through the front with the bots trusting the backend's root (Q-1, Q-3, the
+TLS cost D-82 left unmeasured), the start-stop procedures; a table to fill in and where the figures go;
+what it cannot prove (Q-2, Q-4, the provider under a real outage, a flood). Checked: every relative link
+and anchor in it resolves, and so do every other document's, by a link checker run over all of them,
+which found DOC-33 (a runbook anchor that did not exist, in 08 §3 and `Rules`), fixed here;
+`build-offline.sh` for the one string changed in `Rules`.
+
 ---
 
 ### Completed 2026-09-23

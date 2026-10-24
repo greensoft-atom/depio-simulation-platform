@@ -16,7 +16,7 @@ public final class Rules {
     private static final String WATCH = "docs/operations/02-runbook.md#5-what-to-watch";
     private static final String PRIMARY = "docs/operations/02-runbook.md#2-stateful-primary-failure";
     private static final String PROCEDURES = "docs/operations/02-runbook.md#3-per-component-procedures";
-    private static final String MACHINE = "docs/operations/02-runbook.md#1-machine-failure";
+    private static final String MACHINE = "docs/operations/02-runbook.md#4-whole-machine-loss";
     private static final String CERTIFICATES = "docs/operations/06-certificates.md#10-when-something-goes-wrong";
 
     private static final long SECOND = 1000;

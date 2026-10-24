@@ -1332,6 +1332,12 @@ address), and installing a machine filled "the machine's name" into nginx's file
 address and the three machines' private ones go. **Fixed:** both steps, found writing
 [development/07](development/07-after-a-code-change.md).
 
+**DOC-33, found 2026-10-24, FIXED the same day** (plan item 103). `PeerUnreachable`'s runbook link, in
+`Rules` and in [operations/08 §3](operations/08-monitoring.md#3-the-alerts), named `02-runbook.md#1-machine-failure`,
+a section that does not exist: a machine's loss is the runbook's §4, `#4-whole-machine-loss`. Found by a
+link check of the new rehearsal guide run over its neighbours; fixed in both, and every document's links
+checked the same way (the checker is a scratchpad script; a committed one is a possible later item).
+
 **DOC-32, found 2026-10-24, FIXED the same day** (plan item 99). `backend/deploy/README.md`'s row for
 `backend-nginx.service` still said the master binds 80 and 443 with `LimitNOFILE=65536`; since D-82 it
 binds 443 and 9001, and the unit says 262144. Found adding the rotation unit's row beside it; fixed.
