@@ -95,7 +95,8 @@ for the backend, its docs and its client.
   6. **Docs stay current:** the design doc, `plan.md`, the defect register `docs/defects.md`
      (every defect found gets an ID), the glossary, requirement questions (Q-_n_), and a new test's
      row in its module's README (the build checks it: `ReadmeTestListsTest`, DOC-29), or in
-     `client/Core.Tests/README.md` for the client's (`ReadmeTestListTests`, DOC-31).
+     `client/Core.Tests/README.md` for the client's (`ReadmeTestListTests`, DOC-31); and every
+     link in `docs/` resolves, file and anchor (`DocsLinksTest`, DOC-33), which the build checks too.
   7. **Commit and push per unit**, with the word check below.
 - **Senior rigour, honest reporting.** Report what was measured, what failed (with the
   output) and what was not verified. The dev VM is loaded, so latency numbers vary between

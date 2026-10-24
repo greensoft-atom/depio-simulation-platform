@@ -1336,7 +1336,7 @@ address and the three machines' private ones go. **Fixed:** both steps, found wr
 `Rules` and in [operations/08 §3](operations/08-monitoring.md#3-the-alerts), named `02-runbook.md#1-machine-failure`,
 a section that does not exist: a machine's loss is the runbook's §4, `#4-whole-machine-loss`. Found by a
 link check of the new rehearsal guide run over its neighbours; fixed in both, and every document's links
-checked the same way (the checker is a scratchpad script; a committed one is a possible later item).
+checked the same way ; the checker is `tools`' `DocsLinksTest` since item 104, run by every build.
 
 **DOC-32, found 2026-10-24, FIXED the same day** (plan item 99). `backend/deploy/README.md`'s row for
 `backend-nginx.service` still said the master binds 80 and 443 with `LimitNOFILE=65536`; since D-82 it

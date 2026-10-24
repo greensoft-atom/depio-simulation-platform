@@ -3619,6 +3619,15 @@ and anchor in it resolves, and so do every other document's, by a link checker r
 which found DOC-33 (a runbook anchor that did not exist, in 08 §3 and `Rules`), fixed here;
 `build-offline.sh` for the one string changed in `Rules`.
 
+#### 104. ~~The documents' links checked by the build (DOC-33's lesson).~~ — **done 2026-10-24**
+
+`tools`' `DocsLinksTest`, run by every build as `ReadmeTestListsTest` is: every relative link in
+`docs/**/*.md` (the research and archive folders apart) names a file that exists, and its anchor a heading
+in it, by GitHub's slug rule, a repeated heading numbered. Checked: it passes against the documents as
+they are (over a hundred links read); a link to a heading that is not there and one to a file that is not
+there, each put into the glossary for a run, caught with its reason; `build-offline.sh` clean. The rule
+is in CLAUDE.md and working-here §1.
+
 ---
 
 ### Completed 2026-09-23

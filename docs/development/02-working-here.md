@@ -34,7 +34,8 @@ under `background/`.
      new test's row in its module's README, with its count: the build fails without
      it (`tools`' `ReadmeTestListsTest`, DOC-29); the client's in
      [Core.Tests/README.md](../../client/Core.Tests/README.md), which its own
-     `ReadmeTestListTests` checks (DOC-31).
+     `ReadmeTestListTests` checks (DOC-31); and every link in `docs/` resolving, file
+     and anchor, which the build checks too (`tools`' `DocsLinksTest`, DOC-33).
   7. Committed and pushed per unit, through the word check
      ([Naming](../README.md#naming)).
 - **After a fix, the whole test suite of each module it touched**, not the one
