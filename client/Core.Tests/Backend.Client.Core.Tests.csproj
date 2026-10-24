@@ -23,4 +23,8 @@
     <None Include="../../backend/sim/src/test/resources/maze-2026.txt" Link="maze-2026.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../backend/arena/src/test/resources/motion-2026.txt" Link="motion-2026.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The tests' own list, held to the code by ReadmeTestListTests (DOC-31). -->
+    <None Include="README.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

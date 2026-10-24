@@ -37,7 +37,9 @@ never copied, so the two sides are held to the same bytes:
 
 ## The tests, by file
 
-`[Test]` counts the methods; a parameterised method runs once a row.
+`[Test]` counts the methods; a parameterised method runs once a row. `ReadmeTestListTests` holds
+this table to the code (DOC-31): a row for each file with tests, its counts right, no row for a file
+that is gone.
 
 | File | `[Test]` | Parameterised | What it covers |
 |---|---|---|---|
@@ -53,7 +55,9 @@ never copied, so the two sides are held to the same bytes:
 | `PartyStateTests.cs` | 6 | | an older state of the same party not applied; none kept against an older state of the party it ended; another party, or none unnamed, applied; a state with no version applied as it comes; a late state of a party left not applied in the next one, even one left without its end |
 | `JsonTests.cs` | 3 | 1, fifteen rows | the API's answers read; escapes and names in any script surviving a round trip; what is not JSON refused; nesting bounded |
 | `ApiClientTests.cs` | 37 | | endpoints tried in turn and the one that answered tried first; a refusal an answer, not a reason to try elsewhere, with its `Retry-After`; none answering is unreachable; a POST that timed out not sent again elsewhere, a read that did; a success that is not JSON not taken for one; every call's route, method, body and bearer, and its answer read: guests and renames, the class table, the phrase list, the skin table, the shop in coins and gems, purchases, item levels, gems for money and its 503, the season pass, equipment, boosts, teams, applications, tournaments of both kinds and a round robin, the queue, a sandbox, a match asked about, a party, social calls, achievements, goals, seasons and boards; `AccountKeeper`'s first launch, a key refused, the store touched only on the thread that signed in, as Unity's main thread requires, and an account deleted, a guest's key forgotten with it (D-84) |
-| `LobbyClientTests.cs` | 5 | | after a match the queue is "none" again and a new join is queued; a declined match forgotten; a message split inside a character read whole; a lobby that stops answering found lost and dialled again; reconnects spread, not in step |
+| `LobbyClientTests.cs` | 7 | | after a match the queue is "none" again and a new join is queued; a join's answer that comes late, after a queue push or after a leave, dropped (T-61); a declined match forgotten; a message split inside a character read whole; a lobby that stops answering found lost and dialled again; reconnects spread, not in step |
+| `TrustRootTests.cs` | 4 | | the backend's root (D-82): a certificate it signed accepted, anything else refused, the root read from its PEM; a match dialling the grant's host and giving its TLS name in the handshake |
+| `ReadmeTestListTests.cs` | 1 | | this table held to the code (DOC-31): a row for each file with tests, naming it, with its `[Test]` and parameterised methods counted, and no row for a file that is gone |
 
 The lobby client is also driven by the headless drills against a real gateway
 ([../Headless/README.md](../Headless/README.md)).

@@ -4,8 +4,7 @@ Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
 re-ordered around it rather than the other way round. **Open as of 2026-10-24:**
-DOC-31 (the client's test list behind its code, item 98); O-45 (nginx's logs never rotated, item 99);
-O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
+O-45 (nginx's logs never rotated, item 99); O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
 Every entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
@@ -1327,13 +1326,18 @@ address), and installing a machine filled "the machine's name" into nginx's file
 address and the three machines' private ones go. **Fixed:** both steps, found writing
 [development/07](development/07-after-a-code-change.md).
 
-**DOC-31, found 2026-10-24, OPEN** (plan item 97; to be fixed in item 98). The client's tests are listed
+**DOC-31, found 2026-10-24, FIXED the same day** (found in plan item 97, fixed in item 98). The client's tests are listed
 in [client/Core.Tests/README.md](../client/Core.Tests/README.md), a count of `[Test]` methods a file,
 as the modules' READMEs list theirs; DOC-29's check reads the modules' alone, so nothing compared the
 client's. Behind: `LobbyClientTests.cs` (5 for 7: T-61's two, item 90), no row for `TrustRootTests.cs`
 (4, D-82, item 90), and `ApiClientTests.cs` one behind before item 97 added its own. All three were
-missed by the units that added the tests. To close it: the rows level, and a check in the client's
-own tests.
+missed by the units that added the tests. **Fixed:** the rows level, and `ReadmeTestListTests` in
+`Core.Tests`, run with every client test run: the README copied beside the tests by the project file,
+each row compared with the assembly by reflection, sorted as NUnit sorts them (`ISimpleTestBuilder`
+for `[Test]`, `ITestBuilder` for `[TestCase]`, `[TestCaseSource]` and their kind). It first failed on
+the two missing rows; a count off by one, a row removed, a row naming no file and a parameterised
+count wrong were each caught. Its first draft counted `[TestCase]` alone and missed
+`[TestCaseSource]`, which the baseline run showed.
 ---
 
 ## 8. What this changes

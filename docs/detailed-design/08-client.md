@@ -413,6 +413,7 @@ client adds:
 | Prediction | the movement rule bit for bit against the trajectory the server's `Room` wrote (`motion-2026.txt`); stamping, matching, replay, corrections and jumps on a frozen clock; live, the `prediction` drill: each frame's predicted position against the server's | core tests; the headless client |
 | What a frame draws, the sticks, the account kept, the party's state (§8 (a), D-74) | the scene at a render tick and the render clock on a frozen clock; the sticks' sectors, dead zone and fire; a first launch and a key refused against a scripted API and a store in memory; older and ended parties' states refused | core tests |
 | The lobby client | against a scripted lobby on a loopback WebSocket: the queue "none" again after a match, a declined match forgotten, a message split inside a character read whole, a silent lobby found lost, reconnects spread; and live, the drills | core tests; the headless client |
+| The tests' own list | `Core.Tests/README.md`'s rows compared with the assembly by reflection, as the server's READMEs are by its build (DOC-29, DOC-31) | `ReadmeTestListTests`, every client test run |
 | The Unity package's scripts | compiled against stubs of the Unity API, for no platform, the editor, iOS and Android; the Android plugin against stubs of Android's | `client/unity-check.sh`, nothing run |
 | Rendering, touch, lifecycle, secure storage, device TLS, frame time on a phone | the Unity editor and devices | **not on this machine** |
 

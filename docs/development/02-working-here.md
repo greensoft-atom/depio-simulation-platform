@@ -32,7 +32,9 @@ under `background/`.
      [defect register](../defects.md) (every defect found gets an ID), the
      [glossary](../glossary.md), a question (Q-*n*) for what is the owner's, and a
      new test's row in its module's README, with its count: the build fails without
-     it (`tools`' `ReadmeTestListsTest`, DOC-29).
+     it (`tools`' `ReadmeTestListsTest`, DOC-29); the client's in
+     [Core.Tests/README.md](../../client/Core.Tests/README.md), which its own
+     `ReadmeTestListTests` checks (DOC-31).
   7. Committed and pushed per unit, through the word check
      ([Naming](../README.md#naming)).
 - **After a fix, the whole test suite of each module it touched**, not the one

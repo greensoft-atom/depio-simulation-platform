@@ -63,7 +63,7 @@ and fixed-phrase chat
 | MySQL persistence design | **[Written](detailed-design/06-persistence-mysql.md)** — schema, transaction patterns, idempotency via natural keys, pooling, retention and growth, backups proved weekly. The schema is one baseline since 2026-10-04, `V1__schema.sql` and `V2__seed.sql` (D-75). |
 | Operations docs | [Mostly written](operations/01-deploy.md) — install, TLS, MySQL, backups and the certificate run for real; the stores' promotion scripted and drilled ([runbook §2](operations/02-runbook.md#2-stateful-primary-failure)), MySQL's too (2026-09-29, rehearsed under load 2026-09-30); backups proved by a weekly restore (item 76); every port and each machine's firewall, run as written ([05](operations/05-ports-and-firewall.md), item 88); the site behind one public address, the front's nginx ending TLS, and the backend's own CA, run as written with the C# client through it ([05](operations/05-ports-and-firewall.md), [06](operations/06-certificates.md), item 90). What is left is the alert thresholds, which wait on Q-3's hardware ([runbook](operations/02-runbook.md)). |
 | Application code | **[backend/](../backend/README.md)**: `common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`, `crypto-examples`. 1 064 tests, 0 compiler warnings (item 86, 2026-10-06). Multi-room arena, largest clean run 1 200 bots, every one sent every snapshot (item 14), and 600 through a failover (item 23); MySQL transactions tested for idempotency and double-spend under concurrency; single-use join tickets; Argon2id login and sessions; register → login → lobby → ticket → play → result persisted → **leaderboard updated**, verified end to end across four processes against real MySQL and real j-redis. |
-| Unity client | **Claude writes it** ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer), 2026-09-27): the engine-free core and a headless driver in [client/](../client/README.md), 148 tests (2026-10-04), driven against the real stack by the live drills. The Unity layer is written as scripts over the core, compiled against stubs and not yet run in Unity (item 77, the owner's Q-51); own-tank prediction, deferred with it on 2026-09-27, was brought back on 2026-10-03 and built (item 70). |
+| Unity client | **Claude writes it** ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer), 2026-09-27): the engine-free core and a headless driver in [client/](../client/README.md), 178 tests (2026-10-24), their list in its README checked by one of them (DOC-31), driven against the real stack by the live drills. The Unity layer is written as scripts over the core, compiled against stubs and not yet run in Unity (item 77, the owner's Q-51); own-tank prediction, deferred with it on 2026-09-27, was brought back on 2026-10-03 and built (item 70). |
 
 ### Build checklist
 
@@ -3534,11 +3534,13 @@ asks for deletion then; privacy law in most places does, and nothing in the back
 - **Found**: DOC-31, the client's test list behind its code (item 98); and, reviewing the item, O-45:
   nginx's logs never rotated, which D-84's "until rotated" had assumed (item 99).
 
-#### 98. The client's test list checked (DOC-31).
+#### 98. ~~The client's test list checked (DOC-31).~~ — **done 2026-10-24**
 
-The rows level with the code, and a test in `Core.Tests` that reads its own README beside it and
-compares each file's row with its `[Test]` methods, by reflection, so the client's list is held as the
-modules' are (DOC-29).
+The rows level with the code (`LobbyClientTests` 7, `TrustRootTests` 4, the check's own), and
+`ReadmeTestListTests` in `Core.Tests`: the README copied beside the tests, each row compared with the
+assembly by reflection, as the modules' lists are by the build (DOC-29). Checked: it failed first on the
+two missing rows, then on its own draft (it missed `[TestCaseSource]`, so NUnit's builder interfaces do
+the sorting now); four mutants caught; the whole client suite 178 of 178.
 
 #### 99. nginx's logs rotated and kept a number of days (O-45).
 
