@@ -2825,9 +2825,23 @@ not before (`RulesTest`), as `promtool test rules` would; a rule's threshold is 
   `backend_watch_notifications_total{outcome}` (`sent`, `failed`, `duplicate`, `silenced`),
   `backend_watch_round_seconds`.
 
+### What each machine last saw (designed 2026-10-24, plan item 102)
+
+Each round the watch also writes its view to the store, `watch:{machine}`, a JSON object for a minute:
+`at`, `machine`, `roundSeconds`, `targets` (each `job`, `instance`, `up`), `peers` (each `peer`, `up`),
+`disks` (each `mount`, `freeBytes`, `sizeBytes`), `memory` (`freeBytes`, `sizeBytes`), `load1m`, `cores`
+and `alertsFiring`. `GET /admin/watch` lists every machine's, newest first, so an operator reads the
+site's state from any machine, with no metrics port to curl; a machine whose view is older than a
+minute is absent, and the others' `peers` say so.
+
+**Reads in parallel.** The targets and the peers are read on virtual threads, one each, and the round
+waits for all: a round is bounded by the 2 s timeout plus the rules, not by the number of targets.
+One after another, C's six targets and two peers all down would take 16 s, eight reads at the 2 s timeout
+(derived), past the 15 s round.
+
 ### What it costs
 
-A round is one HTTP request a target on loopback and a few system calls, well under a second; the
-series kept are the rules' alone, a few hundred doubles each: measured in `WatchTest` and reported in
-08. The watch's thread is its own, scheduled with a fixed delay; a round that throws is logged and the
-next runs.
+A round is one HTTP request a target on loopback, in parallel, and a few system calls: 0.15 s with four
+targets on the drill's stack (08 §7); the series kept are the rules' alone, a few hundred doubles each.
+The watch's thread is its own, scheduled with a fixed delay; a round that throws is logged and the next
+runs.

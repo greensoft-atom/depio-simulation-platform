@@ -809,4 +809,36 @@ class AdminServerTest {
         assertThat(audited("ResultSetAside")).containsSubsequence("silence silenced", "unsilence lifted", "unsilence refused_no_such_silence");
         assertThat(audited("alerts")).contains("alerts ok");
     }
+
+    @Test
+    @DisplayName("GET /admin/watch lists what each machine's watch last saw, from the store (04 §12, item 102)")
+    void watchViews() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var alerts = new com.backend.platform.watch.AlertStore(jredis);
+        alerts.publishView(new com.backend.platform.watch.AlertStore.View("C", 1_700_000_000_000L, 0.12,
+                List.of(new com.backend.platform.watch.AlertStore.View.TargetUp("worker", "127.0.0.1:9102", false)),
+                List.of(new com.backend.platform.watch.AlertStore.View.PeerUp("A", true)),
+                List.of(new com.backend.platform.watch.AlertStore.View.Disk("/var/lib", 50L << 30, 100L << 30)),
+                8L << 30, 64L << 30, 1.5, 24, 1));
+        HttpResponse<String> listed = call("GET", "/admin/watch", null, SECRET);
+        assertThat(listed.statusCode()).as(listed.body()).isEqualTo(200);
+        var v = mapper.readTree(listed.body()).get("machines").get(0);
+        assertThat(v.get("machine").asText()).isEqualTo("C");
+        assertThat(v.get("at").asText()).isEqualTo("2023-11-14T22:13:20Z");
+        assertThat(v.get("roundSeconds").asDouble()).isEqualTo(0.12);
+        assertThat(v.at("/targets/0/job").asText()).isEqualTo("worker");
+        assertThat(v.at("/targets/0/up").asBoolean()).isFalse();
+        assertThat(v.at("/peers/0/peer").asText()).isEqualTo("A");
+        assertThat(v.at("/peers/0/up").asBoolean()).isTrue();
+        assertThat(v.at("/disks/0/mount").asText()).isEqualTo("/var/lib");
+        assertThat(v.at("/disks/0/freeBytes").asLong()).isEqualTo(50L << 30);
+        assertThat(v.at("/memory/sizeBytes").asLong()).isEqualTo(64L << 30);
+        assertThat(v.get("load1m").asDouble()).isEqualTo(1.5);
+        assertThat(v.get("cores").asInt()).isEqualTo(24);
+        assertThat(v.get("alertsFiring").asInt()).isEqualTo(1);
+        HttpResponse<String> wrong = call("POST", "/admin/watch", "{}", SECRET);
+        assertThat(wrong.statusCode()).isEqualTo(405);
+        assertThat(wrong.headers().firstValue("Allow")).hasValue("GET");
+        assertThat(audited("watch")).contains("watch ok");
+    }
 }

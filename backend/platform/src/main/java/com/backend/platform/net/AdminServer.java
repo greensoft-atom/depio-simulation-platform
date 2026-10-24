@@ -170,6 +170,8 @@ public final class AdminServer implements AutoCloseable {
                 endSeason(ex);
             } else if (path.equals("/admin/alerts")) {
                 listAlerts(ex);
+            } else if (path.equals("/admin/watch")) {
+                watchViews(ex);
             } else if (path.equals("/admin/silences")) {
                 silences(ex);
             } else if (path.startsWith("/admin/silences/")) {
@@ -719,6 +721,37 @@ public final class AdminServer implements AutoCloseable {
             a.labels().forEach(labels::put);
             row.put("summary", a.summary()).put("runbook", a.runbook())
                     .put("since", Instant.ofEpochMilli(a.sinceMillis()).toString()).put("silenced", stored.silenced());
+        }
+        answer(ex, 200, json);
+    }
+
+    /** {@code GET /admin/watch}: what each machine's watch last saw, from the store, newest first (04 §12, item 102). */
+    private void watchViews(HttpExchange ex) throws IOException, SQLException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            ex.getResponseHeaders().set("Allow", "GET");
+            answer(ex, 405, error("method_not_allowed", "use GET"));
+            return;
+        }
+        admin.audit("watch", "watch", null, "ok");
+        var json = JSON.createObjectNode();
+        var list = json.putArray("machines");
+        for (var v : alerts.views()) {
+            var row = list.addObject().put("machine", v.machine()).put("at", Instant.ofEpochMilli(v.atMillis()).toString())
+                    .put("roundSeconds", v.roundSeconds());
+            var targets = row.putArray("targets");
+            for (var t : v.targets()) {
+                targets.addObject().put("job", t.job()).put("instance", t.instance()).put("up", t.up());
+            }
+            var peers = row.putArray("peers");
+            for (var p : v.peers()) {
+                peers.addObject().put("peer", p.peer()).put("up", p.up());
+            }
+            var disks = row.putArray("disks");
+            for (var d : v.disks()) {
+                disks.addObject().put("mount", d.mount()).put("freeBytes", d.freeBytes()).put("sizeBytes", d.sizeBytes());
+            }
+            row.putObject("memory").put("freeBytes", v.memoryFreeBytes()).put("sizeBytes", v.memorySizeBytes());
+            row.put("load1m", v.load1m()).put("cores", v.cores()).put("alertsFiring", v.alertsFiring());
         }
         answer(ex, 200, json);
     }

@@ -275,6 +275,18 @@ Every machine's firing alerts, from the shared store ([08 §5](../operations/08-
   "runbook":"docs/operations/02-runbook.md#5-what-to-watch","since":"2026-10-24T14:02:15Z","silenced":false}]}
 ```
 
+### `GET /admin/watch`: what each machine's watch last saw
+
+Every machine's last round, newest first, from the shared store ([08 §5](../operations/08-monitoring.md#5-reading-and-silencing-alerts), 04 §12): each target's and peer's `up`, the disks, the memory, the load and cores, how long the round took, and how many alerts that machine has firing. A machine whose watch has stopped drops out within a minute, and the others' `peers` say so.
+
+```json
+200 {"machines":[{"machine":"C","at":"2026-10-24T14:02:15Z","roundSeconds":0.15,
+  "targets":[{"job":"platform","instance":"127.0.0.1:9101","up":true},{"job":"worker","instance":"127.0.0.1:9102","up":false}],
+  "peers":[{"peer":"A","up":true},{"peer":"B","up":true}],
+  "disks":[{"mount":"/","freeBytes":53687091200,"sizeBytes":107374182400}],
+  "memory":{"freeBytes":8589934592,"sizeBytes":68719476736},"load1m":1.5,"cores":24,"alertsFiring":1}]}
+```
+
 ### `GET /admin/silences`, `POST /admin/silences`: an alert kept unsent
 
 `POST` `{"alertname", "hours", "reason"}`: the alert of that name stays listed, marked `silenced`, and is not sent, for 1 to 168 hours. Refused: a name that is no alert of the watch's (400 `no_such_alert`; the names are [08 §3](../operations/08-monitoring.md#3-the-alerts)'s), hours not a whole number from 1 to 168 (400 `invalid_hours`), no reason (400 `no_reason`).

@@ -105,6 +105,16 @@ Every machine's alerts, whichever platform answers: they are in the shared store
 platform has stopped disappears within a minute, while the two other machines raise `PeerUnreachable`
 for it.
 
+**What each watch last saw**, `GET /admin/watch`: every machine's last round, newest first, with each
+target's and peer's `up`, the disks' free space and size, the memory, the load and cores, the round's
+time and the alerts firing; the site's state from one machine, with no metrics port to read
+([api/03](../api/03-admin-api.md)). A machine whose watch has stopped drops out of the list within a
+minute.
+
+```bash
+curl -s -H "Authorization: Bearer $(cat admin-token)" http://127.0.0.1:9120/admin/watch
+```
+
 **A silence**, for a maintenance you know will fire an alert (MySQL restarted at a quiet hour,
 `MysqlReplicaDown`; a worker upgraded, `TargetDown`): the alert stays listed, marked `silenced`, and is
 not sent.
@@ -121,8 +131,10 @@ is (D-30); it lapses by itself.
 
 ## 6. What it costs, and when it fails
 
-- **A round** is one HTTP request a target on loopback and a few system calls: 0.15 s with four targets
-  on the drill's stack (§7); the series kept are the rules' alone, an hour of each. Its own metrics: `backend_watch_scrapes_total{outcome}`,
+- **A round** is one HTTP request a target on loopback, the targets and the peers read at once on virtual
+  threads so that a round is bounded by the 2 s timeout and not by how many are down, and a few system
+  calls: 0.15 s with four targets on the drill's stack (§7); the series kept are the rules' alone, an
+  hour of each. Its own metrics: `backend_watch_scrapes_total{outcome}`,
   `backend_watch_notifications_total{outcome}` (`sent`, `failed`, `duplicate`, `silenced`),
   `backend_watch_alerts_firing{machine}`, `backend_watch_round_seconds`.
 - **The watch's platform stops**: its alerts leave the store within a minute; the other two machines
@@ -146,5 +158,7 @@ On 2026-10-24 (plan item 100):
   0.15 s with four targets, then silenced through the admin API.
 - **Under systemd**, `check-units-el9.sh` in UBI 9.5: the same, listed after 134 s, in the platform's
   journal, and resolved within 15 s of the worker's start.
+- **The view** (item 102): the drill's `GET /admin/watch` showed the platform, gateway and arena up and the
+  worker down, a round of 0.10 s; four targets that each take a second are read in about one (`WatchTest`).
 - **Not checked**: three machines' watches over a real private network, and a real webhook receiver:
   the rehearsal on the owner's machines, once Q-60 names one.

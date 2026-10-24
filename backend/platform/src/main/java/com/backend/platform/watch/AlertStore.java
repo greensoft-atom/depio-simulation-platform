@@ -28,6 +28,7 @@ public final class AlertStore {
     private static final String ALERT = "alert:";
     private static final String SENT = "alertsent:";
     private static final String SILENCE = "silence:";
+    private static final String WATCH = "watch:";
     /** A firing alert is written each round (15 s); unwritten this long, its watch is gone, and so is it. */
     static final int LIVE_SECONDS = 60;
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -36,6 +37,27 @@ public final class AlertStore {
     public record Stored(Alert alert, boolean silenced) { }
 
     public record Silence(String alertname, long untilMillis, String reason) { }
+
+    /**
+     * What one machine's watch saw in its last round (04 §12, plan item 102): each target's and peer's
+     * {@code up}, the disks, the memory, the load and cores, how long the round took, and how many alerts it
+     * has firing. Written each round for a minute, so a machine whose watch stopped drops out of the list.
+     */
+    public record View(String machine, long atMillis, double roundSeconds, List<TargetUp> targets, List<PeerUp> peers,
+                       List<Disk> disks, long memoryFreeBytes, long memorySizeBytes, double load1m, int cores, int alertsFiring) {
+
+        public record TargetUp(String job, String instance, boolean up) { }
+
+        public record PeerUp(String peer, boolean up) { }
+
+        public record Disk(String mount, long freeBytes, long sizeBytes) { }
+
+        public View {
+            targets = List.copyOf(targets);
+            peers = List.copyOf(peers);
+            disks = List.copyOf(disks);
+        }
+    }
 
     private final JRedisClient client;
 
@@ -70,6 +92,25 @@ public final class AlertStore {
             }
         }
         out.sort(Comparator.comparing((Stored s) -> s.alert().name()).thenComparing(s -> s.alert().fingerprint()));
+        return out;
+    }
+
+    /** This machine's view of its last round, kept a minute. */
+    public void publishView(View view) {
+        client.sync().set(WATCH + view.machine(), viewJson(view), SetArgs.ex(LIVE_SECONDS));
+    }
+
+    /** Every machine's view within the last minute, newest first. */
+    public List<View> views() {
+        List<View> out = new ArrayList<>();
+        for (String key : keys(WATCH + "*")) {
+            String json = client.sync().get(key);
+            View v = json == null ? null : view(json);
+            if (v != null) {
+                out.add(v);
+            }
+        }
+        out.sort(Comparator.comparingLong(View::atMillis).reversed().thenComparing(View::machine));
         return out;
     }
 
@@ -139,6 +180,48 @@ public final class AlertStore {
         }
         node.put("summary", a.summary()).put("runbook", a.runbook()).put("since", a.sinceMillis());
         return node.toString();
+    }
+
+    static String viewJson(View v) {
+        ObjectNode n = JSON.createObjectNode().put("machine", v.machine()).put("at", v.atMillis()).put("roundSeconds", v.roundSeconds());
+        var targets = n.putArray("targets");
+        for (View.TargetUp t : v.targets()) {
+            targets.addObject().put("job", t.job()).put("instance", t.instance()).put("up", t.up());
+        }
+        var peers = n.putArray("peers");
+        for (View.PeerUp p : v.peers()) {
+            peers.addObject().put("peer", p.peer()).put("up", p.up());
+        }
+        var disks = n.putArray("disks");
+        for (View.Disk d : v.disks()) {
+            disks.addObject().put("mount", d.mount()).put("freeBytes", d.freeBytes()).put("sizeBytes", d.sizeBytes());
+        }
+        n.putObject("memory").put("freeBytes", v.memoryFreeBytes()).put("sizeBytes", v.memorySizeBytes());
+        n.put("load1m", v.load1m()).put("cores", v.cores()).put("alertsFiring", v.alertsFiring());
+        return n.toString();
+    }
+
+    static View view(String json) {
+        try {
+            JsonNode n = JSON.readTree(json);
+            List<View.TargetUp> targets = new ArrayList<>();
+            for (JsonNode t : n.path("targets")) {
+                targets.add(new View.TargetUp(t.path("job").asText(), t.path("instance").asText(), t.path("up").asBoolean()));
+            }
+            List<View.PeerUp> peers = new ArrayList<>();
+            for (JsonNode p : n.path("peers")) {
+                peers.add(new View.PeerUp(p.path("peer").asText(), p.path("up").asBoolean()));
+            }
+            List<View.Disk> disks = new ArrayList<>();
+            for (JsonNode d : n.path("disks")) {
+                disks.add(new View.Disk(d.path("mount").asText(), d.path("freeBytes").asLong(), d.path("sizeBytes").asLong()));
+            }
+            return new View(n.path("machine").asText(), n.path("at").asLong(), n.path("roundSeconds").asDouble(), targets, peers, disks,
+                    n.path("memory").path("freeBytes").asLong(), n.path("memory").path("sizeBytes").asLong(),
+                    n.path("load1m").asDouble(), n.path("cores").asInt(), n.path("alertsFiring").asInt());
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     static Alert alert(String json) {

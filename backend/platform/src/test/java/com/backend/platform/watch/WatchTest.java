@@ -44,10 +44,19 @@ class WatchTest {
     private static final class Target implements AutoCloseable {
         final HttpServer server;
         final AtomicReference<String> body = new AtomicReference<>("");
+        /** How long it takes to answer /metrics: a slow target. */
+        final AtomicLong delayMillis = new AtomicLong();
 
         Target() throws IOException {
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-            server.createContext("/metrics", ex -> answer(ex, 200, body.get()));
+            server.createContext("/metrics", ex -> {
+                try {
+                    Thread.sleep(delayMillis.get());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                answer(ex, 200, body.get());
+            });
             server.createContext("/health", ex -> answer(ex, 200, "{\"status\":\"ok\"}"));
             server.start();
         }
@@ -316,6 +325,64 @@ class WatchTest {
                 watch.round();
                 assertThat(hook.next().get("status").asText()).as("the claim released by the failure: sent now").isEqualTo("firing");
             }
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("each round writes what the machine saw to the store for a minute, and every machine's view is listed newest first (item 102)")
+    void theViewOfEachMachine() throws Exception {
+        int closed;
+        try (ServerSocket probe = new ServerSocket(0)) {
+            closed = probe.getLocalPort();
+        }
+        try (Target worker = new Target()) {
+            worker.body.set("backend_worker_dead_letter_depth 1\n");
+            watch = watch("A", null, 3_600_000L, List.of(new WatchSettings.Target("worker", "127.0.0.1", worker.port()),
+                    new WatchSettings.Target("arena", "127.0.0.1", closed)), List.of(new WatchSettings.Peer("B", "127.0.0.1", worker.port())));
+            watch.round();
+            Watch other = watch("B", null, 3_600_000L, List.of(), List.of(), new Metrics());
+            try {
+                now.addAndGet(15_000);
+                other.round();
+            } finally {
+                other.close();
+            }
+            List<AlertStore.View> views = new AlertStore(store).views();
+            assertThat(views).extracting(AlertStore.View::machine).as("newest first").containsExactly("B", "A");
+            AlertStore.View a = views.get(1);
+            assertThat(a).isEqualTo(watch.lastView());
+            assertThat(a.atMillis()).isEqualTo(T0);
+            assertThat(a.targets()).containsExactly(new AlertStore.View.TargetUp("worker", "127.0.0.1:" + worker.port(), true),
+                    new AlertStore.View.TargetUp("arena", "127.0.0.1:" + closed, false));
+            assertThat(a.peers()).containsExactly(new AlertStore.View.PeerUp("B", true));
+            assertThat(a.disks()).extracting(AlertStore.View.Disk::mount).containsExactly("/");
+            assertThat(a.disks().get(0).sizeBytes()).isGreaterThanOrEqualTo(a.disks().get(0).freeBytes()).isPositive();
+            assertThat(a.memorySizeBytes()).isGreaterThanOrEqualTo(a.memoryFreeBytes()).isPositive();
+            assertThat(a.cores()).isGreaterThanOrEqualTo(1);
+            assertThat(a.alertsFiring()).isEqualTo(1);
+            assertThat(a.roundSeconds()).isBetween(0.0, 10.0);
+            assertThat(store.sync().ttl("watch:A")).as("a minute, then gone with its watch").isBetween(1L, 60L);
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("the targets are read in parallel: four that each take a second are read in about one, not four (item 102)")
+    void targetsAreReadInParallel() throws Exception {
+        try (Target t1 = new Target(); Target t2 = new Target(); Target t3 = new Target(); Target t4 = new Target()) {
+            List<WatchSettings.Target> targets = new java.util.ArrayList<>();
+            for (Target t : List.of(t1, t2, t3, t4)) {
+                t.delayMillis.set(1_000);
+                t.body.set("backend_worker_queue_depth 1\n");
+                targets.add(new WatchSettings.Target("worker", "127.0.0.1", t.port()));
+            }
+            watch = watch("A", null, 3_600_000L, targets, List.of());
+            long started = System.nanoTime();
+            watch.round();
+            double seconds = (System.nanoTime() - started) / 1e9;
+            assertThat(seconds).as("in parallel, about a second; one after another, four").isLessThan(2.5);
+            assertThat(watch.lastView().targets()).hasSize(4).allMatch(AlertStore.View.TargetUp::up);
         }
     }
 

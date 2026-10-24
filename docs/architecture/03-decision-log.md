@@ -2486,9 +2486,9 @@ where D-84 had said "until rotated".
 
 **Cost.**
 - **Disk, on the front**: about 1.3 GB a day compressed at 10 000 players (access logs compress about
-  ten to one; derived, not measured), 18 GB at 14 days; five times that at 50 000. Nothing alerts on a
-  disk today: the monitoring to come (plan item 100) must, and until then `df` is in the runbook's
-  daily routine (§5, §6).
+  ten to one; derived, not measured), 18 GB at 14 days; five times that at 50 000. The watch alerts on a
+  disk since D-86 (`DiskFilling`, `DiskFillsWithinAWeek`); until the owner names where alerts go (Q-60),
+  the runbook's daily routine reads them on a machine.
 - **Midnight splits a night's incident across two files.**
 - **Left as they are**: MySQL's own error log in `/var/log/backend-mysql/`, errors and start-up lines
   alone, kilobytes a day; the Java services', which go to the journal, bounded by systemd's
@@ -2524,8 +2524,8 @@ and the runbook's §5 says what should alert on them; nothing read them.
   fires or resolves, and again every `BACKEND_ALERT_REPEAT_HOURS` (4) while it fires; retried three times;
   **once for the site**, not once a machine: the sender takes `alert:sent:{fingerprint}` in the store
   (`SET NX`) first, and the two others see it taken. Unset, alerts are listed and logged alone, which is
-  the state until the owner names a destination (Q-60). E-mail through the owner's relay, with the
-  bundle's `javax.mail`, follows when wanted.
+  the state until the owner names a destination (Q-60). E-mail through the owner's relay, by an SMTP
+  client of the backend's own (the bundle holds the mail API alone), follows when wanted.
 - **The watch reports on itself**: scrapes by outcome, alerts firing, notifications by outcome, which
   the peers read as any metric.
 

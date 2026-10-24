@@ -745,6 +745,9 @@ if [ "${WATCH:-0}" = 1 ]; then
     -d '{"alertname":"TargetDown","hours":1,"reason":"drill"}' http://127.0.0.1:9196/admin/silences)
   [ "$code" = 201 ] && admin alerts | grep -q '"silenced":true' && echo "silenced through the admin API: 201, listed as silenced" \
     || { echo "WATCH FAILED: the silence answered $code, listed: $(admin alerts | cut -c1-200)"; STATUS=1; }
+  echo "what the watch last saw (GET /admin/watch): $(admin watch | cut -c1-400)"
+  admin watch | grep -q '"job":"worker","instance":"127.0.0.1:9199","up":false' && echo "the view says the worker is down" \
+    || { echo "WATCH FAILED: the view does not show the worker down"; STATUS=1; }
 fi
 echo "--- the matcher's view: platform's metrics, scraped"
 curl -s http://127.0.0.1:9195/metrics | grep -E '^backend_platform_(matches_made_total|confirms_total|queue_players|queue_wait_seconds_(sum|count)|request_seconds_count|(open|match)_tickets_issued_total)' || echo "(no scrape)"

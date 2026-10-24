@@ -3579,8 +3579,8 @@ was reverted uncommitted, and the rule recorded. Then: "complete and robust as i
   resolved within 15 s of the worker's start. `build-offline.sh`: every test but one passed; `ArenaServerTest.theDeadComeBackAtTheNextWave`, untouched by this item, erred once and passed alone (T-62, to fix next; commit 6cbfb02's message says the build passed, which it did not). Not checked: three machines'
   watches on a real private network (the peers' `/health` and the once-for-the-site sending are
   WatchTest's, on one host), and a real webhook receiver.
-- **Open**: Q-60, the webhook's address (or e-mail through the owner's relay with the bundle's
-  `javax.mail`, a later slice), and who answers at night. Then the readiness review's other steps, in its
+- **Open**: Q-60, the webhook's address (or e-mail through the owner's relay by an SMTP client of
+  the backend's own, a later slice: the bundle holds the mail API alone), and who answers at night. Then the readiness review's other steps, in its
   order: a rehearsal on the three machines, a load test from outside through the front (Q-3), an outside
   security review (the owner's cost), a soft launch. Q-59 (the app's updates) and Q-53 (the backups' copy
   off the site) are the owner's, open.
@@ -3594,6 +3594,19 @@ their own clock, as the real one does every ten. Checked: without pings the clie
 a first fix that pinged only when a read found nothing was cut too (a client receiving snapshots never
 waits; its sending is what the rule judges); with pings on a clock, three runs of 19 s each, and
 `build-offline.sh` clean.
+
+#### 102. ~~The watch: what each machine last saw, and reads in parallel (04 §12).~~ — **done 2026-10-24**
+
+Each round the watch writes what it saw to the store, `watch:{machine}` for a minute: each target's and
+peer's `up`, the disks, the memory, the load, the round's time and the alerts firing; `GET /admin/watch`
+lists every machine's, newest first, so an operator sees the site's state from one machine without
+reading each metrics port. The targets and the peers are read at once on virtual threads: on C, six
+targets and two peers all down would take 16 s one after another (eight reads at the 2 s timeout; derived,
+not measured), past the 15 s round; now a round is bounded by the 2 s timeout. Checked: test first (`WatchTest`'s view and parallel-read tests, `AdminServerTest`'s route, each failing for want of the
+code); five mutants caught: the targets read one after another (6.5 s against the 2.5 s bound), the view not written,
+kept for ever, listed oldest first, the time as a number; the drill's `WATCH=1` on the release's stack: `TargetDown`
+listed after 131 s, sent, silenced, and `GET /admin/watch` showing the platform, gateway and arena up and the worker
+down, a round of 0.10 s; `build-offline.sh` clean.
 
 ---
 
