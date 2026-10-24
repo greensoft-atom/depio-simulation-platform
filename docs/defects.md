@@ -3,8 +3,9 @@
 Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
-re-ordered around it rather than the other way round. **Open as of 2026-10-23:**
-nothing; O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
+re-ordered around it rather than the other way round. **Open as of 2026-10-24:**
+DOC-31 (the client's test list behind its code, item 98); O-45 (nginx's logs never rotated, item 99);
+O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
 Every entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
@@ -1022,6 +1023,16 @@ moment before the dump now fails if the comparison is put back.
 
 ---
 
+**O-45, found 2026-10-24, OPEN** (reviewing plan item 97; to be fixed in item 99). nginx's logs are never
+rotated or deleted. The release's nginx is not the system's package, so it brings no logrotate entry,
+and nothing in `deploy/` or the scripts rotates `/var/log/backend-nginx/access.log`, `stream.log` or
+`error.log`. At 10 000 players asking the API once in 10 seconds each, `access.log` gains about a
+thousand lines a second, some 13 GB a day at its ~150 bytes a line (derived, not measured), until the
+disk is full, and on A that disk may be MySQL's. And each line keeps a player's address for good,
+where D-84 says logs keep them "until rotated". To close it: rotation and a retention in days, by a
+timer of the release's own (rename, `nginx -s reopen`, delete past the retention), checked as
+written.
+
 ## 7. Documentation
 
 The audit found the documents have drifted from the code in ~60 places. The six
@@ -1315,6 +1326,14 @@ http://127.0.0.1:8080/health`, where the platform no longer listens (it binds th
 address), and installing a machine filled "the machine's name" into nginx's files, where the site's
 address and the three machines' private ones go. **Fixed:** both steps, found writing
 [development/07](development/07-after-a-code-change.md).
+
+**DOC-31, found 2026-10-24, OPEN** (plan item 97; to be fixed in item 98). The client's tests are listed
+in [client/Core.Tests/README.md](../client/Core.Tests/README.md), a count of `[Test]` methods a file,
+as the modules' READMEs list theirs; DOC-29's check reads the modules' alone, so nothing compared the
+client's. Behind: `LobbyClientTests.cs` (5 for 7: T-61's two, item 90), no row for `TrustRootTests.cs`
+(4, D-82, item 90), and `ApiClientTests.cs` one behind before item 97 added its own. All three were
+missed by the units that added the tests. To close it: the rows level, and a check in the client's
+own tests.
 ---
 
 ## 8. What this changes

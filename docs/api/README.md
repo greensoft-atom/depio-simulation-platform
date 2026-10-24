@@ -79,6 +79,9 @@ rooms, each on a port of its own.
   polled to the end over HTTP, which the matcher never makes for players without a lobby
   connection (it drops them within a second; 01 §6 says so now). Both fixed; the second run is
   the one shown in the references.
+- **Again on 2026-10-24**, with folder 13 added (an account deleted, D-84): 135 requests, 137
+  checks passed, against `run-local.sh`'s stack from that day's release, the admin API on and
+  payments simulated.
 - **The lobby**, by `lobby-example.mjs` on Node 24: every answer as expected, a whole duel
   included.
 - **The examples in 01-03 are those runs' requests and answers.** A few needed a player with

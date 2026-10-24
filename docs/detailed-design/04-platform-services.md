@@ -284,6 +284,40 @@ party's (until it next changes), a queued entry and a match under way (from the
 next match). A rename and a result applied in the same instant can leave a board
 with the old name until the player's next match.
 
+### Deleting an account (designed 2026-10-24, plan item 97)
+
+`DELETE /v1/accounts` `{"password"}`, with the bearer session: the player's own account erased in place
+([D-84](../architecture/03-decision-log.md#d-84--a-player-deletes-their-own-account-erased-in-place-what-others-history-needs-kept-under-a-bare-id)).
+A guest sends no password.
+
+| Answer | When |
+|---|---|
+| 204 | erased, or already erased |
+| 400 `invalid_body` | a registered account sent no password |
+| 401 `no_token`, `invalid_session` | no session |
+| 403 `wrong_password` | the password is not the account's; counted as a failed login |
+| 409 `leader_with_members` | the player leads a team with others in it: hand it over first (§2) |
+| 429 `too_many_attempts`, 503 `busy` | the login's limits and the hasher's line, as at a login |
+| 503 `storage_unavailable` | the store did not answer: before the erasure, nothing is erased; after it, the same call with the same session finishes it |
+
+**The steps, in this order** (`AccountDeletion`), as an operator's ban orders its own (§10):
+1. The session's player, and the password checked: none for a guest, nor for an account already
+   erased.
+2. Out of the queue and the party, and the team left, each as its own call does it. A store that
+   fails here refuses before anything is erased.
+3. The erasure, one MySQL transaction (`AccountRepository.erase`): the account's username, hash,
+   guest key and last login; the player's display name and rated counts; the rows of `friend`,
+   `friend_request` and `block`, either way; `inbox`, `team_invite` and `team_application`.
+4. Off the score boards (`lb:score:*` for every period still kept, and `lb:name`), and every
+   session ended (`revokeAll`): the store's part. A store that fails here answers 503 with the
+   session still working, and the same call finishes: steps 2 and 3 are done, and an erased
+   account asks no password.
+5. Every device's lobby told, `evt.session.revoked` `{"reason": "deleted"}`, which closes it.
+
+**A deleted account is no account** to everything else: a login finds no such name and no such
+guest key; the admin API answers 404; the boards' rebuild leaves it out. The app forgets its
+session, and a guest's key.
+
 ## 2. Teams
 
 | Action | LEADER | VICE_LEADER | MEMBER |

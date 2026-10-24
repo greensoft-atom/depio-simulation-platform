@@ -24,7 +24,7 @@ public final class AccountRepository {
     private static final int DUPLICATE_ENTRY = 1062;
 
     /**
-     * {@code account.status}: 0 active, 1 suspended, 2 banned (06 §3).
+     * {@code account.status}: 0 active, 1 suspended, 2 banned (06 §3), 3 deleted: erased by its player (D-84).
      *
      * A suspension ends at {@code banned_until}, or never if that is null; a ban does not end.
      * Any other value is one this code predates, and is read as a ban: the column is written
@@ -33,16 +33,25 @@ public final class AccountRepository {
      * permanent ban with a stale date from an earlier suspension was no ban at all.
      */
     public enum Status {
-        ACTIVE, SUSPENDED, BANNED;
+        ACTIVE, SUSPENDED, BANNED, DELETED;
 
         public static Status of(int code) {
             return switch (code) {
                 case 0 -> ACTIVE;
                 case 1 -> SUSPENDED;
+                case 3 -> DELETED;
                 default -> BANNED;
             };
         }
     }
+
+    /** What deleting an account needs of it (D-84): the name its attempts count under, and whether a password proves it. */
+    public record Owner(long playerId, String usernameKey, byte[] passwordHash, Status status, boolean guest) { }
+
+    public enum Erased { ERASED, ALREADY, NO_SUCH_PLAYER }
+
+    /** The display name an erased player keeps, wherever others still see them: a match, a bracket, a past season (D-84). */
+    public static final String ERASED_NAME = "Deleted player";
 
     /** What login needs, and nothing more. The hash is bytes: it is never rendered. */
     public record Credentials(long playerId, byte[] passwordHash, Status status,
@@ -295,6 +304,87 @@ public final class AccountRepository {
             ps.setLong(2, accountId);
             ps.setBytes(3, expected);
             return ps.executeUpdate() == 1;
+        }
+    }
+
+    /** @return the account's owner, or null if there is no such account */
+    public Owner owner(long playerId) throws SQLException {
+        try (Connection c = dataSource.getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT username_key, password_hash, status, guest_key_hash IS NOT NULL FROM account WHERE id = ?")) {
+            ps.setLong(1, playerId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? new Owner(playerId, rs.getString(1), rs.getBytes(2), Status.of(rs.getInt(3)),
+                        rs.getBoolean(4)) : null;
+            }
+        }
+    }
+
+    /**
+     * Erases what identifies a player, in one transaction (D-84): the account's name, password, guest key and last
+     * login; the player's display name, and their listing on the rating boards; whom they knew, either way, their inbox,
+     * and their team invitations and applications. The rows that others' history and the ledger need stay, under the
+     * bare id. The name becomes {@code ~deleted~<id>}, which no one can register (a username has no {@code ~}), so the
+     * old one is free again.
+     */
+    public Erased erase(long playerId) throws SQLException {
+        return tx.execute(c -> {
+            try (PreparedStatement ps = c.prepareStatement("SELECT status FROM account WHERE id = ? FOR UPDATE")) {
+                ps.setLong(1, playerId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) {
+                        return Erased.NO_SUCH_PLAYER;
+                    }
+                    if (Status.of(rs.getInt(1)) == Status.DELETED) {
+                        return Erased.ALREADY;
+                    }
+                }
+            }
+            update(c, "UPDATE account SET username = CONCAT('~deleted~', id), password_hash = '', guest_key_hash = NULL,"
+                    + " last_login_at = NULL, banned_until = NULL, status = " + Status.DELETED.ordinal() + " WHERE id = ?", playerId);
+            try (PreparedStatement ps = c.prepareStatement(
+                    "UPDATE player SET display_name = ?, rated_duels = 0, rated_tvts = 0, rated_rffas = 0 WHERE id = ?")) {
+                ps.setString(1, ERASED_NAME);
+                ps.setLong(2, playerId);
+                ps.executeUpdate();
+            }
+            // A friendship is two rows, and friend_id has no index of its own: the other side's found by this side's.
+            java.util.List<Long> friends = new java.util.ArrayList<>();
+            try (PreparedStatement ps = c.prepareStatement("SELECT friend_id FROM friend WHERE player_id = ?")) {
+                ps.setLong(1, playerId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        friends.add(rs.getLong(1));
+                    }
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement("DELETE FROM friend WHERE player_id = ? AND friend_id = ?")) {
+                for (long friend : friends) {
+                    ps.setLong(1, friend);
+                    ps.setLong(2, playerId);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            for (String sql : new String[] {
+                    "DELETE FROM friend WHERE player_id = ?",
+                    "DELETE FROM friend_request WHERE from_id = ?",
+                    "DELETE FROM friend_request WHERE to_id = ?",
+                    "DELETE FROM block WHERE player_id = ?",
+                    "DELETE FROM block WHERE blocked_id = ?",
+                    "DELETE FROM inbox WHERE player_id = ?",
+                    "DELETE FROM team_invite WHERE player_id = ?",
+                    "DELETE FROM team_application WHERE player_id = ?"}) {
+                update(c, sql, playerId);
+            }
+            return Erased.ERASED;
+        });
+    }
+
+    private static void update(Connection c, String sql, long id) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, id);
+            ps.executeUpdate();
         }
     }
 

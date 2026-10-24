@@ -201,6 +201,24 @@ class LeaderboardRebuildTest {
         }
     }
 
+    @Test
+    @DisplayName("an erased player is left off every board a rebuild makes, and their name with them (D-84)")
+    void anErasedPlayerIsNotRebuilt() throws Exception {
+        long a = register("ada");
+        long b = register("bob");
+        long now = System.currentTimeMillis();
+        play(new LeaderboardStore(live), now - HOUR, a, 500, b, 300);
+        assertThat(accounts.erase(b)).isEqualTo(AccountRepository.Erased.ERASED);
+
+        rebuild(empty, now);
+
+        for (Board board : Board.values()) {
+            assertThat(board(empty, board.key(Instant.ofEpochMilli(now - HOUR)))).as(board.apiName())
+                    .containsOnlyKeys(Long.toString(a));
+        }
+        assertThat(empty.sync().hgetall("lb:name")).containsOnlyKeys(Long.toString(a));
+    }
+
     // ---- helpers -----------------------------------------------------------------------------
 
     private long register(String name) throws SQLException {

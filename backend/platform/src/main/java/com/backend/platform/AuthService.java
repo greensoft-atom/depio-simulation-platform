@@ -306,6 +306,11 @@ public final class AuthService {
         return await(sessions.playerIdOf(sessionToken));
     }
 
+    /** Whether {@code password} is the account's, for what asks it again of a player logged in (D-84). */
+    public boolean verifies(AccountRepository.Owner owner, char[] password) {
+        return hasher.verify(password == null ? new char[0] : password, owner.passwordHash());
+    }
+
     public boolean logout(String sessionToken) {
         return await(sessions.revoke(sessionToken));
     }
@@ -317,7 +322,7 @@ public final class AuthService {
             // by whoever next writes it, not on the login path.
             case SUSPENDED -> c.bannedUntilMillis() == null
                     || c.bannedUntilMillis() > System.currentTimeMillis();
-            case BANNED -> true;
+            case BANNED, DELETED -> true;
         };
     }
 

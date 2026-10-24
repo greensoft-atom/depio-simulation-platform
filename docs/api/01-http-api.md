@@ -204,6 +204,34 @@ The name answered is the one stored, normalised (spaces collapsed, NFKC). Again 
 `429 {"code":"too_soon","message":"a display name changes once in 30 days"}`; a refused name:
 400 `invalid_display_name`.
 
+### `DELETE /v1/accounts`: delete the account
+
+Bearer. Body `{"password"}`; a guest sends none. The player's own account is erased: its name,
+password, guest key and display name (shown as `Deleted player` where others still see it),
+friends, blocks, inbox, team invitations and applications, its places on the boards, and every
+session, each device's lobby told `evt.session.revoked` `{"reason":"deleted"}`. Matches,
+brackets, the ledger and payment orders stay, under the bare id
+([D-84](../architecture/03-decision-log.md#d-84--a-player-deletes-their-own-account-erased-in-place-what-others-history-needs-kept-under-a-bare-id)).
+The name is free to register again. There is no undo.
+
+```http
+DELETE /v1/accounts
+Authorization: Bearer 1eOf0B5d...
+{"password": "hunter2-hunter2"}
+```
+```json
+204
+```
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `invalid_body` | a registered account sent no password |
+| 401 | `no_token`, `invalid_session` | no session |
+| 403 | `wrong_password` | not the account's password; counted as a failed login |
+| 409 | `leader_with_members` | the player leads a team with others in it: hand it over first |
+| 429, 503 | `too_many_attempts`, `busy` | as a login |
+| 503 | `storage_unavailable` | try again: the same call, with the same session, finishes it |
+
 ## 3. Content
 
 Public, no auth, `GET` only: what the client draws by. Each answer carries `ETag: "<version>"`;

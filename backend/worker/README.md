@@ -302,7 +302,7 @@ started in the test: no store to install.
 | `TournamentSchedulerTest` | Seeding, rooms, claims lost to another worker, decisions with and without a result, cut short, round robins, prizes and gems, a failing step |
 | `SeasonKeeperTest` | A season closed, paid and reset once; the teams'; the lock; a run stopped part-way finished by the next |
 | `LedgerCheckTest` | Once a day across the fleet; a mismatch in coins or gems found and reported; a failed check gives the day back |
-| `LeaderboardRebuildTest` | A rebuild equal to the live boards; nothing lowered on a live store |
+| `LeaderboardRebuildTest` | A rebuild equal to the live boards; nothing lowered on a live store; an erased player not rebuilt (D-84) |
 | `ReplicaWatchTest` | The heartbeat stamped through the pool |
 | `EloRatingTest`, `AccountLevelsTest`, `BackupWatchTest` | The rules, and the backup metrics, without a database |
 

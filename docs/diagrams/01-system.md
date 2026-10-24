@@ -20,7 +20,7 @@ backups' copy off the site is not chosen yet (Q-53).
 
 ```mermaid
 flowchart LR
-    player["Player<br/>Unity app on iOS or Android"]
+    player["Player<br/>Unity app on Android"]
     operator["Operator<br/>SSH, scripts, admin API"]
     backend["The backend<br/>arena, gateway, platform, worker<br/>j-redis, MySQL, nginx"]
     provider["Payment provider<br/>simulated, Q-52"]

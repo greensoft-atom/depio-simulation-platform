@@ -358,6 +358,41 @@ namespace Backend.Client.Core.Tests
         }
 
         [Test]
+        public void ADeletedAccountsKeyIsForgottenAndARefusedDeletionKeepsIt()
+        {
+            var asked = new List<string>();
+            HttpStatusCode answer = HttpStatusCode.Forbidden;
+            var hosts = new Hosts
+            {
+                Answer = r =>
+                {
+                    asked.Add(r.Method + " " + r.RequestUri.AbsolutePath + " " + r.Headers.Authorization + " "
+                        + (r.Content == null ? "-" : r.Content.ReadAsStringAsync().Result));
+                    return answer == HttpStatusCode.NoContent
+                        ? new HttpResponseMessage(HttpStatusCode.NoContent)
+                        : Json(answer, "{\"code\":\"wrong_password\",\"message\":\"no\"}");
+                },
+            };
+            var store = new MemorySecureStore();
+            store.Set(AccountKeeper.GuestKeyName, "k-1");
+            var keeper = new AccountKeeper(new ApiClient(Three, hosts), store);
+
+            ApiResult<bool> refused = keeper.DeleteAccount("t-1", "not-it").Result;
+            Assert.That((refused.Ok, refused.Status, refused.Code), Is.EqualTo((false, 403, "wrong_password")));
+            Assert.That(store.Get(AccountKeeper.GuestKeyName), Is.EqualTo("k-1"), "refused: nothing is gone");
+
+            answer = HttpStatusCode.NoContent;
+            ApiResult<bool> erased = keeper.DeleteAccount("t-1", null).Result;
+            Assert.That(erased.Ok, Is.True);
+            Assert.That(store.Get(AccountKeeper.GuestKeyName), Is.Null, "erased: the key would sign in to nothing");
+            Assert.That(asked, Is.EqualTo(new[]
+            {
+                "DELETE /v1/accounts Bearer t-1 {\"password\":\"not-it\"}",
+                "DELETE /v1/accounts Bearer t-1 -",
+            }), "a guest sends no password");
+        }
+
+        [Test]
         public void AKeyRefusedIsForgottenAndNoNewGuestMadeUnasked()
         {
             var asked = new List<string>();

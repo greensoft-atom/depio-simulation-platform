@@ -1,7 +1,8 @@
 # 08 — Client
 
-The Unity app a player installs on iOS and Android
-([D-1](../architecture/03-decision-log.md#d-1--unity-native-mobile-client-no-browser-build)).
+The Unity app a player installs on Android, from the owner's own copy, not a store
+([D-1](../architecture/03-decision-log.md#d-1--unity-native-mobile-client-no-browser-build),
+[C-10](../requirements/01-scope-and-nfrs.md#3-constraints); the iOS parts below stay, unused).
 **Status: designed 2026-09-27**, when the owner decided that Claude writes it
 ([plan](../plan.md), item 3). **Built: steps 1 to 4 of §7**, the wire, the
 world, the match connection, the API, the lobby and the own tank's prediction,
@@ -548,7 +549,7 @@ makes (.NET Standard 2.1), copied in by `client/unity-package.sh`:
 | `WorldView` | draws `Scene`: a pooled `SpriteRenderer` a handle, its sprite by kind, class and skin from a `LookTable` asset |
 | `TouchControls` | two sticks where the thumbs land (keys and the mouse in the editor) into `TouchSticks`, then `SetInput` |
 | `FollowCamera` | on the own tank, the view's size as the arena's |
-| `LobbyScreen`, `Hud` | the least screens to play: play now, a duel's queue, its state, a match found to accept; level and experience, the kill feed, respawn and leave |
+| `LobbyScreen`, `Hud` | the least screens to play: play now, a duel's queue, its state, a match found to accept, the account deleted after a second ask (D-84); level and experience, the kill feed, respawn and leave |
 | `SecureStores` | the keychain on iOS (a small Objective-C plugin), the keystore on Android (a small Java plugin over `AndroidKeyStore`, no library), `PlayerPrefs` in the editor and any other build (a desktop's), named as not secure |
 
 **Checked here, and not.** The core's additions by its tests. The package's

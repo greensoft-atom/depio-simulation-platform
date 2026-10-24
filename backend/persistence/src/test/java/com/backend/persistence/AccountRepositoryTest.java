@@ -217,6 +217,13 @@ class AccountRepositoryTest {
         }
     }
 
+    private static void exec(String sql) throws SQLException {
+        try (Connection c = db.dataSource().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.executeUpdate();
+        }
+    }
+
     private static void jdbc(String sql, long arg) throws SQLException {
         try (Connection c = db.dataSource().getConnection();
              PreparedStatement ps = c.prepareStatement(sql)) {
@@ -265,5 +272,86 @@ class AccountRepositoryTest {
                 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32});
         assertThat(accounts.upgrade(other, "bobby", HASH, null)).isEqualTo(AccountRepository.Upgraded.OK);
         assertThat(accounts.findProfile(other).displayName()).as("kept when none is given").isEqualTo("Guest5678");
+    }
+
+    @Test
+    @DisplayName("an erased account keeps no name, password or last login, and no one it knew; what others' history needs stays (D-84)")
+    void erasing() throws Exception {
+        long ada = accounts.register("ada", "Ada", HASH);
+        long bob = accounts.register("bob", "Bob", HASH);
+        long cy = accounts.register("cy", "Cy", HASH);
+        accounts.touchLogin(ada);
+        jdbc("UPDATE player SET rated_duels = 12, rated_rffas = 11, rated_tvts = 10 WHERE id = ?", ada);
+        exec("INSERT INTO friend (player_id, friend_id, since) VALUES (" + ada + ", " + bob + ", NOW(3)), ("
+                + bob + ", " + ada + ", NOW(3)), (" + bob + ", " + cy + ", NOW(3)), (" + cy + ", " + bob + ", NOW(3))");
+        exec("INSERT INTO friend_request (from_id, to_id, expires_at) VALUES (" + ada + ", " + cy + ", NOW(3) + INTERVAL 1 DAY), ("
+                + cy + ", " + ada + ", NOW(3) + INTERVAL 1 DAY)");
+        exec("INSERT INTO block (player_id, blocked_id, since) VALUES (" + bob + ", " + ada + ", NOW(3)), ("
+                + ada + ", " + cy + ", NOW(3))");
+        exec("INSERT INTO inbox (player_id, kind, ref, created_at) VALUES (" + ada + ", 1, " + cy + ", NOW(3)), ("
+                + bob + ", 2, " + ada + ", NOW(3))");
+        exec("INSERT INTO team (name, member_count) VALUES ('Reds', 1)");
+        long team = count("SELECT id FROM team WHERE name = 'Reds'", null);
+        exec("INSERT INTO team_invite (team_id, player_id, invited_by, expires_at) VALUES (" + team + ", " + ada + ", "
+                + bob + ", NOW(3) + INTERVAL 1 DAY)");
+        exec("INSERT INTO team_application (team_id, player_id, expires_at) VALUES (" + team + ", " + ada
+                + ", NOW(3) + INTERVAL 1 DAY)");
+        exec("INSERT INTO ledger (player_id, currency, delta, balance_after, reason, ref, idem_key) VALUES (" + ada
+                + ", 0, 50, 50, 0, 'm1', 'm1:" + ada + "')");
+
+        AccountRepository.Owner before = accounts.owner(ada);
+        assertThat(before.usernameKey()).isEqualTo("ada");
+        assertThat(before.passwordHash()).isEqualTo(HASH);
+        assertThat(before.status()).isEqualTo(AccountRepository.Status.ACTIVE);
+        assertThat(before.guest()).isFalse();
+        assertThat(accounts.erase(ada)).isEqualTo(AccountRepository.Erased.ERASED);
+
+        assertThat(accounts.findForLogin("ada")).as("no login by the old name").isNull();
+        assertThat(count("SELECT COUNT(*) FROM account WHERE id = ? AND username = CONCAT('~deleted~', id)"
+                + " AND status = 3 AND password_hash = '' AND guest_key_hash IS NULL AND last_login_at IS NULL"
+                + " AND banned_until IS NULL", ada)).isEqualTo(1);
+        assertThat(accounts.owner(ada).status()).isEqualTo(AccountRepository.Status.DELETED);
+        assertThat(accounts.findProfile(ada).displayName()).isEqualTo(AccountRepository.ERASED_NAME);
+        assertThat(count("SELECT rated_duels + rated_rffas + rated_tvts FROM player WHERE id = ?", ada))
+                .as("off the rating boards").isZero();
+        assertThat(count("SELECT COUNT(*) FROM friend WHERE ? IN (player_id, friend_id)", ada)).isZero();
+        assertThat(count("SELECT COUNT(*) FROM friend WHERE player_id = ?", bob)).as("bob's other friend").isEqualTo(1);
+        assertThat(count("SELECT COUNT(*) FROM friend_request WHERE ? IN (from_id, to_id)", ada)).isZero();
+        assertThat(count("SELECT COUNT(*) FROM block WHERE ? IN (player_id, blocked_id)", ada)).isZero();
+        assertThat(count("SELECT COUNT(*) FROM inbox WHERE player_id = ?", ada)).isZero();
+        assertThat(count("SELECT COUNT(*) FROM inbox WHERE player_id = ?", bob)).as("others' items lapse as they would").isEqualTo(1);
+        assertThat(count("SELECT COUNT(*) FROM team_invite WHERE player_id = ?", ada)).isZero();
+        assertThat(count("SELECT COUNT(*) FROM team_application WHERE player_id = ?", ada)).isZero();
+        assertThat(count("SELECT COUNT(*) FROM ledger WHERE player_id = ?", ada)).as("the ledger is kept").isEqualTo(1);
+        assertThat(count("SELECT COUNT(*) FROM player_stat WHERE player_id = ?", ada)).as("and the stats").isEqualTo(1);
+
+        long again = accounts.register("ada", "Ada", HASH);
+        assertThat(again).as("the name is free again, for a new account").isPositive().isNotEqualTo(ada);
+        assertThat(accounts.erase(ada)).as("a retry").isEqualTo(AccountRepository.Erased.ALREADY);
+        assertThat(accounts.erase(again + 1000)).isEqualTo(AccountRepository.Erased.NO_SUCH_PLAYER);
+        assertThat(accounts.owner(again + 1000)).isNull();
+    }
+
+    @Test
+    @DisplayName("an erased guest's key logs in no more (D-84)")
+    void erasingAGuest() throws Exception {
+        byte[] key = new byte[32];
+        key[0] = 9;
+        long id = accounts.createGuest("~01JCGUEST0000000000000003", "Guest4321", key);
+        assertThat(accounts.owner(id).guest()).isTrue();
+        assertThat(accounts.erase(id)).isEqualTo(AccountRepository.Erased.ERASED);
+        assertThat(accounts.findGuest(key)).isNull();
+        assertThat(accounts.owner(id).guest()).as("no key, so no guest").isFalse();
+    }
+
+    @Test
+    @DisplayName("to the admin API an erased account is no account: no ban, no unban (D-84)")
+    void anErasedAccountHasNoStatusToSet() throws Exception {
+        long ada = accounts.register("ada", "Ada", HASH);
+        accounts.erase(ada);
+        AdminRepository admin = new AdminRepository(db.dataSource());
+        assertThat(admin.setStatus(ada, AccountRepository.Status.ACTIVE, null, "unban", "{}", "active"))
+                .isEqualTo(AdminRepository.Change.NO_SUCH_PLAYER);
+        assertThat(accounts.owner(ada).status()).isEqualTo(AccountRepository.Status.DELETED);
     }
 }

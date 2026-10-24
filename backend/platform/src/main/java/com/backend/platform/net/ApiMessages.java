@@ -13,6 +13,8 @@ final class ApiMessages {
 
     record RenameRequest(String displayName) { }
 
+    record PasswordRequest(String password) { }
+
     record RegisterResponse(long playerId) { }
 
     /** A username and password, or a guest's key alone (D-46). */

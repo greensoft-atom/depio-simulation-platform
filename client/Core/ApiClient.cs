@@ -571,6 +571,14 @@ namespace Backend.Client.Core
         public Task<ApiResult<bool>> Logout(string token) =>
             Call(HttpMethod.Delete, "/v1/sessions", null, token, _ => true);
 
+        /// <summary>
+        /// The session's own account erased (D-84): a registered account's password asked again; a guest's session is
+        /// enough, with no password. A 503 after the erasure leaves the session working, and the same call finishes it.
+        /// </summary>
+        public Task<ApiResult<bool>> DeleteAccount(string token, string password) =>
+            Call(HttpMethod.Delete, "/v1/accounts", password == null ? null : JsonValue.NewObject().Set("password", password),
+                token, _ => true);
+
         /// <summary>Straight to platform. The lobby's match.request is the other way in.</summary>
         public Task<ApiResult<MatchGrant>> RequestMatch(string token) =>
             Call(HttpMethod.Post, "/v1/match-requests", null, token, ReadGrant);

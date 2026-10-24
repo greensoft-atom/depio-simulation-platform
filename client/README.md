@@ -1,6 +1,6 @@
 # client
 
-The Unity app a player installs on iOS and Android. Designed in
+The Unity app a player installs on Android, from the owner's own copy, not a store (C-10). Designed in
 [docs/detailed-design/08-client.md](../docs/detailed-design/08-client.md): an
 engine-free core that speaks to the server, built and tested here against the
 real server, and a thin Unity layer that draws it

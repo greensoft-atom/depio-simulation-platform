@@ -27,6 +27,7 @@ import com.backend.handoff.LeaderboardStore.Entry;
 import com.backend.handoff.LeaderboardStore.Neighbourhood;
 import com.backend.handoff.StoreUnavailableException;
 import com.backend.common.Metrics;
+import com.backend.platform.AccountDeletion;
 import com.backend.platform.AuthService;
 import com.backend.platform.BoostService;
 import com.backend.platform.Catalogue;
@@ -50,6 +51,7 @@ import com.backend.platform.net.ApiMessages.OrderResponse;
 import com.backend.platform.net.ApiMessages.OrderView;
 import com.backend.platform.net.ApiMessages.PackView;
 import com.backend.platform.net.ApiMessages.PacksResponse;
+import com.backend.platform.net.ApiMessages.PasswordRequest;
 import com.backend.platform.net.ApiMessages.PassResponse;
 import com.backend.platform.net.ApiMessages.PremiumResponse;
 import com.backend.platform.net.ApiMessages.RewardView;
@@ -178,6 +180,7 @@ public final class PlatformHttpServer implements AutoCloseable {
     private final com.backend.platform.GoalService goals;
     private final com.backend.platform.PaymentService payments;
     private final com.backend.platform.PassService passes;
+    private final AccountDeletion deletion;
     /** The skin table a client draws by, and its version: its content's CRC32, as the class table's (D-70). */
     private final String skinsJson;
     private final long skinsVersion;
@@ -204,7 +207,7 @@ public final class PlatformHttpServer implements AutoCloseable {
             PartyService parties, FriendService friends, InboxService inbox,
             com.backend.platform.RatingLeaderboards ratingBoards, com.backend.platform.AchievementService achievements,
             com.backend.platform.GoalService goals, com.backend.platform.PaymentService payments,
-            com.backend.platform.PassService passes, String bindHost, int port)
+            com.backend.platform.PassService passes, AccountDeletion deletion, String bindHost, int port)
             throws IOException {
         this.auth = auth;
         this.joins = joins;
@@ -224,6 +227,7 @@ public final class PlatformHttpServer implements AutoCloseable {
         this.goals = goals;
         this.payments = payments;
         this.passes = passes;
+        this.deletion = deletion;
         List<SkinView> skins = new ArrayList<>();
         for (Items.Skin s : equipment.skins()) {
             skins.add(new SkinView(s.skin(), s.itemId()));
@@ -236,7 +240,7 @@ public final class PlatformHttpServer implements AutoCloseable {
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         // The routes nginx limits, matched exactly (S-18); an id in any path is at most 18 digits, so
         // it always fits a long and a longer one names no route (S-17).
-        server.createContext("/v1/accounts", exchange -> exact(exchange, "POST", "/v1/accounts", this::register));
+        server.createContext("/v1/accounts", this::accounts);
         server.createContext("/v1/accounts/upgrade", exchange -> exact(exchange, "POST", "/v1/accounts/upgrade", this::upgrade));
         server.createContext("/v1/accounts/name", exchange -> exact(exchange, "PUT", "/v1/accounts/name", this::rename));
         server.createContext("/v1/guests", exchange -> exact(exchange, "POST", "/v1/guests", this::createGuest));
@@ -321,6 +325,63 @@ public final class PlatformHttpServer implements AutoCloseable {
                 default -> methodNotAllowed(ex, "POST, DELETE");
             }
         });
+    }
+
+    /** {@code POST} registers; {@code DELETE} erases the caller's own account (D-84). */
+    private void accounts(HttpExchange exchange) throws IOException {
+        guard(exchange, ex -> {
+            if (!ex.getRequestURI().getPath().equals("/v1/accounts")) {
+                error(ex, 404, "no_such_route", "use /v1/accounts");
+                return;
+            }
+            switch (ex.getRequestMethod()) {
+                case "POST" -> register(ex);
+                case "DELETE" -> deleteAccount(ex);
+                default -> methodNotAllowed(ex, "POST, DELETE");
+            }
+        });
+    }
+
+    /**
+     * {@code DELETE /v1/accounts} {@code {"password"}}: the player's own account erased (04 §1, D-84). The password is
+     * asked again, so a session taken from a phone cannot end the account, and its attempts count as a login's.
+     */
+    private void deleteAccount(HttpExchange exchange) throws IOException, SQLException {
+        String token = bearerToken(exchange);
+        if (token == null) {
+            error(exchange, 401, "no_token", "send Authorization: Bearer <token>");
+            return;
+        }
+        PasswordRequest request = read(exchange, PasswordRequest.class);
+        com.backend.persistence.AccountRepository.Owner owner = deletion.owner(token);
+        if (owner == null) {
+            error(exchange, 401, "invalid_session", "log in again");
+            return;
+        }
+        if (AccountDeletion.needsPassword(owner)) {
+            if (request == null || request.password() == null) {
+                error(exchange, 400, "invalid_body", "password is required");
+                return;
+            }
+            try (PasswordHasher.Admission place = auth.admit()) {
+                if (refusal(exchange, place, owner.usernameKey()) != null) {
+                    return;
+                }
+                char[] password = request.password().toCharArray();
+                boolean proved = auth.verifies(owner, password);
+                java.util.Arrays.fill(password, '\0');
+                if (!proved) {
+                    error(exchange, 403, "wrong_password", "that is not this account's password");
+                    return;
+                }
+            }
+        }
+        switch (deletion.erase(token, owner)) {
+            case OK -> respond(exchange, 204, null);
+            case NO_SESSION -> error(exchange, 401, "invalid_session", "log in again");
+            case LEADER_WITH_MEMBERS -> error(exchange, 409, "leader_with_members",
+                    "hand the team to another member first");
+        }
     }
 
     private void register(HttpExchange exchange) throws IOException, SQLException {

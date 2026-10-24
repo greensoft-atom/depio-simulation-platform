@@ -42,7 +42,9 @@ public final class LeaderboardSource {
         String sql = """
                 SELECT s.player_id, p.display_name, s.best_score
                   FROM player_stat s JOIN player p ON p.id = s.player_id
+                  JOIN account a ON a.id = s.player_id
                  WHERE s.player_id > ? AND s.best_score > 0
+                   AND a.status <> 3                    -- an erased player is on no board (D-84)
                  ORDER BY s.player_id
                  LIMIT ?
                 """;
@@ -71,7 +73,9 @@ public final class LeaderboardSource {
                   FROM matches m
                   JOIN match_player mp ON mp.match_id = m.id
                   JOIN player p ON p.id = mp.player_id
+                  JOIN account a ON a.id = mp.player_id
                  WHERE m.ended_at >= ? AND m.ended_at < ? AND mp.score > 0
+                   AND a.status <> 3                    -- as above (D-84)
                  GROUP BY mp.player_id, p.display_name
                 """;
         try (Connection c = dataSource.getConnection();

@@ -123,11 +123,13 @@ public final class PlatformMain {
         // Q-46's hourly limits on asking others: friend requests, team invitations and applications; party invitations.
         AskThrottle asking = new AskThrottle(store);
         PartyService parties = new PartyService(auth, accounts, party, push, queues, friendRows, asking);
+        LeaderboardStore boards = new LeaderboardStore(store);
+        TeamService teamService = new TeamService(auth, teams, push, java.time.Clock.systemUTC(), asking);
         PlatformHttpServer server = new PlatformHttpServer(auth, joins,
-                new LeaderboardStore(store), new LoginThrottle(store), shop, equipment,
+                boards, new LoginThrottle(store), shop, equipment,
                 new BoostService(auth, new com.backend.persistence.BoostRepository(db.dataSource()), items,
                         java.time.Clock.systemUTC()),
-                new TeamService(auth, teams, push, java.time.Clock.systemUTC(), asking),
+                teamService,
                 new TournamentService(auth, new com.backend.persistence.TournamentRepository(db.dataSource()),
                         new com.backend.handoff.TournamentGrants(store), party, teams, java.time.Clock.systemUTC()),
                 queues, parties,
@@ -139,7 +141,9 @@ public final class PlatformMain {
                         new com.backend.persistence.SeasonRepository(db.dataSource()), java.time.Clock.systemUTC(), 100),
                 new AchievementService(auth, new com.backend.persistence.AchievementRepository(db.dataSource())),
                 new GoalService(auth, new com.backend.persistence.DailyGoalRepository(db.dataSource()), java.time.Clock.systemUTC()),
-                payments, passes, bindHost, port);
+                payments, passes,
+                new AccountDeletion(auth, accounts, queues, parties, teamService, boards, new SessionStore(store), push),
+                bindHost, port);
         server.trustForwardedFor(proxies);
         log.info("X-Forwarded-For believed from {}", proxies);
         // The listeners' settings first, metrics' and the admin API's: a bad one is refused (exit 2) before the

@@ -34,7 +34,7 @@ namespace Backend.Client.Headless
         {
             "lobby", "replaced", "badsession", "duel", "walkover", "party", "decline", "rffa", "coop", "banned", "removed",
             "tournament", "teammatch", "teamcup", "team", "social", "rename", "apply", "roundrobin", "milestone", "season",
-            "achievements", "goals", "pass", "domination", "tag", "maze", "sandbox", "notice",
+            "achievements", "goals", "pass", "domination", "tag", "maze", "sandbox", "notice", "erase",
         };
 
         public static int Main(string[] args)
@@ -107,6 +107,7 @@ namespace Backend.Client.Headless
                         case "coop": Coop(); break;
                         case "banned": Banned(); break;
                         case "notice": Notice(); break;
+                        case "erase": Erase(); break;
                         case "removed": Removed(); break;
                         case "phrase": Phrase(); break;
                         default: Fail($"no scenario called {s}"); break;
@@ -784,6 +785,48 @@ namespace Backend.Client.Headless
             {
                 lobby.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Deleting an account (04 §1, D-84): a wrong password refused; the right one erases it, the player's lobby on
+        /// another device told and closed through the gateway, that session ended too, the name refused at login and
+        /// free to register again, the friend's list without them; and a guest deleted by its session alone.
+        /// </summary>
+        private static void Erase()
+        {
+            var (ada, name) = NewSession();
+            var (bob, _) = NewSession();
+            ApiResult<Session> phone = Patiently(() => Api.Login(name, "hunter2-hunter2"));
+            Check(phone.Ok, $"a second device logged in ({phone})");
+            Api.AskFriend(ada.Token, bob.PlayerId).Wait();
+            Check(Api.AskFriend(bob.Token, ada.PlayerId).Result.Value == "friends", "friends");
+            var lobby = NewLobby();
+            try
+            {
+                lobby.Connect(phone.Value.Token);
+                Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.Ready), "the other device in the lobby");
+                ApiResult<bool> wrong = Api.DeleteAccount(ada.Token, "not-the-password").Result;
+                Check(!wrong.Ok && wrong.Status == 403 && wrong.Code == "wrong_password", $"a wrong password refused ({wrong})");
+                ApiResult<bool> erased = Api.DeleteAccount(ada.Token, "hunter2-hunter2").Result;
+                Check(erased.Ok, $"the account deleted ({erased})");
+                Check(RunLobbyUntil(lobby, 5_000, () => lobby.State == LobbyState.InvalidSession),
+                    "the other device's lobby told, through the gateway");
+                Check(lobby.LastError == "session revoked: deleted", $"and why ({lobby.LastError})");
+                Check(Api.Queue(phone.Value.Token).Result.Status == 401, "its session ended too");
+                ApiResult<Session> login = Patiently(() => Api.Login(name, "hunter2-hunter2"));
+                Check(!login.Ok && login.Status == 401, $"logging in by the name refused ({login.Code})");
+                ApiResult<FriendsInfo> friends = Api.Friends(bob.Token).Result;
+                Check(friends.Ok && !friends.Value.Friends.Exists(f => f.PlayerId == ada.PlayerId), "gone from the friend's list");
+                Check(Patiently(() => Api.Register(name, null, "hunter2-hunter2")).Ok, "the name free again");
+            }
+            finally
+            {
+                lobby.Dispose();
+            }
+            ApiResult<Guest> guest = Patiently(() => Api.CreateGuest());
+            ApiResult<Session> guestIn = Patiently(() => Api.LoginGuest(guest.Value.GuestKey));
+            Check(Api.DeleteAccount(guestIn.Value.Token, null).Result.Ok, "a guest deleted by its session alone");
+            Check(Patiently(() => Api.LoginGuest(guest.Value.GuestKey)).Status == 401, "and its key logs in no more");
         }
 
         /// <summary>

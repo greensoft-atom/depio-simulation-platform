@@ -36,10 +36,12 @@ public final class AdminRepository {
         return tx.execute(c -> {
             int changed;
             try (PreparedStatement ps = c.prepareStatement(
-                    "UPDATE account SET status = ?, banned_until = ? WHERE id = ?")) {
+                    // An erased account is no account (D-84): neither banned nor brought back.
+                    "UPDATE account SET status = ?, banned_until = ? WHERE id = ? AND status <> ?")) {
                 ps.setInt(1, status.ordinal());
                 ps.setTimestamp(2, untilMillis == null ? null : new Timestamp(untilMillis));
                 ps.setLong(3, playerId);
+                ps.setInt(4, AccountRepository.Status.DELETED.ordinal());
                 changed = ps.executeUpdate();
             }
             insert(c, action, Long.toString(playerId), request, changed == 0 ? "no_such_player" : outcome);

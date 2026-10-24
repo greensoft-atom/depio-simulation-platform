@@ -120,8 +120,10 @@ CREATE TABLE account (
 ```
 
 `status` 1 is suspended until `banned_until`, or until lifted when that is null; 2 is
-banned for good; any other value is read as banned (`AccountRepository.Status`), since
-operators write the column. A guest's `username` is `~` and a ULID, and its
+banned for good; 3 is an account its player erased (D-84, 04 §1), whose `username` is
+`~deleted~` and its id, its hash empty and its guest key gone, and which no status changes
+again; any other value is read as banned (`AccountRepository.Status`), since operators write
+the column. V1's comment on the column predates 3, and an applied migration is not edited. A guest's `username` is `~` and a ULID, and its
 `password_hash` empty until it is upgraded (V15); the username rules refuse `~`, so no
 login by name reaches it. `ix_account_created` (V34) serves the funnel's window of days.
 

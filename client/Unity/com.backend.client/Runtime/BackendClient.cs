@@ -29,6 +29,7 @@ namespace Backend.Client.Unity
         /// <summary>What went wrong last, for a screen to say: a refusal, nothing answering.</summary>
         public string Problem { get; private set; }
         public bool SigningIn => _signingIn != null;
+        public bool Deleting => _deleting != null;
         /// <summary>What this frame draws, built in Update; read in LateUpdate.</summary>
         public Scene Scene { get; } = new Scene();
 
@@ -36,6 +37,7 @@ namespace Backend.Client.Unity
         private TrustRoot _trust;
         private ISecureStore _store;
         private Task<ApiResult<Session>> _signingIn;
+        private Task<ApiResult<bool>> _deleting;
         private ClientWorld _world;
         private RenderClock _render = new RenderClock();
         private long _applied = -1;
@@ -52,6 +54,15 @@ namespace Backend.Client.Unity
         public void SignIn()
         {
             if (_signingIn == null) _signingIn = new AccountKeeper(Api, _store).SignIn();
+        }
+
+        /// <summary>
+        /// Deletes this device's account (D-84): a guest's, whose session is all it is asked; the key forgotten with it,
+        /// so Play makes a new guest.
+        /// </summary>
+        public void DeleteAccount()
+        {
+            if (_deleting == null && Session != null) _deleting = new AccountKeeper(Api, _store).DeleteAccount(Session.Token, null);
         }
 
         /// <summary>A seat in the public arena.</summary>
@@ -83,6 +94,25 @@ namespace Backend.Client.Unity
                 else
                 {
                     Problem = signedIn.ToString();
+                }
+            }
+            if (_deleting != null && _deleting.IsCompleted)
+            {
+                Task<ApiResult<bool>> done = _deleting;
+                _deleting = null;
+                ApiResult<bool> deleted = done.Status == TaskStatus.RanToCompletion ? done.Result : null;
+                if (deleted != null && deleted.Ok)
+                {
+                    Problem = "the account is deleted";
+                    Lobby?.Dispose();
+                    Lobby = null;
+                    Session = null;
+                }
+                else
+                {
+                    Problem = deleted == null
+                        ? "deleting failed: " + (done.Exception?.GetBaseException().Message ?? "cancelled")
+                        : deleted.ToString();
                 }
             }
             Lobby?.Poll();

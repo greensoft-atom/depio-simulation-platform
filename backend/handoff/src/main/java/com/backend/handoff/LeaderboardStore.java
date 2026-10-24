@@ -149,6 +149,38 @@ public final class LeaderboardStore {
     }
 
     /**
+     * Takes a player off every board, and their name with them: an account erased (D-84). A board that expires is
+     * cleared for each period it can still hold, a day at a time back to its expiry, since a past day's or week's
+     * board stays readable that long.
+     */
+    public CompletableFuture<Void> remove(long playerId) {
+        String member = Long.toString(playerId);
+        Instant now = clock.instant();
+        java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+        for (Board board : Board.values()) {
+            for (long back = 0; back <= board.ttlSeconds(); back += 86_400) {
+                keys.add(board.key(now.minusSeconds(back)));
+            }
+        }
+        var batch = client.multi();
+        for (String key : keys) {
+            batch.send("ZREM", key, member);
+        }
+        batch.send("HDEL", NAME_KEY, member);
+        return batch.exec().thenApply(replies -> {
+            if (replies == null) {
+                throw new IllegalStateException("transaction aborted");
+            }
+            for (var r : replies) {
+                if (r.isError()) {
+                    throw new IllegalStateException("j-redis: " + r.asString());
+                }
+            }
+            return null;
+        });
+    }
+
+    /**
      * Offers one match's score to every board, raising each only if it beats what is there.
      *
      * {@code endedAtMillis} is the match's own clock, not the worker's. A result that sat in

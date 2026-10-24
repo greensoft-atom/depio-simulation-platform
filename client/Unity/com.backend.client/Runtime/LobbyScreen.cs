@@ -10,6 +10,7 @@ namespace Backend.Client.Unity
     public sealed class LobbyScreen : MonoBehaviour
     {
         [SerializeField] private BackendClient client;
+        private bool _confirmingDeletion;
 
         private void OnGUI()
         {
@@ -49,6 +50,21 @@ namespace Backend.Client.Unity
                 }
                 if (lobby.GrantRefusal != null) GUILayout.Label(lobby.GrantRefusal);
                 if (lobby.QueueRefusal != null) GUILayout.Label(lobby.QueueRefusal);
+            }
+            // The player's right to have it erased (D-84), asked twice: there is no undo.
+            if (client.Session != null)
+            {
+                if (client.Deleting) GUILayout.Label("Deleting the account...");
+                else if (!_confirmingDeletion)
+                {
+                    if (GUILayout.Button("Delete my account")) _confirmingDeletion = true;
+                }
+                else
+                {
+                    GUILayout.Label("Delete this account for good? Its progress and what it bought cannot be brought back.");
+                    if (GUILayout.Button("Delete it")) { client.DeleteAccount(); _confirmingDeletion = false; }
+                    if (GUILayout.Button("Keep it")) _confirmingDeletion = false;
+                }
             }
             GUILayout.EndArea();
         }

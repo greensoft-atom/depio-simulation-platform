@@ -186,7 +186,9 @@ class PlatformHttpServerTest {
                         new com.backend.persistence.SeasonRepository(db.dataSource()), clock, 100),
                 new com.backend.platform.AchievementService(auth, new com.backend.persistence.AchievementRepository(db.dataSource())),
                 new com.backend.platform.GoalService(auth, new com.backend.persistence.DailyGoalRepository(db.dataSource()), clock),
-                payments, passes, "127.0.0.1", 0);
+                payments, passes, new com.backend.platform.AccountDeletion(auth, accounts, queues(auth, jredis, accounts),
+                        parties(auth, jredis, accounts), teams, leaderboards, new SessionStore(jredis),
+                        new com.backend.handoff.LobbyPush(jredis)), "127.0.0.1", 0);
     }
 
     @AfterAll
@@ -234,7 +236,9 @@ class PlatformHttpServerTest {
                         new com.backend.persistence.SeasonRepository(db.dataSource()), clock, 100),
                 new com.backend.platform.AchievementService(auth, new com.backend.persistence.AchievementRepository(db.dataSource())),
                 new com.backend.platform.GoalService(auth, new com.backend.persistence.DailyGoalRepository(db.dataSource()), clock),
-                payments, passes, "127.0.0.1", 0);
+                payments, passes, new com.backend.platform.AccountDeletion(auth, accounts, queues(auth, down, accounts),
+                        parties(auth, down, accounts), teams, new LeaderboardStore(down), new SessionStore(down),
+                        new com.backend.handoff.LobbyPush(down)), "127.0.0.1", 0);
         String downBase = "http://127.0.0.1:" + downServer.start();
         try {
             register("ada");                       // MySQL is shared and healthy; only the store is gone
@@ -314,7 +318,9 @@ class PlatformHttpServerTest {
                         new com.backend.persistence.SeasonRepository(db.dataSource()), clock, 100),
                 new com.backend.platform.AchievementService(auth, new com.backend.persistence.AchievementRepository(db.dataSource())),
                 new com.backend.platform.GoalService(auth, new com.backend.persistence.DailyGoalRepository(db.dataSource()), clock),
-                payments, passes, "127.0.0.1", 0);
+                payments, passes, new com.backend.platform.AccountDeletion(auth, accounts, queues(auth, jredis, accounts),
+                        partiesDown, teams, leaderboards, new SessionStore(jredis),
+                        new com.backend.handoff.LobbyPush(jredis)), "127.0.0.1", 0);
         String partlyBase = "http://127.0.0.1:" + partly.start();
         try {
             String ada = register("lease-ada");
@@ -324,6 +330,15 @@ class PlatformHttpServerTest {
                     .POST(HttpRequest.BodyPublishers.ofString("{\"playerId\":" + bobId + "}")).build());
             assertThat(invited.statusCode()).as(invited.body()).isEqualTo(503);
             assertThat(body(invited).get("code").asText()).isEqualTo("storage_unavailable");
+
+            // A deletion whose party could not be left: refused whole, nothing erased (D-84).
+            HttpResponse<String> deleted = send(HttpRequest.newBuilder(URI.create(partlyBase + "/v1/accounts"))
+                    .header("Authorization", "Bearer " + ada).header("Content-Type", "application/json")
+                    .method("DELETE", HttpRequest.BodyPublishers.ofString("{\"password\":\"hunter2-hunter2\"}")).build());
+            assertThat(deleted.statusCode()).as(deleted.body()).isEqualTo(503);
+            assertThat(body(deleted).get("code").asText()).isEqualTo("storage_unavailable");
+            assertThat(auth.playerIdOf(ada)).as("the session lives on").isPositive();
+            assertThat(accounts.owner(auth.playerIdOf(ada)).status()).isEqualTo(AccountRepository.Status.ACTIVE);
         } finally {
             partly.close();
             down.close();
@@ -501,6 +516,17 @@ class PlatformHttpServerTest {
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + bearer)
                 .PUT(HttpRequest.BodyPublishers.ofString(json)).build());
+    }
+
+    /** A DELETE with a body, as {@code DELETE /v1/accounts} takes one; either may be null. */
+    private static HttpResponse<String> deleteWith(String path, String json, String bearer) throws Exception {
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(base + path))
+                .header("Content-Type", "application/json")
+                .method("DELETE", json == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(json));
+        if (bearer != null) {
+            b.header("Authorization", "Bearer " + bearer);
+        }
+        return send(b.build());
     }
 
     private static HttpResponse<String> delete(String path, String bearer) throws Exception {
@@ -1607,7 +1633,7 @@ class PlatformHttpServerTest {
         assertThat(response.statusCode()).isEqualTo(405);
         assertThat(body(response).get("code").asText()).isEqualTo("method_not_allowed");
         // RFC 9110 requires it, and neither this nor the count below was there.
-        assertThat(response.headers().firstValue("Allow")).hasValue("POST");
+        assertThat(response.headers().firstValue("Allow")).hasValue("POST, DELETE");     // registering, and deleting (D-84)
 
         HttpResponse<String> sessions = send(HttpRequest.newBuilder(URI.create(base + "/v1/sessions"))
                 .PUT(HttpRequest.BodyPublishers.noBody()).build());
@@ -2905,6 +2931,97 @@ class PlatformHttpServerTest {
         } finally {
             gateway.close();
         }
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("deleting one's account: the password asked; every session ended and the lobby told; off the boards, friends and team; the name free again (D-84)")
+    void deletingAnAccount() throws Exception {
+        String ada = register("ada");
+        String adaPhone = body(post("/v1/sessions", "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null))
+                .get("token").asText();
+        String bob = register("bob");
+        long adaId = auth.playerIdOf(ada);
+        long bobId = auth.playerIdOf(bob);
+        post("/v1/friends", "{\"playerId\":" + bobId + "}", ada);
+        post("/v1/friends", "{\"playerId\":" + adaId + "}", bob);
+        long teamId = body(post("/v1/teams", "{\"name\":\"DelTanks\"}", bob)).get("id").asLong();
+        post("/v1/teams/mine/invites", "{\"playerId\":" + adaId + "}", bob);
+        post("/v1/team-invites/" + teamId, "{\"accept\":true}", ada);
+        leaderboards.record(adaId, "ada", 700, clock.millis()).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        String password = "{\"password\":\"hunter2-hunter2\"}";
+
+        java.util.concurrent.LinkedBlockingQueue<String> pushed = new java.util.concurrent.LinkedBlockingQueue<>();
+        JRedisClient gateway = store.newClient();
+        try {
+            gateway.pubSub().subscribe("push:gw-del",
+                    (ch, msg) -> pushed.add(new String(msg, StandardCharsets.UTF_8))).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            jredis.sync().set("conn:" + adaId, "gw-del#x-a");
+
+            expectError(deleteWith("/v1/accounts", password, null), 401, "no_token");
+            expectError(deleteWith("/v1/accounts", "{}", ada), 400, "invalid_body");
+            expectError(deleteWith("/v1/accounts", "{\"password\":\"not-her-password\"}", ada), 403, "wrong_password");
+            expectError(deleteWith("/v1/accounts", password, bob), 409, "leader_with_members");
+            assertThat(auth.playerIdOf(ada)).as("nothing done").isEqualTo(adaId);
+            assertThat(auth.playerIdOf(bob)).isEqualTo(bobId);
+
+            HttpResponse<String> deleted = deleteWith("/v1/accounts", password, ada);
+            assertThat(deleted.statusCode()).as(deleted.body()).isEqualTo(204);
+            assertThat(auth.playerIdOf(ada)).as("this session").isEqualTo(-1);
+            assertThat(auth.playerIdOf(adaPhone)).as("and the other device's").isEqualTo(-1);
+            JsonNode told = nextPush(pushed);
+            while (!told.at("/msg/t").asText().equals("evt.session.revoked")) {
+                told = nextPush(pushed);                 // the team's update comes first, from leaving it
+            }
+            assertThat(told.get("to").asLong()).isEqualTo(adaId);
+            assertThat(told.at("/msg/d/reason").asText()).isEqualTo("deleted");
+        } finally {
+            gateway.close();
+        }
+        expectError(post("/v1/sessions", password.replace("{", "{\"username\":\"ada\","), null), 401, "invalid_credentials");
+        assertThat(body(get("/v1/friends", bob)).get("friends")).as("bob's friends").isEmpty();
+        assertThat(body(get("/v1/teams/mine", bob)).get("members")).as("bob's team").hasSize(1);
+        assertThat(jredis.sync().zscore("lb:score:alltime", Long.toString(adaId))).as("off the boards").isNull();
+        assertThat(jredis.sync().hget("lb:name", Long.toString(adaId))).isNull();
+        assertThat(post("/v1/accounts", "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null).statusCode())
+                .as("the name is free again").isEqualTo(201);
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("a deletion's wrong passwords count against the account's logins: no more guesses through it than through a login (D-84)")
+    void aDeletionsGuessesCountAsLogins() throws Exception {
+        String ada = register("ada");                 // its login, the account's first attempt
+        for (int i = 0; i < 9; i++) {
+            expectError(deleteWith("/v1/accounts", "{\"password\":\"guess-" + i + "-guess\"}", ada), 403, "wrong_password");
+        }
+        expectError(post("/v1/sessions", "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null),
+                429, "too_many_attempts");
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("a guest deletes its account by its session alone, and its key logs in no more (D-84)")
+    void aGuestDeletesItsAccount() throws Exception {
+        String key = body(post("/v1/guests", null, null)).get("guestKey").asText();
+        String token = body(post("/v1/sessions", "{\"guestKey\":\"" + key + "\"}", null)).get("token").asText();
+        HttpResponse<String> deleted = deleteWith("/v1/accounts", null, token);
+        assertThat(deleted.statusCode()).as(deleted.body()).isEqualTo(204);
+        expectError(post("/v1/sessions", "{\"guestKey\":\"" + key + "\"}", null), 401, "invalid_credentials");
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("a deletion cut short after MySQL's part is finished by the same session, with no password: an erased account has none (D-84)")
+    void aDeletionCutShortIsFinishedByAskingAgain() throws Exception {
+        String ada = register("ada");
+        long adaId = auth.playerIdOf(ada);
+        leaderboards.record(adaId, "ada", 700, clock.millis()).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        new AccountRepository(db.dataSource()).erase(adaId);      // as if the store had failed just after
+        HttpResponse<String> finished = deleteWith("/v1/accounts", null, ada);
+        assertThat(finished.statusCode()).as(finished.body()).isEqualTo(204);
+        assertThat(auth.playerIdOf(ada)).isEqualTo(-1);
+        assertThat(jredis.sync().hget("lb:name", Long.toString(adaId))).isNull();
     }
 
     @Test

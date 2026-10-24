@@ -65,5 +65,13 @@ namespace Backend.Client.Core
             if (!session.Ok && session.Status == 401) _store.Delete(GuestKeyName);
             return session;
         }
+
+        /// <summary>The account erased (D-84), and a guest's key forgotten with it: it would sign in to nothing.</summary>
+        public async Task<ApiResult<bool>> DeleteAccount(string token, string password)
+        {
+            ApiResult<bool> erased = await _api.DeleteAccount(token, password);
+            if (erased.Ok) _store.Delete(GuestKeyName);
+            return erased;
+        }
     }
 }

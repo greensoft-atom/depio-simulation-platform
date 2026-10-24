@@ -3505,6 +3505,55 @@ the platform's, or the persistence's; and whether any document says so.
   migration, from its file to its deploy; a change to the wire. Linked from both READMEs,
   development/03 §4 and operations/01 §5.
 
+#### 97. ~~A player deletes their own account (D-84, C-10).~~ — **done 2026-10-24**
+
+**The owner, 2026-10-24:** agreed to the readiness review's first step, and said the app is not to be in
+Google Play or the App Store but installed on Android phones from the owner's own copy (C-10). No store
+asks for deletion then; privacy law in most places does, and nothing in the backend could erase anyone.
+
+- **Designed**: D-84 and [04 §1](detailed-design/04-platform-services.md#deleting-an-account-designed-2026-10-24-plan-item-97):
+  `DELETE /v1/accounts` with the password (a guest's session alone); what identifies the player erased in
+  place, what others' history and the ledger need kept under the bare id; ordered as a ban is, so a store
+  that fails before the erasure refuses whole and one after it is finished by the same call.
+- **Built**: `AccountRepository.erase` and `owner`, status 3 `DELETED`; `AccountDeletion`; the route,
+  its password counted as a login's; `LeaderboardStore.remove`, every board still kept; the boards'
+  rebuild and the admin API leaving an erased account alone; the client's `DeleteAccount`,
+  `AccountKeeper` forgetting a guest's key, the Unity screen's button asked twice; the drill's `erase`.
+- **Recorded**: C-10, Q-59 (how a new APK reaches the phones, open, the owner's), Q-52's store-based
+  recommendations withdrawn, D-1 amended.
+- **Checked**: tests first, then the code: 3 in `persistence`, 1 each in `handoff` and `worker`, 4 in
+  `platform`'s HTTP tests and one more case in its store-failure test, 1 in the client's core. The
+  mutation check broke 27 rules on purpose in Java, from the old name kept to a wrong password
+  accepted, and every one was caught; the client's 3 were too. The live drill's new `erase` passed its
+  13 checks against the release (a second device's lobby told through the gateway and closed, its
+  session ended, the name refused and then free, the friend's list without the player, a guest by its
+  session), with `banned`, `social`, `guest` and `rename` beside it. The Postman collection gained
+  folder 13: 135 requests, 137 checks passed. The Unity scripts compile on the four branches against
+  stubs; nothing was run in Unity. `build-offline.sh` passed. Not checked: a deletion while a match is
+  under way (D-84's cost: the result is applied to the erased row), and on the production machines.
+- **Found**: DOC-31, the client's test list behind its code (item 98); and, reviewing the item, O-45:
+  nginx's logs never rotated, which D-84's "until rotated" had assumed (item 99).
+
+#### 98. The client's test list checked (DOC-31).
+
+The rows level with the code, and a test in `Core.Tests` that reads its own README beside it and
+compares each file's row with its `[Test]` methods, by reflection, so the client's list is held as the
+modules' are (DOC-29).
+
+#### 99. nginx's logs rotated and kept a number of days (O-45).
+
+A timer of the release's own on every machine: each log renamed daily, nginx told to reopen, those past
+the retention deleted, the retention a setting (14 days recommended: long enough to look into an
+incident, short enough that players' addresses are not kept for good). Checked as written in RHEL 9.
+
+#### 100. Monitoring and alerts (the owner agreed, 2026-10-24) — waits on Q-60.
+
+Prometheus and Alertmanager in the release, the runbook's alerts as their rules, two machines
+collecting; where alerts go is the owner's (Q-60). Then the readiness review's other steps, in its
+order: a rehearsal on the three machines, a load test from outside through the front (Q-3), an outside
+security review (the owner's cost), a soft launch. Q-59 (the app's updates) and Q-53 (the backups'
+copy off the site) are the owner's, open.
+
 ---
 
 ### Completed 2026-09-23

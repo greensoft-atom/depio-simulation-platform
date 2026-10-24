@@ -69,7 +69,7 @@ put it on one.
 | `WorldView` | Draws the `Scene` in `LateUpdate`: a pooled `SpriteRenderer` a handle, placed, turned and sized; the world's y grows down and Unity's up, turned over here only |
 | `TouchControls` | The left half of the screen moves, the right aims and fires (`TouchSticks`), each stick where its thumb lands, its reach 0.12 of the screen's height; keys and the mouse in the editor; `SetInput` every frame |
 | `FollowCamera` | Orthographic, on the own tank, 1 600 world units high |
-| `LobbyScreen` | IMGUI, the least screen to play from: sign in, play now, a duel's queue and its state, a match found to accept or decline, the refusals |
+| `LobbyScreen` | IMGUI, the least screen to play from: sign in, play now, a duel's queue and its state, a match found to accept or decline, the refusals, and the account deleted, asked twice (D-84) |
 | `Hud` | IMGUI: level and experience, the last kills (five by default), respawn when dead, leave |
 | `SecureStores` | The keychain (iOS), the keystore (Android), `PlayerPrefs` in the editor and any other build, a desktop's, which is not secure |
 | `LookTable` | How each thing looks: an asset |

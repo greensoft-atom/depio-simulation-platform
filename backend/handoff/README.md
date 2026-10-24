@@ -264,7 +264,7 @@ Each test class runs an embedded j-redis; nothing outside the JVM is needed.
 
 | Class | Tests | What it covers |
 |---|---|---|
-| `LeaderboardStoreTest` | 17 | `GT` under redelivery and reordering; the day and week a result belongs to; expiry, and a late result that does not revive a board; a refused write reported; top, ties, around-me, missing names, renames, board names |
+| `LeaderboardStoreTest` | 18 | `GT` under redelivery and reordering; the day and week a result belongs to; expiry, and a late result that does not revive a board; a refused write reported; top, ties, around-me, missing names, renames, board names; an erased player off every board still kept (D-84) |
 | `ArenaDirectoryTest` | 14 | Announce, list, pick, full arenas, expired entries pruned, malformed entries ignored, withdraw, TLS. A made match's arena by free rooms; the promise held until announced; eight choosers racing for one last room never given it twice. A burst of 600 seats spread 300 and 300 over two arenas by their promises; a seat's promise one a player, dropped by the announcement that counts them, lapsing with the ticket (T-59, D-79); the TLS name an arena behind the front announces (D-82) |
 | `StoreClientsTest` | 13 | The password sent; none for a store that wants one refused, with one address or both, naming the right store's setting; the events store shared or its own; a malformed address refused, spaces around a comma read; following a promotion; an unreachable store not refused; `INFO replication` parsed and measured against a real replica |
 | `TicketStoreTest` | 9 | Issue and claim with every field; bonus and skin rules; single use, sixteen racing claims with one winner; unknown, expired and half-written tickets |

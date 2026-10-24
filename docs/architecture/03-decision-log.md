@@ -32,6 +32,9 @@ transport as WebSocket.
 **Cost.** If a browser build is ever wanted, the transport decision reopens and
 UDP is off the table for that client.
 
+**Amended 2026-10-24** ([C-10](../requirements/01-scope-and-nfrs.md#3-constraints)): Android
+alone, installed from the owner's own distribution, not through a store. iOS is not a target.
+
 ### D-2 — Java 21 with generational ZGC
 
 **Decision.** All services target Java 21 and run with
@@ -2406,3 +2409,49 @@ constant in the code, 24 hours ([Q-9](../requirements/01-scope-and-nfrs.md#7-ope
 **Not chosen.** Trimming only what every group has applied, so that memory follows the backlog and
 not the hours: a different design, which would need the oldest pending entry of both groups at
 every trim. Not needed while the table fits.
+
+### D-84 — A player deletes their own account: erased in place, what others' history needs kept under a bare id
+
+**Decided 2026-10-24** (plan item 97), the owner agreeing. No store asks for it since
+[C-10](../requirements/01-scope-and-nfrs.md#3-constraints); privacy law in most places gives a player
+the right to have what identifies them erased, and nothing in the backend could.
+
+**Decision.**
+- **`DELETE /v1/accounts`, by the player, with their password.** A guest has no password, so its
+  session is enough. A token stolen from a phone is not enough to end a registered account, and a
+  wrong password counts against the login's limits, the account's and the address's.
+- **What identifies the player is erased; the account's row stays**, with status 3, `DELETED`:
+  - the username becomes `~deleted~<id>`, which no one can register, so the old name is free again;
+  - the password's hash and a guest's key are removed, so nothing can log in again;
+  - the display name becomes `Deleted player`, and the last login is removed.
+
+  Friends, friend requests and blocks, either way, are deleted, with the player's inbox and their
+  team invitations and applications. A team is left as `leave` leaves it. The rating boards stop
+  listing the player (the rated counts set to 0), and the score boards drop them and their name.
+- **What others' history needs is kept**, under the bare id, which nothing ties to a person any
+  more: the matches and who played them, brackets, past seasons' places, the ledger and payment
+  orders, inventory and stats.
+- **What the player is in, then MySQL's erasure, then the store's part**, as an operator's ban is
+  ordered. The player leaves the queue, the party and the team, so a store that fails then refuses
+  before anything is erased; one transaction erases; then the score boards are cleared and every
+  session ended. A store that fails there answers 503 with the session still working, and the same
+  call finishes, without a password: an erased account has none. After a full success no session
+  is left, so a retry whose answer was lost is a 401: the account is gone.
+- **A leader with members is refused** (409 `leader_with_members`), as leaving is: the team is
+  handed over first.
+
+**Why.**
+- **In place, not removed.** Twenty tables name a player, most of them others' history (a match's
+  other players, a bracket, a past season's board) or the ledger, which accounting keeps. Erasing
+  what identifies the person leaves rows that are about no one.
+- **By the player, not by support**: at any hour, with no operator. The admin API can take the same
+  call, for a player who cannot log in, when one asks.
+
+**Cost.**
+- **Not at once everywhere.** The nightly dumps and the binlog copies hold the old rows until they
+  age out, 8 days ([06 §10](../detailed-design/06-persistence-mysql.md#10-backup-and-recovery)); a
+  store's files until it next rewrites them; nginx's and the services' logs until they are rotated.
+- **Traces that name no one stay.** Others' inbox items about the player stay until they lapse, as
+  `Deleted player`. A match under way when the account is deleted is applied to the erased row when
+  it ends, and can put `Deleted player` on that day's score board (D-60 reads the name from MySQL).
+- **No undo.** A player who deletes by mistake starts again.

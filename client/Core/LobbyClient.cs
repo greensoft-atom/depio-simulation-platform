@@ -333,8 +333,8 @@ namespace Backend.Client.Core
             }
             else if (t == "evt.session.revoked")
             {
-                // Every session ended by an operator: a ban or a suspension (04 §10). Not retried:
-                // logging in again is what to do, and it says whether the account may play.
+                // Every session ended: an operator's ban or suspension (04 §10), or the account deleted
+                // (D-84). Not retried: logging in again is what to do, and it says whether the account may play.
                 LastError = "session revoked: " + d["reason"].AsString;
                 Finish(LobbyState.InvalidSession);
             }

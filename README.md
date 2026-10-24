@@ -1,6 +1,6 @@
 # backend
 
-A self-hosted backend for simulation engine, played from a Unity app on iOS and Android, and the client's
+A self-hosted backend for simulation engine, played from a Unity app on Android (C-10), and the client's
 engine-free core that speaks to it. Java 21 and MySQL on the server, its own
 Redis-compatible store ([j-redis](j-redis-service/README.md)), C# on the
 client. Sized for 50 000 concurrent players on three machines; the launch

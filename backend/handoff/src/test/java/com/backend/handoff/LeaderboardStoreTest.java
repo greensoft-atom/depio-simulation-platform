@@ -179,6 +179,30 @@ class LeaderboardStoreTest {
                 .hasMessageContaining("WRONGTYPE");
     }
 
+    // ---- an account erased -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("an erased player leaves every board the store still holds, and their name with them (D-84)")
+    void anErasedPlayerLeavesEveryBoard() throws Exception {
+        Instant twoDaysAgo = NOON.minus(Duration.ofDays(2));
+        Instant nineDaysAgo = NOON.minus(Duration.ofDays(9));
+        record(7, "Ada", 900, NOON);
+        record(7, "Ada", 400, twoDaysAgo);              // a day board still kept, and the week before's
+        record(7, "Ada", 300, nineDaysAgo);
+        record(8, "Bob", 500, NOON);
+
+        store.remove(7).get(5, TimeUnit.SECONDS);
+
+        for (Instant at : List.of(NOON, twoDaysAgo, nineDaysAgo)) {
+            for (Board board : Board.values()) {
+                assertThat(client.sync().zscore(board.key(at), "7")).as(board.key(at)).isNull();
+            }
+        }
+        assertThat(client.sync().hget("lb:name", "7")).isNull();
+        assertThat(top(Board.DAILY, 10)).extracting(Entry::playerId).containsExactly(8L);
+        assertThat(client.sync().hget("lb:name", "8")).as("no one else's").isEqualTo("Bob");
+    }
+
     // ---- reading ---------------------------------------------------------------------------
 
     @Test

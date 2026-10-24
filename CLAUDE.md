@@ -133,6 +133,9 @@ for the backend, its docs and its client.
   443 and 9001 and routes match traffic by the arena's TLS name. The certificate comes from the
   backend's own CA (`private-ca.sh`), whose root the app ships and trusts alone
   ([operations/06](docs/operations/06-certificates.md)).
+- **The app is for Android alone**, installed from the owner's own copy, not Google Play or the App
+  Store (owner, 2026-10-24; C-10): no store's rules apply, iOS is not a target, and nothing updates the
+  app but the owner's channel (Q-59, open). A player deletes their own account (D-84).
 - **Client scope:** the engine-free C# core, the headless driver, and since 2026-10-04 (Q-51,
   plan item 77) the Unity layer as scripts: logic in the core where it can be tested, the
   Unity scripts thin. There is no Unity here: say what was and was not compiled.
@@ -178,7 +181,7 @@ target/release/backend-*/runtime/bin/java -cp crypto-examples/target/classes com
 # The Unity package: the core built into it, then its scripts compiled against stubs (nothing run)
 client/unity-package.sh && client/unity-check.sh
 
-# Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice
+# Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice erase
 TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]
 # Over TLS, where "untrusted" is a scenario too (without TLS=1 it fails: it needs a certificate)
 TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted

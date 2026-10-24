@@ -552,7 +552,7 @@ an embedded j-redis. The live drill (`client/headless-drill.sh`, see the
 
 | Test class | Tests | What it covers |
 |---|---|---|
-| `net/PlatformHttpServerTest` | 83 | every route over HTTP against real MySQL and j-redis: answers, codes, the body limit, exact paths, addresses behind nginx and the forwarded ones the front's nginx is believed for (D-82), a grant's TLS name, the store failing |
+| `net/PlatformHttpServerTest` | 87 | every route over HTTP against real MySQL and j-redis: answers, codes, the body limit, exact paths, addresses behind nginx and the forwarded ones the front's nginx is believed for (D-82), a grant's TLS name, the store failing; an account deleted, a guest's, one finished after a store's failure, its guesses counted as logins (D-84) |
 | `MatchmakerTest` | 43 | lining up every mode's sides, the confirm step's every path, races between matchers (T-16, T-32 to T-34), tournament calls, the lease, the metrics; a made match's grant and push carrying the arena's TLS name (D-82) |
 | `net/AdminServerTest` | 22 | every admin call, its audit and its refusals; starting only when named, with a secret, on loopback |
 | `AuthServiceTest` | 15 | register, login, sessions, bans and suspensions, the decoy hash, rehashing, the upgrade's checks |

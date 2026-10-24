@@ -101,6 +101,7 @@ the wire.
 | **player tag** | A number identifying a player inside one room, never reused. Kill credit travels by tag, because a pool slot can be reused by someone else while a bullet is still in the air. | `Entity.playerTag` |
 | **handle** | A one-byte per-client alias for an entity, so the wire never carries a 32-bit id. | `ClientView`, `Wire.MAX_HANDLES` |
 | **display name** | What other players see: 1–16 characters, any script, checked by `DisplayName` at registration and at a rename (once in 30 days, [04 §1](detailed-design/04-platform-services.md#1-auth-and-sessions)). Distinct from **username**, which is what you log in with (ASCII, never shown to others). Need not be unique. | `player.display_name` vs `account.username` |
+| **erased account** | An account its player deleted (D-84): status 3, `DELETED`, its name `~deleted~<id>`, no password or guest key, its display name `Deleted player`, whom it knew and its places on the boards gone. Its rows in others' history and the ledger stay, under the bare id. | `AccountRepository.erase`, `AccountDeletion`, `DELETE /v1/accounts` |
 | **public code** | A twelve-character code every player is given, unique, meant to be shared. Shown by no API yet: friends are asked by player id (Q-20). | `player.public_code` |
 
 ## 4. The world
