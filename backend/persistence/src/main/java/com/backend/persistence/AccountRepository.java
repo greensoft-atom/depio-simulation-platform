@@ -321,6 +321,33 @@ public final class AccountRepository {
     }
 
     /**
+     * The guests nobody has played for a while (D-87): made before {@code idleSince}, no login since (or ever), and no
+     * day in {@code player_day} on or after its date; lowest ids first, at most {@code limit}. One pass over the
+     * accounts and one over the days kept, as the admin's count makes them ({@link StatsRepository#guests}); nothing is
+     * indexed for it, since it runs daily.
+     */
+    public java.util.List<Long> idleGuests(java.time.Instant idleSince, int limit) throws SQLException {
+        java.util.List<Long> ids = new java.util.ArrayList<>();
+        try (Connection c = dataSource.getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT a.id FROM account a"
+                     + " LEFT JOIN (SELECT DISTINCT player_id FROM player_day WHERE day >= ?) d ON d.player_id = a.id"
+                     + " WHERE a.guest_key_hash IS NOT NULL AND a.created_at < ?"
+                     + " AND (a.last_login_at IS NULL OR a.last_login_at < ?) AND d.player_id IS NULL"
+                     + " ORDER BY a.id LIMIT ?")) {
+            ps.setString(1, idleSince.atZone(java.time.ZoneOffset.UTC).toLocalDate().toString());
+            ps.setTimestamp(2, Timestamp.from(idleSince));
+            ps.setTimestamp(3, Timestamp.from(idleSince));
+            ps.setInt(4, limit);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    ids.add(rs.getLong(1));
+                }
+            }
+        }
+        return ids;
+    }
+
+    /**
      * Erases what identifies a player, in one transaction (D-84): the account's name, password, guest key and last
      * login; the player's display name, and their listing on the rating boards; whom they knew, either way, their inbox,
      * and their team invitations and applications. The rows that others' history and the ledger need stay, under the

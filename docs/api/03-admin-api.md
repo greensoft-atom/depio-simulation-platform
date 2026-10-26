@@ -108,7 +108,9 @@ Whether players come back, by day (UTC), newest first, `days` 1 to 60 (default 1
 200 {"players":4,"guests":0,"inactive":0}
 ```
 
-`guests`: accounts never upgraded; `inactive`: guests made over 90 days ago, unseen for 90.
+`guests`: accounts never upgraded; `inactive`: guests made over 90 days ago, unseen for 90. At 180 days unseen a
+guest is erased by retention ([D-87](../architecture/03-decision-log.md#d-87--a-guest-nobody-plays-for-180-days-is-erased-by-retention-a-deletion-is-at-once));
+`inactive` is what the next 90 days will erase.
 
 ### `GET /admin/seasons`
 

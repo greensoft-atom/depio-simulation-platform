@@ -567,7 +567,8 @@ class MatchResultPipelineTest {
                 friends, teams, new com.backend.persistence.BoostRepository(db.dataSource()), tournaments,
                 new com.backend.persistence.DailyGoalRepository(db.dataSource()), payments,
                 new com.backend.persistence.SeasonPassRepository(db.dataSource()),
-                new com.backend.persistence.BackupRunRepository(db.dataSource()))) {
+                new com.backend.persistence.BackupRunRepository(db.dataSource()),
+                new IdleGuests(accounts, teams, leaderboards, Retention.BATCH))) {
             assertThat(retention.lastRunSeconds()).as("before any run").isNaN();
             assertThat(retention.runOnce()).isEqualTo(1);
             assertThat(retention.lastRunSeconds()).as("how long the run took, reported (D-72)").isNotNaN().isPositive();
@@ -624,7 +625,9 @@ class MatchResultPipelineTest {
                 new com.backend.persistence.DailyGoalRepository(db.dataSource()),
                 new com.backend.persistence.PaymentRepository(db.dataSource()),
                 new com.backend.persistence.SeasonPassRepository(db.dataSource()),
-                new com.backend.persistence.BackupRunRepository(db.dataSource()))) {
+                new com.backend.persistence.BackupRunRepository(db.dataSource()),
+                new IdleGuests(accounts, new com.backend.persistence.TeamRepository(db.dataSource(), 30), leaderboards,
+                        Retention.BATCH))) {
             retention.runOnce();
             assertThat(retention.lastRunSeconds()).as("timed though a step failed").isNotNaN();
         }

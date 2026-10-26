@@ -283,11 +283,11 @@ never point `JDBC_URL` at a database that matters. The development database,
 | Class | What it holds |
 |---|---|
 | `PersistenceTest` | The result's transaction end to end: ratings of each mode, team matches and their teams, cut-short results, names, assists, levels and milestones, achievements, daily goals, the pass's points; redelivery and concurrency; retention's refusals; purchases, item levels, gems; the ledger and its reconciliation; the `CHECK` |
-| `AccountRepositoryTest` | Registration, a taken name in any case, simultaneous registrations, guests, renaming, login; an account erased, a guest's too, and no status set on one (D-84) |
+| `AccountRepositoryTest` | Registration, a taken name in any case, simultaneous registrations, guests, renaming, login; an account erased, a guest's too, and no status set on one (D-84); the idle guests listed (D-87) |
 | `BackupRunRepositoryTest`, `TableSizesTest` | The backups' latest outcomes and their purge; the tables' row estimates |
 | `BoostRepositoryTest`, `EquipmentRepositoryTest`, `PaymentRepositoryTest`, `SeasonPassRepositoryTest` | Each economy repository, once a key, under concurrency where it matters; a refund written with its `admin_audit` row |
 | `SeasonRepositoryTest`, `RatingBoardsTest`, `TeamBoardsTest` | Season ends, places, gems, resets; the boards' order and a place read by key |
-| `TeamRepositoryTest`, `FriendRepositoryTest`, `InboxRepositoryTest`, `TournamentRepositoryTest`, `StatsRepositoryTest` | The rest of the repositories, each with its purge |
+| `TeamRepositoryTest`, `FriendRepositoryTest`, `InboxRepositoryTest`, `TournamentRepositoryTest`, `StatsRepositoryTest` | The rest of the repositories, each with its purge; an erased player out of the team, a leader's handed over (D-87) |
 | `PrimaryDataSourceTest`, `DatabaseLimitsTest`, `StoredTimesTest` | The primary's choice and the heartbeat; the time limits (a slow migration from `src/test/resources/db/slow` is not cut); UTC stored whatever the process's zone |
 | `DatabaseSettingsTest`, `BracketTest`, `RoundRobinTest`, `DailyGoalsTest` | No database: settings, the bracket, the schedule, the goals' draw |
 

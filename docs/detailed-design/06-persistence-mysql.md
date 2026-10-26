@@ -1299,8 +1299,13 @@ a design decision rather than an afterthought. **Built 2026-09-26**
 - **The rest of the daily run:** daily goals' progress more than a week old
   (`ix_daily_goal_day`); orders pending longer than a day, expired, their rows kept
   (`ix_order_state`); season passes older than the six seasons kept
-  (`ix_pass_season`); and `backup_run` rows past 90 days, but never a kind's newest
-  success, so the last time a step worked is not lost to age (§10). Each step stands
+  (`ix_pass_season`); `backup_run` rows past 90 days, but never a kind's newest
+  success, so the last time a step worked is not lost to age (§10); and, last, the
+  guests nobody has played for 180 days, erased as a player's own deletion erases
+  them ([D-87](../architecture/03-decision-log.md#d-87--a-guest-nobody-plays-for-180-days-is-erased-by-retention-a-deletion-is-at-once)):
+  off the boards and out of their team first, then `AccountRepository.erase`, a
+  transaction a guest; the candidates by one pass over `account` and one over the
+  days `player_day` keeps, 1 000 at a time, nothing indexed for it. Each step stands
   on its own: one that fails is logged and the next still runs, and the run's time
   is reported either way. The order is in the
   [worker README](../../backend/worker/README.md#retention).

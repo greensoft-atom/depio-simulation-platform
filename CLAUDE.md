@@ -143,7 +143,8 @@ for the backend, its docs and its client.
   ([operations/06](docs/operations/06-certificates.md)).
 - **The app is for Android alone**, installed from the owner's own copy, not Google Play or the App
   Store (owner, 2026-10-24; C-10): no store's rules apply, iOS is not a target, and nothing updates the
-  app but the owner's channel (Q-59, open). A player deletes their own account (D-84).
+  app but the owner's channel (Q-59, open). A player deletes their own account (D-84); a guest nobody plays
+  for 180 days is erased by retention (Q-61, D-87).
 - **Client scope:** the engine-free C# core, the headless driver, and since 2026-10-04 (Q-51,
   plan item 77) the Unity layer as scripts: logic in the core where it can be tested, the
   Unity scripts thin. There is no Unity here: say what was and was not compiled.
@@ -195,6 +196,8 @@ TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]
 TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted
 # The watch on, a webhook receiver of the drill's: the worker killed after the scenarios, TargetDown listed and sent (08)
 WATCH=1 TMPDIR=<scratchpad> client/headless-drill.sh play
+# A guest aged 181 days in the database after the scenarios, erased by a fresh worker's retention a minute on (D-87)
+IDLEGUEST=1 TMPDIR=<scratchpad> client/headless-drill.sh play
 
 # The certificate scripts' own check (openssl alone, a few seconds), and the front's end to end in Rocky 9.5:
 # firewalld, nginx, two machines, the C# client through 443 and 9001 (Docker, .NET; about ten minutes)

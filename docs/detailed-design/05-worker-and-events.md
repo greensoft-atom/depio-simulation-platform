@@ -695,8 +695,14 @@ measure of how many there are". `GET /admin/stats/guests` is that measure:
 
 `guests` are the accounts still guests; `inactive`, those of them made more than
 90 days ago with no day played in the last 90 (`player_day`, kept that long)
-and no login since. **Deleting them stays deferred**
-([D-72](../architecture/03-decision-log.md#d-72--the-tables-growth-is-watched-against-measured-triggers-and-a-restore-not-the-purge-is-what-binds)'s
-way, a trigger measured): a guest touches every table a player is in, and a
-deleted one is a device whose player comes back to nothing. Trigger: `inactive`
-past a million, or past a quarter of `players`.
+and no login since. **Erased at 180 days** (decided 2026-10-26,
+[D-87](../architecture/03-decision-log.md#d-87--a-guest-nobody-plays-for-180-days-is-erased-by-retention-a-deletion-is-at-once)): retention's
+last step erases, as the player's own deletion does, every guest made more than
+180 days ago with no login since and no day played in the days kept, off the
+boards and out of its team first (a leader's team handed to its longest-serving
+vice leader or member). Until then the deletion was deferred,
+[D-72](../architecture/03-decision-log.md#d-72--the-tables-growth-is-watched-against-measured-triggers-and-a-restore-not-the-purge-is-what-binds)'s
+way, to a trigger (`inactive` past a million, or a quarter of `players`), because
+deleting a guest touched every table a player is in; D-84's erasure in place made
+that cost small. `inactive`, at 90 days, is the measure of what the erasure takes
+90 days on.

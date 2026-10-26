@@ -355,6 +355,55 @@ class TeamRepositoryTest {
     }
 
     @Test
+    @DisplayName("an erased player is out of the team whatever the role: a leader with members hands it to the longest-serving"
+            + " vice leader, else the longest-serving member; a leader alone ends it (D-87)")
+    void erased() throws Exception {
+        long ada = player("ada");
+        long bob = player("bob");
+        long cy = player("cy");
+        long dee = player("dee");
+        long team = team("Tanks", ada, bob, cy);
+        assertThat(teams.erase(dee, T)).as("in no team").isEqualTo(Outcome.NO_TEAM);
+        assertThat(teams.erase(cy, T)).as("a member").isEqualTo(Outcome.OK);
+        assertThat(teamIdOf(cy)).isNull();
+        assertThat(teams.teamOf(ada).members()).extracting(TeamRepository.Member::playerId).containsExactly(ada, bob);
+        assertThat(teams.invite(ada, dee, T)).isEqualTo(Outcome.OK);
+        assertThat(teams.answer(dee, team, true, T)).isEqualTo(Outcome.OK);
+        assertThat(teams.setRole(ada, bob, TeamRepository.VICE)).isEqualTo(Outcome.OK);
+        joined(dee, "2026-09-01 00:00:00");                                        // longer in it than the vice leader
+        joined(bob, "2026-09-15 00:00:00");
+        assertThat(teams.erase(ada, T)).as("the leader, with a vice leader and a member").isEqualTo(Outcome.OK);
+        assertThat(teamIdOf(ada)).isNull();
+        assertThat(roleOf(bob)).as("the vice leader leads, whoever joined first").isEqualTo(TeamRepository.LEADER);
+        assertThat(roleOf(dee)).isEqualTo(TeamRepository.MEMBER);
+        assertThat(teams.teamOf(bob).members()).hasSize(2);
+
+        long eve = player("eve");
+        long fay = player("fay");
+        long gus = player("gus");
+        team("Shapes", eve, fay, gus);
+        joined(gus, "2026-09-01 00:00:00");
+        joined(fay, "2026-09-15 00:00:00");
+        assertThat(teams.erase(eve, T)).as("the leader, with members alone").isEqualTo(Outcome.OK);
+        assertThat(roleOf(gus)).as("the longest-serving member leads").isEqualTo(TeamRepository.LEADER);
+        assertThat(roleOf(fay)).isEqualTo(TeamRepository.MEMBER);
+        assertThat(teams.erase(fay, T)).isEqualTo(Outcome.OK);
+        assertThat(teams.erase(gus, T)).as("a leader alone: the team ends").isEqualTo(Outcome.OK);
+        assertThat(teams.teamOf(gus)).isNull();
+        assertThat(teams.erase(gus, T)).isEqualTo(Outcome.NO_TEAM);
+        assertThat(teams.create(player("hal"), "Shapes", T).outcome()).as("the team gone: its name free").isEqualTo(Outcome.OK);
+    }
+
+    private static void joined(long playerId, String at) throws SQLException {
+        try (Connection c = db.dataSource().getConnection();
+             PreparedStatement ps = c.prepareStatement("UPDATE team_member SET joined_at = ? WHERE player_id = ?")) {
+            ps.setString(1, at);
+            ps.setLong(2, playerId);
+            ps.executeUpdate();
+        }
+    }
+
+    @Test
     @Timeout(60)
     @DisplayName("disbanding locks its members' rows, not every player's: a player elsewhere being paid is not waited for (defect D-32)")
     void disbandingLocksItsMembersOnly() throws Exception {

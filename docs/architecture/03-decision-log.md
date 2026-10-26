@@ -2554,3 +2554,69 @@ and the runbook's §5 says what should alert on them; nothing read them.
 **Not chosen.** Prometheus, Alertmanager and node_exporter in the release (designed, vendored and
 reverted the same day on the owner's rule); the journal alone (no "for five minutes", no rate); a watch
 in the worker (on C alone).
+
+### D-87 — A guest nobody plays for 180 days is erased by retention; a deletion is at once
+
+**Decided 2026-10-26** (plan item 105; [Q-61](../requirements/01-scope-and-nfrs.md#7-open-questions),
+the owner taking the recommendation on both of its parts).
+
+**Decision.**
+- **(a) A deletion is at once**, as [D-84](#d-84--a-player-deletes-their-own-account-erased-in-place-what-others-history-needs-kept-under-a-bare-id)
+  built it: no pending days, nothing a login cancels. A registered account's deletion asks its
+  password, a guest's its session, which exists on the device alone; with no support desk nobody
+  could act on a pending deletion but the player. To be reconsidered when there is support.
+- **(b) A guest made more than 180 days ago, with no login since and no day played in the days
+  `player_day` keeps (90), is erased** by the worker's retention, daily, exactly as the player's own
+  deletion erases (`AccountRepository.erase`): nothing differs in what goes and what stays. Only a
+  guest: a registered account is its player's to delete, never erased for idleness.
+- **The guest leaves its team, whatever its role**: a leader with members hands the team to the
+  longest-serving vice leader, else the longest-serving member (`joined_at`, then id), then leaves;
+  a leader alone ends the team. The members are not pushed the change; they see the new leader at
+  their next read.
+- **Off every board** the store still holds, the all-time one included, and out of the names' hash.
+  **No session to end**: a session lives a day and is not renewed, so a guest that had one logged in
+  within the day. No lobby to tell.
+- **The order, a guest at a time: the store first**, then the team, then the erasure, one
+  transaction each. A store that fails stops the step before anything is erased, and the next day's
+  run finds the guest still a guest. (The player's own deletion has it the other way round, D-84,
+  because that player, their session still working, retries the same call.) The step is retention's
+  last: it fails on its own, the run's time counts toward D-72's 30 minutes, the count is reported
+  (`backend_worker_guests_erased_total`) and a line a run goes to the journal.
+- **The measure stays at 90 days**: `GET /admin/stats/guests`' `inactive` is what the erasure will
+  take 90 days on.
+- **Announced** where a guest signs in (the app's lobby text) and in the API guide's `POST /v1/guests`:
+  a guest nobody plays for 180 days is erased; register to keep it.
+
+**Why.**
+- **180 days, not the measure's 90.** Ninety days is idleness; half a year is abandonment. A phone put
+  away for a season and taken up again finds its guest; one wiped, sold or lost never comes back, and
+  nothing but this ever ends what it left. Longer costs nothing in rows, since what the erasure frees
+  is small; shorter erases players who return.
+- **Erasing in place made it cheap.** Q-22 and 05 §11 put the deletion off until a count called for
+  it, because deleting a guest touched every table a player is in. D-84's erasure touches eight small
+  tables and the boards and leaves others' history as it is; the cost that justified waiting is gone.
+- **What it frees is the social layer's ghosts**: a friends list, capped at 100 (Q-20), holding guests
+  gone for good; a team whose leader will never return, which no rule handed over (its members could
+  only leave); the all-time board's places held by players who no longer exist; a key that, if the
+  phone reaches other hands with its secure store intact, logs in no more.
+- **No grace period** because, with no support, a pending deletion protects only against the player's
+  own mistake, and a hijacker who can send the password can as well cancel it; the app's confirmation
+  is the protection. When there is support, a pending state is cheap to add: a status, a date, and a
+  login that clears it.
+- **In the worker, not an admin's call**: it runs every day with no one, as retention's other steps do.
+
+**Cost.**
+- **A guest who returns after half a year starts again.** The app's text says so.
+- **The all-time board forgets abandoned guests' scores**; a registered account's stay. Whoever wants a
+  place kept registers.
+- **The first run after this release erases every guest already idle 180 days** at once. At launch
+  there are none; on a site that has run that long the journal line says how many, and the run takes
+  a transaction a guest (a few milliseconds each on the development machine: measured in the test
+  and reported on item 105).
+- **The candidates cost a pass over `account` and one over the days `player_day` keeps**, 1 000 at a
+  time; nothing is indexed for it, since a daily pass over a million rows is seconds.
+- **Backups**, as D-84: the erased rows stay in the dumps and the binlog copies 8 days.
+
+**Not chosen.** A pending deletion (no support to act on it); a trigger on the count (D-72's way, now
+that the cost is small); deleting the rows (D-84's reasons); a push to the team's members (the
+worker has no team service; a read shows it); a shorter or configurable period (one rule, announced).

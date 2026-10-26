@@ -169,7 +169,9 @@ POST /v1/guests
 ```
 
 Then `POST /v1/sessions {"guestKey": "ufLTWOrW..."}` gives a token as above. Keep the key on
-the device: it is the account.
+the device: it is the account. A guest nobody plays for 180 days is erased, its progress with it
+([D-87](../architecture/03-decision-log.md#d-87--a-guest-nobody-plays-for-180-days-is-erased-by-retention-a-deletion-is-at-once)); upgrading it to an
+account keeps it.
 
 ### `POST /v1/accounts/upgrade`: a guest becomes an account
 

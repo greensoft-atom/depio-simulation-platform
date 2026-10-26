@@ -620,6 +620,36 @@ public final class TeamRepository {
         });
     }
 
+    /**
+     * An erased player out of their team, whatever the role (D-87): a leader with members hands the team to the
+     * longest-serving vice leader, else the longest-serving member, then leaves; a leader alone ends the team.
+     */
+    public Outcome erase(long playerId, Instant now) throws SQLException {
+        Long teamId = unlockedTeamIdOf(playerId);
+        if (teamId == null) {
+            return Outcome.NO_TEAM;
+        }
+        return tx.execute(c -> {
+            if (!lockTeam(c, teamId)) {
+                return Outcome.NO_TEAM;
+            }
+            lockPlayer(c, playerId);
+            int role = roleIn(c, teamId, playerId);
+            if (role < 0) {
+                return Outcome.NO_TEAM;
+            }
+            if (role == LEADER) {
+                if (memberCount(c, teamId) == 1) {
+                    removeTeam(c, teamId, now);
+                    return Outcome.OK;
+                }
+                setRoleOf(c, teamId, successorOf(c, teamId, playerId), LEADER);
+            }
+            removeMember(c, teamId, playerId, now);
+            return Outcome.OK;
+        });
+    }
+
     /** A leader removes anyone but themself; a vice leader, members only. */
     public Outcome kick(long byPlayer, long playerId, Instant now) throws SQLException {
         Long teamId = unlockedTeamIdOf(byPlayer);
@@ -786,6 +816,19 @@ public final class TeamRepository {
             ps.setLong(2, playerId);
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next() ? rs.getInt(1) : -1;
+            }
+        }
+    }
+
+    /** Who takes a leader's place: the longest-serving vice leader, else the longest-serving member. */
+    private static long successorOf(Connection c, long teamId, long leader) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("SELECT player_id FROM team_member WHERE team_id = ? AND player_id <> ?"
+                + " ORDER BY role DESC, joined_at, player_id LIMIT 1")) {
+            ps.setLong(1, teamId);
+            ps.setLong(2, leader);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
             }
         }
     }

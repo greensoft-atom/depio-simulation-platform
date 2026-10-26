@@ -318,6 +318,19 @@ A guest sends no password.
 guest key; the admin API answers 404; the boards' rebuild leaves it out. The app forgets its
 session, and a guest's key.
 
+### An idle guest erased (designed 2026-10-26, plan item 105)
+
+A guest nobody plays for 180 days is erased by the worker's retention
+([D-87](../architecture/03-decision-log.md#d-87--a-guest-nobody-plays-for-180-days-is-erased-by-retention-a-deletion-is-at-once), Q-61): made more than 180 days ago, no login since,
+and no day in `player_day` since (kept 90 days; the second test guards the first against a session
+that one day outlives a day). Only a guest: a registered account is its player's to delete. The same
+erasure as above, by the worker (`worker/IdleGuests`), a guest at a time in this order: off the boards
+first (the store: one that fails stops the step with nothing erased, and the next day's run finds the
+guest still a guest), out of its team whatever its role (§2), then `AccountRepository.erase`. No
+session to end, since a session lives a day, and no lobby to tell. The app says so where a guest
+signs in, and the API guide at `POST /v1/guests`. `backend_worker_guests_erased_total` counts them;
+`GET /admin/stats/guests`' `inactive`, at 90 days, is the measure of what the next 90 days erase.
+
 ## 2. Teams
 
 | Action | LEADER | VICE_LEADER | MEMBER |
@@ -378,7 +391,11 @@ invitations as the way in. **Built 2026-09-30**, and drilled from the release.
   starts too. **Promote** to vice leader and **demote**, by the leader, two
   vice leaders at most. **Transfer** the leadership to a member, the old
   leader becoming one. **Disband**, by the leader: every member out, cooldowns
-  started, invitations dropped.
+  started, invitations dropped. **Erased** as an idle guest, by retention
+  ([D-87](../architecture/03-decision-log.md#d-87--a-guest-nobody-plays-for-180-days-is-erased-by-retention-a-deletion-is-at-once)): out whatever the role; a leader with
+  members hands the team to the longest-serving vice leader, else the longest-serving member
+  (`joined_at`, then id), then leaves; a leader alone ends the team. The members are not
+  pushed the change; they see it at their next read.
 
 Every action is one transaction that locks the team row first, then the
 players it changes (D-39), so capacity and the vice leaders' limit hold under

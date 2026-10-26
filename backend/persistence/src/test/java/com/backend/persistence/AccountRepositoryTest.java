@@ -7,6 +7,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -204,6 +205,41 @@ class AccountRepositoryTest {
     }
 
     // ---- helpers ---------------------------------------------------------------------
+
+    @Test
+    @DisplayName("the idle guests: made before the moment given, no login since and no day played since; not a registered"
+            + " account, a young guest, an erased one, or one who played without a login counted (D-87)")
+    void idleGuests() throws Exception {
+        Instant since = Instant.parse("2026-04-29T00:00:00Z");                     // 180 days before 2026-10-26
+        long never = guest(1);                                                      // old, never logged in
+        long longAgo = guest(2);                                                    // old, last logged in just before
+        long recent = guest(3);                                                     // logged in since
+        long played = guest(4);                                                     // a day played since, no login
+        long young = guest(5);                                                      // made since
+        long registered = accounts.register("ada", "Ada", HASH);                     // old, no login, not a guest
+        long erased = guest(6);                                                     // erased already
+        long atSince = guest(7);                                                    // logged in at the moment itself
+        long playedBefore = guest(8);                                               // a day played before, none since
+        for (long id : new long[] {never, longAgo, recent, played, registered, erased, atSince, playedBefore}) {
+            jdbc("UPDATE account SET created_at = '2025-10-01 00:00:00' WHERE id = ?", id);
+        }
+        jdbc("UPDATE account SET created_at = '2026-10-16 00:00:00' WHERE id = ?", young);
+        jdbc("UPDATE account SET last_login_at = '2026-04-28 23:59:59' WHERE id = ?", longAgo);
+        jdbc("UPDATE account SET last_login_at = '2026-10-16 00:00:00' WHERE id = ?", recent);
+        jdbc("UPDATE account SET last_login_at = '2026-04-29 00:00:00' WHERE id = ?", atSince);
+        jdbc("INSERT INTO player_day (day, player_id) VALUES ('2026-07-18', ?)", played);
+        jdbc("INSERT INTO player_day (day, player_id) VALUES ('2026-04-01', ?)", playedBefore);
+        accounts.erase(erased);
+
+        assertThat(accounts.idleGuests(since, 10)).containsExactly(never, longAgo, playedBefore);
+        assertThat(accounts.idleGuests(since, 2)).as("lowest ids first, the limit kept").containsExactly(never, longAgo);
+    }
+
+    private static long guest(int n) throws SQLException {
+        byte[] key = new byte[32];
+        key[0] = (byte) n;
+        return accounts.createGuest("~01JCIDLE0000000000000000" + n, "Guest" + n, key);
+    }
 
     private static long count(String sql, Long arg) throws SQLException {
         try (Connection c = db.dataSource().getConnection();

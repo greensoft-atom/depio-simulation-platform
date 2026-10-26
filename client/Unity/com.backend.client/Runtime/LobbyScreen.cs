@@ -51,9 +51,11 @@ namespace Backend.Client.Unity
                 if (lobby.GrantRefusal != null) GUILayout.Label(lobby.GrantRefusal);
                 if (lobby.QueueRefusal != null) GUILayout.Label(lobby.QueueRefusal);
             }
-            // The player's right to have it erased (D-84), asked twice: there is no undo.
+            // The player's right to have it erased (D-84), asked twice: there is no undo. And what becomes of a guest
+            // nobody plays (D-87): this screen signs in as the device's guest alone.
             if (client.Session != null)
             {
+                GUILayout.Label("A guest nobody plays for 180 days is erased, its progress with it.");
                 if (client.Deleting) GUILayout.Label("Deleting the account...");
                 else if (!_confirmingDeletion)
                 {

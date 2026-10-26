@@ -3628,6 +3628,23 @@ they are (over a hundred links read); a link to a heading that is not there and 
 there, each put into the glossary for a run, caught with its reason; `build-offline.sh` clean. The rule
 is in CLAUDE.md and working-here §1.
 
+#### 105. ~~Q-61 decided: a deletion at once, and a guest nobody plays for 180 days erased (D-87).~~ — **done 2026-10-26**
+
+The owner took the recommendation on both parts. (a) stays as D-84 built it. (b) is retention's eleventh step,
+`worker/IdleGuests`: `AccountRepository.idleGuests` lists the guests made before the moment 180 days back, with no
+login since and no day in `player_day` since (one pass over `account` and one over the days kept, 1 000 a round
+until none is left); for each, the store first (`LeaderboardStore.remove`, so a store that fails erases nothing),
+then `TeamRepository.erase` (out whatever the role; a leader's team handed to the longest-serving vice leader, else
+member; a leader alone ends it), then `AccountRepository.erase`; `backend_worker_guests_erased_total` counts them.
+Announced in the API guide and the lobby's text. Checked: five tests written first (the query's eight cases and its
+limit; the hand-over's three; the loop, its batches, and the store-first order against an embedded store that was
+closed); 16 mutants, every one caught by an assertion, two of them sharpened after an exception had caught them
+first; the drill's `IDLEGUEST=1`: a guest aged 181 days in the database was erased by the running worker's retention
+a minute into its life, its key then refused (401) and its row `~deleted~<id>`, status 3; the Unity scripts compiled
+against the stubs with the lobby's new line (not run); `build-offline.sh` clean, "0 failed". Docs: D-87, Q-61 and Q-22, 04 §1 and §2,
+05 §11, 06 §9, api/01 and 03, the glossary, both READMEs, the retention diagram, CLAUDE.md and working-here (C-10,
+and a trap: a harness under `sh` cannot source `dev-env.sh`).
+
 ---
 
 ### Completed 2026-09-23

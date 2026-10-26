@@ -530,9 +530,10 @@ flowchart TD
     R8["payment orders pending over a day, marked expired"]
     R9["season passes before the six seasons kept"]
     R10["backup_run rows over 90 days, but each kind's newest success"]
+    R11["guests nobody played for 180 days, erased as a deletion erases them (D-87)"]
     D["record the run's time: backend_worker_retention_seconds"]
     F["a step that fails is logged, and the next step runs"]
-    S --> R1 --> R2 --> R3 --> R4 --> R5 --> R6 --> R7 --> R8 --> R9 --> R10 --> D
+    S --> R1 --> R2 --> R3 --> R4 --> R5 --> R6 --> R7 --> R8 --> R9 --> R10 --> R11 --> D
     F -.- R1
 ```
 

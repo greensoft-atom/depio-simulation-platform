@@ -54,6 +54,10 @@
 #                                                     and a second worker taking them over (05);
 #                                                     with play, as the others check their pay
 #                                                     while the worker is stopped, and fail that
+#   IDLEGUEST=1 client/headless-drill.sh play        a guest made and aged 181 days in the database after the
+#                                                     scenarios, and a second worker started (its metrics on 9193),
+#                                                     whose retention a minute on erases it (D-87): the journal
+#                                                     line, the metric, its key refused at login, the row erased
 #
 # Needs: the backend release (backend/scripts/make-release.sh; RELEASE= for a copy of one), the
 # headless client built (dotnet build), python3 and the development MySQL (dev-mysql.sh, 127.0.0.1:3314
@@ -725,6 +729,27 @@ if [ "${TAKEOVER:-0}" = 1 ]; then
   IN=$(mysql -h127.0.0.1 -P"$DBPORT" --protocol=TCP -ubackend -p"${BACKEND_DB_PASSWORD:-backend-dev-password}" backend_dev -N -e "
     SELECT COUNT(*) FROM matches WHERE match_uid IN ('$(printf '%s\n' $UIDS | paste -sd, | sed "s/,/','/g")')" 2>/dev/null)
   echo "in MySQL: $IN of $N"; [ "$IN" = "$N" ] && [ "$N" -gt 0 ] || { echo "TAKEOVER FAILED"; STATUS=1; }
+fi
+if [ "${IDLEGUEST:-0}" = 1 ]; then
+  echo "--- an idle guest (04 §1, D-87): made, aged 181 days in the database, erased by a worker's retention a minute after it starts"
+  G=$(curl -s -X POST http://127.0.0.1:8093/v1/guests)
+  GID=$(printf '%s' "$G" | sed -E 's/.*"playerId":([0-9]+).*/\1/'); GKEY=$(printf '%s' "$G" | sed -E 's/.*"guestKey":"([^"]+)".*/\1/')
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"guestKey\":\"$GKEY\"}" http://127.0.0.1:8093/v1/sessions)
+  echo "guest $GID made; its key logs in: $code"
+  dbq "$DBPORT" "UPDATE account SET created_at = NOW() - INTERVAL 181 DAY, last_login_at = NOW() - INTERVAL 181 DAY WHERE id = $GID"
+  BACKEND_METRICS_ADDR=127.0.0.1:9193 $J $OPENS -cp "$R/lib/worker/*" com.backend.worker.WorkerMain 127.0.0.1 6390 worker-drill-c > "$D/worker-c.log" 2>&1 & PIDS+=($!)
+  T0=$(date +%s)
+  until grep -q "retention: guests idle" "$D/worker-c.log"; do
+    if [ $(( $(date +%s) - T0 )) -gt 150 ]; then echo "IDLEGUEST FAILED: worker-drill-c ran no retention in 150 s"; STATUS=1; break; fi
+    sleep 2
+  done
+  echo "worker-drill-c, $(( $(date +%s) - T0 )) s after its start: $(grep -o 'retention: guests idle.*' "$D/worker-c.log" | head -1)"
+  echo "worker-drill, during the scenarios: $(grep -o 'retention: guests idle.*' "$D/worker.log" | head -1)"
+  echo "backend_worker_guests_erased_total: worker-drill $(curl -s http://127.0.0.1:9199/metrics | awk '$1 == "backend_worker_guests_erased_total" { print $2 }'), worker-drill-c $(curl -s http://127.0.0.1:9193/metrics | awk '$1 == "backend_worker_guests_erased_total" { print $2 }')"
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"guestKey\":\"$GKEY\"}" http://127.0.0.1:8093/v1/sessions)
+  row=$(dbq "$DBPORT" "SELECT CONCAT(username, ' status ', status) FROM account WHERE id = $GID")
+  echo "its key at login now: $code; the account's row: $row"
+  [ "$code" = 401 ] && [ "$row" = "~deleted~$GID status 3" ] || { echo "IDLEGUEST FAILED"; STATUS=1; }
 fi
 if [ "${WATCH:-0}" = 1 ]; then
   echo "--- the watch (04 §12, D-86): the worker killed, TargetDown listed by the admin API and sent to the webhook within three minutes, then silenced"

@@ -34,6 +34,7 @@ final class Retention implements AutoCloseable {
     private final com.backend.persistence.PaymentRepository payments;
     private final com.backend.persistence.SeasonPassRepository passes;
     private final com.backend.persistence.BackupRunRepository backups;
+    private final IdleGuests idleGuests;
 
     private volatile double lastRunSeconds = Double.NaN;
 
@@ -50,7 +51,8 @@ final class Retention implements AutoCloseable {
               com.backend.persistence.TeamRepository teams, com.backend.persistence.BoostRepository boosts,
               com.backend.persistence.TournamentRepository tournaments,
               com.backend.persistence.DailyGoalRepository goals, com.backend.persistence.PaymentRepository payments,
-              com.backend.persistence.SeasonPassRepository passes, com.backend.persistence.BackupRunRepository backups) {
+              com.backend.persistence.SeasonPassRepository passes, com.backend.persistence.BackupRunRepository backups,
+              IdleGuests idleGuests) {
         this.matches = matches;
         this.inbox = inbox;
         this.stats = stats;
@@ -62,6 +64,7 @@ final class Retention implements AutoCloseable {
         this.payments = payments;
         this.passes = passes;
         this.backups = backups;
+        this.idleGuests = idleGuests;
     }
 
     /** A minute after start, so start-up recovery goes first; then daily. */
@@ -125,6 +128,8 @@ final class Retention implements AutoCloseable {
             step("backup runs older than " + com.backend.persistence.BackupRunRepository.KEPT.toDays()
                     + " days, each kind's newest success kept (D-71, D-48)",
                     () -> backups.purgeBefore(now.minus(com.backend.persistence.BackupRunRepository.KEPT), BATCH));
+            // Last, the guests nobody has played for 180 days, erased as a player's own deletion erases them (D-87).
+            step("guests idle " + IdleGuests.IDLE_DAYS + " days, erased (D-87)", () -> idleGuests.erase(now));
             return count;
         } finally {
             // Timed whether or not a step failed: a slow run that failed is still slow (D-72's trigger).
@@ -140,6 +145,10 @@ final class Retention implements AutoCloseable {
 
     long deletedTotal() {
         return deleted.get();
+    }
+
+    long guestsErasedTotal() {
+        return idleGuests.erasedTotal();
     }
 
     @Override

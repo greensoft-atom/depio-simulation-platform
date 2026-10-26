@@ -93,21 +93,24 @@ public final class WorkerMain {
                 streamRetention);
         // One for the process, so what it could not deliver is counted in one place (O-6).
         LobbyPush push = new LobbyPush(store);
+        LeaderboardStore boards = new LeaderboardStore(store);
+        com.backend.persistence.TeamRepository teams = new com.backend.persistence.TeamRepository(db.dataSource(), 30);
         MatchResultConsumer consumer = new MatchResultConsumer(queue, results,
-                new LeaderboardStore(store), new com.backend.persistence.BoostRepository(db.dataSource())::percentsAt)
+                boards, new com.backend.persistence.BoostRepository(db.dataSource())::percentsAt)
                 .telling((player, rewards) -> push.send(player, "evt.rewards", rewards));
         Retention retention = new Retention(results,
                 new com.backend.persistence.InboxRepository(db.dataSource()),
                 new com.backend.persistence.StatsRepository(db.dataSource()),
                 // Retention deletes lapsed requests and invitations only: the caps are the platform's (Q-20, Q-46).
                 new com.backend.persistence.FriendRepository(db.dataSource(), 100, 100),
-                new com.backend.persistence.TeamRepository(db.dataSource(), 30),
+                teams,
                 new com.backend.persistence.BoostRepository(db.dataSource()),
                 new com.backend.persistence.TournamentRepository(db.dataSource()),
                 new com.backend.persistence.DailyGoalRepository(db.dataSource()),
                 new com.backend.persistence.PaymentRepository(db.dataSource()),
                 new com.backend.persistence.SeasonPassRepository(db.dataSource()),
-                new com.backend.persistence.BackupRunRepository(db.dataSource()));
+                new com.backend.persistence.BackupRunRepository(db.dataSource()),
+                new IdleGuests(new com.backend.persistence.AccountRepository(db.dataSource()), teams, boards, Retention.BATCH));
         retention.start();
         LedgerCheck ledgerCheck = new LedgerCheck(new EconomyRepository(db.dataSource()), store, workerId);
         ledgerCheck.start();
@@ -204,6 +207,9 @@ public final class WorkerMain {
                 queue::deferredCount);
         m.counter("backend_worker_retention_deleted_total", "Matches deleted by retention.",
                 retention::deletedTotal);
+        m.counter("backend_worker_guests_erased_total",
+                "Guests nobody played for " + IdleGuests.IDLE_DAYS + " days, erased by retention (D-87).",
+                retention::guestsErasedTotal);
         m.counter("backend_worker_tournament_failures_total",
                 "Tournament ticks, or one tournament's step, that failed and will be tried again in 5 s."
                         + " Alert on a steady rise: every tournament waits on it.",

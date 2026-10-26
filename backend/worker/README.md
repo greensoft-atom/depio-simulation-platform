@@ -31,6 +31,7 @@ Package `com.backend.worker`.
 | `AccountLevels` | The account level a lifetime xp total is worth: `3 000 × (L − 1)^p`, p ≈ 1.654, level 100 at 6 000 000 |
 | `EloRating` | How a rated match moves ratings: each player against each other by placement, K 32, then 16 after 30 rated matches |
 | `Retention` | The daily purge of everything kept for a while |
+| `IdleGuests` | Retention's last step: the guests nobody has played for 180 days, erased (D-87) |
 | `LedgerCheck` | The fleet's daily check that every balance is its ledger's sum |
 | `ReplicaWatch` | The MySQL heartbeat, each replica's lag, and the stores' replicas, for the metrics |
 | `TournamentScheduler` | The tournaments' clock: seeding, starting, matches made and decided, rounds, prizes |
@@ -134,6 +135,12 @@ Daily, in this order, each step 1 000 rows a transaction
 8. Payment orders pending longer than a day, marked expired; the rows stay.
 9. Season passes older than the season being played and the five before it.
 10. `backup_run` rows older than 90 days, except each kind's newest success.
+11. Guests made more than 180 days ago, with no login since and no day played in the days
+    kept, erased as a player's own deletion erases them
+    ([D-87](../../docs/architecture/03-decision-log.md#d-87--a-guest-nobody-plays-for-180-days-is-erased-by-retention-a-deletion-is-at-once)):
+    off the boards and out of their team first (a leader's handed to its longest-serving vice
+    leader, else member), then `AccountRepository.erase`, a transaction a guest, 1 000 at a
+    time until none is left. The store first, so a store that fails erases nothing.
 
 Each step stands on its own: one that fails is logged and the next still runs, and
 the run's time is recorded either way (`backend_worker_retention_seconds`). Player
@@ -270,6 +277,7 @@ Served in the Prometheus text format at `/metrics`.
 | `backend_worker_trimmed_unapplied_total` | Results trimmed before anyone applied them: lost, **alert above 0** |
 | `backend_worker_pushes_unheard_total` | Pushes to a player registered on a gateway whose channel nobody heard |
 | `backend_worker_retention_deleted_total`, `backend_worker_retention_seconds` | Matches deleted by retention; how long the last run took (alert past 1 800) |
+| `backend_worker_guests_erased_total` | Guests nobody played for 180 days, erased by retention (D-87) |
 | `backend_worker_tournament_failures_total` | Tournament ticks, or one tournament's step, that failed |
 | `backend_worker_ledger_mismatches`, `backend_worker_ledger_checked_timestamp_seconds` | The fleet's last ledger check, the same on every worker: alert above 0, or older than two days |
 | `backend_backup_succeeded_timestamp_seconds{kind}`, `backend_backup_failed{kind}`, `backend_backup_restore_seconds` | The backup steps (`dump`, `proof`, `offsite`): last success, last run failed, the last proof's restore and replay |
@@ -303,6 +311,7 @@ started in the test: no store to install.
 | `SeasonKeeperTest` | A season closed, paid and reset once; the teams'; the lock; a run stopped part-way finished by the next |
 | `LedgerCheckTest` | Once a day across the fleet; a mismatch in coins or gems found and reported; a failed check gives the day back |
 | `LeaderboardRebuildTest` | A rebuild equal to the live boards; nothing lowered on a live store; an erased player not rebuilt (D-84) |
+| `IdleGuestsTest` | The idle guests erased as a deletion erases: off the boards, the team handed over, the key gone, the recent and the registered kept; a batch at a time; the store first, so a store that fails erases nothing (D-87) |
 | `ReplicaWatchTest` | The heartbeat stamped through the pool |
 | `EloRatingTest`, `AccountLevelsTest`, `BackupWatchTest` | The rules, and the backup metrics, without a database |
 
