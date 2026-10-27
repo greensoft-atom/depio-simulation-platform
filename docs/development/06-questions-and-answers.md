@@ -330,7 +330,8 @@ MySQL 5, and was not tried against this 8.4 server.
 
 | What you see | What to do |
 |---|---|
-| `port 3314 is taken by another process` | Another program has the port. Choose another: `MYSQL_PORT=3324 ./dev-mysql.sh start`. Then give every command the same `MYSQL_PORT`, or `export MYSQL_PORT=3324` once in the terminal, and change 3314 in `.vscode/settings.json` and `.vscode/launch.json`. `stop` and `status` find it on any port. |
+| `127.0.0.1:3314: in use (…)`, then `another port for it: MYSQL_PORT=…` | Another program has the port. Choose another: `MYSQL_PORT=3324 ./dev-mysql.sh start`. Then give every command the same `MYSQL_PORT`, or `export MYSQL_PORT=3324` once in the terminal, and change 3314 in `.vscode/settings.json` and `.vscode/launch.json`. `stop` and `status` find it on any port. |
+| `127.0.0.1:3314: refused (Permission denied)`, and under it the policy found | Not your rank: a policy of this machine keeps the port from users, though ports above 1023 are any user's on Linux. The lines under it name it (the unprivileged-port threshold raised, a login SELinux confines, WSL's reserved ranges) with the command that lifts it; or another port, as above ([03 §10](03-build-and-run.md#10-when-something-fails)). |
 | `already runs, on 3314, not 3324` | It runs on another port than the one asked: `./dev-mysql.sh stop` first. |
 | `MySQL could not be initialised` | The first start failed: read `work/mysql/init.err`. The half-made data is removed, so the next `start` tries again from nothing. |
 | `start` fails otherwise | It prints the end of `work/mysql/mysqld.err`; the whole log is in that file. |

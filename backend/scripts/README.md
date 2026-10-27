@@ -4,9 +4,9 @@ The backend's operational scripts: the release build and its check on RHEL 9, th
 their proofs, the promotions, the certificate, and a drill of the backups. Each script's header is
 its own reference; this page lists them together, with what each needs and what runs it.
 
-The release ships thirteen of them in `scripts/`, installed as `/opt/backend/scripts/`
+The release ships fourteen of them in `scripts/`, installed as `/opt/backend/scripts/`
 ([make-release.sh](#make-releasesh)); the backup units run them from there. `make-release.sh`, the
-`check-*.sh` and `backup-drill.sh` stay in the source tree.
+other `check-*.sh` and `backup-drill.sh` stay in the source tree.
 Every setting a script or unit reads is also in the
 [deploy README's catalogue](../deploy/README.md#environment-variables). How they are used:
 [operations/01-deploy](../../docs/operations/01-deploy.md) and the
@@ -21,6 +21,7 @@ Every setting a script or unit reads is also in the
 | [`check-certificates.sh`](#check-certificatessh) | Certificates | no | hand, on any machine with openssl |
 | [`rotate-nginx-logs.sh`](#rotate-nginx-logssh) | Logs | yes | `backend-nginx-logs.timer`, nightly, on every machine |
 | [`check-nginx-logs.sh`](#check-nginx-logssh) | Logs | no | hand, on a machine with a release and curl |
+| [`check-bind.sh`](#check-bindsh) | Ports | yes | `dev-mysql.sh`, `run-local.sh` and the drill, before they start anything; hand, on a server whose unit says `Permission denied` on its port |
 | [`binlog-stream.sh`](#binlog-streamsh) | Backups | yes | `backend-binlog-stream.service`, always on |
 | [`backup-mysql.sh`](#backup-mysqlsh) | Backups | yes | `backend-mysql-backup.timer`, nightly |
 | [`record-backup.sh`](#record-backupsh) | Backups | yes | the three scripts that record |
@@ -142,6 +143,29 @@ scripts/check-ports-el9.sh                     the release in target/release/bac
 |---|---|
 | Needs | Docker, and the network once, to build its image (`rockylinux/rockylinux:9.5` with firewalld); .NET 8 at `/opt/dotnet` for the C# driver, published self-contained, so the image needs none; `fs.inotify.max_user_watches` high enough for the container's dbus (524288; an editor's watches can use up the default) |
 | Runs | on the build machine, from anywhere; about ten minutes once its image is built |
+
+## Ports
+
+### check-bind.sh
+
+Can this user bind these TCP ports, here? Each is bound on 127.0.0.1 and let go, and a refusal is
+explained: the policy of this machine that refuses it (the unprivileged-port threshold raised, an
+SELinux-confined login, WSL's reserved ranges), the command that lifts it, and the way round it
+([D-88](../../docs/architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)).
+A port above 1023 is any user's on Linux, so `Permission denied` on one is a policy, which the
+process's own error does not name. `dev-mysql.sh`, `run-local.sh` and the drill run it before they
+start anything, in place of their old test of a port in use; on a server, run it as the unit's user
+when the unit's journal says `Permission denied` on its port.
+
+```
+scripts/check-bind.sh 3314 8080                                  0: every port free; 1: one in use or refused, and why
+runuser -u backend -- /opt/backend/scripts/check-bind.sh 8080    on a server, as the unit's user
+```
+
+| | |
+|---|---|
+| Needs | python3 (RHEL 9 and Ubuntu carry it) or, in the source tree, `vendor/jdk-21`; `ss`, for who holds a port in use |
+| Runs | anywhere, in a second. Checked as a user who is not root in a network namespace with the threshold raised (both refusals the owner met reproduced first, O-46), in Rocky Linux 9 as uid 1000, and with a port in TIME_WAIT, free to it as to a server; the SELinux and WSL branches are from the documentation, not run (plan item 106) |
 
 ## Backups and recovery
 

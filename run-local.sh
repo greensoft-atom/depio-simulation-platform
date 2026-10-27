@@ -9,8 +9,8 @@
 #   ./run-local.sh bots [count] [seconds]                        bots play through it (20 for 15 s)
 #   ./run-local.sh status
 #
-# Ports, each refused if taken: STORE_PORT 6380, PLATFORM_PORT 8080, GATEWAY_PORT 8081, ARENA_PORT
-# 9001. DEBUG=1: each Java process waits for no one but listens for a debugger, the platform on
+# Ports, each tried before the start (in use, or refused by a policy of the machine, it is named, D-88):
+# STORE_PORT 6380, PLATFORM_PORT 8080, GATEWAY_PORT 8081, ARENA_PORT 9001. DEBUG=1: each Java process waits for no one but listens for a debugger, the platform on
 # 5005, the worker 5006, the gateway 5007, the arena 5008, the store 5009; it then runs on vendor/'s
 # JDK, as the release's runtime has no debugger agent.
 set -euo pipefail
@@ -22,6 +22,7 @@ export BACKEND_DB_URL=${BACKEND_DB_URL:-"jdbc:mysql://127.0.0.1:$MYSQL_PORT/back
 export BACKEND_DB_USER=${BACKEND_DB_USER:-backend} BACKEND_DB_PASSWORD=${BACKEND_DB_PASSWORD:-backend-dev-password}
 ALL="store platform worker gateway arena"
 declare -A DEBUG_PORT=([platform]=5005 [worker]=5006 [gateway]=5007 [arena]=5008 [store]=5009)
+declare -A PORT=([store]=$STORE_PORT [platform]=$PLATFORM_PORT [gateway]=$GATEWAY_PORT [arena]=$ARENA_PORT)
 
 R=$(ls -d "$B"/backend/target/release/backend-*/ 2> /dev/null | head -1 || true); R=${R%/}
 # Running, and ours: a pid left from before a reboot may be another process's by now.
@@ -32,6 +33,14 @@ running() {
         && [[ $cmd == *"$B/backend/target/release/"* ]]
 }
 taken() { (exec 3<> "/dev/tcp/127.0.0.1/$1") 2> /dev/null; }
+# The ports of the processes named that are not running, tried before any starts: one in use, or one a
+# policy of the machine refuses, is named with its cause (D-88).
+check_ports() {
+    local p ports=()
+    for p in "$@"; do running "$p" || [ -z "${PORT[$p]:-}" ] || ports+=("${PORT[$p]}"); done
+    [ ${#ports[@]} = 0 ] || "$B/backend/scripts/check-bind.sh" "${ports[@]}" || {
+        echo "another port for it: STORE_PORT, PLATFORM_PORT, GATEWAY_PORT or ARENA_PORT, the same for every later command" >&2; exit 1; }
+}
 
 start_one() {
     local p=$1 port args java
@@ -54,9 +63,6 @@ start_one() {
                         "$ARENA_PORT" 5700 150 1500 4 127.0.0.1 "$STORE_PORT" arena-1 0 "$L/spool" 127.0.0.1 127.0.0.1) ;;
         *)        echo "no process $p: $ALL" >&2; exit 2 ;;
     esac
-    if [ -n "$port" ] && taken "$port"; then
-        echo "$p: port $port is taken by another process: ${p^^}_PORT=<a free port>" >&2; exit 1
-    fi
     java=("$R/runtime/bin/java")
     [ "${DEBUG:-0}" = 1 ] && java=("$JAVA_HOME/bin/java"
         "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:${DEBUG_PORT[$p]}")
@@ -101,6 +107,7 @@ start)
     [ -n "$R" ] || { echo "no release in backend/target/release: ./build-offline.sh first" >&2; exit 1; }
     mkdir -p "$L"
     shift; procs=${*:-$ALL}
+    check_ports $procs
     case " $procs " in *" platform "*|*" worker "*) "$B/dev-mysql.sh" start ;; esac
     for p in $ALL; do case " $procs " in *" $p "*) start_one "$p" ;; esac; done ;;
 bots)
@@ -122,6 +129,7 @@ restart)
     procs=$(named "$ALL" "$@")
     for p in $(named "$STOP_ORDER" "$@"); do stop_one "$p"; done
     mkdir -p "$L"
+    check_ports $procs
     case " $(echo $procs) " in *" platform "*|*" worker "*) "$B/dev-mysql.sh" start ;; esac
     for p in $procs; do start_one "$p"; done ;;
 *)

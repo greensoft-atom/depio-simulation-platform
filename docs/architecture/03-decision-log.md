@@ -2620,3 +2620,47 @@ the owner taking the recommendation on both of its parts).
 **Not chosen.** A pending deletion (no support to act on it); a trigger on the count (D-72's way, now
 that the cost is small); deleting the rows (D-84's reasons); a push to the team's members (the
 worker has no team service; a read shows it); a shorter or configurable period (one rule, announced).
+
+### D-88 — A port the machine refuses is named, with its policy, before anything starts
+
+**Decided 2026-10-27** (plan item 106; [O-46](../defects.md#6-operations): the owner's run as a user
+who is not root, refused 3314 and 8080 with `Permission denied`).
+
+**Decision.**
+- **One check, `backend/scripts/check-bind.sh PORT...`**, binds each port on 127.0.0.1 as the user
+  running it and lets it go, and says of each whether it is free, in use (by what, from `ss`) or
+  refused. A refusal is followed by the policy of this machine that explains it, the command that
+  lifts it, and the alternative of other ports. Three policies are known, the ones that refuse a port
+  above 1023 to a user on Linux: `net.ipv4.ip_unprivileged_port_start` raised above the port; SELinux
+  enforcing with the login confined (`user_u`, `staff_u`) and `selinuxuser_tcp_server` off; WSL, where
+  Windows keeps ranges of ports for Hyper-V (WSL 1, and WSL 2 with mirrored networking). None found,
+  it says so and names `strace` and `ausearch`.
+- **The development scripts run it before they start anything**: `dev-mysql.sh` on the MySQL's port,
+  `run-local.sh` on the ports of the processes it is about to start (not those already running), the
+  drill on its fixed ports. It replaces their test of a port in use, which was a connection to it and
+  told nothing of a refusal. Each adds the variable that moves its port.
+- **The release ships it** (`/opt/backend/scripts/check-bind.sh`), for a unit that fails with
+  `Permission denied` on a server: run as the service's user. The rehearsal's first table gains
+  `getenforce`, the audit log's denials and the threshold.
+- **The bind is python3's**, which RHEL 9 (dnf's) and Ubuntu carry; without it, the repository's JDK
+  compiles and runs a probe class (the release's runtime cannot: it has no `jdk.compiler`); with
+  neither, the check says so and lets the start go on.
+
+**Why.**
+- Ports above 1023 are any user's on Linux, so `Permission denied` on 3314 or 8080 is never the
+  user's rank: it is a policy of the machine, which the process's own error never names (mysqld even
+  asks whether another server holds the port). The owner met it, and the scripts showed the raw log
+  (O-46). The first thing to know is which policy, and the check finds it in the second it takes,
+  from signals readable without root (`sysctl`, `id -Z`, `getenforce`, `/proc`).
+- **Before, not after**: a probe bind costs nothing and fails for the reason the server would. The
+  server is then never started to fail, with nothing to clean up: no pid file, no data directory
+  initialised for a MySQL that never listened.
+- **Not a capability for the processes**: `CAP_NET_BIND_SERVICE` would bind below the threshold, but
+  nothing on a development machine runs with capabilities, and on a server the units' bounding set is
+  empty by design ([01 §2](../operations/01-deploy.md#2-conventions)) and stays so. A raised threshold
+  is the machine's administrator's decision; the check tells them what it costs here.
+- **What was reproduced and what was not**: the threshold, in a network namespace of its own with the
+  whole flow run as a user who is not root for the first time, and in a Rocky Linux 9 container as uid
+  1000. This machine has no SELinux and is not WSL: those two branches are built from the documentation
+  and checked for syntax alone, which [03 §10](../development/03-build-and-run.md#10-when-something-fails)
+  says.

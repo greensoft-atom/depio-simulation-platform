@@ -253,6 +253,12 @@ and the certificate's check naming both ports. The subject matters: on a port th
 `openssl s_client` finds no certificate and still prints `Verify return code: 0 (ok)`. Each unit's log: `journalctl -u backend-platform`
 (and so on); their metrics on loopback (01 §7).
 
+A unit that is not active, and whose journal says `Permission denied` on its port: a policy of this
+machine keeps the port from its user, and `runuser -u backend -- /opt/backend/scripts/check-bind.sh 8080`
+(the unit's user and port) names it, with what lifts it
+([D-88](../architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts));
+the [rehearsal's first table](09-rehearsal.md#1-install-the-three-machines) looks before it happens.
+
 <!-- /guide-steps -->
 
 ## 12. Open the firewall

@@ -1038,6 +1038,28 @@ old empty log) and by `check-units-el9.sh` in UBI 9.5: the timer enabled, the se
 the workers as `nginx` writing the fresh `access.log` after the reopen. Found while fixing it: nothing
 alerts on a disk (runbook §5 now says what should, for plan item 100) and DOC-32.
 
+**O-46 (M), found 2026-10-26 by the owner, FIXED 2026-10-27** (plan item 106, [D-88](architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)).
+Run as a user who is not root on the owner's machine, `dev-mysql.sh` and `run-local.sh` failed with
+`Permission denied` on 3314 and 8080, and showed nothing but the servers' own errors: mysqld's, which goes
+on to ask whether another server holds the port, and the store's `bind(..) failed: Permission denied`.
+The development flow had only ever run as root on the development VM, where no policy refuses a port,
+so no run here could have met it. A port above 1023 is any user's on Linux: the refusal is a policy of
+the machine (the unprivileged-port threshold raised, a login SELinux confines, WSL's reserved ranges),
+which neither script looked for; their test of a port was a connection to it, which tells taken from
+free and nothing else. **Fixed:** `check-bind.sh` (D-88): each port bound as the servers bind and let go,
+a refusal explained with the policy found and what lifts it; run by `dev-mysql.sh`, `run-local.sh` and
+the drill before anything starts, in place of the connection test; shipped in the release for a
+server's units. Checked as a user of its own (`devtest`) in a network namespace with the threshold at
+9100: both failures reproduced first, as the owner saw them, then named; the same in Rocky Linux 9 and
+UBI 9 as uid 1000, the release's copy among them, and in UBI minimal, which has no python3, where the
+check says so and stands aside; a port in TIME_WAIT free to it as to a server; and, with the plain
+policy, the whole flow as that user for the first time: the build, the MySQL, the five processes with
+bots, a restart, the play drill; nothing else failed. Twelve mutants (the threshold rule off, the exit,
+a refusal read as free in each binder, SO_REUSEADDR off in each, the holder unnamed, each script
+ignoring the check, `run-local.sh` checking the ports of processes already running), all caught. Not
+reproduced: SELinux enforcing and WSL, which this machine cannot do; their lines are from the
+documentation ([03 §10](development/03-build-and-run.md#10-when-something-fails)).
+
 ## 7. Documentation
 
 The audit found the documents have drifted from the code in ~60 places. The six

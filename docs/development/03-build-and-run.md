@@ -41,6 +41,10 @@ made file by file can lose the files' execute bits, and then nothing runs
 (`dev-env.sh` says so). **Its path may hold letters, digits and `. _ - + @ /`
 only**: no spaces. A symbolic link without spaces to it will do.
 
+**Any user may run it, root or not**: nothing here needs root, and every port is above 1023.
+A port the machine refuses to the user all the same (`Permission denied`) is a policy of that
+machine, which the scripts name before they start anything (§10).
+
 **Everything a build, a test or a run writes is in `work/`**, beside this
 repository's `README.md`. It is never committed. Delete it to start afresh: the
 next build copies the libraries it needs from the bundle again.
@@ -195,7 +199,8 @@ messages:
 
 | What `start` says | What to do |
 |---|---|
-| `port 3314 is taken by another process` | Another program has the port. Choose another: `MYSQL_PORT=3324 ./dev-mysql.sh start`. Then give every command the same `MYSQL_PORT` (`dev-env.sh`, the tests and `run-local.sh` read it), or `export MYSQL_PORT=3324` once in the shell. VS Code's settings name 3314: change it in `.vscode/settings.json` and `.vscode/launch.json` too. `stop` and `status` find it on any port. |
+| `127.0.0.1:3314: in use (…)`, then `another port for it: MYSQL_PORT=…` | Another program has the port. Choose another: `MYSQL_PORT=3324 ./dev-mysql.sh start`. Then give every command the same `MYSQL_PORT` (`dev-env.sh`, the tests and `run-local.sh` read it), or `export MYSQL_PORT=3324` once in the shell. VS Code's settings name 3314: change it in `.vscode/settings.json` and `.vscode/launch.json` too. `stop` and `status` find it on any port. |
+| `127.0.0.1:3314: refused (Permission denied)`, and under it the policy found | A policy of this machine keeps the port from this user (ports above 1023 are any user's on Linux): the lines under it name it, the unprivileged-port threshold raised, an SELinux-confined login or WSL's reserved ranges, with the command that lifts it; or another port, as above (§10). |
 | `already runs, on 3314, not 3324` | It runs on another port than the one asked: `./dev-mysql.sh stop` first. |
 | `MySQL could not be initialised` | the first start failed; read `work/mysql/init.err`. The half-made data is removed, so the next `start` tries again. |
 
@@ -262,7 +267,8 @@ process logs to `work/run/<process>.log`.
 | arena | 127.0.0.1:9001 | `ARENA_PORT` |
 | worker | none | |
 
-A port already taken is refused, with its name. `stop` stops only processes it
+A port already taken, or one a policy of the machine refuses to this user, is named before
+anything starts, with its cause (§10). `stop` stops only processes it
 started from this checkout's release, whatever their pid files say. An arena still
 running a match drains it first, for up to eleven minutes (D-29). Give every command the same
 settings, `start` and `bots` alike. What each process's arguments mean:
@@ -463,8 +469,9 @@ here runs Unity). [client/README](../../client/README.md).
 | Stack traces and `ERROR` lines while the tests run, such as `room-1 - tick 161 failed` or `has not ticked for 10451 ms; abandoning it`, and the build still ends `--- done:` | Not failures. Tests that break something on purpose (a tick that throws, a spool that cannot be written, a room that hangs) check what the backend does then, and the backend logs it as it would in production. | Nothing. A test that fails stops the build with `[ERROR] Tests run: …, Failures: …` and its name under `[ERROR] Failures:` or `[ERROR] Errors:`, and its report is in `<module>/target/surefire-reports/`. |
 | `dev-env.sh: vendor/jdk-21/bin/java is not executable` | the copy lost the files' modes | copy again with `git clone` or `tar` |
 | `dev-env.sh: … holds a character the build cannot carry` | a space or another character in the path | move the checkout, or link to it from a path without one |
-| `port 3314 is taken by another process` | another server on the development MySQL's port | `MYSQL_PORT=<a free port>` |
-| `platform: port 8080 is taken by another process` | another program on that port | `PLATFORM_PORT=<a free port>`, and the same for every later command |
+| `127.0.0.1:3314: in use (…)`, then `another port for it: MYSQL_PORT=…` | another server on the development MySQL's port | `MYSQL_PORT=<a free port>` |
+| `127.0.0.1:8080: in use (…)`, then `another port for it: STORE_PORT, PLATFORM_PORT, …` | another program on that port | `PLATFORM_PORT=<a free port>`, and the same for every later command |
+| `127.0.0.1:3314: refused (Permission denied)` (or 6380, 8080, 8081, 9001, the drill's), then `A port above 1023 is any user's on Linux: a refusal is a policy of this machine. Found:` and the policy | Not the user's rank: a policy of this machine keeps the port from users. `check-bind.sh` names the one it finds, the unprivileged-port threshold raised above the port (`net.ipv4.ip_unprivileged_port_start`), a login SELinux confines (`user_u`, `staff_u`) with `selinuxuser_tcp_server` off, or WSL's reserved port ranges; or says it knows none ([D-88](../architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)). Reproduced here: the threshold, as a user who is not root; the SELinux and WSL lines are from the documentation. | the command under the policy (`sudo sysctl -w net.ipv4.ip_unprivileged_port_start=1024`; `sudo setsebool -P selinuxuser_tcp_server on`; ports outside Windows' ranges), or other ports: `MYSQL_PORT`, `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT`. By hand: `backend/scripts/check-bind.sh 3314 8080` |
 | `Cannot access java21-offline in offline mode` | `-o` with the bundle's settings | drop `-o` (§2) |
 | `class file has wrong version 65.0, should be 52.0`, or `release version 21 not supported` | Maven ran on Java 8: `dev-env.sh` was not sourced, or `/etc/mavenrc` won | `. ./dev-env.sh` first; it sets `MAVEN_SKIP_RC` |
 | `Could not resolve dependencies … com.jredis:j-redis-client` | the backend built before the store | `(cd j-redis-service && mvn install -DskipTests)` first, or `./build-offline.sh` |

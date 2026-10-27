@@ -3645,6 +3645,24 @@ against the stubs with the lobby's new line (not run); `build-offline.sh` clean,
 05 §11, 06 §9, api/01 and 03, the glossary, both READMEs, the retention diagram, CLAUDE.md and working-here (C-10,
 and a trap: a harness under `sh` cannot source `dev-env.sh`).
 
+#### 106. ~~A port the machine refuses, named with its policy before anything starts; the flow as a user who is not root (O-46, D-88).~~ — **done 2026-10-27**
+
+The owner's run as a user who is not root failed with `Permission denied` on 3314 and 8080, and the scripts showed the
+raw errors; everything here had run as root. `backend/scripts/check-bind.sh PORT...`: each port bound on 127.0.0.1 as the
+servers bind (SO_REUSEADDR) and let go; one in use is named with its holder, one refused with the policy of the machine
+found (`net.ipv4.ip_unprivileged_port_start` above the port; a login SELinux confines with `selinuxuser_tcp_server` off;
+WSL's reserved ranges) and what lifts it, or the `strace` and `ausearch` lines when none is known. `dev-mysql.sh`,
+`run-local.sh` (the ports of the processes it is about to start, not the running ones) and the drill run it first, in
+place of their connection test; the release ships it for a server's units; python3 binds, or the repository's JDK
+without it. Checked: a harness of 17 cases as a user of its own, `devtest`, in a network namespace with the threshold
+raised there alone (free; in use, with the holder; refused, with the cause; no python3; TIME_WAIT free; each script
+refusing with the cause and starting nothing; and the plain flow: the MySQL, the five processes, bots, start again,
+restart one, stop); Rocky 9 and UBI 9 as uid 1000 with the release's copy, UBI minimal standing aside; the play drill
+as that user; twelve mutants, all caught; `DocsLinksTest` and the tools' tests. The harness and the mutants are session
+scripts (they need root, the user and the namespace: working-here §3). Not reproduced: SELinux and WSL. Docs: D-88,
+O-46, 03 §1, §3.1, §5 and §10, the Q&A, working-here §3 (the `devtest` user and namespace) and §4 (the trap), the
+install guide §11, the rehearsal §1 (`getenforce`, the audit log, the threshold), the scripts README, CLAUDE.md.
+
 ---
 
 ### Completed 2026-09-23

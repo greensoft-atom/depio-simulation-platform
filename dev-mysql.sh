@@ -23,9 +23,8 @@ start)
         [ "$on" = "$MYSQL_PORT" ] || { echo "the development MySQL already runs, on $on, not $MYSQL_PORT:" \
                                             "$0 stop first" >&2; exit 1; }
     else
-        if (exec 3<> "/dev/tcp/127.0.0.1/$MYSQL_PORT") 2> /dev/null; then
-            echo "port $MYSQL_PORT is taken by another process: MYSQL_PORT=<a free port> $0 start" >&2; exit 1
-        fi
+        # In use, or refused by a policy of the machine: named before anything starts (D-88)
+        "$B/backend/scripts/check-bind.sh" "$MYSQL_PORT" || { echo "another port for it: MYSQL_PORT=<a free port> $0 start" >&2; exit 1; }
         mkdir -p "$D"
         if [ ! -d "$D/data" ]; then
             "$M/mysqld" --no-defaults --initialize-insecure --datadir="$D/data" --user="$(id -un)" \

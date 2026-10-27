@@ -26,6 +26,8 @@ By the [install guide](03-install-guide.md), §1 to §12 on each, with the diffe
 | `firewall-cmd --list-all-zones` | `public`: 443 and 9001 alone; `backend`: the two other machines' addresses and [05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9)'s ports | |
 | from each machine, `curl -s http://10.0.0.X:8080/health` for the two others | `{"status":"ok"}` from both | |
 | `journalctl -u backend-platform -n 20` | `the watch reads N target(s), 2 peer(s)…` and no `ERROR` | |
+| `getenforce`, then `ausearch -m avc -ts boot \| grep -c -E 'comm="(java\|mysqld\|nginx)"'` | the owner's mode (`Enforcing` is expected), and `0`: no denial for a backend process. One found: its line, and `runuser -u <the unit's user> -- /opt/backend/scripts/check-bind.sh <its port>` ([D-88](../architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)); SELinux enforcing was never seen by a check here ([05 §9](05-ports-and-firewall.md#9-what-was-checked-and-what-was-not)) | the mode; any denial, whole |
+| `sysctl net.ipv4.ip_unprivileged_port_start` | `1024`: a higher value keeps the units' ports for root, and they fail with `Permission denied` | the value |
 
 **The private network's speed**, once, from A to C: a transfer of the release tarball with `scp -v`, its
 rate noted, or `iperf3` if the owner has it. **The uplink** ([Q-1](../requirements/01-scope-and-nfrs.md#7-open-questions)):

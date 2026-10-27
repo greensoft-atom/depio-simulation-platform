@@ -91,6 +91,14 @@ another port), 6381, 8082. **The drills' ports:** 6390 and 6392 (j-redis and its
 replica), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 to 9199 (metrics
 and the admin API), 3307 to 3309 (the drills' own MySQL servers).
 
+**A user who is not root, `devtest`**, with a clone of its own in `/home/devtest/background` and a
+network namespace `devtest` (loopback alone; after a reboot, `ip netns add devtest && ip netns exec devtest
+ip link set lo up` makes it again): the flow as a user who is not root, which until item 106 had only
+ever run as root here (O-46). A command there: `ip netns exec devtest runuser -u devtest -- bash -lc 'cd
+~/background && ./run-local.sh start'`; the unprivileged-port threshold raised there alone, to reproduce
+a refusal: `ip netns exec devtest sysctl -w net.ipv4.ip_unprivileged_port_start=9100` (and back to 1024).
+The namespace has no network: the clone builds (the bundle), but the client's NuGet restore does not.
+
 **This is not the production platform.** Production is RHEL 9.x, with glibc
 2.34; this machine has glibc 2.39. Anything compiled here may need newer glibc
 symbols (2.38's, for one) and not start there: native code for the release is
@@ -99,6 +107,12 @@ image, which is RHEL 9's own userspace (plan item 80).
 
 ## 4. Traps, each met at least once
 
+- **Everything here runs as root, so a policy that refuses a port to a user never shows**: the
+  owner's `dev-mysql.sh` and `run-local.sh` failed with `Permission denied` on 3314 and 8080, which no
+  run on this VM could have met (O-46, 2026-10-26). A port above 1023 is any user's on Linux, so such a
+  refusal is the machine's policy (the threshold `net.ipv4.ip_unprivileged_port_start`, a login SELinux
+  confines, WSL's reserved ranges), which `check-bind.sh` names before anything starts (D-88). What must
+  work for a user who is not root is run as `devtest`, in its namespace (§3).
 - **A failing test reads like a plugin that could not be fetched.** Maven's last line
   after test failures is `Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:…`.
   On a clone, `build-offline.sh`'s database tests once went to 127.0.0.1:3306 and failed

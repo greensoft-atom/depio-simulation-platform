@@ -160,6 +160,9 @@ for the backend, its docs and its client.
   5005 to 5009). Nothing in `/tmp`, `~/.m2` or `/opt` is needed by a clone; the drills, which
   need .NET, are the exception (03 §7). The built-in defaults name the development MySQL too
   (O-40): a process with no `BACKEND_DB_URL`, a test with no `JDBC_URL`, and the drills.
+- **Nothing on a development machine needs root**, and everything here runs as root, so a policy that
+  refuses a port to a user never shows (O-46): what must work for a user who is not root is run as
+  `devtest`, in its network namespace (working-here §3), where the port threshold can be raised alone.
 - Push to `main`; never rewrite pushed history. Temporary files go in the session scratchpad.
 
 ## Commands
@@ -203,6 +206,7 @@ IDLEGUEST=1 TMPDIR=<scratchpad> client/headless-drill.sh play
 # firewalld, nginx, two machines, the C# client through 443 and 9001 (Docker, .NET; about ten minutes)
 backend/scripts/check-certificates.sh
 backend/scripts/check-nginx-logs.sh                 # nginx's log rotation, the release's nginx on a loopback port
+backend/scripts/check-bind.sh 3314 8080             # a port this user cannot bind, with the policy that refuses it (D-88); the dev scripts run it first
 (cd backend && scripts/check-ports-el9.sh)
 
 # The backups' own drill: the stream, dump, copy off the site, weekly proof under writes, a restore to a

@@ -85,6 +85,8 @@ if [ -x "$R/runtime/bin/java" ]; then J=${JAVA:-$R/runtime/bin/java}; else J=${J
 if [ -x "$R/mysql/bin/mysqld" ]; then MYSQLD_BIN=${MYSQLD_BIN:-$R/mysql/bin/mysqld}; PATH="$R/mysql/bin:$PATH"
 else MYSQLD_BIN=${MYSQLD_BIN:-/usr/sbin/mysqld}; fi
 DOTNET=${DOTNET:-/opt/dotnet/dotnet}
+# The drill's fixed ports, tried first: one in use, or one a policy of the machine refuses, is named (D-88)
+"$B/backend/scripts/check-bind.sh" 6390 8093 8094 9011 9195 9196 9197 9198 9199 || exit 1
 D=$(mktemp -d); mkdir -p "$D/data" "$D/spool"
 echo "logs in $D"
 # The store's jars copied, and the tools' below: a build beside a long drill deletes its target
