@@ -3637,6 +3637,43 @@ class ArenaServerTest {
 
     @Test
     @Timeout(60)
+    @DisplayName("sandbox: a power sent with the join, before the Welcome, is honoured once the player is in (T-63)")
+    void aSandboxPowerSentWithTheJoinIsHonoured() throws Exception {
+        try (ArenaServer server = new ArenaServer(tickets, 2_000f, 2_048, 20, 60, 2, 3,
+                MatchRules.open("arena-test"), o -> { })) {
+            int port = server.start(0);
+            String uid = com.backend.handoff.Ulid.generate();
+            try (TestClient a = new TestClient(port)) {
+                a.join(sandboxTicket(uid, 9653));
+                // In the slot before the ticket is claimed: the tick that admits the player finds it there, before
+                // the match, and so the sandbox, has started (T-63).
+                a.send(sandbox(ClientMessage.SANDBOX_GUARDIAN, 0));
+                Welcome.of(readReply(a));
+                RoomThread room = roomOf(server, uid);
+                java.util.concurrent.atomic.AtomicInteger guardians = new java.util.concurrent.atomic.AtomicInteger();
+                room.tickHook = () -> {
+                    var w = room.room().world();
+                    for (Connection c : room.connections()) {
+                        if (c.entityId() >= 0) {
+                            w.entities[c.entityId()].hp = w.entities[c.entityId()].maxHp;
+                        }
+                    }
+                    int n = 0;
+                    for (int i = 0; i < w.tanks.size; i++) {
+                        var t = w.entities[w.tanks.items[i]];
+                        if (t.alive && t.hunts && w.tankStats[t.id].classId == com.backend.sim.ClassTable.GUARDIAN) {
+                            n++;
+                        }
+                    }
+                    guardians.set(n);
+                };
+                waitUntil(() -> guardians.get() == 1);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(60)
     @DisplayName("sandbox: someone coming back starts the empty count again")
     void anEmptySandboxCountsAfresh() throws Exception {
         try (ArenaServer server = new ArenaServer(tickets, 2_000f, 2_048, 20, 60, 2, 3,

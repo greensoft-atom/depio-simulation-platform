@@ -163,6 +163,9 @@ for the backend, its docs and its client.
 - **Nothing on a development machine needs root**, and everything here runs as root, so a policy that
   refuses a port to a user never shows (O-46): what must work for a user who is not root is run as
   `devtest`, in its network namespace (working-here §3), where the port threshold can be raised alone.
+- **A race the owner's machine shows and this VM's cores hide is not waited for**: a test that fails in the
+  owner's build and never here is read for its window in the code, and a test written that puts the request
+  in that window by construction (T-63; working-here §4). Pinning to one CPU reproduced nothing.
 - Push to `main`; never rewrite pushed history. Temporary files go in the session scratchpad.
 
 ## Commands

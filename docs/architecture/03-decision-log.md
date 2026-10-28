@@ -2664,3 +2664,34 @@ who is not root, refused 3314 and 8080 with `Permission denied`).
   1000. This machine has no SELinux and is not WSL: those two branches are built from the documentation
   and checked for syntax alone, which [03 §10](../development/03-build-and-run.md#10-when-something-fails)
   says.
+
+### D-89 — A sandbox's request made before its sandbox plays waits for it
+
+**Decided 2026-10-27** (plan item 107; [T-63](../defects.md#4-concurrency): the owner's full build on their
+VM failed `ArenaServerTest.aSandboxSummonsOneGuardian`, no Guardian in 30 s, where this machine had passed
+it in every build).
+
+**Decision.**
+- **The room takes a sandbox request from its connection's slot only once its `Sandbox` exists**, which is
+  from the made match's start. Until then the request stays in the slot, and the first tick after the start
+  honours it. A room that is no sandbox never reads the slot: the request is never honoured, as before in
+  effect, and the connection kept ([01 §8.10](../detailed-design/01-arena.md#810-sandbox-designed-2026-10-01-plan-item-33)).
+- **Nothing else moves.** The requests are still applied before the step, and the `Sandbox` is still made at
+  the start, after the world's reset and the fresh spawns at level 1.
+
+**Why.**
+- **The window.** A sandbox's room is made at its first ticket's join and starts its match on the tick that
+  admits that player. That tick sends the Welcome from the admit, takes every pending sandbox request before
+  the step, and starts the match, making the `Sandbox`, after the step. `applySandbox` took the request first
+  and asked for the `Sandbox` after, so one in the slot between the admit and the take was taken and dropped
+  without a word. A client that sends its first power with its join, before the Welcome, has it in the slot
+  before the ticket is even claimed, and lost it anywhere, every time: the new test is that client. One that
+  sends it the moment the Welcome arrives, as the failing test does, has it in the slot a round trip later;
+  on this machine's twelve cores the room thread was past the take long before, on the owner's VM the thread
+  the Welcome woke ran first. It is the only path by which a request goes without a trace, and the one the
+  owner's log fits: the join, the request, nothing, the idle cut at 30 s.
+- **Hold, not reorder, and not earlier.** Applying the requests before the step is the design, so a level
+  set is the level the step runs with; the start after the step is where every made mode begins. Making the
+  `Sandbox` at the room's birth would apply the request in the admit tick and wipe it the same tick: the
+  start resets the world and respawns everyone at level 1, so the Guardian would be recycled and the level
+  rebuilt. Keeping the request costs a slot the connection already has, for one tick.

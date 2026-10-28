@@ -3663,6 +3663,22 @@ scripts (they need root, the user and the namespace: working-here §3). Not repr
 O-46, 03 §1, §3.1, §5 and §10, the Q&A, working-here §3 (the `devtest` user and namespace) and §4 (the trap), the
 install guide §11, the rehearsal §1 (`getenforce`, the audit log, the threshold), the scripts README, CLAUDE.md.
 
+#### 107. ~~A sandbox's request made before its sandbox plays waits for it; the owner's build on their VM (T-63, D-89).~~ — **done 2026-10-27**
+
+The owner's full build on their VM failed `ArenaServerTest.aSandboxSummonsOneGuardian`, `condition not met within 30 s`: the
+player joined, asked for a Guardian, none came, the arena cut the client as idle; every build here had passed it. From the
+tick's order, not a reproduction: the tick that admits a sandbox's first player sends the Welcome at the admit, takes each
+connection's pending sandbox request before the step, and makes the `Sandbox` only at the match's start after the step, so
+`applySandbox`, taking first and asking for the `Sandbox` after, dropped a request in the slot in that window without a word;
+a client that sends a power with its join lost it anywhere, every time. Fixed by holding: the request stays in its slot while
+the `Sandbox` does not exist, and the first tick after the start honours it; not made at the room's birth, since the start
+resets the world and would wipe what was applied. Test first, a power sent with the join before the Welcome: failed for the
+reason (30 s, no Guardian, the idle cut), passes after; three mutants (the take before the check, the `Sandbox` from birth,
+a drop while not playing) each caught; the fixed source rebuilt clean. The owner's test pinned to one CPU here, with and
+without two busy loops beside it: thirty runs passed, their interleaving not reproduced on this machine. Docs: T-63, D-89,
+01 §8.10, the arena's README, working-here §4 and CLAUDE.md (a race the owner's machine shows is read for its window, not
+waited for).
+
 ---
 
 ### Completed 2026-09-23

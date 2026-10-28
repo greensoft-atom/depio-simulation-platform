@@ -1406,7 +1406,12 @@ it ends, an operator's close and a shutdown included). A made room took its
 capacity from the roster, which a sandbox has none of: `places()` gives it a
 party's three. Where `MatchRules` and the registry asked whether a mode was
 queued, meaning made, they ask that now. Co-op's Guardian is summoned and
-enraged by the same code (`Waves`).
+enraged by the same code (`Waves`). A request in a connection's slot before the
+sandbox plays, sent with the join or in the window of the tick that admits the first
+player, waits there for the first tick after the start; it was taken and dropped
+([T-63](../defects.md#4-concurrency),
+[D-89](../architecture/03-decision-log.md#d-89--a-sandboxs-request-made-before-its-sandbox-plays-waits-for-it),
+2026-10-27).
 
 ## 9. In-room events
 

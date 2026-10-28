@@ -1868,14 +1868,22 @@ public final class RoomThread implements Runnable {
         }
     }
 
-    /** A sandbox's powers asked for, before the step as points are (01 §8.10); dropped in any other room. */
+    /**
+     * A sandbox's powers asked for, before the step as points are (01 §8.10), and only once the sandbox plays:
+     * a request from before, sent with the join or in the window of the tick that admits the first player,
+     * waits in its slot for the first tick after the start, where it was taken and dropped (T-63, D-89). A
+     * room that is no sandbox never reads the slot, so a request there is never honoured and the connection kept.
+     */
     private void applySandbox() {
+        if (sandbox == null) {
+            return;
+        }
         World world = room.world();
         for (int i = 0; i < active.size(); i++) {
             Connection c = active.get(i);
             long asked = c.takeSandboxRequest();
             int id = c.entityId();
-            if (asked != Connection.NO_SANDBOX && sandbox != null && id >= 0) {    // -1 once dead
+            if (asked != Connection.NO_SANDBOX && id >= 0) {    // -1 once dead
                 sandbox.apply(world.entities[id], (int) (asked >>> 32), (int) asked);
             }
         }

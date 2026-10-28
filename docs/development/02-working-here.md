@@ -107,6 +107,11 @@ image, which is RHEL 9's own userspace (plan item 80).
 
 ## 4. Traps, each met at least once
 
+- **A race the owner's machine shows and this machine's twelve cores hide**: the owner's full build on their
+  VM failed `ArenaServerTest.aSandboxSummonsOneGuardian`, no Guardian in 30 s, which every build here had
+  passed; pinned to one CPU with two busy loops beside it, thirty runs passed here too (T-63, 2026-10-27).
+  Do not wait for a reproduction: read the tick's order for the window the log fits, and write the test
+  that puts the request in it by construction (there, a power sent with the join, before the Welcome).
 - **Everything here runs as root, so a policy that refuses a port to a user never shows**: the
   owner's `dev-mysql.sh` and `run-local.sh` failed with `Permission denied` on 3314 and 8080, which no
   run on this VM could have met (O-46, 2026-10-26). A port above 1023 is any user's on Linux, so such a
