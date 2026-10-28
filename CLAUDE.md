@@ -162,7 +162,9 @@ for the backend, its docs and its client.
   (O-40): a process with no `BACKEND_DB_URL`, a test with no `JDBC_URL`, and the drills.
 - **Nothing on a development machine needs root**, and everything here runs as root, so a policy that
   refuses a port to a user never shows (O-46): what must work for a user who is not root is run as
-  `devtest`, in its network namespace (working-here §3), where the port threshold can be raised alone.
+  `devtest`, in its network namespace (working-here §3), where the port threshold can be raised alone. SELinux is
+  seen in a Rocky 9 guest alone (`check-selinux-el9.sh`, D-90): a confined login refuses every port above 1023 while
+  `selinuxuser_tcp_server` is off, and the grant is the login's, the boolean, a module or the mapping, never the binary's.
 - **A race the owner's machine shows and this VM's cores hide is not waited for**: a test that fails in the
   owner's build and never here is read for its window in the code, and a test written that puts the request
   in that window by construction (T-63; working-here §4). Pinning to one CPU reproduced nothing.
@@ -210,6 +212,7 @@ IDLEGUEST=1 TMPDIR=<scratchpad> client/headless-drill.sh play
 backend/scripts/check-certificates.sh
 backend/scripts/check-nginx-logs.sh                 # nginx's log rotation, the release's nginx on a loopback port
 backend/scripts/check-bind.sh 3314 8080             # a port this user cannot bind, with the policy that refuses it (D-88); the dev scripts run it first
+backend/scripts/check-selinux-el9.sh                # its SELinux branch and the three grants, in a Rocky 9 guest under QEMU, SELinux enforcing (D-90; forty minutes without KVM, ten after)
 (cd backend && scripts/check-ports-el9.sh)
 
 # The backups' own drill: the stream, dump, copy off the site, weekly proof under writes, a restore to a

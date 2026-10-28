@@ -3679,6 +3679,24 @@ without two busy loops beside it: thirty runs passed, their interleaving not rep
 01 §8.10, the arena's README, working-here §4 and CLAUDE.md (a race the owner's machine shows is read for its window, not
 waited for).
 
+#### 108. ~~The port check's SELinux branch proven in a Rocky 9 guest, the three grants tested, the exact grant named; the flow as a user who is not root again (D-90).~~ — **done 2026-10-28**
+
+The owner's platform was refused 8080 with `Permission denied` on their CentOS VM while their store bound 6380, and they
+asked for a grant for the Java process, then whether the grants could be tested as a user who is not root. This VM has
+no SELinux and no KVM, so `backend/scripts/check-selinux-el9.sh` boots a Rocky Linux 9.8 guest under QEMU in software
+emulation, SELinux enforcing, a `devel` login mapped `user_u`, python3 and OpenJDK 21 from cloud-init, and asserts each
+stage on 3314 6380 8080 8081 9001 with python3 and Java's `HttpServer`: confined with the boolean off, every bind refused
+(`name_bind` denied on `unreserved_port_t` and on the labelled `http_cache_port_t`, `transproxy_port_t`, `tor_port_t`
+alike) and `check-bind.sh` naming the policy and its remedies; permissive, every bind allowed; the module from 8080's own
+denial, 8080 allowed and the others still refused; `selinuxuser_tcp_server` on, every bind allowed, the labelled ports
+too; the login mapped `unconfined_u`, every bind allowed. So a confined login on an EL9 policy does not give "6380 bound,
+8080 refused"; the owner's own `id -Z`, `getenforce` and `ausearch` decide. `check-bind.sh` now names the exact grant
+(the module from `src=PORT`'s denial) beside the boolean and the mapping, and greps the denial by `src=PORT`. The whole
+stack from today's release also ran as `devtest`, a user who is not root, in its namespace: every port bound, bots through
+it. Docs: D-90, D-88 and O-46 amended (SELinux reproduced; WSL still from the documentation), 03 §10, the scripts README
+(`check-selinux-el9.sh`), working-here §3 (QEMU) and §4 (`ausearch` reads a piped stdin; `pgrep` without `-f` matches
+fifteen characters), CLAUDE.md.
+
 ---
 
 ### Completed 2026-09-23

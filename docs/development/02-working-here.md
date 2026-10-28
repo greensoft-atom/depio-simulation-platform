@@ -84,6 +84,7 @@ carries ([03 §1](03-build-and-run.md#1-what-you-need-and-what-the-repository-to
 | .NET 8 SDK | `/opt/dotnet` | for `client/`; NuGet.org is reachable. Not in `vendor/`: the owner chose the backend only (D-77) |
 | MySQL | 127.0.0.1:3306 | 8.0.46 from the distribution; databases `backend_dev` and `backend_test`, user `backend` / `backend-dev-password`. Used by nothing here since O-40 (2026-10-23): the tests, the drills and a run by hand use the development MySQL on 3314 |
 | Docker | `/usr/bin/docker` | other users' containers too: name ours distinctly, remove them after |
+| QEMU | `/usr/bin/qemu-system-x86_64` | 8.2, with `cloud-localds`, installed 2026-10-28 for `backend/scripts/check-selinux-el9.sh`: a Rocky 9 guest with SELinux enforcing, the only way to see SELinux from this machine (its kernel's is AppArmor, and Docker shares the kernel). No KVM here, so the guest is emulated: forty minutes the first time, ten after; its image and disk in `work/el9` (D-90) |
 | The internet | reachable | Maven Central, NuGet.org, GitHub, the vendors' downloads |
 
 **Ports taken by others:** 6379 (a valkey server, not ours: start j-redis on
@@ -107,6 +108,10 @@ image, which is RHEL 9's own userspace (plan item 80).
 
 ## 4. Traps, each met at least once
 
+- **`ausearch` reads a piped stdin as its input**: a script fed to `bash -s` over ssh lost its own tail to the
+  first `ausearch` in it, which then found no denials and let the rest never run (2026-10-28, D-90). Run such
+  a script from a file with stdin closed (`bash cmd.sh < /dev/null`). And **`pgrep` without `-f` matches at
+  most fifteen characters of a name**: `pgrep qemu-system-x86_64` finds nothing; `pgrep -f` it.
 - **A race the owner's machine shows and this machine's twelve cores hide**: the owner's full build on their
   VM failed `ArenaServerTest.aSandboxSummonsOneGuardian`, no Guardian in 30 s, which every build here had
   passed; pinned to one CPU with two busy loops beside it, thirty runs passed here too (T-63, 2026-10-27).

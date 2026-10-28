@@ -22,6 +22,7 @@ Every setting a script or unit reads is also in the
 | [`rotate-nginx-logs.sh`](#rotate-nginx-logssh) | Logs | yes | `backend-nginx-logs.timer`, nightly, on every machine |
 | [`check-nginx-logs.sh`](#check-nginx-logssh) | Logs | no | hand, on a machine with a release and curl |
 | [`check-bind.sh`](#check-bindsh) | Ports | yes | `dev-mysql.sh`, `run-local.sh` and the drill, before they start anything; hand, on a server whose unit says `Permission denied` on its port |
+| [`check-selinux-el9.sh`](#check-selinux-el9sh) | Ports | no | hand, on a machine with QEMU: `check-bind.sh`'s SELinux branch and the three grants, in a Rocky 9 guest with SELinux enforcing (D-90) |
 | [`binlog-stream.sh`](#binlog-streamsh) | Backups | yes | `backend-binlog-stream.service`, always on |
 | [`backup-mysql.sh`](#backup-mysqlsh) | Backups | yes | `backend-mysql-backup.timer`, nightly |
 | [`record-backup.sh`](#record-backupsh) | Backups | yes | the three scripts that record |
@@ -165,7 +166,29 @@ runuser -u backend -- /opt/backend/scripts/check-bind.sh 8080    on a server, as
 | | |
 |---|---|
 | Needs | python3 (RHEL 9 and Ubuntu carry it) or, in the source tree, `vendor/jdk-21`; `ss`, for who holds a port in use |
-| Runs | anywhere, in a second. Checked as a user who is not root in a network namespace with the threshold raised (both refusals the owner met reproduced first, O-46), in Rocky Linux 9 as uid 1000, and with a port in TIME_WAIT, free to it as to a server; the SELinux and WSL branches are from the documentation, not run (plan item 106) |
+| Runs | anywhere, in a second. Checked as a user who is not root in a network namespace with the threshold raised (both refusals the owner met reproduced first, O-46), in Rocky Linux 9 as uid 1000, and with a port in TIME_WAIT, free to it as to a server; the SELinux branch in a Rocky 9 guest with SELinux enforcing and a confined login, where each remedy it names was seen to work ([`check-selinux-el9.sh`](#check-selinux-el9sh), plan item 108); the WSL branch is from the documentation, not run |
+
+### check-selinux-el9.sh
+
+Where SELinux is real: a Rocky Linux 9 guest under QEMU, SELinux enforcing, with a login it confines
+(`devel`, `user_u`), on 3314, 6380, 8080, 8081 and 9001 with python3 and Java 21's `HttpServer`, the owner's
+symptom ([D-90](../../docs/architecture/03-decision-log.md#d-90--the-port-checks-selinux-branch-is-proven-in-a-rocky-9-guest-and-names-the-exact-grant)).
+Confined with the boolean off, every bind is refused and `check-bind.sh` must name the policy and its three
+remedies; permissive, every bind allowed; the module from 8080's own denial, 8080 allowed and the others still
+refused; the boolean on, every bind allowed, the labelled ports too; the login mapped unconfined, every bind
+allowed and `check-bind.sh` "free for this user". Each stage is asserted; the guest is powered off at the end
+and its disk kept, so a rerun skips the image and the packages.
+
+```
+backend/scripts/check-selinux-el9.sh          0: ALL PASSED; 1: a FAIL line with the stage's output
+EL9_SSH_PORT=2224 backend/scripts/check-selinux-el9.sh    another host port for the guest's ssh
+```
+
+| | |
+|---|---|
+| Needs | `qemu-system-x86_64`, `qemu-img`, `cloud-localds` (Ubuntu: `qemu-system-x86`, `qemu-utils`, `cloud-image-utils`), ssh, and the network for the image (650 MB, once, checked against Rocky's `CHECKSUM`) and the guest's dnf |
+| Runs | about forty minutes without KVM the first time (the guest is emulated), ten after; everything in `work/el9` |
+| Writes | `work/el9`: the image, the guest's disk, its seed, key and console log |
 
 ## Backups and recovery
 

@@ -2661,9 +2661,11 @@ who is not root, refused 3314 and 8080 with `Permission denied`).
   is the machine's administrator's decision; the check tells them what it costs here.
 - **What was reproduced and what was not**: the threshold, in a network namespace of its own with the
   whole flow run as a user who is not root for the first time, and in a Rocky Linux 9 container as uid
-  1000. This machine has no SELinux and is not WSL: those two branches are built from the documentation
+  1000. This machine has no SELinux and is not WSL: those two branches were built from the documentation
   and checked for syntax alone, which [03 §10](../development/03-build-and-run.md#10-when-something-fails)
-  says.
+  said. The SELinux branch was proven on 2026-10-28 in a Rocky 9 guest
+  ([D-90](#d-90--the-port-checks-selinux-branch-is-proven-in-a-rocky-9-guest-and-names-the-exact-grant));
+  WSL's stays from the documentation.
 
 ### D-89 — A sandbox's request made before its sandbox plays waits for it
 
@@ -2695,3 +2697,39 @@ it in every build).
   `Sandbox` at the room's birth would apply the request in the admit tick and wipe it the same tick: the
   start resets the world and respawns everyone at level 1, so the Guardian would be recycled and the level
   rebuilt. Keeping the request costs a slot the connection already has, for one tick.
+
+### D-90 — The port check's SELinux branch is proven in a Rocky 9 guest, and names the exact grant
+
+**Decided 2026-10-28** (plan item 108; after [D-88](#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)
+and [O-46](../defects.md#6-operations): the owner's platform refused 8080 with `Permission denied` on their
+CentOS VM while their store bound 6380, and they asked for a grant for the Java process).
+
+**Decision.**
+- **`backend/scripts/check-selinux-el9.sh`** boots a Rocky Linux 9 guest under QEMU, SELinux enforcing, with a
+  login it confines (`user_u`), and proves there, with python3 and Java 21's `HttpServer` on 3314, 6380, 8080,
+  8081 and 9001: confined with the boolean off, every bind refused and `check-bind.sh` naming the policy and its
+  remedies; permissive, every bind allowed; the module from 8080's own denial, 8080 allowed alone; the boolean on,
+  every bind allowed, the labelled ports too; the login mapped unconfined, every bind allowed. This machine has no
+  SELinux and no KVM, so the guest runs in software emulation: about forty minutes the first time, ten after, the
+  image and the guest's disk kept in `work/el9`.
+- **`check-bind.sh` names the exact grant** beside the boolean and the unconfined mapping: the policy module
+  built from the port's own denial, `ausearch -m avc -ts recent | grep 'src=PORT' | audit2allow -M backend-dev`
+  and `semodule -i`, and greps the denial by `src=PORT`, which every `name_bind` record carries.
+
+**Why.**
+- **There is no grant for a process on Linux for a port above 1023**: the kernel asks nothing of it, and
+  `cap_net_bind_service` covers the ports below the threshold alone. Where SELinux refuses, the grant goes to the
+  login's domain, which the binary in a home directory never changes; the three ways are the boolean, a module
+  and the mapping, and the owner should see them tested rather than read.
+- **What the guest showed, against the reading D-88 was written from**: RHEL 9's policy refuses a confined login
+  every port above 1023 while `selinuxuser_tcp_server` is off, the unlabelled (`unreserved_port_t`: 3314, 6380)
+  and the labelled (`http_cache_port_t` 8080, `transproxy_port_t` 8081, `tor_port_t` 9001) alike, and allows
+  them all with it on, the labelled ones too; `audit2allow` itself says the denial is the boolean's. So a confined
+  login does not produce the owner's "6380 bound, 8080 refused" on an EL8 or EL9 policy, and their box is one of
+  those: the vendored MySQL needs glibc 2.28, which CentOS 7 does not have, and it ran there. Their machine's own
+  signals (`id -Z`, `getenforce`, `ausearch`) decide, not the reading.
+- **A guest, not a container**: SELinux is the host kernel's, and this VM's is AppArmor's; Docker cannot show it.
+  QEMU is a tool on the development machine, as Docker and .NET are, not a service of the backend's.
+- **Two traps met**: `ausearch` reads a piped stdin as its input, so a script fed to `bash -s` over ssh lost its
+  own tail to it (the check runs the guest's commands from a file with stdin closed); and `pgrep` without `-f`
+  matches at most fifteen characters of a name, so `pgrep qemu-system-x86_64` finds nothing.

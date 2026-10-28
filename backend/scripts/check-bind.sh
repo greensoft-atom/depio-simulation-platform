@@ -84,7 +84,9 @@ explain() {
                 echo "  SELinux is enforcing and this login is confined, $ctx: a confined user listens only with the boolean on, and it reads: $b"
                 echo "    lift it:   sudo setsebool -P selinuxuser_tcp_server on"
                 echo "    or make the login unconfined:   sudo semanage login -m -s unconfined_u $(id -un)   then log in again"
-                echo "    the refusal itself:   sudo ausearch -m avc -ts recent | grep name_bind" ;;
+                echo "    or allow this port alone, from its own denial (the exact grant, seen in a Rocky 9 guest):"
+                echo "      sudo ausearch -m avc -ts recent | grep 'src=$port' | audit2allow -M backend-dev && sudo semodule -i backend-dev.pp"
+                echo "    the refusal itself:   sudo ausearch -m avc -ts recent | grep 'src=$port'" ;;
         esac
     fi
     if [ -e /proc/sys/fs/binfmt_misc/WSLInterop ] || grep -qi microsoft /proc/sys/kernel/osrelease 2> /dev/null; then

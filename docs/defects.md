@@ -1058,8 +1058,13 @@ policy, the whole flow as that user for the first time: the build, the MySQL, th
 bots, a restart, the play drill; nothing else failed. Twelve mutants (the threshold rule off, the exit,
 a refusal read as free in each binder, SO_REUSEADDR off in each, the holder unnamed, each script
 ignoring the check, `run-local.sh` checking the ports of processes already running), all caught. Not
-reproduced: SELinux enforcing and WSL, which this machine cannot do; their lines are from the
-documentation ([03 §10](development/03-build-and-run.md#10-when-something-fails)).
+reproduced then: SELinux enforcing and WSL, which this machine cannot do; their lines were from the
+documentation ([03 §10](development/03-build-and-run.md#10-when-something-fails)). **SELinux reproduced
+2026-10-28** in a Rocky 9.8 guest under QEMU with a confined login (`check-selinux-el9.sh`,
+[D-90](architecture/03-decision-log.md#d-90--the-port-checks-selinux-branch-is-proven-in-a-rocky-9-guest-and-names-the-exact-grant)):
+every port above 1023 refused while the boolean is off, the labelled ones too; the check names the policy; the
+boolean, the module from the port's own denial and the unconfined mapping each seen to lift it, and the check
+now names the module as the exact grant. WSL stays from the documentation.
 
 ## 7. Documentation
 
