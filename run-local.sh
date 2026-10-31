@@ -10,14 +10,15 @@
 #   ./run-local.sh status
 #
 # Ports, each tried before the start (in use, or refused by a policy of the machine, it is named, D-88):
-# STORE_PORT 6380, PLATFORM_PORT 8080, GATEWAY_PORT 8081, ARENA_PORT 9001. DEBUG=1: each Java process waits for no one but listens for a debugger, the platform on
+# STORE_PORT 6380, PLATFORM_PORT 8080, GATEWAY_PORT 8081, ARENA_PORT 9001. ARENA_ADVERTISE_HOST, 127.0.0.1: the
+# host the arena tells clients to dial, which run-front.sh sets to its own (D-91). DEBUG=1: each Java process waits for no one but listens for a debugger, the platform on
 # 5005, the worker 5006, the gateway 5007, the arena 5008, the store 5009; it then runs on vendor/'s
 # JDK, as the release's runtime has no debugger agent.
 set -euo pipefail
 . "$(dirname "$0")/dev-env.sh"
 L=$WORK/run
 STORE_PORT=${STORE_PORT:-6380} PLATFORM_PORT=${PLATFORM_PORT:-8080}
-GATEWAY_PORT=${GATEWAY_PORT:-8081} ARENA_PORT=${ARENA_PORT:-9001}
+GATEWAY_PORT=${GATEWAY_PORT:-8081} ARENA_PORT=${ARENA_PORT:-9001} ARENA_ADVERTISE_HOST=${ARENA_ADVERTISE_HOST:-127.0.0.1}
 export BACKEND_DB_URL=${BACKEND_DB_URL:-"jdbc:mysql://127.0.0.1:$MYSQL_PORT/backend_dev?useSSL=false&allowPublicKeyRetrieval=true"}
 export BACKEND_DB_USER=${BACKEND_DB_USER:-backend} BACKEND_DB_PASSWORD=${BACKEND_DB_PASSWORD:-backend-dev-password}
 ALL="store platform worker gateway arena"
@@ -60,7 +61,7 @@ start_one() {
                   # port, map size, max players, shapes, rooms, store, name, match seconds (0: continuous),
                   # spool, bind host, advertised host (backend/README, Running it)
                   args=(-XX:+UseZGC -XX:+ZGenerational -cp "$R/lib/arena/*" com.backend.arena.ArenaMain
-                        "$ARENA_PORT" 5700 150 1500 4 127.0.0.1 "$STORE_PORT" arena-1 0 "$L/spool" 127.0.0.1 127.0.0.1) ;;
+                        "$ARENA_PORT" 5700 150 1500 4 127.0.0.1 "$STORE_PORT" arena-1 0 "$L/spool" 127.0.0.1 "$ARENA_ADVERTISE_HOST") ;;
         *)        echo "no process $p: $ALL" >&2; exit 2 ;;
     esac
     java=("$R/runtime/bin/java")

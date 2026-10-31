@@ -278,6 +278,8 @@ Each script's own settings are in [scripts/README](../scripts/README.md). Those 
 | `WORK` | `dev-env.sh`, so every script beside it | `work/` in the checkout: Maven's settings and local repository, `TMPDIR`, the development MySQL, a run by hand (D-80) |
 | `MYSQL_PORT` | `dev-env.sh`, `dev-mysql.sh`, `run-local.sh` | 3314, the development MySQL's |
 | `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT`, `DEBUG` | `run-local.sh` | 6380, 8080, 8081, 9001; `DEBUG=1` for debugger ports 5005 to 5009 |
+| `ARENA_ADVERTISE_HOST` | `run-local.sh` | 127.0.0.1: the host the arena tells clients to dial; `run-front.sh` sets it to its address (D-91) |
+| `FRONT_PORT`, `FRONT_MATCH_PORT` | `run-front.sh` | 8443 (the player API and the lobby), 9443 (matches): the site's 443 and 9001 for a run by hand (D-91) |
 | `IMAGE` | `check-release-el9.sh` | `registry.access.redhat.com/ubi9/ubi-minimal:9.5` |
 | `RELEASE`, `JREDIS_JAR`, `JREDIS_CLI_JAR`, `TOOLS_JAR`, `JAVA`, `MYSQLD_BIN`, `DOTNET`, `TLS`, `FAILOVER`, `MYSQL_FAILOVER`, `BOTS`, `ARENA_OPTS`, `SOAK`, `STAYS`, `SAMPLE_EVERY`, `JUDGE_FROM`, `WORKERS`, `TAKEOVER`, `DRAIN_AFTER`, `BACKEND_DB_PASSWORD` | `client/headless-drill.sh` | its header |
 
@@ -328,6 +330,7 @@ primary's port; the copy off the site leaves C by SSH, to the host the owner nam
 | 3314 | the development MySQL, `vendor/`'s 8.4 (`backend_test`, `backend_dev`) | `dev-mysql.sh`: the tests, the benchmarks, `run-local.sh` and both drills, which start it when it is not running; the processes' and the tests' built-in defaults (D-80, O-40). Nothing here uses a machine's own 3306 |
 | 6380, 8080, 8081, 9001 | j-redis, platform, gateway, arena | `run-local.sh`, and the by-hand example in [backend/README](../README.md#running-it) |
 | 5005 to 5009 | the debugger, one per process | `DEBUG=1 ./run-local.sh start` |
+| 8443, 9443 | the release's nginx in front of a run by hand, on every address: the API and the lobby, matches | `run-front.sh` (D-91) |
 
 All bind `127.0.0.1`. 6381 and 8082 belong to other processes on the development machine.
 

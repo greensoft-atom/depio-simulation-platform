@@ -30,7 +30,7 @@ a team, a tournament).
 
 | Variable | Default | Set it to |
 |---|---|---|
-| `baseUrl` | `http://127.0.0.1:8080` | the platform, or `https://<the site's address>` through the front's nginx, trusting the backend's root, `ca.pem` ([operations/06](../operations/06-certificates.md)): in Postman, Settings, Certificates, CA certificates; with newman, `--ssl-extra-ca-certs ca.pem` |
+| `baseUrl` | `http://127.0.0.1:8080` | the platform; from another machine, `https://<address>:8443` through `run-front.sh`'s nginx ([development/03 §5.0](../development/03-build-and-run.md#50-clients-on-other-machines-the-front)); or `https://<the site's address>` through the front's nginx, trusting the backend's root, `ca.pem` ([operations/06](../operations/06-certificates.md)): in Postman, Settings, Certificates, CA certificates; with newman, `--ssl-extra-ca-certs ca.pem` |
 | `adminUrl` | `http://127.0.0.1:9120` | the admin API, through an SSH tunnel |
 | `adminToken` | | the admin secret (`/etc/backend/credentials/admin-token`) |
 | `password` | `example-password-1` | any, 8 to 128 characters |

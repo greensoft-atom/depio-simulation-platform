@@ -2733,3 +2733,54 @@ CentOS VM while their store bound 6380, and they asked for a grant for the Java 
 - **Two traps met**: `ausearch` reads a piped stdin as its input, so a script fed to `bash -s` over ssh lost its
   own tail to it (the check runs the guest's commands from a file with stdin closed); and `pgrep` without `-f`
   matches at most fifteen characters of a name, so `pgrep qemu-system-x86_64` finds nothing.
+
+### D-91 — A run by hand gets the site's front of its own, from the release's nginx and configuration
+
+**Decided 2026-10-31** (plan item 109; the owner, after `./build-offline.sh` and `./run-local.sh start` on their
+VM: how to start nginx for a client on another machine, then: the release already has nginx and its
+configuration, and a script of its own beside `run-local.sh`).
+
+**Decision.**
+- **`./run-front.sh start [address]`**, at the checkout's root beside `run-local.sh`, puts the release's own
+  nginx (`nginx/sbin/nginx`) in front of a run by hand, as the site's front is put in front of a machine
+  (D-82): the player API and the lobby over HTTPS on `FRONT_PORT`, 8443, which the site serves on 443; matches
+  over TLS on `FRONT_MATCH_PORT`, 9443, which the site serves on 9001, routed by the arena's TLS name. Both
+  ports are above 1023, so the user who runs `run-local.sh` runs this too; 9001 stays the local arena's.
+  `stop` and `status` complete it. The address is the one clients dial: the argument, else the machine's first
+  (`hostname -I`).
+- **Its configuration is the release's**, `nginx-conf/`, the five files a server installs, rewritten into
+  `work/front/conf` for one machine and no root: the paths to `work/front` (configuration, logs, pid, temporary
+  files, the certificate) and to the release (`mime.types`); every upstream to this run's ports, the first
+  `server` of each group kept and the others' dropped; the stream map to its first name alone, to the local
+  arena; the listen ports; `server_name` the address; `user` dropped (`nobody` when root runs it), the
+  open-file limit and IPv6's listen lines too (the soft limit of 1 024 a user has; a machine without IPv6), and
+  1 024 connections a worker; the temporary files' paths, which the build fixed under `/var/cache`, to `work/front`.
+  Production's rate limits, timeouts, TLS settings and routes stay as they are. **What a rewrite missed is
+  refused**: a production path, address or port left in the result stops the start, naming the line, so a
+  release whose configuration moved cannot give a front that reads `/etc/backend` or proxies to `10.0.0.x`.
+  `nginx -t` then checks the result.
+- **The certificate is the backend's own CA's** (`private-ca.sh`, operations/06): a root made once in
+  `work/front/ca` and kept, so a client given `ca.pem` keeps trusting it; a certificate for the address and the
+  arena's name, issued again when it does not name the address given.
+- **The arena announces the front.** `run-local.sh` takes `ARENA_ADVERTISE_HOST` (default 127.0.0.1, as before)
+  in place of its fixed address, and passes the environment as it always has, so `start` restarts the local
+  arena announcing the address, `FRONT_MATCH_PORT` and the name (`BACKEND_ADVERTISE_PORT`,
+  `BACKEND_ADVERTISE_TLS_NAME`), and `stop` restarts it announcing 127.0.0.1 again. A grant then sends a client,
+  and `./run-local.sh bots`, through nginx, as on the site.
+- **It needs the run**: `start` refuses while the platform or the gateway is not running from this checkout,
+  and names `./run-local.sh start`. Both ports are tried first with `check-bind.sh` (D-88). The firewall is the
+  machine's administrator's: the script prints the `firewall-cmd` line and runs nothing as root.
+
+**Why.**
+- **A client on another machine had no way in.** Every process of a run by hand listens on 127.0.0.1 and the
+  arena tells clients to dial 127.0.0.1, which is right for the bots and the drills, and nothing else. The
+  site's way in is nginx, and the release carries it, built for RHEL 9, with production's configuration: a
+  front from those two is the site's shape on one machine, with nothing new to keep in step.
+- **Rewritten, not written again.** A second configuration, written for development, would drift from
+  production's without a sign; this one changes when production's does, and the refusal says when a rewrite
+  no longer applies.
+- **A script beside `run-local.sh`, not a command of it**: the owner's choice. It changes `run-local.sh` by one
+  variable, and drives it only through its own commands (`status`, `restart arena`).
+- **8443 and 9443, not 443 and 9001**: a port below 1024 needs root or a lowered threshold, and 9001 is the
+  local arena's. A client takes the arena's port from its grant, so 9443 costs a client nothing; the API's and
+  the lobby's port is the client's setting.

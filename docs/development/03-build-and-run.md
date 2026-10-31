@@ -56,6 +56,7 @@ next build copies the libraries it needs from the bundle again.
 | `tmp/` | temporary files of Maven, the tests and MySQL (`TMPDIR`, `java.io.tmpdir`) | all of them |
 | `mysql/` | the development MySQL's data, socket and logs (§3) | `dev-mysql.sh` |
 | `run/` | a run by hand: each process's log and pid, the store's files, the arena's spool (§5) | `run-local.sh` |
+| `front/` | the front of a run by hand: nginx's configuration, rewritten from the release's, its logs and pid, the certificate and its root (§5.0) | `run-front.sh` |
 
 **`dev-env.sh` is the environment**, and each script beside it starts by reading it:
 - `JAVA_HOME` and `PATH` on `vendor/jdk-21` and `vendor/maven-3.9`, whatever the machine's `JAVA_HOME` says;
@@ -264,7 +265,7 @@ process logs to `work/run/<process>.log`.
 | store (j-redis) | 127.0.0.1:6380 | `STORE_PORT` |
 | platform (the API) | 127.0.0.1:8080, `GET /health` | `PLATFORM_PORT` |
 | gateway (the lobby) | 127.0.0.1:8081, `ws://…/lobby` | `GATEWAY_PORT` |
-| arena | 127.0.0.1:9001 | `ARENA_PORT` |
+| arena | 127.0.0.1:9001 | `ARENA_PORT`; `ARENA_ADVERTISE_HOST`, 127.0.0.1, the host it tells clients to dial, which `run-front.sh` sets (§5.0) |
 | worker | none | |
 
 A port already taken, or one a policy of the machine refuses to this user, is named before
@@ -273,6 +274,34 @@ started from this checkout's release, whatever their pid files say. An arena sti
 running a match drains it first, for up to eleven minutes (D-29). Give every command the same
 settings, `start` and `bots` alike. What each process's arguments mean:
 [backend/README](../../backend/README.md#running-it).
+
+### 5.0 Clients on other machines: the front
+
+Everything above listens on 127.0.0.1. For a client on another machine, `run-front.sh` puts the
+release's own nginx in front of the run, as the site's front is put in front of a machine
+([D-91](../architecture/03-decision-log.md#d-91--a-run-by-hand-gets-the-sites-front-of-its-own-from-the-releases-nginx-and-configuration)):
+
+```bash
+./run-local.sh start
+./run-front.sh start                 # or: ./run-front.sh start 192.168.56.10, the address clients dial
+./run-front.sh status
+./run-front.sh stop                  # the arena announces 127.0.0.1 again
+```
+
+| | Here | On the site |
+|---|---|---|
+| The player API and the lobby | `https://<address>:8443/v1/...`, `wss://<address>:8443/lobby` | 443 |
+| Matches | `<address>:9443`, TLS, routed by the arena's name | 9001 |
+| The configuration | the release's `nginx-conf/`, rewritten into `work/front/conf` | `/etc/backend/nginx` |
+| The certificate | `work/front/tls`, from a root of its own, `work/front/ca/ca.pem` | operations/06 |
+
+Give a client `work/front/ca/ca.pem` to trust: `curl --cacert ca.pem`, Postman's Settings,
+Certificates, CA certificates, the headless client's `--trust`. `start` restarts the local
+arena so that it announces the address and 9443, and `./run-local.sh bots` then plays
+through nginx too. It needs the platform and the gateway running, tries both ports first
+(§10), and prints the firewall's line rather than running it; `FRONT_PORT` and
+`FRONT_MATCH_PORT` move them. A port below 1024 needs root, so the site's 443 and 9001 are
+not used here.
 
 ### 5.1 Trying each interface
 
@@ -472,6 +501,12 @@ here runs Unity). [client/README](../../client/README.md).
 | `127.0.0.1:3314: in use (…)`, then `another port for it: MYSQL_PORT=…` | another server on the development MySQL's port | `MYSQL_PORT=<a free port>` |
 | `127.0.0.1:8080: in use (…)`, then `another port for it: STORE_PORT, PLATFORM_PORT, …` | another program on that port | `PLATFORM_PORT=<a free port>`, and the same for every later command |
 | `127.0.0.1:3314: refused (Permission denied)` (or 6380, 8080, 8081, 9001, the drill's), then `A port above 1023 is any user's on Linux: a refusal is a policy of this machine. Found:` and the policy | Not the user's rank: a policy of this machine keeps the port from users. `check-bind.sh` names the one it finds, the unprivileged-port threshold raised above the port (`net.ipv4.ip_unprivileged_port_start`), a login SELinux confines (`user_u`, `staff_u`) with `selinuxuser_tcp_server` off, or WSL's reserved port ranges; or says it knows none ([D-88](../architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)). Reproduced here: the threshold, as a user who is not root, and SELinux, in a Rocky 9 guest with a confined login, where the three remedies were each seen to work (`backend/scripts/check-selinux-el9.sh`, [D-90](../architecture/03-decision-log.md#d-90--the-port-checks-selinux-branch-is-proven-in-a-rocky-9-guest-and-names-the-exact-grant)); the WSL lines are from the documentation. | the command under the policy (`sudo sysctl -w net.ipv4.ip_unprivileged_port_start=1024`; `sudo setsebool -P selinuxuser_tcp_server on`, or the module from the port's own denial, or the login mapped `unconfined_u`; ports outside Windows' ranges), or other ports: `MYSQL_PORT`, `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT`. By hand: `backend/scripts/check-bind.sh 3314 8080` |
+| `the platform or the gateway is not running from this checkout's release: ./run-local.sh start first` | `run-front.sh start` with no run to stand in front of | `./run-local.sh start`, then again, with the same `PLATFORM_PORT`, `GATEWAY_PORT` and `ARENA_PORT` given to both |
+| `127.0.0.1:8443: in use (…)`, then `another port for it: FRONT_PORT or FRONT_MATCH_PORT` | another program on the front's port | `FRONT_PORT=<a free port>` (or `FRONT_MATCH_PORT`), the same for `status` and `stop` |
+| `the release's nginx configuration has what this script cannot rewrite for this machine (D-91):` and the lines | the release's `nginx-conf/` gained a path, an address, a port or an upstream that `run-front.sh` does not rewrite; nothing was started | teach the rewrite the new line ([D-91](../architecture/03-decision-log.md#d-91--a-run-by-hand-gets-the-sites-front-of-its-own-from-the-releases-nginx-and-configuration)); the generated files are left in `work/front/conf.new` to read |
+| On the client: `curl: (60) SSL certificate problem: unable to get local issuer certificate` | the client does not trust the front's root | give it `work/front/ca/ca.pem`: `--cacert`, Postman's CA certificates, the headless client's `--trust` |
+| On the client: `no alternative certificate subject name matches` | it dialled an address the certificate does not name | `./run-front.sh stop`, then `start <the address it dials>`: the certificate is issued again, the root kept |
+| On the client: the connection times out | the machine's firewall, or a VM on NAT networking that only its host can reach | the `firewall-cmd` line `run-front.sh start` printed; a bridged network or a port forward for the VM |
 | `Cannot access java21-offline in offline mode` | `-o` with the bundle's settings | drop `-o` (§2) |
 | `class file has wrong version 65.0, should be 52.0`, or `release version 21 not supported` | Maven ran on Java 8: `dev-env.sh` was not sourced, or `/etc/mavenrc` won | `. ./dev-env.sh` first; it sets `MAVEN_SKIP_RC` |
 | `Could not resolve dependencies … com.jredis:j-redis-client` | the backend built before the store | `(cd j-redis-service && mvn install -DskipTests)` first, or `./build-offline.sh` |

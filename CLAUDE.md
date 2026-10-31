@@ -187,6 +187,7 @@ for the backend, its docs and its client.
 # The whole backend from the release, on the development MySQL; DEBUG=1 for debugger ports
 ./run-local.sh start && ./run-local.sh bots && ./run-local.sh stop
 ./run-local.sh restart platform                     # one alone; stop arena likewise (operations/07)
+./run-front.sh start [address] && ./run-front.sh stop   # the release's nginx in front of it, for clients elsewhere: 8443 API+lobby, 9443 matches; work/front/ca/ca.pem (D-91)
 
 # Client core tests (look for "Total tests:")
 cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test --logger "console;verbosity=normal"

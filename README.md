@@ -41,7 +41,7 @@ machine layout, the protocols and the failover paths are drawn in
 | [`java21-offline/`](java21-offline/README.md)   | Every third-party library the build needs, for a machine with no network                                                                                                                                                                                                                 |
 | [`vendor/`](vendor/VERSIONS.md)                 | What the backend is built with and runs on, committed ready to use: the JDK (Temurin 21), Maven 3.9, MySQL 8.4 LTS, nginx 1.30 compiled for RHEL 9 and the sources it is compiled from, and the scripts that refresh them (D-77)                                                         |
 | [`build-offline.sh`](build-offline.sh)          | Builds j-redis, the backend with every test and the release from the repository alone, with no network: `vendor/`'s JDK and Maven, `java21-offline` as the only repository, the tests on the development MySQL |
-| [`dev-env.sh`](dev-env.sh), [`dev-mysql.sh`](dev-mysql.sh), [`run-local.sh`](run-local.sh) | The environment every build and run uses (sourced), the development MySQL (`vendor/`'s 8.4 on 127.0.0.1:3314), and the whole backend run from the release, with a debugger if asked (D-80) |
+| [`dev-env.sh`](dev-env.sh), [`dev-mysql.sh`](dev-mysql.sh), [`run-local.sh`](run-local.sh), [`run-front.sh`](run-front.sh) | The environment every build and run uses (sourced), the development MySQL (`vendor/`'s 8.4 on 127.0.0.1:3314), the whole backend run from the release, with a debugger if asked (D-80), and the release's nginx in front of it for clients on other machines (D-91) |
 | `work/`                                         | Not in the repository (ignored): all a build, a test or a run writes, Maven's local repository and the development MySQL among it; deleting it costs only the next build's copying |
 | [`.vscode/`](.vscode/)                          | VS Code's settings for the Java extensions, and the debugger's configurations ([05 — VS Code](docs/development/05-vscode.md)) |
 | `jdk21/`, `vscode/`                             | Not in the repository since 2026-10-19 (ignored), kept outside git by the owner: a JDK 21 RPM and `.tar.gz` with the Java 21.0.12 API documentation, and VS Code 1.140.0's RPM. Used by no script: the build's JDK is `vendor/jdk-21`. The history still holds them (commits 8d6be59 and c45b538) |
@@ -99,6 +99,7 @@ own Java and MySQL are neither used nor changed, and everything written goes in
 ./build-offline.sh            # j-redis, the backend with every test, the release; SKIP_TESTS=1 without tests
 ./run-local.sh start          # the store, the platform, a worker, the gateway, an arena, from the release
 ./run-local.sh bots           # twenty bots play through it; then ./run-local.sh stop
+./run-front.sh start          # the release's nginx in front, for clients elsewhere: https://<address>:8443
 . ./dev-env.sh                # then mvn and java in this shell: vendor/'s, offline
 ```
 

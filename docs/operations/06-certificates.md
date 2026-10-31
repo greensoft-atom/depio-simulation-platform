@@ -184,7 +184,9 @@ under 30 days. The runbook's routine lists the renewal ([02 §6](02-runbook.md#6
   and connect to it directly, without nginx: that tests the arena's own TLS, which the site does
   not use.
 - **On a developer's machine**, `private-ca.sh root` and `issue` make a test CA in any directory,
-  for `127.0.0.1` and the arena's name.
+  for `127.0.0.1` and the arena's name. `run-front.sh` does it in `work/front` for the address
+  clients dial, keeps the root, and issues the certificate again when the address changes
+  ([D-91](../architecture/03-decision-log.md#d-91--a-run-by-hand-gets-the-sites-front-of-its-own-from-the-releases-nginx-and-configuration)).
 
 ## 10. When something goes wrong
 

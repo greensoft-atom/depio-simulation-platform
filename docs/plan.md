@@ -3697,6 +3697,27 @@ it. Docs: D-90, D-88 and O-46 amended (SELinux reproduced; WSL still from the do
 (`check-selinux-el9.sh`), working-here §3 (QEMU) and §4 (`ausearch` reads a piped stdin; `pgrep` without `-f` matches
 fifteen characters), CLAUDE.md.
 
+#### 109. ~~A run by hand gets the site's front of its own, from the release's nginx and configuration (D-91).~~ — **done 2026-10-31**
+
+The owner asked how to start nginx for a client on another machine after `./build-offline.sh` and `./run-local.sh start`, then
+pointed out that the release already carries nginx and its configuration, and asked for a script of its own. `./run-front.sh
+start [address] | stop | status`: the release's `nginx/sbin/nginx` with the release's `nginx-conf/` rewritten into
+`work/front/conf` (paths, upstreams to this run's ports, the stream map's first name to the local arena, listen ports,
+`server_name`, what needs root or IPv6, the temporary paths the build fixed under `/var/cache`); production's rate limits,
+timeouts, TLS and routes kept; what a rewrite missed refused, naming the line. The API and the lobby on 8443, matches on 9443,
+routed by the arena's name; a root of the backend's own CA made once in `work/front/ca` and kept, the certificate issued again
+when the address changes. `run-local.sh` takes `ARENA_ADVERTISE_HOST`; `start` restarts the arena announcing the front, `stop`
+restarts it announcing 127.0.0.1, each decided by the arena process's environment, not its log, which says so half a second
+after its port answers (found by the harness: a stop in that half second left the arena announcing the front). Checked as
+`devtest`, a user who is not root, with a Rocky 9 curl and the C# headless client as outside clients: 23 harness cases (the
+API, a guest, the lobby's upgrade, 404 elsewhere, refused without `ca.pem`; the bots and the headless client's `play` through
+9443 by the arena's name; status; a second start; a port in use; another address; two drifts of the release's configuration;
+other ports; stop; a stop in the half second; nginx killed then started for another address); sixteen mutants, each caught for
+its reason (one first written wrong, caught by a shell error, written again). The harness and the mutants are session scripts
+(they need `devtest` and Docker). Not checked: a client across a real firewall, since this VM's could not be opened; the
+client ran on the host's network, dialling the Docker bridge's address. Docs: D-91, 03 §2, §5, §5.0 and §10, the API guide's
+`baseUrl`, operations/06 §9, the root README, the deploy README's variables and ports, CLAUDE.md.
+
 ---
 
 ### Completed 2026-09-23
