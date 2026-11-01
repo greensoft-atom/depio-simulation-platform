@@ -3778,12 +3778,19 @@ changed: recorded outputs and dated records; figures only a run could check (ban
 front's nginx allocation, which D-82 already calls unmeasured). Not run: Mermaid's rendering, so the semicolon in
 diagrams/01 that may end its statement there was written as a comma rather than proven to break.
 
-#### 112. A team change sent in the snapshot, so a captured dominator shows its new team (P-60).
+#### 112. ~~A team change sent in the snapshot, so a captured dominator shows its new team (P-60).~~ — **done 2026-11-01**
 
-Found by item 111's review: `SnapshotEncoder` never sets `F_TEAM`, though both reference readers read it, and
-domination changes a dominator's team in place (`Room`). Test first: a dominator captured in a client's view, the next
-snapshot carrying `TEAM` with the new team; then the encoder sends it when the team differs from the one sent
-(`ClientView`), no protocol change.
+Found by item 111's review: `SnapshotEncoder` never set `F_TEAM`, though both reference readers read it, and
+domination changes a dominator's team in place (`Room`), so a client already looking at it kept the old team. Test
+first (`SnapshotEncoderTest.teamChangesAreSent`, through the reference client): it failed, the client still on team 1;
+then `ClientView` keeps the team last sent and the encoder sends `TEAM` when it differs, in the format's place, no
+protocol change. Mutants: the mask never set, the create recording no team, an update recording the old one, each
+caught; the team compared for every kind, not only tanks and units, equivalent (the create records every entity's
+team, and nothing changes a shape's), so that guard was taken out. Checked: the arena's tests and `tools`'
+(`ReadmeTestListsTest` found the README's count, made 24); the C# core already applies a `TEAM` update
+(`EveryUpdateFieldIsApplied`). Live drill: `play` and `domination` on a release with the fix, as a regression; the
+drill captures no dominator, so a capture over the network is not drilled. Not measured: the change adds a byte to a
+frame only when a team changes, once a capture, nothing a tick could show.
 ---
 
 ### Completed 2026-09-23

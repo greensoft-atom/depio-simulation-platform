@@ -66,6 +66,7 @@ public final class ClientView {
     private final int[] pendingHp = new int[Wire.MAX_HANDLES];
     private final int[] pendingLevel = new int[Wire.MAX_HANDLES];
     private final int[] pendingClass = new int[Wire.MAX_HANDLES];
+    private final int[] pendingTeam = new int[Wire.MAX_HANDLES];
     private final int[] pendingFlags = new int[Wire.MAX_HANDLES];
     private final int[] pendingTick = new int[Wire.MAX_HANDLES];
 
@@ -287,6 +288,14 @@ public final class ClientView {
         return pendingClass[h];
     }
 
+    /**
+     * A team as last sent, in its create or since. A dominator's changes in place when it is captured, and the
+     * client kept the team of its create until it left the view (P-60).
+     */
+    int sentTeam(int h) {
+        return pendingTeam[h];
+    }
+
     /** A tank's flags as last sent; 0 after its create, which has no field for them. */
     int sentFlags(int h) {
         return pendingFlags[h];
@@ -326,7 +335,7 @@ public final class ClientView {
         return tick - ackMovedAt;
     }
 
-    void recordPending(int h, int x, int y, int angle, int hp, int level, int classId, int flags,
+    void recordPending(int h, int x, int y, int angle, int hp, int level, int classId, int team, int flags,
                        int tick) {
         pendingX[h] = x;
         pendingY[h] = y;
@@ -334,6 +343,7 @@ public final class ClientView {
         pendingHp[h] = hp;
         pendingLevel[h] = level;
         pendingClass[h] = classId;
+        pendingTeam[h] = team;
         pendingFlags[h] = flags;
         pendingTick[h] = tick;
     }

@@ -1276,7 +1276,8 @@ neutral, so it shoots both teams (§8.3); a team's once captured, so it shoots
 the other's and not its own, and its own bullets do not hurt it.
 
 **It is captured, never killed.** A blow that would kill it, a bullet's or a
-body's, from a tank a player drives makes it that tank's team's, at full health;
+body's, from a tank a player drives makes it that tank's team's, at full health (a client that sees it
+is sent its new team, P-60);
 the kill is logged and paid as any tank kill of level 45, so the capturer's team
 counts the kill. A blow from anything else, another dominator's bullet or a
 shape's body, leaves it as it was, at full health: dominators do not take each

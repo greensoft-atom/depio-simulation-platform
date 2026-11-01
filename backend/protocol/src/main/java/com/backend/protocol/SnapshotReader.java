@@ -24,9 +24,9 @@ import java.util.List;
  *
  * <h2>Reads every field the format defines</h2>
  *
- * Including the update field the arena does not currently send, TEAM (CLASS it does, on a promotion). A
- * decoder that only handled what today's encoder emits would desynchronise the first time one was switched
- * on, and the mask exists precisely so that it can be.
+ * Including the update fields the arena sends rarely: TEAM, when a team changes in place (a dominator
+ * captured, P-60), and CLASS, on a promotion. A decoder that only handled what today's encoder emits would
+ * desynchronise the first time one was switched on, and the mask exists precisely so that it can be.
  */
 public final class SnapshotReader {
 

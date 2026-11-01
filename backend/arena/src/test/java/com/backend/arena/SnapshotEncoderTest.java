@@ -449,6 +449,41 @@ class SnapshotEncoderTest {
     }
 
     @Test
+    @DisplayName("a team changed in place reaches the client, as a captured dominator's does (P-60)")
+    void teamChangesAreSent() {
+        Room r = populated(17L, 12, 0);
+        World w = r.world();
+        ClientView v = new ClientView(w.tanks.items[0], w.capacity(), 100_000f, 100_000f, 30);
+        SnapshotEncoder enc = new SnapshotEncoder();
+        SnapshotWriter out = new SnapshotWriter(2048);
+        com.backend.protocol.ClientWorld client = new com.backend.protocol.ClientWorld();
+
+        enc.encode(w, v, 1, out, NO_EVENTS);
+        client.apply(out.array(), 0, out.length());
+        v.acknowledge(1);
+        int other = w.tanks.items[1];
+        int h = v.handleOf(other);
+        assertThat(client.entity(h).team).as("in the create").isEqualTo(w.entities[other].team);
+        enc.encode(w, v, 2, out, NO_EVENTS);
+        assertThat(new SnapshotReader().decode(out.array(), 0, out.length()).updates())
+                .as("no team sent while none changed").noneMatch(u -> u.has(Wire.F_TEAM));
+        client.apply(out.array(), 0, out.length());
+        v.acknowledge(2);
+
+        // Domination's capture: the entity's team set in place, as Room does for a dominator.
+        w.entities[other].team = 2;
+        enc.encode(w, v, 3, out, NO_EVENTS);
+        client.apply(out.array(), 0, out.length());
+        v.acknowledge(3);
+        // It used to keep the team it was created with until it left the view and came back.
+        assertThat(client.entity(h).team).as("in an update").isEqualTo(2);
+
+        enc.encode(w, v, 4, out, NO_EVENTS);
+        assertThat(new SnapshotReader().decode(out.array(), 0, out.length()).updates())
+                .as("and sent once, not every frame").noneMatch(u -> u.handle() == h && u.has(Wire.F_TEAM));
+    }
+
+    @Test
     @DisplayName("a bullet's create carries its radius, as big as a Destroyer's (protocol 3)")
     void bulletsCarryTheirSize() {
         Room r = populated(14L, 2, 0);

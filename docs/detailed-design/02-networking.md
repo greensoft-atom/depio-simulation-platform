@@ -288,6 +288,7 @@ varint  createCount
 varint  updateCount
         [ handle, u8 fieldMask,
           POS(dpos dx, dy) | ANGLE(u8) | HP(u8) | LEVEL(u8) | CLASS(u8) | TEAM(u8) | FLAGS(u8) ]*
+        (TEAM when a team changes in place, a dominator captured: P-60)
 
 varint  eventCount
         [ u8 type, varint payloadBytes, payload ]*

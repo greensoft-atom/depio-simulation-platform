@@ -271,7 +271,7 @@ public final class SnapshotEncoder {
             // Flags as 0: the create has no field for them, so a tank that has any is sent them
             // in the next frame's update.
             view.recordPending(h, Wire.quantisePos(e.x), Wire.quantisePos(e.y),
-                    angle, hp, level, classId, 0, tick);
+                    angle, hp, level, classId, e.team, 0, tick);
             view.mark(h, tick);
             n++;
         }
@@ -336,6 +336,10 @@ public final class SnapshotEncoder {
             if (classId != view.sentClass(h)) {
                 mask |= Wire.F_CLASS;
             }
+            // A team changes in place for a dominator captured in domination (P-60): sent then, and only then.
+            if (e.team != view.sentTeam(h)) {
+                mask |= Wire.F_TEAM;
+            }
             if (flags != view.sentFlags(h)) {
                 mask |= Wire.F_FLAGS;
             }
@@ -361,10 +365,13 @@ public final class SnapshotEncoder {
             if ((mask & Wire.F_CLASS) != 0) {
                 out.u8(classId);
             }
-            if ((mask & Wire.F_FLAGS) != 0) {           // after TEAM, never sent
+            if ((mask & Wire.F_TEAM) != 0) {
+                out.u8(e.team);
+            }
+            if ((mask & Wire.F_FLAGS) != 0) {
                 out.u8(flags);
             }
-            view.recordPending(h, qx, qy, angle, hp, level, classId, flags, tick);
+            view.recordPending(h, qx, qy, angle, hp, level, classId, e.team, flags, tick);
             n++;
         }
         out.patchCount(slot, n);
