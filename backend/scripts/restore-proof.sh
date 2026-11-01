@@ -17,8 +17,9 @@ DUMPS=$1
 BINLOGS=$2
 SOURCE=${3:-backend}
 SCRATCH=${4:-backend_proof}
-: "${SOURCE_CNF:?SOURCE_CNF must name the backup account's option file}"
-: "${SCRATCH_CNF:?SCRATCH_CNF must name the scratch server's option file}"
+# No apostrophe in these words: one inside "${...}" pairs with the next, and the second check vanished (O-65).
+: "${SOURCE_CNF:?SOURCE_CNF must name the option file of the backup account}"
+: "${SCRATCH_CNF:?SCRATCH_CNF must name the option file of the scratch server}"
 HERE=$(dirname "$0")
 BEGAN=$(date +%s)
 LOG=$(mktemp)

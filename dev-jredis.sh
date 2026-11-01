@@ -15,7 +15,7 @@ jar() { ls "$J"/j-redis-server/target/j-redis-server-*-all.jar 2> /dev/null | he
 running() {
     local pid cmd
     pid=$(cat "$L/store.pid" 2> /dev/null) && cmd=$(tr '\0' ' ' 2> /dev/null < "/proc/$pid/cmdline") \
-        && [[ $cmd == *"$B/"*j-redis-server* ]]
+        && [[ $cmd == *"$J/j-redis-server/target/j-redis-server-"* ]]   # its own build's: not a drill's j-redis (O-86)
 }
 taken() { (exec 3<> "/dev/tcp/127.0.0.1/$1") 2> /dev/null; }
 
@@ -50,7 +50,7 @@ stop)
     if running; then echo "j-redis: still running after 30 s, pid $(cat "$L/store.pid")" >&2; exit 1; fi
     rm -f "$L/store.pid"; echo "j-redis: stopped" ;;
 restart)
-    "$0" stop && exec "$0" start ;;
+    "$B/dev-jredis.sh" stop && exec "$B/dev-jredis.sh" start ;;     # by path: bash dev-jredis.sh gave a name alone (O-86)
 status)
     if running; then echo "j-redis: running, pid $(cat "$L/store.pid"), on 127.0.0.1:$STORE_PORT"
     else echo "j-redis: not running"; exit 1; fi ;;

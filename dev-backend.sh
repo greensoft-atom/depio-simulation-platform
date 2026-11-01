@@ -27,12 +27,13 @@ declare -A DEBUG_PORT=([platform]=5005 [worker]=5006 [gateway]=5007 [arena]=5008
 declare -A PORT=([platform]=$PLATFORM_PORT [gateway]=$GATEWAY_PORT [arena]=$ARENA_PORT)
 
 R=$(ls -d "$B"/backend/target/release/backend-*/ 2> /dev/null | head -1 || true); R=${R%/}
-# Running, and ours: a pid left from before a reboot may be another process's by now.
-# No pipe: under pipefail, a reader that ends first fails the writer, and so the test.
+# Running, and ours: a pid left from before a reboot may be another process's by now, another of the four's
+# among them, so the process's own jars (O-86). No pipe: under pipefail, a reader that ends first fails the
+# writer, and so the test.
 running() {
     local pid cmd
     pid=$(cat "$L/$1.pid" 2> /dev/null) && cmd=$(tr '\0' ' ' 2> /dev/null < "/proc/$pid/cmdline") \
-        && [[ $cmd == *"$B/backend/target/release/"* ]]
+        && [[ $cmd == *"$B/backend/target/release/"*"/lib/$1/"* ]]
 }
 taken() { (exec 3<> "/dev/tcp/127.0.0.1/$1") 2> /dev/null; }
 # The processes named that are not running: what they need first, then their ports. The store for all four, the
@@ -91,13 +92,20 @@ start_one() {
     echo "$p: up${port:+ on 127.0.0.1:$port}$said$dbg (log $L/$p.log)"
 }
 
+# Stopped, or a failure: the arena drains its made matches first, up to its unit's twelve minutes (01 §8.6), and
+# a stop that gave up at 30 s said so and went on, a restart then finding it running (O-86).
 stop_one() {
-    local p=$1
-    running "$p" || { echo "$p: not running"; return; }
+    local p=$1 wait=30
+    running "$p" || { echo "$p: not running"; return 0; }
+    [ "$p" = arena ] && wait=720
     kill "$(cat "$L/$p.pid")"
-    for _ in $(seq 30); do running "$p" || break; sleep 1; done
-    if running "$p"; then echo "$p: still running after 30 s, pid $(cat "$L/$p.pid")" >&2
-    else rm -f "$L/$p.pid"; echo "$p: stopped"; fi
+    for i in $(seq "$wait"); do
+        running "$p" || break
+        [ "$i" = 5 ] && [ "$p" = arena ] && echo "arena: draining its made matches, up to 12 minutes"
+        sleep 1
+    done
+    if running "$p"; then echo "$p: still running after $wait s, pid $(cat "$L/$p.pid")" >&2; return 1; fi
+    rm -f "$L/$p.pid"; echo "$p: stopped"
 }
 
 # Refuses a name that is not one of the four; run in the script's own shell, so that its exit is the script's.
@@ -155,11 +163,13 @@ start)
     for p in $procs; do start_one "$p"; done ;;
 stop)
     shift; known "$@"
-    for p in $(named "$STOP_ORDER" "$@"); do stop_one "$p"; done ;;
+    rc=0
+    for p in $(named "$STOP_ORDER" "$@"); do stop_one "$p" || rc=1; done
+    exit $rc ;;
 restart)
     shift; known "$@"
     [ -n "$R" ] || { echo "no release in backend/target/release: $0 build first" >&2; exit 1; }
-    for p in $(named "$STOP_ORDER" "$@"); do stop_one "$p"; done
+    for p in $(named "$STOP_ORDER" "$@"); do stop_one "$p" || exit 1; done
     mkdir -p "$L"
     procs=$(named "$ALL" "$@")
     check_start $procs

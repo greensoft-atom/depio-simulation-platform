@@ -14,12 +14,16 @@
 set -u
 if [ "${1:-}" != --inside ]; then
     HERE=$(cd "$(dirname "$0")" && pwd)
-    REL=$(cd "${1:-$(ls -d "$HERE"/../target/release/backend-*/ | head -1)}" && pwd)
+    REL=${1:-$(ls -d "$HERE"/../target/release/backend-*/ 2> /dev/null | head -1)}
+    # Checked: cd "" stays where it is, and the caller's directory was taken for the release (O-79).
+    [ -n "$REL" ] && REL=$(cd "$REL" && pwd) || { echo "no release: scripts/make-release.sh first, or name one" >&2; exit 1; }
     IMAGE=${IMAGE:-registry.access.redhat.com/ubi9/ubi-init:9.5}
     NAME="backend-check-units-$$"
     docker run -d --rm --privileged --name "$NAME" -e REL_NAME="$(basename "$REL")" \
         -v "$REL:/opt/$(basename "$REL"):ro" -v "$HERE/../deploy:/deploy:ro" -v "$HERE/check-units-el9.sh:/check.sh:ro" \
         "$IMAGE" > /dev/null || exit 1
+    # Stopped on every way out, an interrupt too: the docker client exits, and the container went on (O-78).
+    trap 'docker stop "$NAME" > /dev/null 2>&1' EXIT
     sleep 5
     docker exec -e REL_NAME="$(basename "$REL")" "$NAME" bash /check.sh --inside
     rc=$?
@@ -217,19 +221,23 @@ systemctl start backend-arena@a1 backend-worker@c1
 active backend-arena@a1 30 && active backend-worker@c1 30 && ok "named, they start" || bad "the start by name"
 
 echo "--- the watch (04 §12, D-86): the worker stopped, TargetDown listed by the admin API within three minutes, gone once it is back"
-admin() { curl -s -H "Authorization: Bearer admintoken" "http://127.0.0.1:9120/admin/$1"; }
+# An answer, or nothing: an admin API that does not answer listed no alert, and so the end of one passed (O-79).
+admin() { curl -sf -H "Authorization: Bearer admintoken" "http://127.0.0.1:9120/admin/$1" || echo "(no answer)"; }
+# The worker's: another target down would have passed for it.
+down() { admin alerts | grep -q '"name":"TargetDown","labels":{[^}]*127.0.0.1:9102'; }
 systemctl stop backend-worker@c1
 T0=$(date +%s)
-until admin alerts | grep -q '"name":"TargetDown"'; do [ $(( $(date +%s) - T0 )) -gt 180 ] && break; sleep 5; done
-admin alerts | grep -q '"name":"TargetDown"' \
+until down; do [ $(( $(date +%s) - T0 )) -gt 180 ] && break; sleep 5; done
+down \
     && ok "TargetDown listed after $(( $(date +%s) - T0 )) s: $(admin alerts | grep -o '"labels":{[^}]*}' | head -1)" \
     || { bad "no TargetDown listed after 180 s: $(admin alerts | cut -c1-200)"; journalctl -u backend-platform --no-pager | grep -iE "watch|ALERT" | tail -5; }
 journalctl -u backend-platform --no-pager | grep -q "ALERT firing TargetDown" && ok "and in the platform's journal" || bad "no ALERT line in the platform's journal"
 systemctl start backend-worker@c1
 T0=$(date +%s)
-while admin alerts | grep -q '"name":"TargetDown"'; do [ $(( $(date +%s) - T0 )) -gt 60 ] && break; sleep 5; done
-admin alerts | grep -q '"name":"TargetDown"' && bad "TargetDown still listed 60 s after the worker's start" \
-    || ok "resolved within $(( $(date +%s) - T0 )) s of the worker's start"
+while down || ! admin alerts | grep -q '"alerts":\['; do [ $(( $(date +%s) - T0 )) -gt 60 ] && break; sleep 5; done
+if down; then bad "TargetDown still listed 60 s after the worker's start"
+elif ! admin alerts | grep -q '"alerts":\['; then bad "the admin API does not answer: $(admin alerts | cut -c1-120)"
+else ok "resolved within $(( $(date +%s) - T0 )) s of the worker's start"; fi
 
 echo "--- backend-nginx-logs: nginx's logs rotated as the unit runs it (D-85, O-45)"
 systemctl enable backend-nginx-logs.timer 2> /dev/null && systemctl list-timers --all --no-pager | grep -q backend-nginx-logs \

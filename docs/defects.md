@@ -1189,6 +1189,174 @@ store answers. Test first (`ArenaAnnouncerTest`, a store started on the client's
 failed with that exception; the arena now hears a command and is announced once the store is up. The mutant that
 never subscribes is caught. Under item 114's load after the fix, no arena restarted in three runs.
 
+**The shell scripts' review, 2026-11-01** (plan item 116, the owner: check all shell scripts again, carefully).
+Every tracked script, read line by line against what documents it by five readers apart, each finding then checked
+against the code here before anything was changed, the false ones closed: O-63 to O-89, DOC-35 and DOC-36. What
+each fix is proved by is said with it; "by reading" where the window is a race this machine cannot make.
+
+**O-63 (H), found 2026-11-01, FIXED the same day** (plan item 116, D-95). The promotions took any error reaching the
+old primary for its absence: `promote-mysql.sh` read an empty answer as "does not answer", so a wrong password, a
+certificate's name, or the old primary given without its port (its host taken for the port) promoted past a live
+one, with `--demote-old` too, which then promoted without fencing; `promote-store.sh` the same for any answer but
+`primary`, `NOAUTH` among them, and a promotion's client that timed out ended the script without a word. Two
+writable primaries, the old one's pools writing to it for up to 28 minutes (D-29). **Fixed:** no connection or no
+reply in time is no answer, anything else is a server that is up and refused by `--old-is-down`; `--demote-old`
+refuses an old primary it cannot reach or fence; `host:port` checked. Test first: `check-promote.sh`, both scripts
+against stand-in clients, failed on nine cases; the MySQL failover drill refuses, live, the port left out, the
+account refused to each mode, and an unreachable old primary to `--demote-old`, touching neither server, where the
+script before this promoted the replica on each. The store's two failover drills, killed and handed over, pass.
+
+**O-64 (M), found 2026-11-01, FIXED the same day** (plan item 116, D-95). A planned MySQL handover could lose the
+old primary's last transactions: the fence set `offline_mode` with `super_read_only`, which closed the replica's own
+link with the rest (seen on two servers of 8.4: the dump thread gone at once, the reconnect refused, "The server is
+currently in offline mode"), so what the link had not carried was never received, the promotion waited only for what
+had been, and the old primary's rebuild by clone erased the rest. **Fixed:** read-only first, then the replica waits
+until it has applied all the old primary executed, then `offline_mode`. Test first: `check-promote.sh` (the order);
+the drill makes the window by construction, the replica's receiver stopped while the old primary commits and started
+5 s into the handover, and requires every transaction the old one executed on the new: it passes, and the mutant that
+closes the old primary at once fails it, "the new primary lacks transactions the old one executed".
+
+**O-65 (M), found 2026-11-01, FIXED the same day** (plan item 116). `restore-proof.sh` never checked `SCRATCH_CNF`:
+the apostrophes in the two `${…:?…}` messages paired up and made both one command (bash 5.2 here and RHEL's 5.1.8
+alike). Run by hand without it, the proof went on and dropped and restored `backend_proof` on whatever server the
+client's defaults reach. **Fixed:** words without apostrophes. Test first: the backup drill's proof without
+`SCRATCH_CNF` went on to the client's default socket; now refused before anything.
+
+**O-66 (M), found 2026-11-01, FIXED the same day** (plan item 116). The nightly dump's retention pruned the binlog
+copies by the oldest dump's start: a dump kept from another series, a primary's before a failover whose binlogs
+number far beyond the new one's, pruned every copy of the new series, the new dump's own start among them, and the
+run said it succeeded. **Fixed:** the earliest start of all the dumps kept. Test first: the backup drill, a dump
+starting at `bin.000450` beside the new: five copies pruned, now none it needs. The runbook's failover says to set the
+old dumps aside too.
+
+**O-67 (L), found 2026-11-01, FIXED the same day** (plan item 116). A dump that recorded no binlog position took its
+final name before the check refused it, and became the proof's newest and, later, retention's oldest, failing each
+night until it aged out. **Fixed:** read in the partial file. Test first: the backup drill with a stand-in mysqldump.
+
+**O-68 (L), found 2026-11-01, FIXED the same day** (plan item 116). The copy off the site skipped only the binlog
+open when it began: one opened since, by a rotation while the dumps were encrypted, went out half-written for an
+hour. **Fixed:** every binlog from that one on is skipped. By reading: the rotation cannot be timed here.
+
+**O-69 (M, latent until Q-53), found 2026-11-01, FIXED the same day** (plan item 116). The copy off the site
+mirrors this machine with `rsync --delete`: with the dumps gone or set aside (a lost backup disk, the one machine's
+restore), the next push deleted the host's dumps and said it succeeded. **Fixed:** no push without a dump to copy,
+recorded as a failure. Test first: the backup drill, a push from an empty dump directory emptied the host.
+
+**O-70 (L), found 2026-11-01, FIXED the same day** (plan item 116). The proof's floor was read through a here-string
+of a command substitution, whose failure set errexit nothing to stop: a failed query was no floor, and the check it
+bounds passed. **Fixed:** assigned, then read. By reading.
+
+**O-71 (L), found 2026-11-01, FIXED the same day** (plan item 116). A restore from the source's own binlogs, the dump
+and the position in one file, took every file after it too (`sed`'s range ran to the index's end), and a rotation
+after the position was read put the stop position on the wrong file. **Fixed:** by name, with `awk`. By reading.
+
+**O-72 (L), found 2026-11-01, FIXED the same day** (plan item 116). `rotate-nginx-logs.sh` kept a day's more logs
+than its unit promises (`-mtime +14` matches fifteen days and more), and a step that failed, a compression, exited
+0, so the timer's unit never showed it. **Fixed:** `-mmin`, and exit 1 on any failed step. Test first:
+`check-nginx-logs.sh`, a file an hour past 14 days kept; a stand-in gzip that fails, exit 0.
+
+**O-73 (L), found 2026-11-01, FIXED the same day** (plan item 116). The root's end was never weighed: the chain nginx
+serves does not carry it, so a certificate outliving its root was installed and `--check`ed as valid for a year, and
+`private-ca.sh issue` signed one. **Fixed:** the root counted wherever expiry is (`CA_FILE`), and `issue` refuses a
+certificate that would outlive its root. Test first: `check-certificates.sh`, a 30-day root, and one of 5 days under a
+398-day certificate.
+
+**O-74 (L), found 2026-11-01, FIXED the same day** (plan item 116). A name was checked with `openssl -checkhost`,
+which falls back to the subject's CN when the SAN has no DNS name: a certificate naming an arena in its CN alone was
+installed, and devices, which read the SAN alone, refuse it. **Fixed:** a host name needs a DNS name in the SAN. Test
+first: `check-certificates.sh`.
+
+**O-75 (M), found 2026-11-01, FIXED the same day** (plan item 116). A certificate file that held the key as well
+passed every check and was installed as given, readable by all, `/etc/backend/tls/fullchain.pem` with the site's
+private key in it. **Fixed:** the certificates alone are split from it and installed. Test first: `check-certificates.sh`.
+
+**O-76 (L), found 2026-11-01, FIXED the same day** (plan item 116). `install-certificate.sh`: a first install that
+nginx refused left the refused files and said the previous ones were back; a failure between writing the certificate
+and the key left the new certificate beside the old key, which nginx refuses at its next start; and every install
+kept the replaced key and certificate, `.previous`, for good. **Fixed:** both written before either moves; with
+nothing before, nothing left; the `.previous` removed once nginx accepts. Test first: `check-certificates.sh`.
+
+**O-77 (L), found 2026-11-01, FIXED the same day** (plan item 116). With `server_name _` (or none) and the arenas'
+map, the certificate was checked against the arenas' names alone and nothing was installed for nginx, exit 0.
+**Fixed:** refused, naming the setting. Test first: `check-certificates.sh`.
+
+**O-78 (L), found 2026-11-01, FIXED the same day** (plan item 116). `check-ports-el9.sh`, `check-install-guide-el9.sh`
+and `check-units-el9.sh` left their privileged container running when interrupted: the trap removed the work
+directory alone. **Fixed:** the container stopped in the trap. By reading; each check run to its end since.
+
+**O-79 (L), found 2026-11-01, FIXED the same day** (plan item 116). Claims the checks made and did not check: the
+firewall's commands run a second time "changed nothing" (printed), the system's MySQL "still running beside ours"
+(printed), the SELinux guest's "every bind allowed" (the count printed), the watch's alert resolved (passed when the
+admin API answered nothing, and any `TargetDown` was the worker's); and two that could fail or pass wrongly: `head
+-60` ending the install guide's steps once their output passed sixty matching lines (30 today), and an empty
+restore block run as a restore. `check-units-el9.sh` and `check-release-el9.sh` took the caller's directory for a
+release when there was none. **Fixed:** each asserted. The install guide's, the units', the ports', the
+release's and the SELinux guest's checks pass with them; the restore block's assertion fails the mutant whose markers are renamed; the two
+with no release refuse.
+
+**O-80 (L), found 2026-11-01, FIXED the same day** (plan item 116). `headless-drill.sh`: an interrupted drill left its
+probe, its soak's loops, the bots and a drain waiting, at the next drill's ports; `WATCH=1` with `BOTS` was skipped
+(an array of the same name); the load's MySQL figures read the lowest mysqld's pid, here the machine's own on 3306;
+a process that died at its start, a worker that never started and no bot connected each passed; a failed clone hung
+it; two lines said what had not happened; ports 9193, 9194 and each mode's own were neither tried nor listed; and
+the watch's check, once it ran with `BOTS`, passed on the arena's `TargetDown` (stopped for its report), not the
+worker's it had killed. **Fixed:** each. Shown: a SIGTERM to a soak left the bots' client and two of its loops
+running, now nothing; `WATCH=1` with `BOTS` runs, on the worker's own alert; the failover drills pass.
+
+**O-81 (L), found 2026-11-01, FIXED the same day** (plan item 116). `unity-check.sh` failed silent when the build's log
+named no error (no SDK, a killed build), and left its temporary directory when javac failed; it and
+`unity-package.sh`, and `check-ports-el9.sh`, took the .NET on PATH, here SDK 10, which restored the core with its own
+packs, where every document names /opt/dotnet's 8. **Fixed:** the log's end and a FAILED line; /opt/dotnet first. Test
+first: the check with no SDK, silent; both scripts run.
+
+**O-82 (L), found 2026-11-01, FIXED the same day** (plan item 116). `check-nginx-logs.sh` printed "no signal sent"
+without checking it, and its stop gave nginx 0.3 s. **Fixed:** checked, and nginx waited for.
+
+**O-83 (L), found 2026-11-01, FIXED the same day** (plan item 116). `check-bind.sh` explained the highest port
+refused alone, so a raised threshold went unnamed beside a confined login; tried 127.0.0.1 alone, so a listener on one
+other address was "free" to nginx on all of them; and told root refused a port below 1024 to run as root. **Fixed:**
+the threshold named for every refused port below it, SELinux's grant still for the highest, as the guest's check
+holds it (explaining the lowest instead, first written, moved that grant to another port, and the SELinux guest
+caught it); `BIND=0.0.0.0` for dev-nginx.sh; the missing capability named. Shown: the threshold for two ports, as
+`devtest` in its namespace; a listener on this machine's address called free, now in use; root without
+`CAP_NET_BIND_SERVICE`; the SELinux guest's check, all passing with the fix. The threshold beside SELinux by
+reading: the guest's threshold is not raised.
+
+**O-84 (L), found 2026-11-01, FIXED the same day** (plan item 116). `make-release.sh` recorded HEAD for a release made
+from a tree that differed from it, wrote an empty COMMIT when git failed, and installed j-redis without `clean`, so a
+resource deleted from its sources could ship. **Fixed:** `git describe --dirty`, written only when it answers; `clean`.
+Shown: this tree's release, `b278ea0…-dirty`.
+
+**O-85 (M), found 2026-11-01, FIXED the same day** (plan item 116). `dev-env.sh`: a `JDBC_URL` it had set, sourced
+again for another `MYSQL_PORT` (the documents' remedy when 3314 is taken), stayed, so the build's tests went to the
+server on the first port and wiped its `backend_test`; a relative `WORK` broke the build; a link to the checkout
+gave each script the path it was reached by, so one did not find another's processes; and its loop variable `f`
+overwrote the caller's (it did this session's own). **Fixed:** each. Shown, the version before against this: the
+second port's URL, `WORK` made absolute, the checkout's own path through a link, the caller's `f` kept.
+
+**O-86 (L), found 2026-11-01, FIXED the same day** (plan item 116). `dev-backend.sh` took any of the release's
+processes for the one a pid file names (a stale `platform.pid` with the arena's pid stopped the arena), as
+`dev-jredis.sh` took a drill's j-redis for its own; a stop gave up on the arena, which drains for up to 11 minutes,
+at 30 s and said so with exit 0, a restart then finding it running; `bash <script> restart` called a name that is no
+command; `run-local.sh status` exited 0 with everything down. **Fixed:** each. Shown with stand-in processes, the
+version before against this: the stale pid's arena left alone (it was killed), a 40 s drain waited for (given up at
+30 s, exit 0), `bash dev-jredis.sh restart` restarting (exit 127), status exit 1.
+
+**O-87 (L), found 2026-11-01, FIXED the same day** (plan item 116). `vendor/update.sh` deleted the committed Maven,
+MySQL and sources before their downloads were fetched and checked, the documented way of moving a version (the
+checksum left empty) among them, and kept a failed download in its cache; `vendor/build-nginx.sh` replaced the
+committed nginx before checking it, with tools from the host its header says it does not need. **Fixed:** fetched and
+checked first; stripped and checked in the container. By reading: no download here.
+
+**O-88, found 2026-11-01, CLOSED as not a defect** (plan item 116). `set-version.sh` leaves the backend's
+`jredis.version`: the backend names the j-redis it builds against, a choice of its own. And `promote-store.sh` raises
+the epoch with `REPLICAOF NO ONE`, at once, so a run cut short cannot leave it unraised; `promote-mysql.sh` can, and
+the runbook says how to see and raise it (a step's failure there would be needed, not worth a reshaped promotion).
+
+**O-89 (L), found 2026-11-01, FIXED the same day** (plan item 116). The install guide's §6 and the runbook's restore
+put every MySQL account's password on `mysql -e`'s command line, which any local user can read in `/proc` while it
+runs. **Fixed:** the statements on standard input. By the install guide's check, its restore among them.
+
 **DOC-34, found 2026-11-01 by the same review, FIXED the same day** (plan item 111). Eight reviews of every
 document against the code, the units, the scripts and the release's configuration, each finding checked against
 its source before it was changed: the failure model without the front (a lost front is a lost site since D-82;
@@ -1202,6 +1370,15 @@ scripts, the thread table, the platform's alert store, the operations' certifica
 port tables, the restart of nginx, and D-92's own text (log paths, an IPv4 nginx, what deleting `work/` costs).
 One semicolon in a Mermaid message (diagrams/01) that may end the statement there, written as a comma. Not
 changed: recorded outputs and "run on <date>" records, and figures only a run could check.
+
+**DOC-35, found 2026-11-01, FIXED the same day** (plan item 116). The persistence README said MySQL 8.0, twice; 8.4
+since D-77.
+
+**DOC-36, found 2026-11-01, FIXED the same day** (plan item 116). The client's READMEs lacked the drill's `erase`
+scenario and its `WATCH=1` and `IDLEGUEST=1`, said its defaults were j-redis's jars and /opt/jdk21 (the release's
+own since D-77), and left out `MYSQLD_BIN` and `MYSQL_PORT`; the scripts README said `fetch-offsite.sh` fetches
+everything (the newest dump, unless `ALL_DUMPS=1`); `install-certificate.sh` said nginx answers a CA's challenge on
+port 80, which nothing has done since D-82.
 
 ## 7. Documentation
 

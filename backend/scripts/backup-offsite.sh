@@ -60,7 +60,9 @@ mirror() {
     local from=$1 to=$2 pattern=$3 skip=${4:-} f name
     while read -r f; do
         name=$(basename "$f")
-        [ "$name" != "${skip:-}" ] || continue          # the binlog being written: next time, closed
+        # The binlog being written, and any opened since (a rotation while the dumps were encrypted): next time,
+        # closed (O-68). The names are fixed width, so they sort as they were written.
+        [ -z "$skip" ] || [[ "$name" < "$skip" ]] || continue
         if [ ! -e "$to/$name.enc" ] || [ "$f" -nt "$to/$name.enc" ]; then
             openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass file:"$OFFSITE_KEY" \
                 -in "$f" -out "$to/$name.enc.partial"
@@ -77,6 +79,11 @@ ENCRYPTED=0
 mirror "$DUMPS" "$MIRROR/dumps" '.*\.sql\.gz'
 mirror "$BINLOGS" "$MIRROR/binlog" '.*\.[0-9][0-9][0-9][0-9][0-9][0-9]' "$WRITING"
 
+# Never a push that leaves the host no dump: --delete would make the host's copy this machine's, and a
+# machine whose dumps are gone or set aside (a lost disk, the one machine's restore) would wipe the copy
+# that outlives it (O-69).
+[ -n "$(find "$MIRROR/dumps" -maxdepth 1 -type f -name '*.sql.gz.enc' -print -quit)" ] \
+    || { SAID="no dump to copy: nothing pushed, so the host keeps what it has"; echo "$SAID" >&2; exit 1; }
 # OFFSITE_SSH: how to reach the host, its key and known_hosts named (the backup user has no home).
 SSH=(); [[ "$OFFSITE_TARGET" == *:* ]] && SSH=(-e "${OFFSITE_SSH:-ssh -o BatchMode=yes}")
 rsync -a --delete "${SSH[@]}" "$MIRROR/" "$OFFSITE_TARGET/"

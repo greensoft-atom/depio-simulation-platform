@@ -50,9 +50,9 @@ expect_ok "issue a second" "$CA" issue "$T/ca" "$T/site2" 203.0.113.10 $NAMES
 # ---- install-certificate.sh, on the shipped nginx configuration, nginx stood in for by NT ----
 
 mkdir -p "$T/etc/tls" "$T/etc/credentials" "$T/etc/cfg"
-install_with() {
+install_with() {   # NC and SC name another nginx and stream configuration
     TLS_DIR=$T/etc/tls CREDENTIALS_DIR=$T/etc/credentials CONFIG_DIR=$T/etc/cfg \
-    NGINX_CONF=$DEPLOY/nginx/backend.conf STREAM_CONF=$DEPLOY/nginx/backend-stream.conf \
+    NGINX_CONF=${NC:-$DEPLOY/nginx/backend.conf} STREAM_CONF=${SC:-$DEPLOY/nginx/backend-stream.conf} \
     NGINX_TEST="${NT:-true}" NGINX_RELOAD=true NGINX_RUNNING=false "$IC" "$@"
 }
 expect_refused "install with no root in TLS_DIR: the system's roots" "does not verify" \
@@ -64,6 +64,10 @@ expect_refused "install from another root" "does not verify" install_with "$T/fo
 expect_refused "install with another key" "is not the key" install_with "$T/site/fullchain.pem" "$T/short/privkey.pem"
 [ ! -e "$T/etc/tls/fullchain.pem" ] && [ ! -e "$T/etc/credentials/privkey.pem" ] \
     && pass "the refusals installed nothing" || fail "a refusal installed a file"
+NT=false expect_refused "a first install that nginx refuses" "none where there were none" \
+    install_with "$T/site/fullchain.pem" "$T/site/privkey.pem"
+[ -z "$(ls -A "$T/etc/tls" | grep -v '^ca.pem$')" ] && [ -z "$(ls "$T/etc/credentials")" ] \
+    && pass "and nothing left installed: no file, nothing kept (O-76)" || fail "left: $(ls -A "$T/etc/tls" "$T/etc/credentials" | tr '\n' ' ')"
 expect_ok "install the site's" install_with "$T/site/fullchain.pem" "$T/site/privkey.pem"
 cmp -s "$T/etc/tls/fullchain.pem" "$T/site/fullchain.pem" && pass "fullchain.pem installed" || fail "fullchain.pem not installed"
 [ "$(stat -c %a "$T/etc/credentials/privkey.pem")" = 600 ] && pass "privkey.pem 0600" \
@@ -72,6 +76,39 @@ NT=false expect_refused "install when nginx refuses the files" "previous files a
     install_with "$T/site2/fullchain.pem" "$T/site2/privkey.pem"
 cmp -s "$T/etc/tls/fullchain.pem" "$T/site/fullchain.pem" && cmp -s "$T/etc/credentials/privkey.pem" "$T/site/privkey.pem" \
     && pass "the previous certificate and key are back" || fail "the previous files were not put back"
+
+
+# ---- what the scripts' review found (plan item 116) ----
+
+cat "$T/site2/fullchain.pem" "$T/site2/privkey.pem" > "$T/bundle.pem"
+expect_ok "install a file that holds the key as well as the certificate" install_with "$T/bundle.pem" "$T/site2/privkey.pem"
+! grep -q "PRIVATE KEY" "$T/etc/tls/fullchain.pem" && cmp -s "$T/etc/tls/fullchain.pem" "$T/site2/fullchain.pem" \
+    && pass "the certificate alone installed, readable by all; the key not with it (O-75)" || fail "fullchain.pem holds the key"
+[ ! -e "$T/etc/tls/fullchain.pem.previous" ] && [ ! -e "$T/etc/credentials/privkey.pem.previous" ] \
+    && pass "the replaced certificate and key not kept once nginx accepts the new (O-76)" || fail "a .previous left"
+sed 's/^\([[:space:]]*\)server_name .*;/\1server_name _;/' "$DEPLOY/nginx/backend.conf" > "$T/underscore.conf"
+NC=$T/underscore.conf expect_refused "install with server_name _ and the arenas' map" "no server_name" \
+    install_with "$T/site/fullchain.pem" "$T/site/privkey.pem"
+leaf() {   # leaf <dir> <subject CN> <subjectAltName> <days> <root dir>: as another CA might make one
+    mkdir -p "$1"
+    openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj "/CN=$2" -keyout "$1/privkey.pem" \
+        -out "$1/csr" 2> /dev/null
+    printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\n' "$3" > "$1/ext"
+    openssl x509 -req -in "$1/csr" -CA "$5/ca.pem" -CAkey "$5/ca.key" -set_serial 7 -days "$4" -extfile "$1/ext" \
+        -out "$1/fullchain.pem" 2> /dev/null
+}
+printf 'map $ssl_server_name $backend_arena {\n    a1.arena.internal 127.0.0.1:9011;\n    default 127.0.0.1:9;\n}\n' \
+    > "$T/one-name.conf"
+leaf "$T/cn" a1.arena.internal IP:203.0.113.10 30 "$T/ca"
+SC=$T/one-name.conf expect_refused "install one naming an arena in its subject alone" "does not name a1.arena.internal" \
+    install_with "$T/cn/fullchain.pem" "$T/cn/privkey.pem"
+ROOT_DAYS=30 expect_ok "a root of 30 days" "$CA" root "$T/brief30"
+expect_refused "issue a certificate that outlives its root" "the root expires" "$CA" issue "$T/brief30" "$T/past" 203.0.113.10
+ROOT_DAYS=5 expect_ok "a root of 5 days" "$CA" root "$T/brief"
+leaf "$T/outlives" backend "IP:203.0.113.10,$(printf 'DNS:%s,' $NAMES | sed 's/,$//')" 398 "$T/brief"
+out=$(CA_FILE=$T/brief/ca.pem install_with "$T/outlives/fullchain.pem" "$T/outlives/privkey.pem" 2>&1) \
+    && grep -q "or its root expires" <<< "$out" && pass "install one whose root ends in 5 days: warned, the root counted (O-73)" \
+    || fail "the root's end not warned of: $out"
 
 echo "--- $fails failed"
 [ "$fails" = 0 ]

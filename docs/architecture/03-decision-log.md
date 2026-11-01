@@ -3003,3 +3003,37 @@ is not there: nothing sets the JVM's login timeout, and a login has the socket's
 **Cost.**
 - A start against a database that is down, or refuses the account, fails after a minute rather than at once,
   the warnings saying why meanwhile; the leaderboard rebuild and the tools wait the same.
+
+### D-95 — A promotion refuses an old primary it can neither rule out nor fence, and a handover closes MySQL's last
+
+**Decided 2026-11-01** (plan item 116, the owner's review of every shell script; defects
+[O-63 and O-64](../defects.md#6-operations)).
+
+**Decision.**
+- **What answers is up.** `promote-mysql.sh` and `promote-store.sh` take an old primary for down only when nothing
+  answers: no connection, or no reply in time (MySQL's 2002, 2003 and 2005, the 20 s limit; no reply from the
+  store). An answer that refuses, the account or TLS refused, `NOAUTH`, comes from a server that is up, and
+  `--old-is-down` refuses it. The old primary is named host and port, or refused.
+- **`--demote-old` fences or refuses.** An old primary it cannot reach is refused, not promoted past: one cut off
+  from this machine may still serve the processes on its side, and the epoch turns new connections away from it,
+  not those its pools hold (D-29). `--old-is-down` is for an old primary the operator has stopped or cut off.
+- **A MySQL handover closes the old primary last.** `super_read_only`, persisted, first; then this replica waits
+  until it has applied every transaction the old primary executed (`WAIT_FOR_EXECUTED_GTID_SET`, 60 s); then
+  `offline_mode`; then the promotion. `offline_mode` closes the replica's own link with the rest (seen: its dump
+  thread gone at once, the reconnect refused, "The server is currently in offline mode"), so set first it lost
+  whatever the link had not carried, and the rebuild of the old primary by clone erased it there too.
+- **The store's handover keeps its window**, the writes of the last moment the link has not carried when the old
+  primary is demoted: on `events`, the results, the arena deletes one from its spool only once `WAIT 1` says the
+  replica holds it, so none is lost; on `session`, a session or ticket made in that moment, which a login makes again.
+  Closing it would take a write fence the store has not (`min-replicas-to-write` raised, then restored), on the path
+  of every failover; not worth it for what it guards.
+
+**Why.** A promotion is where two primaries are made, the one failure neither store prevents (06 §10, j-redis 16
+§9). The scripts refused only the plain case, an old primary that answered as one; an error reaching it was read as
+its absence, so a wrong password, a certificate's name or an old primary given without its port promoted past a
+live one. And the planned handover, the one meant to lose nothing, could lose the last transactions.
+
+**Cost.** During a handover's wait the old primary is read-only but still open: the processes' pools keep their
+connections to it, and a write on one fails as read-only, where before the connection was closed at once; writes
+were refused from the fence to the promotion before as now. An old primary that cannot be reached and is not known
+to be down needs the operator's step, stopping or cutting it off, before `--old-is-down`.

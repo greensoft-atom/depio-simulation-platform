@@ -16,7 +16,13 @@ R=${1:-$(ls -d "$HERE"/../target/release/backend-*/ 2>/dev/null | head -1)}
 NGINX=$R/nginx/sbin/nginx
 PORT=${PORT:-18080}
 T=$(mktemp -d "${TMPDIR:-/tmp}/check-nginx-logs.XXXXXX")
-stop_nginx() { [ -f "$T/run/nginx.pid" ] && kill -QUIT "$(cat "$T/run/nginx.pid")" 2> /dev/null; sleep 0.3; }
+# Until it has ended, not a moment after the signal: still running, it was signalled by the rotation that was to find
+# it stopped (O-82).
+stop_nginx() {
+    local pid; pid=$(cat "$T/run/nginx.pid" 2> /dev/null) || return 0
+    kill -QUIT "$pid" 2> /dev/null
+    for _ in $(seq 50); do kill -0 "$pid" 2> /dev/null || return 0; sleep 0.1; done
+}
 trap 'stop_nginx; rm -rf "$T"' EXIT
 fails=0
 pass() { echo "ok   $*"; }
@@ -50,6 +56,9 @@ rotate() { LOG_DIR=$T/log PID_FILE=$T/run/nginx.pid KEEP_DAYS=${KEEP:-14} "$ROTA
 : > "$T/log/stream.log" && touch -d "20 days ago" "$T/log/stream.log"   # as on a machine that is not the front: empty, and old
 touch -d "20 days ago" "$T/log/access.log.20261004T000500Z.gz"
 touch -d "3 days ago" "$T/log/stream.log.20261021T000500Z.gz"
+# Either side of KEEP_DAYS by an hour: -mtime +14 kept the one past it for another day (O-72).
+touch -d "@$(( $(date +%s) - 14 * 86400 - 3600 ))" "$T/log/error.log.20261017T000500Z.gz"
+touch -d "@$(( $(date +%s) - 14 * 86400 + 3600 ))" "$T/log/error.log.20261018T000500Z.gz"
 
 if out=$(rotate 2>&1); then pass "rotated: $(echo "$out" | tr '\n' ';' | cut -c1-120)"; else fail "rotate: $out"; fi
 rotated=$(ls "$T"/log/access.log.*Z.gz 2> /dev/null | grep -v 20261004 | head -1)
@@ -64,6 +73,8 @@ else
 fi
 [ -e "$T/log/access.log.20261004T000500Z.gz" ] && fail "a rotated file 20 days old kept past KEEP_DAYS=14" || pass "a rotated file past KEEP_DAYS deleted"
 [ -e "$T/log/stream.log.20261021T000500Z.gz" ] && pass "one 3 days old kept" || fail "a rotated file 3 days old deleted"
+[ ! -e "$T/log/error.log.20261017T000500Z.gz" ] && [ -e "$T/log/error.log.20261018T000500Z.gz" ] \
+    && pass "an hour past KEEP_DAYS deleted, an hour short kept (O-72)" || fail "KEEP_DAYS by the hour: $(ls "$T/log" | grep error.log.)"
 [ -e "$T/log/stream.log" ] && [ -z "$(ls "$T"/log/stream.log.*Z* 2> /dev/null | grep -v 20261021)" ] \
     && pass "an empty log left alone, however old: not rotated, not deleted" || fail "an empty log was rotated or deleted: $(ls "$T/log")"
 
@@ -78,10 +89,16 @@ stop_nginx
 echo "written after nginx stopped" >> "$T/log/access.log"
 if out=$(rotate 2>&1); then
     n=$(ls "$T"/log/access.log.*Z.gz | grep -vc 20261004)
-    [ "$n" = 2 ] && pass "nginx not running: rotated all the same, no signal sent" || fail "nginx not running: $n rotated files, $out"
+    [ "$n" = 2 ] && grep -q "rotated without a signal" <<< "$out" && pass "nginx not running: rotated all the same, no signal sent" \
+        || fail "nginx not running: $n rotated files, $out"
 else
     fail "nginx not running: rotate failed: $out"
 fi
+
+mkdir -p "$T/fakebin" && printf '#!/bin/sh\nexit 1\n' > "$T/fakebin/gzip" && chmod +x "$T/fakebin/gzip"
+echo "written for a compression that fails" >> "$T/log/access.log"
+out=$(PATH=$T/fakebin:$PATH rotate 2>&1); rc=$?
+[ "$rc" = 1 ] && pass "a compression that fails: exit 1, so the unit shows it (O-72)" || fail "a compression that fails: exit $rc, $out"
 
 echo "--- $fails failed"
 [ "$fails" = 0 ]

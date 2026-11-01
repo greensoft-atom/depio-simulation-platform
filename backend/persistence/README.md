@@ -1,6 +1,6 @@
 # persistence
 
-The system of record on MySQL 8.0
+The system of record on MySQL 8.4
 ([06](../../docs/detailed-design/06-persistence-mysql.md)): the schema and its
 migrations, the connection pool, and every repository and transaction the backend
 runs against the database. `platform` and `worker` depend on it; `arena` never does,
@@ -85,7 +85,7 @@ grants are in the deploy guide,
 never written in a document or a unit ([§2, Secrets](../../docs/operations/01-deploy.md#secrets)).
 In order:
 
-1. MySQL 8.0 installed, with the guide's settings: TLS required, the binary log in
+1. MySQL 8.4 installed, with the guide's settings: TLS required, the binary log in
    rows, and `default-time-zone = '+00:00'`, so what MySQL stamps itself is UTC too.
 2. The database `backend` created, and its accounts: `backend` for the processes,
    which may change the schema, since Flyway runs as it, and may drop nothing;

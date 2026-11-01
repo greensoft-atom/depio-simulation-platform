@@ -1522,13 +1522,20 @@ replaced without a failed request; and a new one, refused, is chosen elsewhere.
 `offline_mode` is set for as long as the server runs, not persisted: after a
 restart no connection is left to close, a read-only server is never chosen, and
 a persisted one would survive the server's rebuild (below) and close the next
-primary it became.
+primary it became. And it is set last (O-64, D-95): it closes the replica's own
+link too, its dump thread, and refuses it again, so set with `super_read_only`
+it lost whatever the link had not carried yet; between the two the replica
+applies every transaction the old primary executed.
 
 **The promotion**, `promote-mysql.sh` on the replica's machine: told the old
-primary is down, it refuses if the old one answers at all; told to demote it, it
-fences it (`super_read_only` persisted, so a restart keeps it read-only). Then
-it waits until the replica has applied every transaction it had received
-(`WAIT_FOR_EXECUTED_GTID_SET`); stops replicating and forgets its source
+primary is down, it refuses if the old one answers at all, refusing the account
+or its TLS included, since a server that refuses is up (O-63, D-95); told to
+demote it, it refuses one it cannot reach, which may still serve the processes on
+its side, and fences one it can: `super_read_only` persisted, so a restart keeps
+it read-only; the replica's wait for every transaction the old primary executed;
+`offline_mode`. Told it is down, it waits until the replica has applied every
+transaction it had received (`WAIT_FOR_EXECUTED_GTID_SET`). Then it stops
+replicating and forgets its source
 (`RESET REPLICA ALL`); makes itself writable with `SET PERSIST`, which outranks
 the configuration file's `super_read_only`, so a restart keeps it so; and raises
 the epoch.

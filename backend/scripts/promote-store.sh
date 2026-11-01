@@ -6,9 +6,10 @@
 #
 # Two primaries taking writes is the one failure the store cannot prevent, so this will not promote
 # while the old primary may still take them: either the operator says it is down or cut off
-# (--old-is-down, refused if it still answers as a primary), or the script demotes it first,
-# making it a replica of this one (--demote-old, with the address the old primary can reach this
-# one at). Then REPLICAOF NO ONE here, which raises the epoch and records it; `replicaof` is taken
+# (--old-is-down, refused if it answers as anything but a replica: one that refuses the password
+# is up), or the script demotes it first, making it a replica of this one (--demote-old, with the
+# address the old primary can reach this one at; refused if it does not answer, since one it
+# cannot reach may still serve the clients that can, O-63). Then REPLICAOF NO ONE here, which raises the epoch and records it; `replicaof` is taken
 # out of the config file (a copy kept), since the role at start-up is the file's; and the new
 # role and epoch are printed. The clients, given both addresses, follow by themselves.
 #
@@ -28,6 +29,8 @@ CONF=${1:?config file}
 OLD=${2:?old primary host:port}
 MODE=${3:?--old-is-down or --demote-old}
 SELF=${4:-}
+[[ $OLD =~ ^[^:]+:[0-9]+$ ]] || { echo "the old primary is host:port, not $OLD"; exit 2; }
+[ -z "$SELF" ] || [[ $SELF =~ ^[^:]+:[0-9]+$ ]] || { echo "this replica's address is host:port, not $SELF"; exit 2; }
 read -r -a CLI <<< "${JREDIS_CLI:-$JREDIS_BIN/j-redis-cli}"
 
 [ -f "$CONF" ] || { echo "no config file $CONF"; exit 2; }
@@ -67,17 +70,28 @@ case "$MODE" in
         if [ "$OLD_ROLE" = "primary" ]; then
             echo "REFUSED: $OLD still answers as a primary. Stop it, cut it off, or use --demote-old."
             exit 1
+        elif [ -n "$OLD_ROLE" ] && [ "$OLD_ROLE" != "replica" ]; then
+            echo "REFUSED: $OLD answers, as neither a primary nor a replica: '$OLD_ROLE'. It is up: stop it or cut it off."
+            exit 1
         fi
         echo "the old primary $OLD does not answer as one (${OLD_ROLE:-no answer}): promoting"
         ;;
     --demote-old)
         [ -n "$SELF" ] || { echo "--demote-old needs this replica's address, as the old primary reaches it"; exit 2; }
         if [ "$OLD_ROLE" = "primary" ]; then
-            REPLY=$(cli "$OLD_HOST" "$OLD_PORT" "REPLICAOF ${SELF%:*} ${SELF##*:}")
-            [ "$REPLY" = "OK" ] || { echo "REFUSED: $OLD would not be demoted: $REPLY"; exit 1; }
+            # || true: a client that timed out failed the assignment, and the script ended without a word (O-63).
+            REPLY=$(cli "$OLD_HOST" "$OLD_PORT" "REPLICAOF ${SELF%:*} ${SELF##*:}") || true
+            [ "$REPLY" = "OK" ] || { echo "REFUSED: $OLD would not be demoted: ${REPLY:-no answer}"; exit 1; }
             echo "the old primary $OLD is a replica of $SELF now: it takes no writes"
+        elif [ "$OLD_ROLE" = "replica" ]; then
+            echo "the old primary $OLD is a replica already: promoting"
+        elif [ -z "$OLD_ROLE" ]; then
+            echo "REFUSED: $OLD does not answer, so it cannot be demoted, and it may still serve the clients that reach it."
+            echo "Once it is stopped or cut off, use --old-is-down."
+            exit 1
         else
-            echo "the old primary $OLD does not answer as one (${OLD_ROLE:-no answer}): promoting"
+            echo "REFUSED: $OLD answers, as neither a primary nor a replica: '$OLD_ROLE'. Nothing done."
+            exit 1
         fi
         ;;
     *)
@@ -85,8 +99,8 @@ case "$MODE" in
         ;;
 esac
 
-REPLY=$(cli 127.0.0.1 "$PORT" "REPLICAOF NO ONE")
-[ "$REPLY" = "OK" ] || { echo "the promotion failed: $REPLY"; exit 1; }
+REPLY=$(cli 127.0.0.1 "$PORT" "REPLICAOF NO ONE") || true
+[ "$REPLY" = "OK" ] || { echo "the promotion failed: ${REPLY:-no answer}"; exit 1; }
 
 COPY="$CONF.before-promotion-$(date -u +%Y%m%dT%H%M%SZ)"
 cp -p "$CONF" "$COPY"

@@ -38,6 +38,8 @@ if [ "${1:-}" != --inside ] && [ "${1:-}" != --after-boot ] && [ "${1:-}" != --d
     NAME="backend-check-guide-$$"
     docker run -d --rm --privileged --network none --name "$NAME" -v "$WORK:/check:ro" \
         -v "$HERE/check-install-guide-el9.sh:/check.sh:ro" "$IMAGE" > /dev/null || exit 1
+    # Stopped on every way out, an interrupt too: the docker client exits, and the container went on (O-78).
+    trap 'docker stop "$NAME" > /dev/null 2>&1; rm -rf "$WORK"' EXIT
     sleep 5
     docker exec -e GUIDE_VALUES="${GUIDE_VALUES:-}" "$NAME" bash /check.sh --inside
     rc=$?
@@ -164,6 +166,7 @@ if [ "${1:-}" = --disk-lost ]; then
          on && /^```bash/ { inb = 1; next } on && inb && /^```/ { inb = 0; next } inb' \
         /srv/depio-simulation-platform/docs/operations/02-runbook.md > /tmp/restore.sh
     echo "--- the runbook's restore: $(grep -c . /tmp/restore.sh) lines"
+    [ -s /tmp/restore.sh ] || fail "no restore block between the runbook's markers (O-79)"
     bash -euo pipefail /tmp/restore.sh > /tmp/restore.log 2>&1 || { fail "the runbook's restore: exit $?"; tail -25 /tmp/restore.log; }
     grep -iE "reconcil|restored|migration" /tmp/restore.log | tail -5
     for i in $(seq 300); do curl -s -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
@@ -237,7 +240,8 @@ container_backup_credentials() {
 }
 export -f container_backup_credentials
 
-bash /tmp/guide-steps.sh 2>&1 | tee /tmp/guide.log | grep -E "^=== step|^active|^inactive|^failed|^activating|registration|ERROR|error|refus" | head -60
+# awk, not head: head ends at its sixtieth line, and the pipe's close then ended tee and the steps with it (O-79).
+bash /tmp/guide-steps.sh 2>&1 | tee /tmp/guide.log | grep -E "^=== step|^active|^inactive|^failed|^activating|registration|ERROR|error|refus" | awk 'NR <= 60'
 rc=${PIPESTATUS[0]}
 echo "--- the steps ran: exit $rc"
 FAILS=0
@@ -266,6 +270,7 @@ curl -s --cacert /etc/backend/tls/ca.pem -X POST -H 'Content-Type: application/j
 if command -v java > /dev/null; then echo "--- the system's java: $(java -version 2>&1 | head -1)"; fi
 if systemctl cat mysqld > /dev/null 2>&1; then
     echo "--- the system's mysqld: $(systemctl is-active mysqld)"
+    [ "$(systemctl is-active mysqld)" = active ] || fail "the system's mysqld is not running beside ours (O-79)"
 fi
 echo "--- listening: $(awk 'FNR > 1 && $4 == "0A" { split($2, a, ":"); print strtonum("0x" a[2]) }' /proc/net/tcp /proc/net/tcp6 | sort -un | tr '\n' ' ')"
 echo "--- $FAILS failed"

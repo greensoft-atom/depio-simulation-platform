@@ -70,6 +70,10 @@ issue)
         fi
     done
     alt=$(IFS=,; echo "${san[*]}")
+    # Not past the root: a device refuses the chain once its root has expired, whatever the leaf says (O-73).
+    root_end=$(date -d "$(openssl x509 -in "$dir/ca.pem" -noout -enddate | cut -d= -f2)" +%s)
+    [ $(( $(date +%s) + DAYS * 86400 )) -le "$root_end" ] \
+        || refuse "the root expires $(date -u -d "@$root_end" +%F), before a certificate of $DAYS days would: a new root is a client release (D-82); fewer DAYS until then"
     cat > "$WORK/leaf.cnf" <<EOF
 [req]
 distinguished_name = dn

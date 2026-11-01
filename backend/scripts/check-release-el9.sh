@@ -10,7 +10,9 @@
 #   IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:9.6 scripts/check-release-el9.sh   another RHEL 9.x
 set -u
 if [ "${1:-}" != --inside ]; then
-    REL=$(cd "${1:-$(ls -d "$(dirname "$0")"/../target/release/backend-*/ | head -1)}" && pwd)
+    REL=${1:-$(ls -d "$(dirname "$0")"/../target/release/backend-*/ 2> /dev/null | head -1)}
+    # Checked: cd "" stays where it is, and the caller's directory was taken for the release (O-79).
+    [ -n "$REL" ] && REL=$(cd "$REL" && pwd) || { echo "no release: scripts/make-release.sh first, or name one" >&2; exit 1; }
     IMAGE=${IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal:9.5}
     exec docker run --rm --name "backend-check-el9-$$" -e REL_NAME="$(basename "$REL")" \
         -v "$REL:/opt/$(basename "$REL"):ro" -v "$(cd "$(dirname "$0")" && pwd)/check-release-el9.sh:/check.sh:ro" \

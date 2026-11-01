@@ -71,7 +71,11 @@ For `events`, the same with its own configuration file and port 6380.
 The scripts use the release's client, `/opt/backend/jredis/bin/j-redis-cli` on
 `/opt/backend/runtime`; `JREDIS_CLI` names another.
 
-It refuses while the old primary still answers as one, promotes (`REPLICAOF NO
+With `--old-is-down` it refuses while the old primary answers as anything but a
+replica, refusing the password (`NOAUTH`) too: a server that refuses is up. With
+`--demote-old` it refuses an old primary it cannot reach, since one cut off from
+this machine may still serve the processes on its side: stop it or cut it off,
+then `--old-is-down` (D-95). The old primary is named `host:port`. It promotes (`REPLICAOF NO
 ONE`: the epoch goes up and is written to disk), takes `replicaof` out of the
 configuration file with a copy kept, and prints the new epoch. **Step 4 is
 automatic**: every process was given both addresses and finds the new primary
@@ -134,14 +138,25 @@ outage is simply that old, and running it again with `--stale-ok` as a third
 argument promotes; if the heartbeat is much older, the replica had stopped
 receiving or applying before the outage, and that stretch is lost unless the
 old primary's disk can be read (§3). With `--old-is-down` it refuses while the
-old primary answers at all. With
-`--demote-old` it fences it first: `super_read_only`, which stops every write,
-persisted so a restart keeps it, and `offline_mode`, which closes every
-connection but an administrator's and refuses new ones. Without the second,
-each process kept its connections to the old primary and failed every write on
-them (defect [D-29](../defects.md)). Then it waits, up to 60 s, until the replica has
-applied everything it received; if that times out it refuses, and running it
-again once the replica has caught up is safe. It stops replication, makes the
+old primary answers at all, refusing the account or its TLS too: an error from
+it is a server that is up (D-95). With
+`--demote-old` it refuses an old primary that does not answer, which may still
+serve the processes that reach it (then `--old-is-down`, once it is stopped or
+cut off), and fences one that does: `super_read_only`, which stops every write,
+persisted so a restart keeps it; then it waits, up to 60 s, until this replica
+has applied every transaction the old primary executed; then `offline_mode`,
+which closes every connection but an administrator's and refuses new ones.
+Without `offline_mode`, each process kept its connections to the old primary and
+failed every write on them (defect [D-29](../defects.md)); set before the wait, it
+closed the replica's own link too, and what that had not carried yet was lost
+(O-64). If the wait times out it refuses, the old primary left read-only (`SET
+PERSIST super_read_only = OFF` there gives it back), and running it again once the
+replica has caught up is safe. With `--old-is-down` it waits, up to 60 s, until the
+replica has applied everything it received. A run that ends with an error after it
+has stopped replication, before its last line, may have left the epoch where it
+was: compare `SELECT epoch FROM backend.ha_epoch` on both servers, and on the new
+primary raise it (`UPDATE backend.ha_epoch SET epoch = epoch + 1 WHERE id = 1`) when
+they are equal. It stops replication, makes the
 replica writable persistently, raises the epoch, and prints it with the executed
 GTID set: keep that line for the incident's record.
 
@@ -172,8 +187,11 @@ need; check `SHOW REPLICA STATUS` shows both threads running.
 the primary: they would be on the disk they protect (06 §10). Install the
 stream and the dump (01 §10) on the machine that holds the replica, B until the
 old primary is rebuilt and that machine after, with `host` in their option
-files naming the new primary, into an empty copies directory: the new
-primary's binlogs are a series of their own. Start `backend-mysql-backup` at
+files naming the new primary, into an empty copies directory, and with the
+old dumps set aside: the new primary's binlogs are a series of their own, and a
+dump from the old series beside the new would name another series' files (since
+O-66 retention keeps the copies any remaining dump starts from, but the proof
+takes the newest dump and the restore the one named). Start `backend-mysql-backup` at
 once; that dump is the earliest point the new series restores to. A point
 before the promotion restores from the old copies, where they are. The proofs,
 their scratch server and the copy off the site go with the stream and the dump
@@ -386,15 +404,17 @@ systemctl stop 'backend-arena@*' backend-gateway backend-platform 'backend-worke
 install -d -o mysql -g mysql -m 0750 /var/lib/backend-mysql
 /opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/mysql/backend.cnf --initialize-insecure --user=mysql
 systemctl start backend-mysql
-/opt/backend/mysql/bin/mysql -S /run/backend-mysql/mysqld.sock -u root \
-    -e "ALTER USER root@localhost IDENTIFIED BY '$(cat /etc/backend/credentials/mysql-root)'"
-/opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf -e "
+/opt/backend/mysql/bin/mysql -S /run/backend-mysql/mysqld.sock -u root <<SQL
+ALTER USER root@localhost IDENTIFIED BY '$(cat /etc/backend/credentials/mysql-root)';
+SQL
+/opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf <<SQL
     CREATE USER 'backend'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/db-password)';
     GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON backend.* TO 'backend'@'127.0.0.1';
     CREATE USER 'backup'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/backup-password)';
     GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, RELOAD, REPLICATION CLIENT ON *.* TO 'backup'@'127.0.0.1';
     CREATE USER 'binlog'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/binlog-password)';
-    GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'binlog'@'127.0.0.1'"
+    GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'binlog'@'127.0.0.1';
+SQL
 # The newest dump, carried through the binlog copies to their end, under the production name
 dump=$(ls /var/lib/backend/mysql-dumps/backend-*.sql.gz | sort | tail -1)
 NO_SOURCE=1 SCRATCH_CNF=/etc/backend/credentials/mysql-root.cnf \

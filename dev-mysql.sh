@@ -48,7 +48,7 @@ stop)
     else echo "the development MySQL is not running"; fi ;;
 restart)
     # stop returns once the server has ended: mysqladmin waits for its pid file to go.
-    "$0" stop && exec "$0" start ;;
+    "$B/dev-mysql.sh" stop && exec "$B/dev-mysql.sh" start ;;       # by path: bash dev-mysql.sh gave a name alone (O-86)
 status)
     if up; then echo "the development MySQL runs on 127.0.0.1:$(cd "$D/data" && "$M/mysql" --no-defaults \
                      -S mysqld.sock -u root -N -e 'SELECT @@port'), its files in $D"

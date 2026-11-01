@@ -104,6 +104,7 @@ these is asked for), T TLS. Times are a run's own, roughly.
 | `coop` | A party of two and one alone queue for co-op, one team against the waves; they drive toward them without firing; the wipe ends it, each paid | L | under a minute |
 | `banned` | An operator bans a player in the lobby: every session ends, the lobby is told and does not come back, logging in is refused until the ban is lifted | L A | seconds |
 | `notice` | An operator's notice, told word for word to two players in the lobby (`evt.notice`) | L A | seconds |
+| `erase` | A player deletes their own account (D-84): a wrong password refused; deleted, every session ends, the other device's lobby told why; logging in by the name refused, gone from a friend's list, the name free again; a guest deleted by its session alone, its key logging in no more | L | seconds |
 | `removed` | An operator takes a player out of the public arena, then closes another's room: each ends `Removed`, `Kick(7)`; a player removed but not banned plays again | A | seconds |
 | `phrase` | The phrase list platform serves is the one the Welcome names; a phrase said comes back to its speaker by their own handle and name; a second at once dropped without a kick, one two seconds on heard | | seconds |
 

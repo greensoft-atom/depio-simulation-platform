@@ -516,7 +516,7 @@ database is `backend_dev` on the development MySQL (§3.1), which each starts wh
 is not running and stops after; the machine's own MySQL on 3306 is never touched
 (O-40). A run by hand uses `backend_dev` too, so do not run both at once: a drill's
 `season` scenario ends the current season for both. They start their own servers on
-ports 3307 to 3309, 6390 to 6392, 8093 and 8094, 9011 and 9195 to 9199.
+ports 3307 to 3309, 6390 to 6392, 8093 and 8094, 9011 and 9193 to 9199.
 `backup-drill.sh` seeds from `backend_dev`, so it needs a drill or a run by hand
 first to have made its schema; it says so if not.
 
@@ -539,8 +539,9 @@ With Docker, each on a release:
 
 Without Docker, `backend/scripts/check-certificates.sh` checks the certificate scripts, with
 openssl alone, in a few seconds ([operations/06 §9](../operations/06-certificates.md#9-testing-and-development)),
-and `backend/scripts/check-nginx-logs.sh` the rotation of nginx's logs, with the release's nginx on a
-loopback port (D-85).
+`backend/scripts/check-nginx-logs.sh` the rotation of nginx's logs, with the release's nginx on a
+loopback port (D-85), and `backend/scripts/check-promote.sh` both promotions' refusals and the MySQL
+handover's order, with stand-in clients, in seconds (D-95).
 And `vendor/build-nginx.sh` compiles nginx again ([vendor/README](../../vendor/README.md)).
 
 ## 9. The client

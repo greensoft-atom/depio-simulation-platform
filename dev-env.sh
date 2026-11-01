@@ -16,8 +16,12 @@
 #
 #   . ./dev-env.sh      then java, mvn and the tests in this shell, offline
 
-B=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# The checkout's own path, a link resolved, so that every script finds its processes by one path however it was
+# reached (O-85); the link's when the path itself holds a character the build cannot carry, as below.
+B=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+case "$B" in *[!A-Za-z0-9._/+@-]*) B=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) ;; esac
 WORK=${WORK:-$B/work}
+case $WORK in /*) ;; *) WORK=$PWD/$WORK ;; esac       # a relative one was read from wherever a script went (O-85)
 # MAVEN_ARGS is split at spaces, and the paths go into XML and sed unescaped.
 case "$B$WORK" in
     *[!A-Za-z0-9._/+@-]*)
@@ -25,10 +29,11 @@ case "$B$WORK" in
              "use a path of letters, digits and . _ - + @ only, or a link to this one" >&2
         return 1 ;;
 esac
-for f in vendor/jdk-21/bin/java vendor/maven-3.9/bin/mvn vendor/mysql-8.4/bin/mysqld; do
-    [ -x "$B/$f" ] || { echo "dev-env.sh: $f is not executable: the copy lost the files' modes;" \
-                             "copy the repository with git clone, or tar, not file by file" >&2; return 1; }
+for _f in vendor/jdk-21/bin/java vendor/maven-3.9/bin/mvn vendor/mysql-8.4/bin/mysqld; do
+    [ -x "$B/$_f" ] || { echo "dev-env.sh: $_f is not executable: the copy lost the files' modes;" \
+                              "copy the repository with git clone, or tar, not file by file" >&2; return 1; }
 done
+unset _f                                              # the caller's shell keeps its own f (O-85)
 
 export JAVA_HOME=$B/vendor/jdk-21
 export PATH=$JAVA_HOME/bin:$B/vendor/maven-3.9/bin:$PATH
@@ -41,7 +46,10 @@ export MAVEN_ARGS="-s $WORK/settings.xml -DargLine=-Djava.io.tmpdir=$WORK/tmp"
 export MAVEN_OPTS="-Djava.io.tmpdir=$WORK/tmp"
 export TMPDIR=$WORK/tmp
 export MYSQL_PORT=${MYSQL_PORT:-3314}
-DEV_JDBC_URL="jdbc:mysql://127.0.0.1:$MYSQL_PORT/backend_test?useSSL=false&allowPublicKeyRetrieval=true"
+# A JDBC_URL an earlier sourcing set, for another MYSQL_PORT, is this file's and not the caller's: kept, the tests
+# went to the server on the first port, and wiped its backend_test (O-85).
+[ "${JDBC_URL:-}" != "${DEV_JDBC_URL:-}" ] || unset JDBC_URL
+export DEV_JDBC_URL="jdbc:mysql://127.0.0.1:$MYSQL_PORT/backend_test?useSSL=false&allowPublicKeyRetrieval=true"
 export JDBC_URL=${JDBC_URL:-$DEV_JDBC_URL}
 # A run by hand's ports and address, the same for each of its scripts (D-92): j-redis, the platform, the gateway
 # and the arena on 127.0.0.1, nginx on every address on the site's ports, and the arena announcing nginx's.

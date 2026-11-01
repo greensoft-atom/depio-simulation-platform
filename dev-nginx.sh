@@ -131,7 +131,7 @@ start)
         exit 0
     fi
     # In use, or refused by a policy of the machine: named before anything starts (D-88)
-    "$B/backend/scripts/check-bind.sh" "$NGINX_HTTP_PORT" "$NGINX_HTTPS_PORT" "$NGINX_MATCH_PORT" || {
+    BIND=0.0.0.0 "$B/backend/scripts/check-bind.sh" "$NGINX_HTTP_PORT" "$NGINX_HTTPS_PORT" "$NGINX_MATCH_PORT" || {
         echo "another port for it: NGINX_HTTP_PORT, NGINX_HTTPS_PORT or NGINX_MATCH_PORT, the same for every later command" >&2
         exit 1; }
     mkdir -p "$F"
@@ -161,7 +161,7 @@ stop)
         echo "nginx: not running"
     fi ;;
 restart)
-    "$0" stop && exec "$0" start ;;
+    "$B/dev-nginx.sh" stop && exec "$B/dev-nginx.sh" start ;;       # by path: bash dev-nginx.sh gave a name alone (O-86)
 status)
     running || { echo "nginx: not running"; exit 1; }
     echo "nginx: running, pid $(cat "$F/nginx.pid"), on $ports, for $(cat "$F/address" 2> /dev/null)"

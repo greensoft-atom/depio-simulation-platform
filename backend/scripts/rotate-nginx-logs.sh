@@ -6,7 +6,8 @@
 #
 #   LOG_DIR=/var/log/backend-nginx PID_FILE=/run/backend-nginx/nginx.pid KEEP_DAYS=14 scripts/rotate-nginx-logs.sh
 #
-# Exit 2 on a setting it refuses (KEEP_DAYS not whole days, 1 to 365), before anything is renamed.
+# Exit 2 on a setting it refuses (KEEP_DAYS not whole days, 1 to 365), before anything is renamed; exit 1 when a
+# step fails (a rename, the compression, a deletion), so that the timer's unit shows it failed (O-72).
 set -u
 LOG_DIR=${LOG_DIR:-/var/log/backend-nginx}
 PID_FILE=${PID_FILE:-/run/backend-nginx/nginx.pid}
@@ -18,11 +19,12 @@ esac
 [ -d "$LOG_DIR" ] || { echo "no log directory $LOG_DIR" >&2; exit 2; }
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
+rc=0
 moved=()
 for name in access.log stream.log error.log; do
     log=$LOG_DIR/$name
     [ -s "$log" ] || continue                        # absent, or empty: nothing to rotate
-    mv "$log" "$log.$stamp" && moved+=("$log.$stamp")
+    if mv "$log" "$log.$stamp"; then moved+=("$log.$stamp"); else rc=1; fi
 done
 if [ ${#moved[@]} -gt 0 ]; then
     # nginx keeps writing to the renamed files until it is told to reopen: USR1 has the master open fresh ones
@@ -33,10 +35,13 @@ if [ ${#moved[@]} -gt 0 ]; then
     else
         echo "nginx is not running: rotated without a signal"
     fi
-    gzip -q "${moved[@]}"
+    gzip -q "${moved[@]}" || rc=1
     echo "rotated: ${moved[*]##*/}"
 else
     echo "nothing to rotate"
 fi
-# The rotated files alone, which carry a suffix after .log; the live ones do not.
-find "$LOG_DIR" -maxdepth 1 -type f -name '*.log.*' -mtime +"$KEEP_DAYS" -print -delete | sed 's/^/deleted: /'
+# The rotated files alone, which carry a suffix after .log; the live ones do not. -mmin, not -mtime: -mtime +14 drops
+# the fraction of a day and matches fifteen days and more, so a day's more logs than the unit's limit were kept (O-72).
+deleted=$(find "$LOG_DIR" -maxdepth 1 -type f -name '*.log.*' -mmin +$((KEEP_DAYS * 1440)) -print -delete) || rc=1
+[ -z "$deleted" ] || sed 's/^/deleted: /' <<< "$deleted"
+exit "$rc"

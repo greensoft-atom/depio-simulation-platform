@@ -26,7 +26,7 @@ VERSION=$(sed -n 's:^  <version>\(.*\)</version>$:\1:p' pom.xml | head -1)
 OUT=target/release/backend-$VERSION
 
 # The store first: the backend builds against its client, and the release carries its server.
-(cd "$JREDIS_SRC" && $MVN -q -o -DskipTests install)
+(cd "$JREDIS_SRC" && $MVN -q -o -DskipTests clean install)    # clean, as the backend's below (O-84)
 # Clean first: a file deleted from the sources, such as a migration replaced by the baseline (D-75),
 # would otherwise stay in target/classes and ship. Clean empties target/, the release's own folder too.
 $MVN -q -o -DskipTests clean install
@@ -85,7 +85,8 @@ cp scripts/backup-mysql.sh scripts/backup-store.sh scripts/binlog-stream.sh \
     scripts/promote-store.sh scripts/promote-mysql.sh scripts/record-backup.sh scripts/restore-proof.sh \
     scripts/backup-offsite.sh scripts/fetch-offsite.sh scripts/private-ca.sh scripts/rotate-nginx-logs.sh \
     scripts/check-bind.sh "$OUT/scripts/"
-git rev-parse HEAD > "$OUT/COMMIT" 2>/dev/null || true
+# The commit, and -dirty when the tree it was made from differs from it: the files shipped are the tree's (O-84).
+c=$(git describe --always --dirty --abbrev=40 2>/dev/null) && echo "$c" > "$OUT/COMMIT"
 {
     cat "$VENDOR/VERSIONS.md"
     echo

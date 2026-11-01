@@ -4,7 +4,8 @@
 # core the drills run is the core the app runs. Run it before opening the package in Unity, and after the core changes.
 set -euo pipefail
 cd "$(dirname "$0")"
-DOTNET=${DOTNET:-$(command -v dotnet || echo /opt/dotnet/dotnet)}
+# The documented .NET 8 first, /opt/dotnet, where it is; another on PATH restored the core with its own packs (O-81).
+DOTNET=${DOTNET:-$( { [ -x /opt/dotnet/dotnet ] && echo /opt/dotnet/dotnet; } || command -v dotnet || echo /opt/dotnet/dotnet)}
 DOTNET_NOLOGO=1 "$DOTNET" build Core -c Release -v q
 mkdir -p Unity/com.backend.client/Runtime/Plugins
 cp Core/bin/Release/netstandard2.1/Backend.Client.Core.dll Unity/com.backend.client/Runtime/Plugins/

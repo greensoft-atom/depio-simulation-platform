@@ -95,7 +95,7 @@ With no scenario named it runs `play resume badticket lifecycle`.
 tournament teammatch teamcup rename apply roundrobin levels gems purchase pass
 skin milestone season achievements goals social guest stats domination tag maze
 sandbox resume coldresume badticket lifecycle lobby replaced badsession duel
-walkover party decline rffa coop banned notice removed phrase`, and
+walkover party decline rffa coop banned notice removed phrase erase`, and
 `untrusted`, with `TLS=1`. What each checks, and what it needs, is in
 [Headless/README.md](Headless/README.md#scenarios).
 
@@ -112,12 +112,17 @@ walkover party decline rffa coop banned notice removed phrase`, and
 | `BOTS` with `SOAK=1` | 0 | The soak (07 §4): stays of `STAYS` seconds (60:300) played again, the duel scenario every 30 s, every process sampled every `SAMPLE_EVERY` s (300), `tools/SoakJudge` judging from `JUDGE_FROM` s (half the run) |
 | `BOTS` with `WORKERS=<k>` | unset | The workers' rate: `k` workers paused while the bots play, then draining their stays together, timed |
 | `TAKEOVER=1` | 0 | The worker stopped with the results in flight, killed, and a second worker taking them over (05) |
-| `RELEASE`, `JREDIS_JAR`, `JREDIS_CLI_JAR`, `JAVA`, `DOTNET`, `TOOLS_JAR` | the release under `backend/target/release`, j-redis 2.2.1's jars, `/opt/jdk21/bin/java`, `/opt/dotnet/dotnet`, the tools' jar | Where things are |
+| `WATCH=1` | 0 | The platform watches the four processes and sends alerts to a receiver of the drill's (9194): after the scenarios the worker is killed, and `TargetDown` must be listed by the admin API and sent within three minutes (04 §12, D-86); with `BOTS` too. Not with `TAKEOVER` |
+| `IDLEGUEST=1` | 0 | A guest made, aged 181 days in the database, and erased by a second worker's retention (its metrics on 9193) a minute after it starts (D-87) |
+| `RELEASE`, `JREDIS_JAR`, `JREDIS_CLI_JAR`, `JAVA`, `MYSQLD_BIN`, `DOTNET`, `TOOLS_JAR` | the release under `backend/target/release`, and its own j-redis, runtime and MySQL (j-redis's build, `/opt/jdk21/bin/java` and `/usr/sbin/mysqld` for a release without them); `/opt/dotnet/dotnet`; the tools' jar | Where things are |
+| `MYSQL_PORT` | 3314 | The development MySQL the drill's backend uses and starts (`dev-mysql.sh`) |
 
 Ports: 6390 j-redis (6392 its replica), 8093 platform, 8094 gateway, 9011 the
 arena, 9195 platform's metrics, 9196 platform's admin API, 9197 the arena's
 metrics, 9198 the gateway's, 9199 the worker's; MySQL 3314, the development MySQL
-(`dev-mysql.sh`, started when it is not running), and 3307 and 3308 for `MYSQL_FAILOVER`. Logs go to a directory under `TMPDIR`, which the script
+(`dev-mysql.sh`, started when it is not running), and 3307 and 3308 for `MYSQL_FAILOVER`; 9193 a second worker's
+metrics with `IDLEGUEST`, 9194 the alerts' receiver with `WATCH`. Every port of the run's modes is tried before
+anything starts (`check-bind.sh`). Logs go to a directory under `TMPDIR`, which the script
 names first. After the run it prints the matcher's metrics, the gateway's
 latency to platform, the arena's log, and the database's view of the last
 match of each mode.

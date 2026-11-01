@@ -61,7 +61,7 @@ refuse() { echo "refusing: $*" >&2; exit 1; }
 warn() { echo "WARNING: $*" >&2; }
 
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+trap 'rm -rf "$WORK"; for f in "${STAGED[@]:-}"; do [ -z "$f" ] || rm -f "$f"; done' EXIT
 
 # What a device trusts: the system's roots, or CA_FILE's alone.
 TRUST=()
@@ -104,17 +104,20 @@ served() {
 
 fingerprint() { openssl x509 -noout -fingerprint -sha256 | cut -d= -f2; }
 
-# split <pem-file> <dir>: one file per certificate, 1.pem first
+# split <pem-file> <dir>: one file per certificate, 1.pem first, and nothing else the file holds (a key, O-75)
 split_pem() {
     mkdir -p "$2"
-    awk -v dir="$2" '/-----BEGIN CERTIFICATE-----/ { n++ } n { print > (dir "/" n ".pem") }' "$1"
+    awk -v dir="$2" '/-----BEGIN CERTIFICATE-----/ { n++; on = 1 } on { print > (dir "/" n ".pem") }
+                     /-----END CERTIFICATE-----/ { on = 0 }' "$1"
 }
 
-# earliest <pem-file>: when the first of its certificates expires, in Unix seconds. A device
-# refuses the chain when any link has expired, the intermediate as much as the leaf.
+# earliest <pem-file>...: when the first of their certificates expires, in Unix seconds. A device
+# refuses the chain when any link has expired, the intermediate as much as the leaf, and the root
+# it trusts (CA_FILE, given by every caller when set: the chain does not carry it, O-73).
 earliest() {
     local dir; dir=$(mktemp -d -p "$WORK")
-    split_pem "$1" "$dir"
+    cat "$@" > "$dir/all"
+    split_pem "$dir/all" "$dir"
     for c in "$dir"/*.pem; do
         date -d "$(openssl x509 -in "$c" -noout -enddate | cut -d= -f2)" +%s
     done | sort -n | head -1
@@ -122,10 +125,13 @@ earliest() {
 
 # ---- checks -------------------------------------------------------------------------------
 
-# covers <leaf.pem> <host>
+# covers <leaf.pem> <host>. A host name by a DNS name in the SAN: with none there, openssl falls back to the
+# subject's CN, which no device reads (O-74).
 covers() {
     local how=-checkhost
-    is_ip "$2" && how=-checkip
+    if is_ip "$2"; then how=-checkip
+    else openssl x509 -in "$1" -noout -ext subjectAltName 2>/dev/null | grep -q 'DNS:' || return 1
+    fi
     openssl x509 -in "$1" -noout "$how" "$2" | grep -q ' does match '
 }
 
@@ -164,38 +170,51 @@ check_certificate() {   # check_certificate <fullchain> <key>
     [ ${#missing[@]} -eq 0 ] \
         || refuse "$chain does not name ${missing[*]}; it names $(openssl x509 -in "$WORK/leaf.pem" -noout -ext subjectAltName | tail -n +2 | tr -d ' ')"
 
-    local end; end=$(earliest "$chain")
+    local end; end=$(earliest "$chain" ${CA_FILE:+"$CA_FILE"})
     if [ $((end - $(date +%s))) -lt $((WARN_DAYS * 86400)) ]; then
-        warn "$chain expires $(date -u -d "@$end" +%FT%TZ), within $WARN_DAYS days"
+        warn "$chain or its root expires $(date -u -d "@$end" +%FT%TZ), within $WARN_DAYS days"
     fi
+    # What is installed: the certificates alone. A file that holds the key as well passed every check above,
+    # and the chain is installed readable by all (O-75).
+    cat "$WORK/leaf.pem" "$WORK/intermediates.pem" > "$WORK/fullchain.pem"
 }
 
 # ---- installing ---------------------------------------------------------------------------
 
-# put <source> <destination> <mode>: replaced whole, never half-written. The temporary file is
-# made beside the destination so that it carries that directory's SELinux label; one made in
-# /tmp and moved would keep a label nginx may not read.
-put() {
+# stage <source> <destination> <mode>: a copy beside the destination, to be moved over it whole, never
+# half-written; its name is the last in STAGED, removed on the way out unless it was moved. Beside the
+# destination so that it carries that directory's SELinux label; one made in /tmp and moved would keep
+# a label nginx may not read.
+STAGED=()
+stage() {
     local tmp; tmp=$(mktemp "$(dirname "$2")/.$(basename "$2").XXXXXX")
+    STAGED+=("$tmp")
     cat "$1" > "$tmp"
     chmod "$3" "$tmp"
-    mv -f "$tmp" "$2"
-    command -v restorecon >/dev/null && restorecon "$2" || true
 }
+moved() { mv -f "$1" "$2"; command -v restorecon >/dev/null && restorecon "$2" || true; }
+put() { stage "$@"; moved "${STAGED[-1]}" "$2"; }
 
-keep_previous() { [ -f "$1" ] && cp -p "$1" "$1.previous" || true; }
-restore_previous() { [ -f "$1.previous" ] && mv -f "$1.previous" "$1" || true; }
+# The previous file kept beside it until nginx accepts the new one; with none before, there is nothing to put
+# back, and the new file goes (O-76).
+keep_previous() { if [ -f "$1" ]; then cp -p "$1" "$1.previous"; else rm -f "$1.previous"; fi; }
+restore_previous() { if [ -f "$1.previous" ]; then mv -f "$1.previous" "$1"; else rm -f "$1"; fi; }
 
 install_edge() {
     local fullchain=$TLS_DIR/fullchain.pem privkey=$CREDENTIALS_DIR/privkey.pem
     keep_previous "$fullchain"; keep_previous "$privkey"
-    put "$1" "$fullchain" 0644
-    put "$2" "$privkey" 0600
+    # Both written before either is moved: a failure between them left the new certificate beside the old key,
+    # which nginx refuses at its next start (O-76).
+    stage "$1" "$fullchain" 0644; local chain_tmp=${STAGED[-1]}
+    stage "$2" "$privkey" 0600; local key_tmp=${STAGED[-1]}
+    moved "$chain_tmp" "$fullchain"; moved "$key_tmp" "$privkey"
     local out
     if ! out=$($NGINX_TEST 2>&1); then
         restore_previous "$fullchain"; restore_previous "$privkey"
-        refuse "nginx does not accept it, the previous files are back: $out"
+        refuse "nginx does not accept it, the previous files are back, or none where there were none: $out"
     fi
+    # Accepted: the replaced key is not kept, with the certificate that would still work with it (O-76).
+    rm -f "$fullchain.previous" "$privkey.previous"
     if ! $NGINX_RUNNING; then
         # The first install, before nginx has ever started: it serves these when it does.
         echo "nginx: not running; the files are installed, and it serves them when started"
@@ -227,8 +246,8 @@ install_arenas() {
     openssl pkcs12 -export -in "$1" -inkey "$2" -name arena -passout "file:$password" -out "$WORK/arena.p12"
     openssl pkcs12 -in "$WORK/arena.p12" -passin "file:$password" -noout \
         || refuse "the arena keystore just made does not open with its password"
-    keep_previous "$keystore"
     put "$WORK/arena.p12" "$keystore" 0600
+    rm -f "$keystore.previous"                       # left by an earlier version; nothing reads it
     echo "arenas: $keystore replaced"
     local want; want=$(fingerprint < "$WORK/leaf.pem")
     for f in "${OWN_TLS_ARENAS[@]}"; do
@@ -260,7 +279,7 @@ check_served() {   # check_served <label> <host> <port> <name>
         echo "$1: no TLS on $2:$3"; return 1
     fi
     verify=$(grep -m1 'Verify return code' <<< "$out" || echo 'no verdict')
-    end=$(earliest "$WORK/served.pem")
+    end=$(earliest "$WORK/served.pem" ${CA_FILE:+"$CA_FILE"})
     days=$(( (end - $(date +%s)) / 86400 ))
     printf '%s: %s, expires %s (%d days), %s\n' "$1" "$4" "$(date -u -d "@$end" +%FT%TZ)" "$days" "${verify#*: }"
     [[ $verify == *'(ok)'* ]] && [ "$days" -ge "$WARN_DAYS" ]
@@ -280,6 +299,10 @@ for f in $(arena_files); do
 done
 mapfile -t NAMES < <(printf '%s\n' "${EDGE_NAMES[@]}" "${STREAM_NAMES[@]}" "${ARENA_NAMES[@]}" | grep -v '^$' | sort -u)
 [ ${#NAMES[@]} -gt 0 ] || refuse "this machine serves no name: no server_name in $NGINX_CONF, no name in $STREAM_CONF's map and no arena of its own TLS in $CONFIG_DIR/arena-*.env"
+# nginx serves 443 and 9001 with one certificate: the arenas' names without the site's address would leave the
+# address unchecked, and nothing installed for nginx at all (O-77).
+[ ${#STREAM_NAMES[@]} -eq 0 ] || [ ${#EDGE_NAMES[@]} -gt 0 ] \
+    || refuse "no server_name in $NGINX_CONF, the site's address devices check; $STREAM_CONF names arenas for nginx"
 
 if [ "${1:-}" = "--check" ]; then
     failed=0
@@ -297,11 +320,12 @@ if [ "${1:-}" = "--check" ]; then
     exit $failed
 fi
 
-# nginx will not start while the files its TLS server names are missing, and the CA's first
-# HTTP-01 challenge needs nginx answering on port 80: a stand-in breaks the circle. Never over
-# a real certificate.
+# nginx will not start while the files its TLS server names are missing: a stand-in lets it start before
+# the real certificate is there. Never over a real certificate.
 if [ "${1:-}" = "--placeholder" ]; then
     [ ! -e "$TLS_DIR/fullchain.pem" ] || refuse "$TLS_DIR/fullchain.pem exists; a placeholder only goes where there is none"
+    exec 9> "$CREDENTIALS_DIR/.install-certificate.lock"
+    flock -n 9 || refuse "another install is running"
     [ ${#EDGE_NAMES[@]} -gt 0 ] || refuse "no server_name in $NGINX_CONF"
     san=""
     for n in "${EDGE_NAMES[@]}" "${STREAM_NAMES[@]}"; do
@@ -333,6 +357,6 @@ flock -n 9 || refuse "another install is running"
 
 check_certificate "$FULLCHAIN" "$PRIVKEY"
 echo "checked: $(openssl x509 -in "$WORK/leaf.pem" -noout -subject -enddate | tr '\n' ' ')for ${NAMES[*]}"
-[ ${#EDGE_NAMES[@]} -gt 0 ] && install_edge "$FULLCHAIN" "$PRIVKEY"
-[ ${#OWN_TLS_ARENAS[@]} -gt 0 ] && install_arenas "$FULLCHAIN" "$PRIVKEY"
+[ ${#EDGE_NAMES[@]} -gt 0 ] && install_edge "$WORK/fullchain.pem" "$PRIVKEY"
+[ ${#OWN_TLS_ARENAS[@]} -gt 0 ] && install_arenas "$WORK/fullchain.pem" "$PRIVKEY"
 exit 0

@@ -36,6 +36,7 @@ Every setting a script or unit reads is also in the
 | [`store-restore-drill.sh`](#store-restore-drillsh) | Recovery | yes | hand, monthly |
 | [`promote-store.sh`](#promote-storesh) | Failover | yes | hand |
 | [`promote-mysql.sh`](#promote-mysqlsh) | Failover | yes | hand |
+| [`check-promote.sh`](#check-promotesh) | Failover | no | hand, on any machine: both promotions' refusals and the handover's order, with stand-in clients |
 | [`private-ca.sh`](#private-cash) | Certificates | yes | hand, on the operators' machine that keeps the root |
 | [`install-certificate.sh`](#install-certificatesh) | Certificates | yes | hand, on every machine |
 | [`backup-drill.sh`](#backup-drillsh) | Drills | no | hand, on a development machine |
@@ -58,7 +59,8 @@ the source tree, which has none, they use the machine's. The store's three (`bac
 
 ### make-release.sh
 
-Builds the release. First `j-redis-service`, `mvn -o -DskipTests install` there: the backend
+Builds the release. First `j-redis-service`, `mvn -o -DskipTests clean install` there (clean as
+below, O-84): the backend
 builds against its client, and the release carries its server. Then `mvn clean install -DskipTests`
 offline, so that a file deleted from the sources (a migration replaced by the baseline, D-75) cannot
 linger in `target/` and ship; the clean empties `backend/target/`, earlier releases included. Then,
@@ -79,7 +81,7 @@ j-redis's, and **a module they use outside the list stops the release** ("the ru
 it to modules"; [09 §4.1](../../docs/detailed-design/09-release-and-packaging.md#41-the-runtime)).
 
 Last it copies `deploy/systemd` and `deploy/env`, `deploy/mysql` as `mysql-conf/` and
-`deploy/nginx` as `nginx-conf/`, the fifteen operational scripts, `COMMIT` (the git commit) and
+`deploy/nginx` as `nginx-conf/`, the fifteen operational scripts, `COMMIT` (the git commit, `-dirty` when the tree differs from it, O-84) and
 `VERSIONS.md` (`vendor/VERSIONS.md`, then the backend's, j-redis's and the runtime's versions),
 packs the directory, and prints the jars in each `lib/` and the sizes of `runtime/`, `mysql/`,
 `nginx/` and `jredis/`. The layout is in the [deploy README](../deploy/README.md#the-release).
@@ -151,7 +153,9 @@ scripts/check-ports-el9.sh                     the release in target/release/bac
 
 ### check-bind.sh
 
-Can this user bind these TCP ports, here? Each is bound on 127.0.0.1 and let go, and a refusal is
+Can this user bind these TCP ports, here? Each is bound on `BIND` (127.0.0.1; `dev-nginx.sh` gives
+0.0.0.0, every address, as its nginx binds, so that a listener on any one is found, O-83) and let go, and a
+refusal is
 explained: the policy of this machine that refuses it (the unprivileged-port threshold raised, an
 SELinux-confined login, WSL's reserved ranges), the command that lifts it, and the way round it
 ([D-88](../../docs/architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)).
@@ -220,9 +224,10 @@ binlog-stream.sh <out-dir>
 A consistent full dump of one database (`mysqldump --single-transaction --source-data=2 --routines
 --triggers --events --set-gtid-purged=OFF --no-tablespaces`, gzipped), with the binlog position it
 was taken at and no `USE` statement, so it restores under any name. It is written as `.partial` and
-renamed when whole; a dump without a binlog position is refused. After a dump has succeeded it
-deletes dumps older than `KEEP_DAYS` and, with `BINLOG_DIR`, every binlog copy before the file the
-oldest remaining dump starts from. Its outcome, success or failure, is recorded through
+renamed when whole; a dump without a binlog position is refused before it is renamed (O-67). After a
+dump has succeeded it deletes dumps older than `KEEP_DAYS` and, with `BINLOG_DIR`, every binlog copy
+before the earliest file a remaining dump starts from: a dump of another series, kept from a primary
+before a failover, keeps its own start (O-66). Its outcome, success or failure, is recorded through
 `record-backup.sh` as kind `dump`. Files are written private (`umask 077`).
 
 ```
@@ -263,7 +268,10 @@ waits up to 30 s for the stream to open the next file, so the one it was writing
 copied whole: only closed binlogs leave. Each dump and closed binlog copy that is new or changed is
 encrypted into the mirror (`openssl enc -aes-256-cbc -pbkdf2 -iter 200000`); a mirror file whose
 source was pruned is removed; then `rsync -a --delete` pushes the mirror to the target, which so
-holds what the backup machine holds. Recorded as kind `offsite`. With `OFFSITE_TARGET` unset it
+holds what the backup machine holds, but never a mirror with no dump: that push is refused and
+recorded as a failure, so that a machine whose dumps are gone or set aside does not wipe the host
+(O-69). Every binlog from the one the stream opened on, newer ones too, waits for the next run, closed
+(O-68). Recorded as kind `offsite`. With `OFFSITE_TARGET` unset it
 copies and records nothing (Q-53: no host named yet).
 
 ```
@@ -280,8 +288,9 @@ backup-offsite.sh <dump-dir> <binlog-dir> <mirror-dir>
 ### fetch-offsite.sh
 
 Brings the copy off the site back and decrypts it: the dumps into `<out-dir>/dumps`, the binlogs
-into `<out-dir>/binlog`, the layout `restore-drill.sh` reads. It fetches everything the host holds.
-Files are written private (`umask 077`).
+into `<out-dir>/binlog`, the layout `restore-drill.sh` reads: the newest dump and every binlog copy,
+what a restore to the copies' end reads; `ALL_DUMPS=1` every dump. Each file is decrypted and its
+encrypted copy removed as it goes. Files are written private (`umask 077`).
 
 ```
 fetch-offsite.sh <out-dir>
@@ -290,7 +299,7 @@ fetch-offsite.sh <out-dir>
 | | |
 |---|---|
 | Environment | `OFFSITE_TARGET` and `OFFSITE_KEY` (both required), `OFFSITE_SSH`, as `backup-offsite.sh`'s |
-| Needs | `rsync`, `ssh`, `openssl`; room for the whole copy twice, encrypted and decrypted |
+| Needs | `rsync`, `ssh`, `openssl`; room for the set once, and the largest file's encrypted copy beside it |
 | Run by | `restore-proof.sh` with `FROM_OFFSITE=1`; by hand for a restore from off the site ([runbook](../../docs/operations/02-runbook.md#a-last-resort-restore-with-no-source-left)) |
 
 ### restore-proof.sh
@@ -392,8 +401,9 @@ store-restore-drill.sh <backup-dir> <source-port> <scratch-port> [session|events
 ### promote-store.sh
 
 Promotes a j-redis replica to primary on the replica's machine. It will not promote while the old
-primary may still take writes: with `--old-is-down` it refuses if the old primary still answers as
-one; with `--demote-old` it first makes the old primary a replica of this one. Then `REPLICAOF NO
+primary may still take writes: with `--old-is-down` it refuses if the old primary answers as anything
+but a replica, `NOAUTH` too; with `--demote-old` it first makes the old primary a replica of this one,
+and refuses one it cannot reach (D-95). The old primary is `host:port`. Then `REPLICAOF NO
 ONE` here, which raises the epoch and records it; `replicaof` is taken out of the configuration
 file (the previous file kept as `<file>.before-promotion-<UTC time>`), since the role at start-up is
 the file's; and the new role and epoch are printed. Run on a primary already, it says so and changes
@@ -416,9 +426,13 @@ promote-store.sh <replica config file> <old primary host:port> --demote-old <thi
 Promotes MySQL's replica to primary, on the replica's machine. First it prints the primary's last
 heartbeat that this replica applied and its age: older than `PROMOTE_STALE_SECONDS`, or not
 readable, it refuses before touching anything unless given `--stale-ok`. It will not promote while
-the old primary may still serve: `--old-is-down` refuses if the old primary answers at all;
-`--demote-old` fences it first (`SET PERSIST super_read_only = ON`, `SET GLOBAL offline_mode =
-ON`). Then it waits up to 60 s for the replica to apply everything it received, stops replicating
+the old primary may still serve: `--old-is-down` refuses if the old primary answers at all, an error
+refusing the account or TLS included (no connection, or no reply in 20 s, is no answer);
+`--demote-old` refuses one that does not answer, and fences one that does: `SET PERSIST
+super_read_only = ON`, then waits up to 60 s for this replica to apply every transaction the old
+primary executed, then `SET GLOBAL offline_mode = ON`, which closes the replica's link too and so
+comes last (D-95, O-64). With `--old-is-down` it waits up to 60 s for the replica to apply everything
+it received. Then it stops replicating
 and forgets its source (`STOP REPLICA`, `RESET REPLICA ALL`), becomes writable with `SET PERSIST`,
 raises the failover epoch in `ha_epoch`, which the processes follow, and prints the epoch and the
 executed GTID set. Run on a primary already, it prints the epoch and changes nothing.
@@ -434,6 +448,22 @@ promote-mysql.sh <old primary host:port> --demote-old [--stale-ok]
 | Needs | root, to read the option file; `mysql`, `timeout`. The account `failover` with the grants of [01 §9](../../docs/operations/01-deploy.md#9-mysql) |
 | Runs | on the MySQL replica's machine (C); this machine's server by its socket, the old primary over TLS |
 | Run by | hand ([runbook §2](../../docs/operations/02-runbook.md#mysql-built-2026-09-29-d-35)) |
+
+### check-promote.sh
+
+Checks the two promotions above with stand-in clients, no server, in seconds: the old primary
+given without its port refused; with `--old-is-down`, one that answers refusing the account or the
+password refused, one that does not answer promoted past, a store's that answers as a replica
+promoted past; with `--demote-old`, one that does not answer, or refuses, refused; MySQL's handover
+in its order, read-only, the replica's wait for all the old primary executed, `offline_mode`, the
+promotion; the store's, the old primary demoted then this one promoted. It ends `--- <n> failed` and
+exits non-zero on any failure. `PM=` and `PS=` name another `promote-mysql.sh` or `promote-store.sh`,
+for a mutation check. The real promotions are the failover drills' (`client/headless-drill.sh`,
+`MYSQL_FAILOVER=demote` and `FAILOVER=1`).
+
+```
+scripts/check-promote.sh
+```
 
 ## Certificates
 
@@ -471,7 +501,11 @@ install-certificate.sh <fullchain.pem> <privkey.pem> | --check | --placeholder
 Checks a certificate the way a device will, then installs it for nginx and reloads it, which drops
 nothing: the key matches, the chain reaches the backend's root (`/etc/backend/tls/ca.pem`, when it
 is there) through the file alone, it is valid now, and it names the site's address (`server_name`)
-and every TLS name in the stream's map. If nginx refuses it, the previous files are put back. Before
+and every TLS name in the stream's map, each by its SAN (O-74), the address required when the map
+names arenas (O-77); the root's end counts with the chain's (O-73). It installs the certificates the file
+holds and nothing else, a key in it left out (O-75), both files written before either replaces its own. If
+nginx refuses them, the previous files are put back, or none left where there were none; once nginx
+accepts, the replaced key and certificate are not kept (O-76). Before
 nginx has ever started it installs without the reload. `--check` says what 443 and 9001 serve now,
 for each name, and the days left. An arena that ends TLS itself, without the front, gets a PKCS#12
 keystore. Its header has every setting.
@@ -510,7 +544,9 @@ with a UTC stamp (`access.log.20261024T000500Z`); nginx's master, the process `P
 `USR1` so that it and its workers open fresh files, and given a second to; the renamed files are
 compressed (`.gz`); rotated files older than `KEEP_DAYS` are deleted. An empty log is left alone, however
 old; the live logs are never deleted; nginx not running, the logs are rotated without a signal. Exit 2 on a
-`KEEP_DAYS` that is not whole days from 1 to 365, before anything is renamed. Run by
+`KEEP_DAYS` that is not whole days from 1 to 365, before anything is renamed; exit 1 when a step fails, a
+rename, the compression or a deletion, so that the timer's unit shows it (O-72). Older than `KEEP_DAYS` is
+counted in minutes (`-mmin`), not whole days. Run by
 `backend-nginx-logs.timer` at 00:05 UTC on every machine, as root under the backup units' sandbox.
 
 ```
@@ -529,7 +565,9 @@ Checks `rotate-nginx-logs.sh` on this machine, with the release's nginx on a loo
 `PORT`) and a log directory of its own: a request logged; the logs renamed with a UTC stamp, compressed,
 the line in them; the next request in a fresh `access.log`, so nginx reopened; a rotated file past
 `KEEP_DAYS` deleted and a newer one kept; an empty log left alone, however old; `KEEP_DAYS=0` and `14.5`
-refused with nothing rotated; nginx stopped, the logs rotated all the same. Its nginx's worker runs as
+refused with nothing rotated; a file an hour past `KEEP_DAYS` deleted and one an hour short kept; nginx
+stopped, waited for, and the logs rotated all the same, without a signal; a compression that fails, exit 1
+(O-72). Its nginx's worker runs as
 root, since a temporary directory under root's is closed to any other user; the workers as `nginx`
 reopening under `LogsDirectory=` are `check-units-el9.sh`'s to check, with the unit and its timer. It
 ends `--- <n> failed` and exits non-zero on any failure. `ROTATE=` names another `rotate-nginx-logs.sh`,
@@ -556,7 +594,10 @@ refuse: the stream copying; the dump, recorded; a mistake at a known moment; the
 encrypted, into a directory standing in for the host; the proof while a writer keeps writing; a
 restore to the moment before the mistake; the proof from off the site, and with the wrong key,
 refused and recorded as a failure (O-15); a gap in the copies, a dump whose gems do not reconcile,
-a proof whose replay stops short, and a moment before the dump, each refused; and the monthly
+a proof whose replay stops short, and a moment before the dump, each refused; the scripts' own
+(plan item 116): a proof without `SCRATCH_CNF` refused (O-65), a dump kept from another series leaving
+the new dump's binlogs (O-66), a dump that records no position never named as one (O-67), a push off
+the site with no dump refused and the host's copy kept (O-69); and the monthly
 drill's exact counts once nothing writes. It runs the scripts, not the units. It ends `BACKUP DRILL
 PASSED` or `BACKUP DRILL FAILED: <n>`, with the working directory, which holds every step's log.
 

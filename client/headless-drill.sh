@@ -85,15 +85,24 @@ if [ -x "$R/runtime/bin/java" ]; then J=${JAVA:-$R/runtime/bin/java}; else J=${J
 if [ -x "$R/mysql/bin/mysqld" ]; then MYSQLD_BIN=${MYSQLD_BIN:-$R/mysql/bin/mysqld}; PATH="$R/mysql/bin:$PATH"
 else MYSQLD_BIN=${MYSQLD_BIN:-/usr/sbin/mysqld}; fi
 DOTNET=${DOTNET:-/opt/dotnet/dotnet}
-# The drill's fixed ports, tried first: one in use, or one a policy of the machine refuses, is named (D-88)
-"$B/backend/scripts/check-bind.sh" 6390 8093 8094 9011 9195 9196 9197 9198 9199 || exit 1
+# The drill's fixed ports, tried first: one in use, or one a policy of the machine refuses, is named (D-88); and
+# each mode's own, which a server left by an earlier run would otherwise answer for (O-80).
+MODE_PORTS=()
+[ "${FAILOVER:-0}" = 1 ] && MODE_PORTS+=(6392)
+[ "${MYSQL_FAILOVER:-0}" != 0 ] && MODE_PORTS+=(3307 3308)
+[ "${IDLEGUEST:-0}" = 1 ] && MODE_PORTS+=(9193)
+[ "${WATCH:-0}" = 1 ] && MODE_PORTS+=(9194)
+"$B/backend/scripts/check-bind.sh" 6390 8093 8094 9011 9195 9196 9197 9198 9199 "${MODE_PORTS[@]}" || exit 1
 D=$(mktemp -d); mkdir -p "$D/data" "$D/spool"
 echo "logs in $D"
 # The store's jars copied, and the tools' below: a build beside a long drill deletes its target
 # directory, and every sample of the store starts the command-line client afresh (T-31).
 cp "$JREDIS" "$JREDIS_CLI" "$D/"; JREDIS=$D/${JREDIS##*/}; JREDIS_CLI=$D/${JREDIS_CLI##*/}
 PIDS=()
-cleanup() { for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-}; do kill "$p" 2>/dev/null; done; sleep 2; for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-}; do kill -9 "$p" 2>/dev/null; done
+# Every background job too, the probe, the soak's loops, the bots and a drain still waiting: a drill ended
+# early left them on, at the next drill's ports (O-80).
+cleanup() { touch "$D/soak.stop" 2>/dev/null; local jobs; jobs=$(jobs -p)
+           for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-} $jobs; do kill "$p" 2>/dev/null; done; sleep 2; for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-} $jobs; do kill -9 "$p" 2>/dev/null; done
            [ "${DEV_MYSQL_STARTED:-0}" = 1 ] && "$B/dev-mysql.sh" stop > /dev/null 2>&1; }
 trap cleanup EXIT
 # NFR-2's p50 and p95 per profile from a scrape of the arena: a histogram's buckets come in its
@@ -264,8 +273,10 @@ class H(http.server.BaseHTTPRequestHandler):
 http.server.HTTPServer(("127.0.0.1", 9194), H).serve_forever()' "$D/webhook.log" & PIDS+=($!)
 fi
 for i in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8093/health && break; sleep 1; done
+curl -s -o /dev/null http://127.0.0.1:8093/health || { echo "DRILL FAILED: the platform does not answer after 60 s"; exit 1; }
 sleep 3
-for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null || echo "process $p died during start-up"; done
+# A process that ended here fails the drill: the scenarios that do not need it passed without it (O-80).
+for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null || { echo "DRILL FAILED: process $p died during start-up"; exit 1; }; done
 
 # The arena's pid is the second started: stopped mid-scenario, it drains (01 §8.6).
 if [ -n "${DRAIN_AFTER:-}" ]; then
@@ -343,6 +354,22 @@ mysql_watched() {
   echo "$out" | grep -q "^REFUSED: this replica holds nothing" || mfail "the refusal: $out"
   echo "  $(echo "$out" | head -1)"
   [ "$(msql 3307 "SELECT @@global.super_read_only")" = 0 ] || mfail "the old primary was fenced before the refusal"
+  # What answers is up, and --demote-old fences or refuses (O-63, D-95): each refused, nothing touched.
+  out=$(MYSQL_FAILOVER_CNF="$D/mysql-failover.cnf" BACKEND_DB_NAME=backend_dev "$B/backend/scripts/promote-mysql.sh" \
+        127.0.0.1 --demote-old 2>&1) && mfail "promoted with the old primary given without its port"
+  { cat "$D/mysql-failover.cnf"; printf '[client_remote]\npassword=not-the-password\n'; } > "$D/mysql-failover-wrong.cnf"
+  chmod 600 "$D/mysql-failover-wrong.cnf"
+  for mode in --old-is-down --demote-old; do
+    out=$(MYSQL_FAILOVER_CNF="$D/mysql-failover-wrong.cnf" BACKEND_DB_NAME=backend_dev \
+          "$B/backend/scripts/promote-mysql.sh" 127.0.0.1:3307 $mode 2>&1) && mfail "$mode promoted past an old primary refusing the account"
+    echo "$out" | grep -q "^REFUSED: 127.0.0.1:3307 answers, refusing this account" || mfail "$mode, the account refused: $out"
+  done
+  out=$(MYSQL_FAILOVER_CNF="$D/mysql-failover.cnf" BACKEND_DB_NAME=backend_dev "$B/backend/scripts/promote-mysql.sh" \
+        127.0.0.1:1 --demote-old 2>&1) && mfail "--demote-old promoted past an old primary it could not reach"
+  echo "$out" | grep -q "^REFUSED: 127.0.0.1:1 does not answer" || mfail "--demote-old, no answer: $out"
+  [ "$(msql 3307 "SELECT @@global.super_read_only")" = 0 ] && [ "$(msql 3308 "SELECT COUNT(*) FROM performance_schema.replication_connection_configuration")" = 1 ] \
+    && echo "  refused: the old primary without its port, one refusing the account, one not answering to --demote-old" \
+    || mfail "a refusal touched a server"
 }
 mysql_kill() {
   promote --old-is-down && mfail "promoted while the old primary was writable"
@@ -353,8 +380,18 @@ mysql_promote() {
   if [ "$MYSQL_FAILOVER" != demote ]; then
     promote --old-is-down || mfail "the promotion"
   else
+    # What the replica has not received when the handover begins, by construction (O-64): its receiver stopped while
+    # the old primary commits (the worker's heartbeat, each second), started again 5 s into the handover. Closed
+    # first, the old primary refused the receiver, and the promotion went ahead without what it had not received.
+    msql 3308 "STOP REPLICA IO_THREAD"
+    sleep 3
+    ( sleep 5; msql 3308 "START REPLICA IO_THREAD" ) &
     promote --demote-old || mfail "the promotion"
     [ "$(msql 3307 "SELECT @@global.super_read_only + @@global.offline_mode")" = 2 ] || mfail "the old primary is not fenced"
+    OLD_SET=$(msql 3307 "SELECT REPLACE(@@global.gtid_executed, '\\n', '')")
+    [ "$(msql 3308 "SELECT GTID_SUBSET('$OLD_SET', @@global.gtid_executed)")" = 1 ] \
+      && echo "  every transaction the old primary executed is on the new one, those it had not sent when the handover began among them" \
+      || mfail "the new primary lacks transactions the old one executed (O-64)"
   fi
 }
 dbq() { mysql -h127.0.0.1 -P"$1" --protocol=TCP -ubackend -p"${BACKEND_DB_PASSWORD:-backend-dev-password}" backend_dev -N -B -e "$2" 2>/dev/null; }
@@ -374,6 +411,8 @@ if [ -n "${BOTS:-}" ]; then
   $J -cp "$TOOLS" com.backend.tools.BotClient "$N" "$SECS" http://127.0.0.1:8093 ws://127.0.0.1:8094/lobby \
     > "$D/bots.log" 2>&1 & BOTS_PID=$!
   until grep -q "bots connected" "$D/bots.log" || ! kill -0 $BOTS_PID 2>/dev/null; do sleep 1; done
+  # None connected, the run would measure an idle stack and pass (O-80).
+  grep -q "bots connected" "$D/bots.log" || { echo "BOTS FAILED: no bot connected: $(tail -3 "$D/bots.log")"; exit 1; }
   if [ "${FAILOVER:-0}" = 1 ] || [ "$MYSQL_FAILOVER" != 0 ]; then
     # The failover under load (architecture/02 §6). The probe: an authenticated read every half
     # second, which needs the session store and MySQL both; each answer's time and status.
@@ -420,14 +459,22 @@ if [ -n "${BOTS:-}" ]; then
       $J $OPENS -cp "$R/lib/worker/*" com.backend.worker.WorkerMain 127.0.0.1 6390 worker-drill-$k \
         > "$D/worker-$k.log" 2>&1 & WPIDS+=($!); PIDS+=($!)
     done
+    T0=$(date +%s)
     for k in $(seq 2 "$WORKERS"); do
-      until grep -q "consuming s:match-result" "$D/worker-$k.log"; do sleep 1; done
+      until grep -q "consuming s:match-result" "$D/worker-$k.log"; do
+        kill -0 "${WPIDS[k - 1]}" 2>/dev/null && [ $(( $(date +%s) - T0 )) -lt 120 ] \
+          || { echo "BOTS FAILED: worker-drill-$k did not start: $D/worker-$k.log"; exit 1; }
+        sleep 1
+      done
     done
     kill -STOP "${WPIDS[@]}"
     echo "--- $WORKERS workers ready, and paused while the bots play ($(date +%T))"
   fi
   NAMES=(store arena platform gateway worker bots mysqld)
-  WATCH=("${PIDS[0]}" "${PIDS[1]}" "${PIDS[2]}" "${PIDS[3]}" "${PIDS[4]}" "$BOTS_PID" "$(pgrep -x mysqld | head -1)")
+  # Not WATCH, the switch: an array of that name read as its first element, and the watch's check was skipped (O-80).
+  # The development MySQL's own pid, not the lowest mysqld's, which may be the machine's.
+  SAMPLED=("${PIDS[0]}" "${PIDS[1]}" "${PIDS[2]}" "${PIDS[3]}" "${PIDS[4]}" "$BOTS_PID" "$(cat "$B/work/mysql/mysqld.pid" 2>/dev/null)")
+  [ "$MYSQL_FAILOVER" != 0 ] && SAMPLED[6]=${MYSQL_PIDS[0]}
   if [ "${SOAK:-0}" = 1 ]; then
     # The soak (07 §4): duels throughout, and every process sampled as second, series, value.
     : > "$D/duels.started"; : > "$D/duels.status"; mkdir -p "$D/histo"
@@ -469,7 +516,7 @@ if [ -n "${BOTS:-}" ]; then
   # utime + stime, read after the name: a thread's name, in parentheses, may hold spaces.
   # 0 for a process gone, which a failover under load makes of the store's primary.
   cpu() { local v; v=$(sed 's/.*) //' "$1" 2>/dev/null | awk '{ print $12 + $13 }'); echo "${v:-0}"; }
-  ticks() { for p in "${WATCH[@]}"; do cpu "/proc/$p/stat"; done; }
+  ticks() { for p in "${SAMPLED[@]}"; do cpu "/proc/$p/stat"; done; }
   threads() {    # the arena's threads by kind, numbers taken off ("room", an event loop): user, kernel
     for t in /proc/${PIDS[1]}/task/*; do
       printf '%s ' "$(sed -E 's/([-#_ ]?[0-9]+)+$//; s/ /_/g' "$t/comm")"; sed 's/.*) //' "$t/stat" | awk '{ print $12, $13 }'
@@ -549,7 +596,7 @@ if [ -n "${BOTS:-}" ]; then
     # Every bot's stay, once.
     # The catch-up's cost: each process's CPU a result, which says whether a result's time is
     # spent working or waiting on round trips and the disk.
-    MYSQLD=${WATCH[6]}; [ "$MYSQL_FAILOVER" != 0 ] && MYSQLD=${MYSQL_PIDS[1]}
+    MYSQLD=${SAMPLED[6]}; [ "$MYSQL_FAILOVER" != 0 ] && MYSQLD=${MYSQL_PIDS[1]}
     W0=$(cpu "/proc/${PIDS[4]}/stat"); Q0=$(cpu "/proc/$MYSQLD/stat")
     T0=$(date +%s)
     until [ "$(stays | awk '{ print $1 }')" -ge "$BOTS_IN" ] 2>/dev/null || [ $(( $(date +%s) - T0 )) -ge 180 ]; do sleep 2; done
@@ -693,7 +740,14 @@ if [ "$MYSQL_FAILOVER" != 0 ] && [ -z "${UNDER_LOAD:-}" ]; then
              SET GLOBAL clone_valid_donor_list = '127.0.0.1:3308';
              CLONE INSTANCE FROM 'clone'@'127.0.0.1':3308 IDENTIFIED BY 'clone-drill' REQUIRE SSL" 2>&1 \
     | grep -v "ERROR 3707"                             # no supervisor here to restart it: started below
-  while kill -0 "${MYSQL_PIDS[0]}" 2>/dev/null; do sleep 1; done
+  # A clone that fails otherwise leaves the server running: waited for two minutes, not for ever (O-80).
+  T1=$(date +%s)
+  while kill -0 "${MYSQL_PIDS[0]}" 2>/dev/null; do
+    if [ $(( $(date +%s) - T1 )) -ge 120 ]; then
+      mfail "the clone did not end the server within 120 s"; kill "${MYSQL_PIDS[0]}"; sleep 5; break
+    fi
+    sleep 1
+  done
   MYSQL_PIDS[0]=$(mysql_run mysql-a 3307 1 --super-read-only=ON)
   mysql_ready 3307 || mfail "the rebuilt replica did not start"
   [ "$(msql 3307 "SELECT STATE FROM performance_schema.clone_status")" = Completed ] || mfail "the clone did not complete"
@@ -727,7 +781,8 @@ if [ "${TAKEOVER:-0}" = 1 ]; then
     if [ $(( $(date +%s) - T0 )) -gt 180 ]; then echo "TAKEOVER FAILED: still pending after 180 s"; STATUS=1; break; fi
     sleep 2
   done
-  echo "pending 0 after $(( $(date +%s) - T0 )) s"; grep -E 're-driving|trimmed' "$D/worker-b.log" | cut -c1-160
+  [ "$(cli "XPENDING s:match-result rewards" | head -1)" = 0 ] && echo "pending 0 after $(( $(date +%s) - T0 )) s"
+  grep -E 're-driving|trimmed' "$D/worker-b.log" | cut -c1-160
   IN=$(mysql -h127.0.0.1 -P"$DBPORT" --protocol=TCP -ubackend -p"${BACKEND_DB_PASSWORD:-backend-dev-password}" backend_dev -N -e "
     SELECT COUNT(*) FROM matches WHERE match_uid IN ('$(printf '%s\n' $UIDS | paste -sd, | sed "s/,/','/g")')" 2>/dev/null)
   echo "in MySQL: $IN of $N"; [ "$IN" = "$N" ] && [ "$N" -gt 0 ] || { echo "TAKEOVER FAILED"; STATUS=1; }
@@ -757,14 +812,16 @@ if [ "${WATCH:-0}" = 1 ]; then
   echo "--- the watch (04 §12, D-86): the worker killed, TargetDown listed by the admin API and sent to the webhook within three minutes, then silenced"
   admin() { curl -s -H "Authorization: Bearer drill-admin-secret" "http://127.0.0.1:9196/admin/$1"; }
   kill -9 "${PIDS[4]}"; echo "worker-drill killed ($(date +%T))"
+  # The worker's: with BOTS the arena has been stopped for its report, and its TargetDown passed for the worker's (O-80).
+  worker_down() { admin alerts | grep -q '"name":"TargetDown","labels":{[^}]*127.0.0.1:9199'; }
   T0=$(date +%s)
-  until admin alerts | grep -q '"name":"TargetDown"'; do
-    if [ $(( $(date +%s) - T0 )) -gt 180 ]; then echo "WATCH FAILED: no TargetDown listed after 180 s: $(admin alerts | cut -c1-300)"; STATUS=1; break; fi
+  until worker_down; do
+    if [ $(( $(date +%s) - T0 )) -gt 180 ]; then echo "WATCH FAILED: no TargetDown for the worker after 180 s: $(admin alerts | cut -c1-300)"; STATUS=1; break; fi
     sleep 5
   done
-  echo "TargetDown listed after $(( $(date +%s) - T0 )) s: $(admin alerts | grep -o '"labels":{[^}]*}' | head -1)"
+  worker_down && echo "TargetDown listed for the worker after $(( $(date +%s) - T0 )) s"
   sleep 3
-  grep -q TargetDown "$D/webhook.log" 2>/dev/null && echo "and sent to the webhook: $(grep -o '"status":"[a-z]*"' "$D/webhook.log" | head -1), $(grep -c . "$D/webhook.log") notification(s) in all" \
+  grep -q 'TargetDown.*127.0.0.1:9199' "$D/webhook.log" 2>/dev/null && echo "and sent to the webhook: $(grep -o '"status":"[a-z]*"' "$D/webhook.log" | head -1), $(grep -c . "$D/webhook.log") notification(s) in all" \
     || { echo "WATCH FAILED: nothing at the webhook"; STATUS=1; }
   echo "ALERT lines in the platform's log: $(grep -c "ALERT firing TargetDown" "$D/platform.log")"
   curl -s http://127.0.0.1:9195/metrics | grep -E '^backend_watch_(scrapes_total|alerts_firing|notifications_total|round_seconds)' | sed 's/^/  /'

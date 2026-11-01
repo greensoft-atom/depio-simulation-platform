@@ -197,6 +197,35 @@ check '[ "$EARLY_OK" = refused ] && grep -qE "stopped +[1-9]" "$W/early.log"' \
 check '[ "$(msql 3307 "SELECT COUNT(*) FROM $DB.player p LEFT JOIN (SELECT player_id, SUM(IF(currency = 0, delta, 0)) c, SUM(IF(currency = 1, delta, 0)) g FROM $DB.ledger GROUP BY player_id) l ON l.player_id = p.id WHERE p.coins <> COALESCE(l.c, 0) OR p.gems <> COALESCE(l.g, 0)")" = 0 ]' \
     "the primary still reconciles: the drill's own writes were consistent"
 
+echo "--- what must be refused or kept, the scripts' own (item 116)"
+SOURCE_CNF=$W/backup.cnf "$HERE/restore-proof.sh" "$W/backup/dumps" "$W/backup/binlog" "$DB" backend_noscratch \
+    > "$W/proof-noscratch.log" 2>&1 && NOSCRATCH=passed || NOSCRATCH=refused
+check '[ "$NOSCRATCH" = refused ] && grep -q "SCRATCH_CNF must name" "$W/proof-noscratch.log"' \
+    "a proof without SCRATCH_CNF: refused before anything (O-65)"
+# A dump kept from another server, a primary before a failover, whose binlogs number far beyond these.
+mkdir -p "$W/series/dumps" "$W/series/binlog"
+cp "$W/backup/binlog"/* "$W/series/binlog/"
+printf -- "-- CHANGE REPLICATION SOURCE TO SOURCE_LOG_FILE='bin.000450', SOURCE_LOG_POS=157;\n" | gzip > "$W/series/dumps/$DB-20200101T000000Z.sql.gz"
+MYSQL_CNF=$W/backup.cnf RECORD=0 BINLOG_DIR=$W/series/binlog "$HERE/backup-mysql.sh" "$DB" "$W/series/dumps" > "$W/series.log" 2>&1 || true
+STARTS=$( { zcat "$(find "$W/series/dumps" -name "$DB-*.sql.gz" | sort | tail -1)" | head -40; } 2>/dev/null \
+    | grep -m1 -oE "SOURCE_LOG_FILE='[^']+'" | cut -d"'" -f2 || true)
+check '[ -n "$STARTS" ] && [ -e "$W/series/binlog/$STARTS" ]' \
+    "a dump kept from another series: the new dump's binlogs kept, ${STARTS:-none read} among them (O-66)"
+# A dump that says nothing of its position, as a mysqldump of another version might write it.
+mkdir -p "$W/fakebin"
+printf '#!/bin/sh\necho "CREATE TABLE t (i INT);"\n' > "$W/fakebin/mysqldump"; chmod +x "$W/fakebin/mysqldump"
+PATH=$W/fakebin:$PATH MYSQL_CNF=$W/backup.cnf RECORD=0 "$HERE/backup-mysql.sh" "$DB" "$W/nopos" > "$W/nopos.log" 2>&1 \
+    && NOPOS=passed || NOPOS=refused
+check '[ "$NOPOS" = refused ] && [ -z "$(find "$W/nopos" -name "$DB-*.sql.gz")" ]' \
+    "a dump that records no binlog position: refused, and never under a dump's name (O-67)"
+OFFSITE_BEFORE=$(find "$W/offsite" -type f | wc -l)
+mkdir -p "$W/nodumps"
+OFFSITE_TARGET=$W/offsite OFFSITE_KEY=$W/offsite.key MYSQL_CNF=$W/backup.cnf RECORD=0 \
+    "$HERE/backup-offsite.sh" "$W/nodumps" "$W/backup/binlog" "$W/mirror-nodumps" > "$W/offsite-nodumps.log" 2>&1 \
+    && NODUMPS=passed || NODUMPS=refused
+check '[ "$NODUMPS" = refused ] && [ -n "$(find "$W/offsite/dumps" -name "*.enc")" ] && [ "$(find "$W/offsite" -type f | wc -l)" -ge "$OFFSITE_BEFORE" ]' \
+    "a push with no dump to copy: refused, the host keeping its copy (O-69)"
+
 echo "--- the monthly drill's exact way, once nothing writes"
 # Asked to stop, not killed: a kill ends the loop but not the write it is in, which then lands
 # after the copy's end and is counted in the source alone (T-47).

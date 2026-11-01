@@ -3853,13 +3853,36 @@ A second machine: the replicas of MySQL and both stores made from the running pr
 then arenas on it; written step by step and run as written in containers, with the site serving throughout. When the
 owner needs it: past about 4 000 in battle, or for failover.
 
-#### 116. Every shell script reviewed again, line by line (the owner, 2026-11-01).
+#### 116. ~~Every shell script reviewed again, line by line (the owner, 2026-11-01).~~ — **done 2026-11-01**
 
 The owner: check all shell scripts again, carefully. Every tracked script, 40 files and j-redis's four launchers,
-about 5 000 lines: read line by line against what documents it (its header, the scripts' README, the guides and
-the runbook, the units that run it), with ShellCheck's every warning judged; each finding checked against the code
-before it is changed, given an ID, and its fix proved by the script's own check or a run. Item 115 waits for the
-owner, so this one comes before it.
+about 5 000 lines, read line by line by five readers apart against what documents each (its header, the scripts'
+README, the guides and the runbook, the units that run it), every ShellCheck warning judged; each finding then
+checked against the code here before anything changed: 26 defects, O-63 to O-87 and O-89, and two in the
+documents, DOC-35 and DOC-36 (O-88 closed, not a defect); and D-95. **The serious ones**: the promotions took any error reaching the old primary
+for its absence and promoted past a live one, `--demote-old` too (O-63, H; live, on the drill's servers, the script
+before this promoted the replica on a port left out, an account refused and an old primary unreachable); a planned
+MySQL handover's fence cut the replica's link before it had everything (O-64, proved on two servers; the drill now
+makes the window by construction, and the old order fails it); a key inside the certificate's file installed
+readable by all (O-75); the restore proof's `SCRATCH_CNF` check defeated by two apostrophes (O-65, both bashes);
+retention pruning a new series' binlogs by an old series' dump (O-66); the copy off the site wiping its host from a
+machine with no dumps (O-69, latent until Q-53); `dev-env.sh` sending the tests to another server's `backend_test`
+(O-85). The rest are the checks' and drills' own claims made true (O-78 to O-80), and the scripts' smaller faults.
+**Tested**: test first wherever a run could show it, each new case failing against the script before it: the new
+`check-promote.sh` (13 cases, nine failing before), `check-certificates.sh` (eight new), `check-nginx-logs.sh` (two),
+`backup-drill.sh` (four), the MySQL failover drill's refusals and construction (two mutants caught: the whole script
+before, and the fence's old order); shown by runs, the version before against this, for `check-bind.sh`, the Unity
+check, `dev-env.sh`, `dev-backend.sh`, `dev-jredis.sh`, `run-local.sh`, the drill under SIGTERM and with `WATCH=1`
+and `BOTS` (which found its watch check passing on the wrong alert, fixed); then each check run whole: the install
+guide's in UBI 9.5, its passwords now on standard input (O-89), the units', the ports', the release's, the store's
+two failover drills and MySQL's handover, the backups' drill, all passing. A mutant of the new restore-block
+assertion caught. **By reading only**, their windows races or downloads this machine cannot make: O-68, O-70, O-71,
+O-87, and check-bind's threshold named beside SELinux (the guest's threshold not raised). The SELinux guest caught a fault of this
+item's own first fix of O-83, which moved the grant it names to another port; fixed before the commit, and the
+guest's check run whole again, all passing. ShellCheck after: no warning added but kinds already
+judged harmless (variables read through `check`'s `eval`, `ls | grep` on names the checks make); the one error,
+O-65's, gone. Docs: D-95, 06 §7 and §10, the runbook's promotions and backups after a failover, 06-certificates,
+09 §1's COMMIT, the scripts README, the client READMEs, development/02 and 03, CLAUDE.md.
 
 ---
 

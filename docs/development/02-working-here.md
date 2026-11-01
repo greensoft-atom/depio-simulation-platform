@@ -96,7 +96,8 @@ nginx on 80, 443 and 9001 on every IPv4 address. This machine's firewall lets 80
 internet (ufw), so while `dev-nginx.sh` runs here its redirect is reachable from outside;
 443 and 9001 are not. **The drills' ports:** 6390 and 6392 (j-redis and its
 replica), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 to 9199 (metrics
-and the admin API), 3307 to 3309 (the drills' own MySQL servers).
+and the admin API), 9193 and 9194 (a second worker's metrics, the alerts' receiver), 3307 to 3309
+(the drills' own MySQL servers).
 
 **A user who is not root, `devtest`**, with a clone of its own in `/home/devtest/background` and a
 network namespace `devtest` (loopback alone; after a reboot, `ip netns add devtest && ip netns exec devtest

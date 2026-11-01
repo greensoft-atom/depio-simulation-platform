@@ -35,7 +35,8 @@ fetch() {                                     # fetch <name>: the file's path in
     url=$(awk '{print $2}' <<< "$line"); sum=$(awk '{print $3}' <<< "$line")
     file="$CACHE/$(basename "${url//%2B/+}")"
     if [ ! -s "$file" ]; then
-        curl -fsSL --retry 3 -o "$file.part" "$url"
+        # Its own failure: errexit does not hold in the $(...) this runs in, and a broken download was kept (O-87).
+        curl -fsSL --retry 3 -o "$file.part" "$url" || { rm -f "$file.part"; echo "cannot download $url" >&2; exit 1; }
         mv "$file.part" "$file"
     fi
     local got; got=$(sha256sum "$file" | awk '{print $1}')
@@ -60,17 +61,21 @@ rm -rf "$HERE/jdk-21"
 cp -r "$T/jmods" "$HERE/jdk-21/jmods"
 cp "$T/NOTICE" "$HERE/jdk-21/NOTICE"
 
+# Each download fetched and checked before its committed directory goes: a checksum left empty, as above, or a
+# failed download removed it first, and every script then refused to run (O-87).
 echo "--- maven"
+m=$(fetch maven)
 rm -rf "$HERE/maven-3.9"
 mkdir -p "$HERE/maven-3.9"
-tar -xzf "$(fetch maven)" -C "$HERE/maven-3.9" --strip-components=1
+tar -xzf "$m" -C "$HERE/maven-3.9" --strip-components=1
 
 # MySQL: the minimal generic build, less what nothing here uses, and the two libraries it takes from
 # the system put in lib/private, which its RUNPATH ($ORIGIN/../lib/private) searches first.
 echo "--- mysql"
+m=$(fetch mysql)
 rm -rf "$HERE/mysql-8.4"
 mkdir -p "$HERE/mysql-8.4"
-tar -xJf "$(fetch mysql)" -C "$HERE/mysql-8.4" --strip-components=1
+tar -xJf "$m" -C "$HERE/mysql-8.4" --strip-components=1
 # share/dictionary.txt is the password-strength component's word list, unused here (and it holds the
 # word the naming rule excludes, which the commit's word check would refuse).
 rm -rf "$HERE/mysql-8.4/lib/mecab" "$HERE/mysql-8.4/lib/pkgconfig" "$HERE/mysql-8.4/include" \
@@ -90,8 +95,10 @@ cp "$work/el9-libs.txt" "$HERE/mysql-8.4/lib/private/EL9-LIBRARIES.txt"
 # The sources nginx is built from, as published.
 echo "--- src"
 mkdir -p "$HERE/src"
+sources=()
+for n in nginx openssl pcre2 zlib; do sources+=("$(fetch "$n")"); done
 rm -f "$HERE"/src/*.tar.gz
-for n in nginx openssl pcre2 zlib; do cp "$(fetch "$n")" "$HERE/src/"; done
+cp "${sources[@]}" "$HERE/src/"
 
 echo "--- done; for new nginx sources, build-nginx.sh next; then VERSIONS.md"
 du -sh "$HERE"/jdk-21 "$HERE"/maven-3.9 "$HERE"/mysql-8.4 "$HERE"/src

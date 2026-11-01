@@ -3,7 +3,8 @@
 # OpenSSL, PCRE2 (and its JIT) and zlib compiled in, and installs it as nginx-1.30/ beside this script
 # (docs/detailed-design/09 §5, D-77), with the stream module and its TLS for match traffic on
 # 9001 (D-82). Never compiled on the development machine: its glibc's newer
-# symbols would keep the binary from starting on RHEL 9. Needs docker; nothing installed on the host.
+# symbols would keep the binary from starting on RHEL 9. Needs docker; nothing installed on the host: it is stripped
+# and checked in the container, and only a binary that passes replaces nginx-1.30 (O-87).
 #
 #   vendor/build-nginx.sh
 set -euo pipefail
@@ -16,6 +17,7 @@ trap 'rc=$?; [ "$rc" = 0 ] || tail -n 25 "$work"/*.log 2>/dev/null; rm -rf "$wor
 
 docker run --rm --name "backend-build-nginx-$$" -v "$HERE/src:/src:ro" -v "$work:/out" "$IMAGE" bash -c '
     set -e
+    trap "chown -R '"$(id -u):$(id -g)"' /out" EXIT      # the caller may delete what a failed build left
     dnf -q -y install gcc make perl-core > /dev/null
     mkdir /build && cd /build
     for t in /src/*.tar.gz; do tar -xzf "$t"; done
@@ -47,19 +49,20 @@ docker run --rm --name "backend-build-nginx-$$" -v "$HERE/src:/src:ro" -v "$work
     make install DESTDIR=/out/install > /dev/null
     cp LICENSE /out/install/LICENSE
     /out/install/opt/backend/nginx/sbin/nginx -V > /out/nginx-V.txt 2>&1
-    chown -R '"$(id -u):$(id -g)"' /out'
+    # Stripped and read here, with the binutils gcc brought: what it links, glibc alone (auth_basic, unused, would
+    # add libcrypt.so.2, which RHEL 9 has and Ubuntu not), and the newest glibc symbol it needs.
+    strip /out/install/opt/backend/nginx/sbin/nginx
+    readelf -d /out/install/opt/backend/nginx/sbin/nginx | grep NEEDED > /out/needed.txt
+    objdump -T /out/install/opt/backend/nginx/sbin/nginx | grep -oE "GLIBC_[0-9.]+" | sort -V | tail -1 > /out/newest.txt'
 
+cat "$work/needed.txt"
+newest=$(cat "$work/newest.txt")
+echo "nginx built: $(head -1 "$work/nginx-V.txt"); the newest glibc symbol it needs: $newest"
+# RHEL 9 has 2.34; checked before the committed nginx is replaced.
+case "$newest" in GLIBC_2.3[5-9]*|GLIBC_2.[4-9]*) echo "TOO NEW FOR RHEL 9: nginx-1.30 left as it was" >&2; exit 1 ;; esac
 rm -rf "$OUT"
 mkdir -p "$OUT/conf"
 cp -a "$work/install/opt/backend/nginx/sbin" "$OUT/"
 cp "$work/install/etc/backend/nginx/mime.types" "$OUT/conf/"
 cp "$work/install/LICENSE" "$OUT/LICENSE"
 cp "$work/nginx-V.txt" "$OUT/BUILD.txt"
-strip "$OUT/sbin/nginx"
-
-# What it links: glibc alone (auth_basic, unused, would add libcrypt.so.2, which RHEL 9 has and Ubuntu not).
-readelf -d "$OUT/sbin/nginx" | grep NEEDED
-# The newest glibc symbol it needs: RHEL 9 has 2.34.
-newest=$(objdump -T "$OUT/sbin/nginx" | grep -oE 'GLIBC_[0-9.]+' | sort -t. -k2 -n | sort -V | tail -1)
-echo "nginx built: $(head -1 "$OUT/BUILD.txt"); the newest glibc symbol it needs: $newest"
-case "$newest" in GLIBC_2.3[5-9]*|GLIBC_2.[4-9]*) echo "TOO NEW FOR RHEL 9" >&2; exit 1 ;; esac

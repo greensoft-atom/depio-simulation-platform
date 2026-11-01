@@ -23,7 +23,8 @@ if [ "${1:-}" != --inside ]; then
     REPO=$(cd "$HERE/../.." && pwd)
     REL=$(ls -d "$REPO"/backend/target/release/backend-*/ 2> /dev/null | head -1)
     [ -n "$REL" ] || { echo "no release in backend/target/release: scripts/make-release.sh first" >&2; exit 1; }
-    DOTNET=${DOTNET:-$(command -v dotnet || echo /opt/dotnet/dotnet)}
+    # The documented .NET 8 first, /opt/dotnet, where it is (O-81).
+    DOTNET=${DOTNET:-$( { [ -x /opt/dotnet/dotnet ] && echo /opt/dotnet/dotnet; } || command -v dotnet || echo /opt/dotnet/dotnet)}
     [ -x "$DOTNET" ] || { echo "no .NET 8 at $DOTNET (DOTNET=...): it publishes the C# client" >&2; exit 1; }
     WORK=$(mktemp -d "${TMPDIR:-/tmp}/check-ports.XXXXXX")
     trap 'rm -rf "$WORK"' EXIT
@@ -44,6 +45,8 @@ EOF
         -v "$REPO/backend/scripts/private-ca.sh:/check/private-ca.sh:ro" \
         -v "$WORK/headless:/check/headless:ro" \
         -v "$HERE/check-ports-el9.sh:/check.sh:ro" "$IMAGE" > /dev/null || exit 1
+    # Stopped on every way out, an interrupt too: the docker client exits, and the container went on (O-78).
+    trap 'docker stop "$NAME" > /dev/null 2>&1; rm -rf "$WORK"' EXIT
     docker exec "$NAME" bash /check.sh --inside
     rc=$?
     docker stop "$NAME" > /dev/null
@@ -412,7 +415,10 @@ expect "B to 6379" open "$(probe b 10.0.0.1 6379)"
 expect "a player to 443" open "$(probe player "$PUB" 443)"
 expect "the stranger to 6379" "No route to host" "$(probe stranger 10.0.0.1 6379)"
 echo "--- A's commands run a second time:"
+zones=$(firewall-cmd --list-all-zones)
 bash "$L/firewall-A.sh" 2>&1 | sed 's/^/      /'
+[ "$(firewall-cmd --list-all-zones)" = "$zones" ] && ok "they changed nothing: every zone as it was" \
+    || fail "a second run changed the zones (O-79)"
 
 for m in B C; do
     echo "--- §5's commands for $m, on a firewall as RHEL 9 has it:"

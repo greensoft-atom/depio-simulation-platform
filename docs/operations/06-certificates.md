@@ -68,7 +68,9 @@ backend/scripts/private-ca.sh show ~/backend-certificate/fullchain.pem
 - Give `names` the map the machines use: the release's `nginx-conf/backend-stream.conf`, or a
   machine's `/etc/backend/nginx/backend-stream.conf`.
 - `show` lists what it names: `IP Address:203.0.113.10, DNS:a1.arena.internal, …`.
-- The certificate is valid 398 days (`DAYS` changes it). It is checked against the root before the
+- The certificate is valid 398 days (`DAYS` changes it), and never past its root: one that would
+  outlive the root is refused (O-73), since a device refuses the chain once the root has expired;
+  near the root's end, a new root is a client release. It is checked against the root before the
   script prints that it is done.
 - It refuses an output directory that already holds a key or a certificate: each issue goes into
   a new one, `~/backend-certificate-2027` say.
@@ -94,13 +96,17 @@ rm /root/fullchain.pem /root/privkey.pem
 - the key is the certificate's;
 - the chain reaches the root in `/etc/backend/tls/ca.pem`, which it trusts alone when that file
   is there (`CA_FILE` overrides);
-- the certificate is valid now, with a warning inside 14 days;
-- it names everything the machine serves: nginx's `server_name`, the site's address, and every
-  name in the stream's map.
+- the certificate is valid now, with a warning inside 14 days of its end or its root's (O-73);
+- it names everything the machine serves, by a DNS name or an address in its SAN, never the CN
+  alone (O-74): nginx's `server_name`, the site's address, which must be there when the stream's map
+  names arenas (O-77), and every name in that map.
 
-It then puts the certificate in `/etc/backend/tls/fullchain.pem` and the key in
-`/etc/backend/credentials/privkey.pem` (0600). It checks them with `nginx -t`, putting the
-previous ones back if nginx refuses them. It reloads nginx, which drops no connection, and
+It then puts the certificates the file holds, and nothing else it holds, a key given in the same file
+among them (O-75), in `/etc/backend/tls/fullchain.pem`, and the key in
+`/etc/backend/credentials/privkey.pem` (0600), both written before either replaces its file. It
+checks them with `nginx -t`, putting the previous ones back if nginx refuses them, or leaving none
+where there were none; once nginx accepts them, the replaced key and certificate are not kept
+(O-76). It reloads nginx, which drops no connection, and
 checks what nginx then serves on 443 and on 9001. Before nginx has ever started, it installs the
 files and says nginx serves them when started; it makes nginx's log directory for `nginx -t`
 first (O-49), as the unit does at its first start.
@@ -176,8 +182,10 @@ routine's date, not on the alert ([02 §6](02-runbook.md#6-routine)).
 - **The scripts' own check**: `backend/scripts/check-certificates.sh`, on any machine with
   openssl, in a few seconds. It makes a root and certificates as §2 and §3 do and installs them as
   §4 does, nginx stood in for, and checks each refusal this page names: the name or the address
-  missing, another root, another key, the system's roots without `ca.pem`, a root made twice, and
-  the previous files put back when nginx refuses the new
+  missing, another root, another key, the system's roots without `ca.pem`, a root made twice, the
+  previous files put back when nginx refuses the new and nothing left by a first install it refuses,
+  a key inside the certificate's file kept out of it, `server_name _`, a name in the CN alone, and a
+  certificate that would outlive its root
   ([scripts README](../../backend/scripts/README.md#check-certificatessh)).
 - **The end-to-end check**: `backend/scripts/check-ports-el9.sh` makes a root and a certificate with
   `private-ca.sh` and installs it with `install-certificate.sh`. It then runs the C# client

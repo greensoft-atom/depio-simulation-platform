@@ -125,6 +125,7 @@ expect "confined: the denial is name_bind, with src=8080 on http_cache_port_t" "
 root "setenforce 0"
 out=$(devel "bash ~/probe.sh $PORTS")
 expect "permissive: every bind allowed ($(grep -c ': ok' <<< "$out") of 10)" "$out" 'enforcing=Permissive' "$refused"
+[ "$(grep -c ': ok' <<< "$out")" = 10 ] || { echo "FAIL ten of ten allowed wanted (O-79)"; bad=1; }
 root "setenforce 1"
 
 devel "bash ~/probe.sh 8080" > /dev/null                      # a fresh denial for the module to come from
@@ -138,12 +139,14 @@ expect "module: 8080 allowed, python3 and Java, 3314 and 6380 still refused" "$o
 root "setsebool -P selinuxuser_tcp_server on"
 out=$(devel "bash ~/probe.sh $PORTS")
 expect "boolean on: every bind allowed, the labelled 8080, 8081 and 9001 too ($(grep -c ': ok' <<< "$out") of 10)" "$out" 'enforcing=Enforcing' "$refused"
+[ "$(grep -c ': ok' <<< "$out")" = 10 ] || { echo "FAIL ten of ten allowed wanted (O-79)"; bad=1; }
 out=$(devel "bash ~/check-bind.sh 3314 6380 8080")
 expect "boolean on: check-bind.sh finds them free" "$out" '^free for this user: 3314 6380 8080$' 'refused'
 
 root "setsebool -P selinuxuser_tcp_server off; semodule -r backend-dev; semanage login -m -s unconfined_u -r s0-s0:c0.c1023 devel"
 out=$(devel "bash ~/probe.sh $PORTS")
 expect "unconfined login: every bind allowed, boolean off, no module ($(grep -c ': ok' <<< "$out") of 10)" "$out" 'unconfined_u:unconfined_r:unconfined_t' "$refused"
+[ "$(grep -c ': ok' <<< "$out")" = 10 ] || { echo "FAIL ten of ten allowed wanted (O-79)"; bad=1; }
 out=$(devel "bash ~/check-bind.sh 3314 6380 8080")
 expect "unconfined login: check-bind.sh finds them free" "$out" '^free for this user: 3314 6380 8080$' 'refused'
 

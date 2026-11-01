@@ -99,7 +99,7 @@ with `/opt/backend` pointing at it (operations/01 §2):
 | `systemd/`, `env/`, `scripts/` | as before; the units and the scripts name the paths above | |
 | `mysql-conf/`, `nginx-conf/` | their configuration (`deploy/mysql`, `deploy/nginx`), under names apart from the binaries | |
 | `VERSIONS.md` | what is inside, with versions | |
-| `COMMIT` | the commit it was made from | |
+| `COMMIT` | the commit it was made from, `-dirty` when the tree it was made from differs from it (O-84) | |
 
 `make-release.sh` also packs it as `backend-<version>.tar.gz`, beside the directory.
 

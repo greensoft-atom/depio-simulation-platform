@@ -6,9 +6,12 @@
 #   promote-mysql.sh <old primary host:port> --demote-old [--stale-ok]
 #
 # It will not promote while the old primary may still serve the backend: either the operator says
-# it is down or cut off (--old-is-down, refused if it still answers), or the script fences it first
-# (--demote-old): super_read_only, persisted, which stops every write, and offline_mode, which
-# closes every connection but an administrator's and refuses new ones (D-29). offline_mode is not
+# it is down or cut off (--old-is-down, refused if it still answers, even refusing the account: a
+# server that refuses is up), or the script fences it first (--demote-old, refused if it does not
+# answer: one it cannot reach may still serve the processes that can): super_read_only, persisted,
+# which stops every write; then this replica applies every transaction the old primary executed;
+# then offline_mode, which closes every connection but an administrator's and refuses new ones
+# (D-29), the replica's own link among them, so that it comes last (O-64). offline_mode is not
 # persisted: a restart leaves no connection to close, and it would outlive the server's rebuild
 # as a replica and close it when it is next promoted (06 §10). Then it waits until
 # this replica has applied every transaction it received, stops replicating and forgets its source,
@@ -33,6 +36,7 @@ PATH="$(cd "$(dirname "$0")/.." && pwd)/mysql/bin:$PATH"
 OLD=${1:?old primary host:port}
 MODE=${2:?--old-is-down or --demote-old}
 STALE_OK=${3:-}
+[[ $OLD =~ ^[^:]+:[0-9]+$ ]] || { echo "the old primary is host:port, not $OLD"; exit 2; }
 [ -z "$STALE_OK" ] || [ "$STALE_OK" = --stale-ok ] || { echo "the third argument, if any, is --stale-ok"; exit 2; }
 CNF=${MYSQL_FAILOVER_CNF:-/etc/backend/credentials/mysql-failover.cnf}
 DB=${BACKEND_DB_NAME:-backend}
@@ -76,24 +80,53 @@ fi
 
 OLD_HOST=${OLD%:*}
 OLD_PORT=${OLD##*:}
-OLD_RO=$(sql "$OLD_HOST" "$OLD_PORT" "SELECT @@global.read_only" 2>/dev/null || true)
+# Whether it answers (O-63): no connection, or no reply within the 20 s, is no answer; any other error, the account
+# or TLS refused, comes from a server that is up.
+if REPLY=$(sql "$OLD_HOST" "$OLD_PORT" "SELECT @@global.read_only" 2>&1); then
+    ANSWERS=yes
+elif [ $? = 124 ] || grep -qE '^ERROR (2002|2003|2005) ' <<< "$REPLY"; then
+    ANSWERS=no
+else
+    ANSWERS=refusing
+fi
 case "$MODE" in
     --old-is-down)
-        if [ -n "$OLD_RO" ]; then
+        if [ "$ANSWERS" = yes ]; then
             echo "REFUSED: $OLD still answers. Stop it, cut it off, or use --demote-old."
+            exit 1
+        elif [ "$ANSWERS" = refusing ]; then
+            echo "REFUSED: $OLD answers, refusing this account: $(head -1 <<< "$REPLY"). It is up: stop it, cut it off, or"
+            echo "correct the failover account's [client_remote] and use --demote-old."
             exit 1
         fi
         echo "the old primary $OLD does not answer: promoting"
         ;;
     --demote-old)
-        if [ -n "$OLD_RO" ]; then
-            FENCE=$(sql "$OLD_HOST" "$OLD_PORT" "SET PERSIST super_read_only = ON; SET GLOBAL offline_mode = ON;
-                                                SELECT @@global.super_read_only + @@global.offline_mode" || true)
-            [ "$FENCE" = "2" ] || { echo "REFUSED: $OLD could not be fenced"; exit 1; }
-            echo "the old primary $OLD is fenced: read-only, and closed to all but administrators"
-        else
-            echo "the old primary $OLD does not answer: promoting"
+        if [ "$ANSWERS" = no ]; then
+            echo "REFUSED: $OLD does not answer, so it cannot be fenced, and it may still serve the processes that reach it."
+            echo "Once it is stopped or cut off, use --old-is-down."
+            exit 1
+        elif [ "$ANSWERS" = refusing ]; then
+            echo "REFUSED: $OLD answers, refusing this account: $(head -1 <<< "$REPLY"). Correct the failover account's"
+            echo "[client_remote], or stop it or cut it off and use --old-is-down."
+            exit 1
         fi
+        READONLY=$(sql "$OLD_HOST" "$OLD_PORT" "SET PERSIST super_read_only = ON;
+                       SELECT @@global.super_read_only, REPLACE(@@global.gtid_executed, '\\n', '')" || true)
+        [ "${READONLY%%$'\t'*}" = 1 ] || { echo "REFUSED: $OLD could not be made read-only"; exit 1; }
+        # Everything it executed, applied here before it is closed: offline_mode closes the replica's link too, and
+        # what the link had not carried yet would be lost with the old primary when it is rebuilt (O-64).
+        EXECUTED=${READONLY#*$'\t'}
+        WAITED=$(LIMIT=70 here "SELECT WAIT_FOR_EXECUTED_GTID_SET('$EXECUTED', 60)" || true)
+        if [ "$WAITED" != 0 ]; then
+            echo "REFUSED: this replica did not apply all $OLD executed within 60 s. The old primary is read-only now"
+            echo "(super_read_only, persisted): SET PERSIST super_read_only = OFF there gives it back."
+            exit 1
+        fi
+        FENCE=$(sql "$OLD_HOST" "$OLD_PORT" "SET GLOBAL offline_mode = ON;
+                                            SELECT @@global.super_read_only + @@global.offline_mode" || true)
+        [ "$FENCE" = "2" ] || { echo "REFUSED: $OLD could not be fenced"; exit 1; }
+        echo "the old primary $OLD is fenced: read-only, every transaction it executed applied here, and closed to all but administrators"
         ;;
     *)
         echo "the second argument is --old-is-down or --demote-old"; exit 2

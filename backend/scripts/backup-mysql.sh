@@ -9,8 +9,10 @@
 # (host, user, password, ssl-mode=VERIFY_IDENTITY, ssl-ca); unset, the local defaults are used.
 #
 # After a dump has succeeded, dumps older than KEEP_DAYS (8) are deleted, and, with BINLOG_DIR
-# (binlog-stream.sh's copies), every copied binlog before the one the oldest remaining dump
-# starts from: nothing a kept dump could need, and nothing else is kept for ever.
+# (binlog-stream.sh's copies), every copied binlog before the earliest file a remaining dump
+# starts from: nothing a kept dump could need, and nothing else is kept for ever. The earliest of
+# them all, not the oldest dump's: a dump kept from another server, a primary before a failover,
+# names a file of another series, and the oldest dump's start then pruned the new series (O-66).
 #
 # Run as a user with SELECT, SHOW VIEW, TRIGGER, EVENT, RELOAD and REPLICATION CLIENT, and
 # nothing more: each was checked by removing it, and RELOAD (FLUSH TABLES) and REPLICATION
@@ -58,12 +60,13 @@ CNF=()
 START=$(date +%s.%N)
 mysqldump "${CNF[@]}" --single-transaction --source-data=2 --routines --triggers --events \
     --set-gtid-purged=OFF --no-tablespaces "$DB" | gzip > "$FILE.partial"
-mv "$FILE.partial" "$FILE"                  # a half-written dump never has the final name
 END=$(date +%s.%N)
 # 8.0 writes MASTER_LOG_FILE, 8.2 and later SOURCE_LOG_FILE. head closes the pipe early by
-# design, which pipefail would count as zcat failing.
-POSITION=$( { zcat "$FILE" | head -40; } 2>/dev/null | grep -m1 -oE "(SOURCE|MASTER)_LOG_FILE='[^']+', (SOURCE|MASTER)_LOG_POS=[0-9]+" || true)
+# design, which pipefail would count as zcat failing. Read before the dump takes its name: one
+# with no position, named, was the newest the proof took and later the oldest retention read (O-67).
+POSITION=$( { zcat "$FILE.partial" | head -40; } 2>/dev/null | grep -m1 -oE "(SOURCE|MASTER)_LOG_FILE='[^']+', (SOURCE|MASTER)_LOG_POS=[0-9]+" || true)
 [ -n "$POSITION" ] || { SAID="the dump records no binlog position"; echo "$SAID: is binary logging on?" >&2; exit 1; }
+mv "$FILE.partial" "$FILE"                  # a half-written dump never has the final name
 SAID=$(printf '%s: %s bytes in %.1f s, taken at %s' "$(basename "$FILE")" "$(stat -c %s "$FILE")" \
     "$(awk -v a="$START" -v b="$END" 'BEGIN { print b - a }')" "$POSITION")
 echo "backup $SAID"
@@ -73,10 +76,14 @@ echo "backup $SAID"
 # -mmin, not -mtime: -mtime +8 drops the fraction of a day and matches nine days and more.
 find "$OUT" -maxdepth 1 -name "$DB-*.sql.gz" -mmin +$(( ${KEEP_DAYS:-8} * 1440 )) -print -delete
 if [ -n "${BINLOG_DIR:-}" ]; then
-    OLDEST=$(find "$OUT" -maxdepth 1 -name "$DB-*.sql.gz" -printf '%f\n' | sort | head -1)
-    NEEDED=$( { zcat "$OUT/$OLDEST" | head -40; } 2>/dev/null \
-        | grep -m1 -oE "(SOURCE|MASTER)_LOG_FILE='[^']+'" | cut -d"'" -f2 || true)
-    [ -n "$NEEDED" ] || { echo "cannot read where $OLDEST starts: keeping every binlog copy" >&2; exit 1; }
+    NEEDED=""
+    while read -r d; do
+        start=$( { zcat "$OUT/$d" | head -40; } 2>/dev/null \
+            | grep -m1 -oE "(SOURCE|MASTER)_LOG_FILE='[^']+'" | cut -d"'" -f2 || true)
+        [ -n "$start" ] || { echo "cannot read where $d starts: keeping every binlog copy" >&2; exit 1; }
+        if [ -z "$NEEDED" ] || [[ "$start" < "$NEEDED" ]]; then NEEDED=$start; fi
+    done < <(find "$OUT" -maxdepth 1 -name "$DB-*.sql.gz" -printf '%f\n' | sort)
+    [ -n "$NEEDED" ] || { echo "no dump left to read a start from: keeping every binlog copy" >&2; exit 1; }
     find "$BINLOG_DIR" -maxdepth 1 -type f -regex '.*\.[0-9][0-9][0-9][0-9][0-9][0-9]' -printf '%f\n' \
         | sort | while read -r f; do
             # An if, not [[ ]] &&: that would end the loop, and the script, with status 1

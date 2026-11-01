@@ -67,8 +67,10 @@ NOLOG="SET sql_log_bin = 0;"
 # The proof's floor: the newest ledger row and match the source has, read before its position,
 # so that everything they name was committed before it and must be in the copy.
 if [ "${PROOF:-0}" = 1 ] && [ "${TO_COPIES_END:-0}" != 1 ]; then
-    read -r FLOOR_LEDGER FLOOR_MATCH <<< "$("${SRC[@]}" -N -e "SELECT (SELECT COALESCE(MAX(id), 0) FROM \`$SOURCE\`.ledger),
-        (SELECT COALESCE(MAX(id), 0) FROM \`$SOURCE\`.matches)")"
+    # Assigned, then read: a failed query inside the here-string was read as no floor at all, and passed (O-70).
+    FLOOR=$("${SRC[@]}" -N -e "SELECT (SELECT COALESCE(MAX(id), 0) FROM \`$SOURCE\`.ledger),
+        (SELECT COALESCE(MAX(id), 0) FROM \`$SOURCE\`.matches)")
+    read -r FLOOR_LEDGER FLOOR_MATCH <<< "$FLOOR"
 fi
 
 # Where the source is now: the drill carries the restore forward to exactly this moment.
@@ -117,7 +119,10 @@ if [ -n "$COPIES" ]; then
 else
     DATADIR=$("${SRC[@]}" -N -e "SELECT @@datadir")
     INDEX=$("${SRC[@]}" -N -e "SELECT @@log_bin_index")
-    mapfile -t LOGS < <(sed -n "/$FILE/,/$STOP_FILE/p" "$INDEX" | sed "s|^\./|$DATADIR|")
+    # By name, from the dump's file to the position's: a range of patterns ran to the end of the index when the
+    # two were one file (O-71).
+    mapfile -t LOGS < <(awk -v a="$FILE" -v b="$STOP_FILE" '{ f = $0; sub(/.*\//, "", f) } f >= a && f <= b' "$INDEX" \
+        | sed "s|^\./|$DATADIR|")
 fi
 
 "${DST[@]}" -e "$NOLOG DROP DATABASE IF EXISTS \`$SCRATCH\`; CREATE DATABASE \`$SCRATCH\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"

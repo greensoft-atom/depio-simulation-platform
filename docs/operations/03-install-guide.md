@@ -20,7 +20,8 @@ an account registered after the dump logs in after the restore, and the next pro
 runbook, each caught (plan item 113). With two more such checks and a build on the same machine at once, a start
 could take minutes ([O-61](../defects.md#6-operations)); since a start waits for its database in the same process
 and an arena for its store (D-94, O-61, O-62), three such checks and the full build with its tests at once passed,
-no platform, worker or arena restarted (plan item 114). Run 2026-10-05 for the guide of the time: every unit
+no platform, worker or arena restarted (plan item 114); and again with every script's review (plan item 116), the
+accounts' passwords given on standard input, not on a command line (O-89): every check passed. Run 2026-10-05 for the guide of the time: every unit
 `active`, the registration `201`, about twenty-five minutes. Also run the same day
 in Rocky Linux 9 with the system's own Java 8 and MySQL 8.0 installed and running
 (`MYSQL_PORT=3307`, §1): the same result, the system's MySQL still running beside
@@ -155,18 +156,20 @@ install -d -o mysql -g mysql -m 0750 /var/lib/backend-mysql /var/log/backend-mys
 /opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/mysql/backend.cnf --initialize-insecure --user=mysql
 systemctl enable --now backend-mysql
 # root's password, then the application's database and user (01 §9's grants)
-/opt/backend/mysql/bin/mysql -S /run/backend-mysql/mysqld.sock -u root \
-    -e "ALTER USER root@localhost IDENTIFIED BY '$(cat /etc/backend/credentials/mysql-root)'"
+/opt/backend/mysql/bin/mysql -S /run/backend-mysql/mysqld.sock -u root <<SQL
+ALTER USER root@localhost IDENTIFIED BY '$(cat /etc/backend/credentials/mysql-root)';
+SQL
 (umask 077; printf '[client]\nuser=root\npassword=%s\nsocket=/run/backend-mysql/mysqld.sock\n' \
     "$(cat /etc/backend/credentials/mysql-root)" > /etc/backend/credentials/mysql-root.cnf)
-/opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf -e "
+/opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf <<SQL
     CREATE DATABASE backend;
     CREATE USER 'backend'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/db-password)';
     GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON backend.* TO 'backend'@'127.0.0.1';
     CREATE USER 'backup'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/backup-password)';
     GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, RELOAD, REPLICATION CLIENT ON *.* TO 'backup'@'127.0.0.1';
     CREATE USER 'binlog'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/binlog-password)';
-    GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'binlog'@'127.0.0.1'"
+    GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'binlog'@'127.0.0.1';
+SQL
 ```
 
 The schema is made by `platform` at its first start (Flyway: `V1` the tables,
@@ -192,8 +195,9 @@ sed "s/^innodb_buffer_pool_size=.*/innodb_buffer_pool_size=$SCRATCH_BUFFER_POOL/
 install -d -o mysql -g mysql -m 0750 /var/lib/backend-scratch-mysql
 /opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/scratch-my.cnf --initialize-insecure --user=mysql
 systemctl enable --now backend-scratch-mysql
-/opt/backend/mysql/bin/mysql -S /run/backend-scratch-mysql/mysqld.sock -u root \
-    -e "ALTER USER root@localhost IDENTIFIED BY '$(cat /etc/backend/credentials/scratch-root)'"
+/opt/backend/mysql/bin/mysql -S /run/backend-scratch-mysql/mysqld.sock -u root <<SQL
+ALTER USER root@localhost IDENTIFIED BY '$(cat /etc/backend/credentials/scratch-root)';
+SQL
 (umask 077; printf '[client]\nhost=127.0.0.1\nport=3309\nuser=root\npassword=%s\n' \
     "$(cat /etc/backend/credentials/scratch-root)" > /etc/backend/credentials/mysql-scratch.cnf)
 ```

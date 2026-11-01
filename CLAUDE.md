@@ -158,7 +158,8 @@ for the backend, its docs and its client.
 - **Ports 6381 and 8082 belong to other processes.** Drills use 6390 (j-redis), 6392 (its
   replica, `FAILOVER=1`), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 (platform's
   metrics), 9196 (platform's admin API), 9197, 9198 and 9199 (the arena's, the gateway's and
-  the worker's metrics), and MySQL servers of their own on 3307 (a primary), 3308 (its
+  the worker's metrics), 9193 and 9194 (a second worker's metrics with `IDLEGUEST=1`, the
+  alerts' receiver with `WATCH=1`), and MySQL servers of their own on 3307 (a primary), 3308 (its
   replica, `MYSQL_FAILOVER=1`) and 3309 (the backup drill's scratch server).
 - **Everything a build, a test or a run by hand writes goes in `work/`**, inside the checkout
   (D-80, owner 2026-10-17): the scripts source `dev-env.sh` (`vendor/`'s JDK and Maven, the bundle
@@ -223,6 +224,7 @@ IDLEGUEST=1 TMPDIR=<scratchpad> client/headless-drill.sh play
 # firewalld, nginx, two machines, the C# client through 443 and 9001 (Docker, .NET; about ten minutes)
 backend/scripts/check-certificates.sh
 backend/scripts/check-nginx-logs.sh                 # nginx's log rotation, the release's nginx on a loopback port
+backend/scripts/check-promote.sh                    # both promotions' refusals and the handover's order, stand-in clients (D-95)
 backend/scripts/check-bind.sh 3314 8080             # a port this user cannot bind, with the policy that refuses it (D-88); the dev scripts run it first
 backend/scripts/check-selinux-el9.sh                # its SELinux branch and the three grants, in a Rocky 9 guest under QEMU, SELinux enforcing (D-90; forty minutes without KVM, ten after)
 (cd backend && scripts/check-ports-el9.sh)

@@ -19,9 +19,11 @@ start)
 stop)
     "$B/dev-nginx.sh" stop; "$B/dev-backend.sh" stop; "$B/dev-jredis.sh" stop ;;
 restart)
-    "$0" stop && exec "$0" start ;;
+    "$B/run-local.sh" stop && exec "$B/run-local.sh" start ;;       # by path: bash run-local.sh gave a name alone (O-86)
 status)
-    for s in nginx backend jredis mysql; do "$B/dev-$s.sh" status || true; done ;;
+    rc=0
+    for s in nginx backend jredis mysql; do "$B/dev-$s.sh" status || rc=1; done
+    exit $rc ;;                                       # each one's own: a service down is not 0 (O-86)
 *)
     echo "usage: $0 start | stop | restart | status" >&2; exit 2 ;;
 esac
