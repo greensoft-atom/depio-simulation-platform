@@ -27,7 +27,7 @@
 # directory LoadCredential delivers into, so the Java units are given their secrets as files their
 # user may read, by a drop-in (operations/01 §2 says what was and was not checked).
 set -u
-if [ "${1:-}" != --inside ] && [ "${1:-}" != --after-boot ] && [ "${1:-}" != --disk-lost ]; then
+if [ "${1:-}" != --inside ] && [ "${1:-}" != --after-boot ] && [ "${1:-}" != --disk-lost ] && [ "${1:-}" != --launch-checks ]; then
     HERE=$(cd "$(dirname "$0")" && pwd)
     REPO=$(cd "$HERE/../.." && pwd)
     WORK=$(mktemp -d "${TMPDIR:-/tmp}/check-install-guide.XXXXXX")
@@ -129,6 +129,15 @@ launch_checks() {
             || fail "the process on $port has no events store of its own: its results would go to the session store"
     done
 }
+
+# The launch's checks alone, on a machine the guide installed: check-two-machines-el9.sh's, on each of its two.
+if [ "${1:-}" = --launch-checks ]; then
+    FAILS=0
+    launch_checks
+    echo "--- the launch's checks: $FAILS failed"
+    [ "$FAILS" = 0 ]
+    exit
+fi
 
 if [ "${1:-}" = --after-boot ]; then
     FAILS=0

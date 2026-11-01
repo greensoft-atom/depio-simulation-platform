@@ -805,8 +805,18 @@ SET PERSIST enforce_gtid_consistency = ON;
 SET PERSIST gtid_mode = OFF_PERMISSIVE;
 SET PERSIST gtid_mode = ON_PERMISSIVE;
 SHOW STATUS LIKE 'Ongoing_anonymous_transaction_count';   -- until 0
+FLUSH BINARY LOGS;
+SHOW BINARY LOG STATUS;   -- until the binlog stream's /var/lib/backend/binlog holds this file
 SET PERSIST gtid_mode = ON;
 ```
+
+The binlog stream must be on a binary log begun after the last transaction without a GTID before the
+mode reaches `ON`: a stream behind or restarting then resumes in a file written without them, which the
+server refuses to send once they are on, and stops for good ([DOC-38](../defects.md#7-documentation)).
+MySQL begins a new binary log at each change of the mode, but a transaction begun before `ON_PERMISSIVE`
+stays without a GTID and is written in the log that change began; hence the flush once none is left.
+The two-machine page does the same, and its check runs it with the stream stopped
+([10 §3](10-two-machines.md#3-on-a-mysql-and-the-stores-on-the-private-network)).
 
 The backups work the same with GTIDs on, once the restore's replay drops them
 (defect [D-31](../defects.md), 06 §10): checked restoring onto the source's own server,
@@ -821,7 +831,9 @@ super_read_only = ON          # nothing but replication writes; a promotion's SE
 ```
 
 **Two more accounts on the primary**, which replication carries to C: one to
-replicate, one to copy a whole server.
+replicate, one to copy a whole server. The replication account's password is 32
+characters at most: `CHANGE REPLICATION SOURCE` refuses a longer one (error 3056;
+`openssl rand -hex 16` makes 32, DOC-37).
 
 ```sql
 CREATE USER 'repl'@'10.0.0.%'  IDENTIFIED BY '…' REQUIRE SSL;

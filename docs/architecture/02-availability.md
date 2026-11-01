@@ -24,8 +24,13 @@ so nothing fails over. The sections after this one are the three machines'. On o
 | The machine, for good | nothing works until another is installed | another machine, the install guide, then the restore: hours | as the row above, and the store's state: sessions, queues, parties (a login again), results in flight (seconds of them); the boards come back from MySQL (D-31). With no copy off the site (Q-53), the database |
 
 So on one machine the copies decide what a loss costs: `/var/lib/backend`, where they go, on a disk of
-its own, and a copy off the site once the owner names a host. A second machine with the replicas gives
-§1's failover back (plan item 115).
+its own, and a copy off the site once the owner names a host.
+
+**On two machines** ([D-96](03-decision-log.md#d-96--a-second-machine-is-the-first-ones-standby-the-replicas-and-a-front-ready-to-start), [operations/10](../operations/10-two-machines.md)): B holds the replicas, and the rest of A installed and
+stopped. A's MySQL or a store failing is §1's row for it, the replica on B promoted and A's processes following;
+A failing is the site down until B is started in its place and the site's address forwarded to it, minutes by
+hand ([runbook §4](../operations/02-runbook.md#on-two-machines-d-96)), the sessions kept, A's battles and seconds
+of its results lost. Arenas on B, for capacity, are plan item 115 (b).
 
 ## 1. Failure table
 

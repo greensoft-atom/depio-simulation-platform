@@ -42,6 +42,7 @@ EOF
     docker run -d --rm --privileged --network none --name "$NAME" -v "$REL:/opt/backend:ro" \
         -v "$REPO/docs/operations/05-ports-and-firewall.md:/check/ports.md:ro" \
         -v "$REPO/docs/operations/03-install-guide.md:/check/install.md:ro" \
+        -v "$REPO/docs/operations/10-two-machines.md:/check/two.md:ro" \
         -v "$REPO/backend/scripts/private-ca.sh:/check/private-ca.sh:ro" \
         -v "$WORK/headless:/check/headless:ro" \
         -v "$HERE/check-ports-el9.sh:/check.sh:ro" "$IMAGE" > /dev/null || exit 1
@@ -448,6 +449,28 @@ expect "one machine: its ports" "9001/tcp" "$(firewall-cmd --zone=public --list-
 expect "one machine: a player to 443" open "$(probe player "$PUB" 443)"
 expect "one machine: a player to 22" "No route to host" "$(probe player "$PUB" 22)"
 expect "one machine: the internal network to 22" open "$(probe stranger 10.0.0.1 22)"
+
+echo "--- two machines (10 §8), each after the install guide's §12, on a firewall as RHEL 9 has it; A's last, as this is A:"
+for m in B A; do
+    rm -f /etc/firewalld/zones/*.xml /etc/firewalld/zones/*.xml.old
+    firewall-cmd -q --reload
+    { echo "A_PRIVATE=10.0.0.1 B_PRIVATE=10.0.0.2 MYSQL_PORT=3306"; block "one machine" /check/install.md; block "two $m" /check/two.md; } \
+        > "$L/firewall-two-$m.sh"
+    grep -q 'zone=backend' "$L/firewall-two-$m.sh" || fail "no firewall block for $m in 10 §8"
+    bash "$L/firewall-two-$m.sh" 2>&1 | sort | uniq -c | sed 's/^/      /'
+    other=10.0.0.2; [ "$m" = B ] && other=10.0.0.1
+    expect "two machines, $m: the backend zone's sources" "$other" "$(firewall-cmd --zone=backend --list-sources)"
+    expect "two machines, $m: its ports" "$(words 3306/tcp 6379/tcp 6380/tcp)" "$(words $(firewall-cmd --zone=backend --list-ports))"
+    expect "two machines, $m: its services" "ssh" "$(firewall-cmd --zone=backend --list-services)"
+    expect "two machines, $m: the public zone's ports" "9001/tcp" "$(firewall-cmd --zone=public --list-ports)"
+    expect "two machines, $m: the public zone's services" "$(words dhcpv6-client https)" "$(words $(firewall-cmd --zone=public --list-services))"
+done
+expect "two machines, A: B to MySQL" open "$(probe b 10.0.0.1 3306)"
+expect "two machines, A: B to the session store" open "$(probe b 10.0.0.1 6379)"
+expect "two machines, A: B to the platform, which B does not use" "$N" "$(probe b 10.0.0.1 8080)"
+expect "two machines, A: a third address on the network to MySQL" "$N" "$(probe c 10.0.0.1 3306)"
+expect "two machines, A: the stranger to the session store" "$N" "$(probe stranger 10.0.0.1 6379)"
+expect "two machines, A: a player to 443" open "$(probe player "$PUB" 443)"
 
 echo "--- a service and a port in one command, as the install guide's §12 had it until 2026-10-19:"
 rm -f /etc/firewalld/zones/*.xml /etc/firewalld/zones/*.xml.old

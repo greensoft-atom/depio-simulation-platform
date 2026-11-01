@@ -96,6 +96,7 @@ Then the detailed design of whatever you are working on.
 | [07 — Start, stop, restart](operations/07-start-stop-restart.md) | Each service's unit, where it runs, its settings and what a change of them takes; nginx reloaded, MySQL or a store restarted alone, an arena drained; every machine stopped and started in order; the same on a development machine | run as written by `check-units-el9.sh` |
 | [08 — Monitoring](operations/08-monitoring.md) | The watch in every platform: what it reads and alerts on, where alerts go, reading and silencing them; the backend's own, no third-party service |
 | [09 — The rehearsal](operations/09-rehearsal.md) | The readiness rehearsal on the owner's three machines as a checklist: each step, its expected outcome, what to record; what it cannot prove |
+| [10 — Two machines](operations/10-two-machines.md) | A second machine as the launch machine's standby (D-96): MySQL's and the stores' replicas made from the running primaries, the rest of A installed on it and stopped; the steps on each machine, the firewall, operating two | run as written by `check-two-machines-el9.sh` |
 
 ### Project
 

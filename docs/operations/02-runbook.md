@@ -46,6 +46,10 @@ The procedure is the same shape for all three:
 Step 1 is the one that gets skipped under pressure, and it is the only step
 that can cause permanent damage.
 
+**On two machines** ([D-96](../architecture/03-decision-log.md#d-96--a-second-machine-is-the-first-ones-standby-the-replicas-and-a-front-ready-to-start)) every primary is on A and every replica on B: each
+command below is run on B, with A the old primary. A's processes were given both machines' addresses
+([10 §3](10-two-machines.md#3-on-a-mysql-and-the-stores-on-the-private-network)), so they follow by themselves.
+
 ### A j-redis store (built 2026-09-29, D-34)
 
 `session` has its primary on A and its replica on B; `events` its primary on B
@@ -433,6 +437,47 @@ systemctl start backend-mysql-backup          # the new server's first dump: the
 
 `restore-drill.sh` ends naming every table restored, the newest migration, and the ledger reconciled
 (06 §10). The set-aside copies are kept until the next weekly proof has passed on the new ones.
+
+### On two machines (D-96)
+
+B is A's standby ([10](10-two-machines.md)): its replicas follow A's primaries, and the rest of it is A's, stopped.
+
+- **A's MySQL or a store lost, A running**: [§2](#2-stateful-primary-failure) on B, A the old primary. A's
+  processes follow; A's site goes on.
+- **A stopped, and coming back** (a reboot, a short outage): wait for it, as on one machine. A failover costs more
+  than minutes of waiting: it ends A as the primary for good.
+- **A lost**: B becomes the site, as below. **Fence A first**: powered off at the provider and kept off. Started again
+  it would be a second site, its stores and MySQL taking writes and its arenas announcing themselves under the names
+  B's take. The epochs keep every process that saw a promotion off A's servers (§2), not A's own processes.
+
+**The steps on B**, as root, in a shell with the values of the install guide's §2 and of 10 §2 (checked as written:
+`check-two-machines-el9.sh` cuts A off and runs them):
+
+<!-- two-machines-a-lost -->
+```bash
+# On B, A powered off: the three promotions, each one already made said so and left as it is
+/opt/backend/scripts/promote-mysql.sh "$A_PRIVATE:$MYSQL_PORT" --old-is-down
+/opt/backend/scripts/promote-store.sh /etc/backend/store-session.conf "$A_PRIVATE:6379" --old-is-down
+/opt/backend/scripts/promote-store.sh /etc/backend/store-events.conf "$A_PRIVATE:6380" --old-is-down
+```
+
+Then on B the install guide's [§6, its backups](03-install-guide.md#its-backups-on-this-machine),
+[§10](03-install-guide.md#10-start-everything) and [§11](03-install-guide.md#11-check-it), as written there: the
+scratch server and the backups' files, every unit started and enabled, and the check, the first dump and its proof
+on B's own copies.
+
+<!-- on B: the install guide's Its backups; 10.; 11. -->
+<!-- /two-machines-a-lost -->
+
+Then the site's address: have the provider forward 443 and 9001 to B, and check from outside as for the front
+above. A session made on A goes on (the session store's replica held it), so players are not asked to log in
+again; the battles A was running are lost, and its arenas' results not yet in the replica (seconds of them).
+
+**A, once repaired, never starts in its old roles.** It is installed again from nothing as the standby: the install
+guide to §5, then [10](10-two-machines.md)'s §4 and §5 with the two addresses swapped (`A_PRIVATE` B's, the primary,
+and `B_PRIVATE` A's), a certificate issued again for A's address by MySQL's CA (10 §3's lines for one address) and
+copied with the rest, and B's firewall opened to it (10 §8). If the primaries belong on A, a handover at a quiet hour
+(§2's `--demote-old`, each of the three) and B made the standby again the same way. Not yet run as written.
 
 ## 5. What to watch
 

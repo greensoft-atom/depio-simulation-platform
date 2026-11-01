@@ -82,7 +82,8 @@ workers `c1` and `c2`; `session` and `events`, with no replica; MySQL's primary,
 the backups beside it. 32 cores, 64 GB and two disks, with heaps sized for one machine (D-93's table).
 It replaces the earlier launch target, 5 000–10 000 on two machines with replication, whose layout
 was never written. Nothing fails over until a second machine
-([02](02-availability.md#on-one-machine-the-launch-d-93)); growing to it is plan item 115.
+([02](02-availability.md#on-one-machine-the-launch-d-93)); growing to it is plan item 115, whose first half, a second
+machine as the first's standby, is [operations/10](../operations/10-two-machines.md) (D-96).
 
 ## 3. Capacity model
 

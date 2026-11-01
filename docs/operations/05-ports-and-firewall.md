@@ -102,6 +102,13 @@ their metrics 9110, 9111 and 9113) and two workers (9102, 9112), and everything 
 `127.0.0.1` alone: MySQL and both stores too, which nothing on another machine reaches. So its firewall
 opens 443 and 9001, and SSH to the internal network, and nothing private ([03 §12](03-install-guide.md#12-open-the-firewall)).
 
+### On two machines, the second the first's standby
+
+As on one machine, but MySQL (3306) and both stores (6379, 6380) listen on the machine's private address too, on
+A and on B ([D-96](../architecture/03-decision-log.md#d-96--a-second-machine-is-the-first-ones-standby-the-replicas-and-a-front-ready-to-start)): B's replicas reach A's primaries there, and after a promotion A's processes reach B's.
+Each machine's firewall opens those three ports to the other's address alone, and nothing else private
+([10 §8](10-two-machines.md#8-the-firewall)). B's other ports are A's and listen only once B is started in A's place.
+
 ### What does not listen, and is sometimes looked for
 
 - **80**: nothing, on any machine (§1).

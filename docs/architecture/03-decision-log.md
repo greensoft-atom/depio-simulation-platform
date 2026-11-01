@@ -2938,7 +2938,8 @@ users, so the backend runs on one machine, and the system is to run that way and
   Lost with it: sessions, queues and parties (a login again), results in flight (seconds of them); the boards come
   back from MySQL (D-31).
 - **Growing**: a second machine takes the replicas first, MySQL's and both stores', made from the running primaries
-  as 01 §9 and §3 describe, which gives failover back; then arenas. Not written step by step, nor run: plan item 115.
+  as 01 §9 and §3 describe, which gives failover back; then arenas: plan item 115. The first half since written
+  step by step and run ([D-96](#d-96--a-second-machine-is-the-first-ones-standby-the-replicas-and-a-front-ready-to-start), [operations/10](../operations/10-two-machines.md)); arenas on the second machine not yet.
 
 **Why.**
 - **The owner's numbers.** 5 000 in battle are 34 rooms of 150: three arenas, about 8 cores of rooms, two workers
@@ -3037,3 +3038,49 @@ live one. And the planned handover, the one meant to lose nothing, could lose th
 connections to it, and a write on one fails as read-only, where before the connection was closed at once; writes
 were refused from the fence to the promotion before as now. An old primary that cannot be reached and is not known
 to be down needs the operator's step, stopping or cutting it off, before `--old-is-down`.
+
+### D-96 — A second machine is the first one's standby: the replicas, and a front ready to start
+
+**Decided 2026-11-01** (plan item 115 (a); the owner: grow in two halves, the replicas and failover first, arenas
+on the second machine when the load needs them; the site serving throughout, restarts of a few seconds accepted).
+
+**Decision.**
+- **B, the standby.** The second machine holds the replicas: MySQL's, cloned from the running primary and following
+  it by GTIDs (01 §9), and both stores' (01 §3). Everything else A runs is installed on B as A has it, from A's own
+  files, and stopped: nginx, the platform, the gateway, the two workers, the arenas `a1` to `a3` under the same
+  names, the same certificate. A replica alone is failover for A's database or a store, not for A: every process
+  and the site's only way in are on A.
+- **A's processes are given both machines' addresses**: each store as `BACKEND_STORE_ADDRESSES` and
+  `BACKEND_EVENTS_STORE`, MySQL as the URL with both hosts and `VERIFY_IDENTITY` (01 §9). A promotion on B is then
+  followed by A's processes by themselves (D-34, D-35), and A's workers measure both replicas (D-58) with no setting
+  of their own. B's settings are A's files, the same names, ports and addresses, so B's units start after A's loss
+  with nothing edited.
+- **On A, MySQL and the stores reach the private network.** GTIDs first, turned on live by 01 §9's steps, the
+  binlog stream moved onto a binary log of GTIDs alone before the mode reaches `ON`; then MySQL restarted once, with
+  the rest at once: loopback and the private address, a certificate from a CA of MySQL's own (01 §9),
+  `require_secure_transport` and the clone plugin. GTIDs set at that restart instead, as first written, stopped the
+  stream for good: it resumes from the file it copied last, written without GTIDs, which a server with them on refuses
+  to send (the check's first run). Live, the same holds for a stream behind or restarting when the mode reaches
+  `ON`, so the step waits for it and stops if it does not come, the server left in `ON_PERMISSIVE`; 01 §9 lacked
+  that wait (DOC-38). Each store restarted once, for its `bind`. Loopback stays for the backups and for
+  the scripts that run on the machine.
+- **The site serves throughout, with gaps of seconds** (the owner): MySQL's restart and each store's refuse
+  requests while they last, and A's Java processes restart once each, in order, the arenas drained, as a deployment
+  restarts them (01 §5). The check measures each gap.
+- **Failover.** A's MySQL or a store lost while A runs: the runbook's §2 on B, and A's processes follow. A lost:
+  fenced first (powered off at the provider and kept off), then on B the three promotions, B's units started, the
+  backups set up on B, and the site's address forwarded to B: minutes, by hand (D-8). A never starts again in its
+  old roles: it is installed again as the standby, the steps with the machines' parts swapped.
+- **The backups stay on A**, beside its primary, as on one machine; after a failover they move with the primary
+  (runbook §2).
+- **Arenas on B** (`b1` to `b3`, behind the front's nginx, the certificate issued again for their names) are the
+  second half, plan item 115 (b).
+
+**Why.** Failover was given up at launch (D-93, NFR-4): the machine failing was the site down for the hours of a new
+installation and a restore. A standby running only its replicas needs no change to nginx, to the certificate or to
+the watch, and its units are A's files, so what starts after A's loss is what ran on A. The steps are run as
+written on two machines, in containers joined by a private link (`check-two-machines-el9.sh`).
+
+**Cost.** A machine paid for to stand by. On A, the gaps above, once. B's processes do not run, so nothing watches
+them: the first proof that they start is the failover, which the check runs, and every release must reach B as it
+reaches A (01 §5). Nothing on B watches A either; where alerts would go is held (Q-60).

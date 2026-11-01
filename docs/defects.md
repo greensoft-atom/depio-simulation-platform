@@ -1380,6 +1380,21 @@ own since D-77), and left out `MYSQLD_BIN` and `MYSQL_PORT`; the scripts README 
 everything (the newest dump, unless `ALL_DUMPS=1`); `install-certificate.sh` said nginx answers a CA's challenge on
 port 80, which nothing has done since D-82.
 
+**DOC-37, found 2026-11-01, FIXED the same day** (plan item 115 (a), its check's first run). 01 §9's `repl` account
+was given a password of any length, as the others are (`openssl rand -hex 24`, 48 characters): MySQL refuses a
+replication source's password longer than 32 (`CHANGE REPLICATION SOURCE`, error 3056), so the replica could not be
+pointed at its primary. Now 01 §9 and the two-machine page say so, and the page makes it 32.
+
+**DOC-38, found 2026-11-01, FIXED the same day** (plan item 115 (a), its check's runs and a mutant). 01 §9 turned
+GTIDs on live, one statement at a time, with no word of the binlog stream, which reads the binlogs as a replica does
+and resumes from the file it copied last. A stream behind or restarting when the mode reached `ON` (in the three
+machines' layout it runs on another machine) resumed in a file written without GTIDs, which the server refuses to send
+once they are on ("Cannot replicate anonymous transaction"), and stopped for good: no point-in-time copies past it.
+Seen first at a restart that set the mode (the two-machine page's first draft); live, the check made the window by
+construction, the stream stopped while the step ran, after a mutant without the wait had passed. Now 01 §9 and the
+page flush the binary log once no transaction without a GTID is left and wait for the stream to hold the new file
+before `ON`; the page's step stops there if it does not, the server left in `ON_PERMISSIVE`.
+
 ## 7. Documentation
 
 The audit found the documents have drifted from the code in ~60 places. The six

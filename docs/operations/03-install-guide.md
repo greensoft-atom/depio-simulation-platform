@@ -32,7 +32,7 @@ ours. Running it found four faults, fixed before this text (O-32 to O-35 in the
 The steps install **the launch's machine**: one machine with every role, for up to about 5 000
 players ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)): nginx in front, a platform, a gateway, three arenas, two workers, both
 stores, MySQL and its backups. It serves for a trial too, and is the first of the three when the
-site grows: [Three machines](#three-machines) says what differs.
+site grows: a second machine, its standby, is [10](10-two-machines.md) (D-96), and [Three machines](#three-machines) says what differs.
 
 ## 1. What the server needs
 
@@ -395,6 +395,7 @@ machine's commands, and every port is in [05](05-ports-and-firewall.md).
 | Deploy a new version | build again (§3), then [01 §5](01-deploy.md#5-rolling-deployment): unpack beside, switch the symlink, restart in order |
 | Back up the database, and prove the backups | on this machine since §6 and §10; [01 §10](01-deploy.md#10-copies-off-the-databases-machine) says what each step does, and restores from them |
 | Handle a failure | the [runbook](02-runbook.md): triage, the store's and MySQL's failover, restores |
+| Add a second machine, its standby: the replicas, and a front ready to start | [10](10-two-machines.md) (D-96) |
 | Act as an operator (kick, ban, notices, tournaments) | the admin API: `systemd/platform-admin.conf.example` as a drop-in, then [04 §10](../detailed-design/04-platform-services.md#10-admin-api) |
 | Watch it | each process's metrics (01 §7); what to watch, the [runbook §5](02-runbook.md#5-what-to-watch) |
 | Take security fixes for Java, MySQL, nginx and OpenSSL | the [runbook](02-runbook.md#6-routine)'s monthly routine; how a version moves, [vendor/README](../../vendor/README.md) |

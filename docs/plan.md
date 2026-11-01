@@ -3847,11 +3847,50 @@ Docs: D-94, 06 §7 (the login's limit and the start), 04 §10, the persistence a
 record. Not measured: a real machine's start, which is the same code; the drill's `play` from a release was not run
 for this item, the install check's three phases being the start it changes.
 
-#### 115. Growing from one machine to two (D-93).
+#### 115. Growing from one machine to two (D-93, D-96): (a) ~~the second machine the first's standby~~ — **done 2026-11-01**; (b) arenas on it, open.
 
 A second machine: the replicas of MySQL and both stores made from the running primaries, which gives failover back,
-then arenas on it; written step by step and run as written in containers, with the site serving throughout. When the
-owner needs it: past about 4 000 in battle, or for failover.
+then arenas on it; written step by step and run as written in containers, with the site serving throughout. In two
+halves (the owner, 2026-11-01: the replicas and failover first, gaps of seconds accepted).
+
+**(a) B the standby, done.** D-96 and [operations/10](operations/10-two-machines.md): on A, MySQL's GTIDs turned on
+live, then one restart of MySQL for the private address, TLS from a CA of MySQL's own, `require_secure_transport` and
+the clone plugin, and one of each store for its `bind`; on B, MySQL cloned from A's running primary and replicating
+by GTIDs, read-only, each store a replica (`replicaof`, `primaryauth`), and the rest of A installed from A's own files
+and stopped; A's Java processes restarted once each, in a deployment's order, on both machines' addresses. The
+runbook's §4 has A's loss on two machines: A fenced, the three promotions on B, B's units and backups, the address
+forwarded. **Run as written** by the new `check-two-machines-el9.sh`: A installed by the guide's own check in UBI 9.5,
+B a second container joined to it by a veth pair alone (no change to this VM's network or firewall), every block in
+order on the machine it names, a probe through A's nginx twice a second. Whole, from scratch: 0 failed, 13.5 minutes.
+Measured (this VM loaded, so each figure moves by seconds): refused for 15 s at MySQL's restart, 5 to 10 s at the
+stores', 14 to 16 s at the platform's, nothing committed lost; B then the standby (replicating, read-only, all A
+executed applied, both stores' links up, A's workers reporting the three replicas), A's launch checks and its dump and
+proof passing; A's MySQL lost while A ran, B's promoted and a registration through A written on it 1 to 2 s after;
+A lost (its link cut and the container frozen), B serving 62 to 67 s after the cut, A's session served, every account
+made on A logging in, B's first dump and proof passing. **Found**: GTIDs set at that restart, as first written,
+stopped the binlog stream for good (it resumes in a file without GTIDs, which the server then refuses to send), so
+they are turned on live; and the same window live, a stream behind when the mode reaches `ON`, was in 01 §9 too
+(DOC-38, fixed: a flush and a wait for the stream); a replication source's password is at most 32 characters
+(DOC-37, fixed); MySQL 8.4 begins a new binary log at each change of `gtid_mode` (measured on vendor/'s), so the flush
+matters only for a transaction begun before `ON_PERMISSIVE`. **Seven mutants** of the page and the runbook, each
+caught for its own reason: B's stores without `primaryauth` (links down, the workers' replica counts 0, A's session
+not served by B); the URL naming A alone (no worker reads B's MySQL, A's processes never reach it after the
+promotion); the processes' account on the private network left out (the page's own wait, step 14); B writable; B's
+certificate naming A's address (refused by `VERIFY_IDENTITY`); the `events` store not promoted (B's launch checks:
+every process without its `events` store); the stream not moved before `ON`, which survived first, the stream never
+behind in a run: the check now stops it, writes a registration, and starts it 5 s into the step, and the mutant's
+stream is then refused for good ("Cannot replicate anonymous transaction"), the page's waited for. The firewall,
+10 §8, by `check-ports-el9.sh` on a release built for it: both machines' zones as written, on A only B reaching
+MySQL and both stores, the platform, a third address and a stranger refused, a player reaching 443; whole, 0 failed;
+A's block without 6380 caught (its ports). Docs: D-96, DOC-37, DOC-38, operations/10, 01 §9, the runbook's §2
+and §4, 02-availability, 03 and 05, the glossary's standby, the scripts README, development/03, docs/README,
+CLAUDE.md. **Not checked**: real machines and a real private network; a reboot of either machine after the steps;
+the address forwarded (the provider's); A's return as the standby, written, not run; the flush alone left out, its
+window (a transaction without a GTID committed across the change of mode, with the stream behind) not one the check
+can make by construction, so read in MySQL's procedure only.
+
+**(b) Arenas on B, open.** `b1` to `b3` behind the front's nginx, the certificate issued again for their names
+(D-96). When the owner needs it: past about 4 000 in battle.
 
 #### 116. ~~Every shell script reviewed again, line by line (the owner, 2026-11-01).~~ — **done 2026-11-01**
 

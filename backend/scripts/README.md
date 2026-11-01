@@ -20,6 +20,7 @@ Every setting a script or unit reads is also in the
 | [`check-ports-el9.sh`](#check-ports-el9sh) | Release | no | hand, on a machine with Docker |
 | [`check-units-el9.sh`](check-units-el9.sh) | Release | no | hand, on a machine with Docker: the release's units under systemd in UBI 9 (its header) |
 | [`check-install-guide-el9.sh`](check-install-guide-el9.sh) | Release | no | hand, on a machine with Docker: the install guide's blocks as written, in UBI 9 with no network; then the launch's one machine checked (D-93), again after a restart, and the runbook's restore after the database's disk is lost (its header) |
+| [`check-two-machines-el9.sh`](check-two-machines-el9.sh) | Release | no | hand, as root on a machine with Docker: the two-machine page's steps as written (D-96) on two UBI 9 machines joined by a private link, the site probed throughout; then A's MySQL lost and B's promoted, then A lost and the runbook's steps for it on B (its header) |
 | [`check-certificates.sh`](#check-certificatessh) | Certificates | no | hand, on any machine with openssl |
 | [`rotate-nginx-logs.sh`](#rotate-nginx-logssh) | Logs | yes | `backend-nginx-logs.timer`, nightly, on every machine |
 | [`check-nginx-logs.sh`](#check-nginx-logssh) | Logs | no | hand, on a machine with a release and curl |
@@ -418,7 +419,7 @@ promote-store.sh <replica config file> <old primary host:port> --demote-old <thi
 |---|---|
 | Environment | `JREDIS_CLI` (default the release's `jredis/bin/j-redis-cli`, else `/opt/j-redis/bin/j-redis-cli`) |
 | Needs | root: it reads `port` and `requirepass` from the configuration file (`/etc/backend/store-<name>.conf`, `root:jredis`, 0640) and rewrites it, keeping a copy beside it in `/etc/backend/`. The j-redis client, `timeout` |
-| Runs | on the store replica's machine (B for `session`, C for `events`); it reaches this machine's server on `127.0.0.1` |
+| Runs | on the store replica's machine (B for `session`, C for `events`; on two machines B for both, D-96); it reaches this machine's server on `127.0.0.1` |
 | Run by | hand ([runbook §2](../../docs/operations/02-runbook.md#a-j-redis-store-built-2026-09-29-d-34)) |
 
 ### promote-mysql.sh
@@ -446,7 +447,7 @@ promote-mysql.sh <old primary host:port> --demote-old [--stale-ok]
 |---|---|
 | Environment | `MYSQL_FAILOVER_CNF`, the `failover` account's option file (default `/etc/backend/credentials/mysql-failover.cnf`: `[client]` with the user and password, `[client_remote]` with the TLS settings, read only for the old primary). `BACKEND_DB_NAME` (`backend`). `MYSQL`, the client (`mysql`). `PROMOTE_STALE_SECONDS` (300) |
 | Needs | root, to read the option file; `mysql`, `timeout`. The account `failover` with the grants of [01 §9](../../docs/operations/01-deploy.md#9-mysql) |
-| Runs | on the MySQL replica's machine (C); this machine's server by its socket, the old primary over TLS |
+| Runs | on the MySQL replica's machine (C; on two machines B, D-96); this machine's server by its socket, the old primary over TLS |
 | Run by | hand ([runbook §2](../../docs/operations/02-runbook.md#mysql-built-2026-09-29-d-35)) |
 
 ### check-promote.sh
