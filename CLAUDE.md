@@ -117,6 +117,9 @@ for the backend, its docs and its client.
 - **No third-party payment provider or sign-in for now** (Q-52): payments simulated.
 - **Put off by the owner (2026-10-05):** the Unity editor's check (Q-54) and an admin
   panel (Q-55). Not proposed until the owner brings them back.
+- **Held by the owner (2026-11-01):** the open questions Q-53 (the copy off the site's host), Q-58 (results past
+  20 000), Q-59 (the app's updates), Q-60 (where alerts go) and Q-62 (the launch's machine). Recorded, not raised
+  again until the owner brings them back; what they cost stays in the documents.
 - **Java 21 only, MySQL 8.4, and the release carries its own runtime, MySQL and nginx**
   (Q-56, plan item 80). **Production is RHEL 9.x** (glibc 2.34), this machine Ubuntu
   24.04: native code is built in a Rocky Linux 9 container, releases checked in UBI 9.
@@ -141,6 +144,10 @@ for the backend, its docs and its client.
   443 and 9001 and routes match traffic by the arena's TLS name. The certificate comes from the
   backend's own CA (`private-ca.sh`), whose root the app ships and trusts alone
   ([operations/06](docs/operations/06-certificates.md)).
+- **The site launches on one machine**, for up to about 5 000 players (owner, 2026-11-01; C-11, D-93):
+  every role on it, the three machines' names and ports on loopback (three arenas, two workers, both
+  stores, MySQL), the backups beside the database on a disk of their own. The install guide installs
+  it and its check proves it; three machines stay the design for 50 000, and growing is plan item 115.
 - **The app is for Android alone**, installed from the owner's own copy, not Google Play or the App
   Store (owner, 2026-10-24; C-10): no store's rules apply, iOS is not a target, and nothing updates the
   app but the owner's channel (Q-59, open). A player deletes their own account (D-84); a guest nobody plays

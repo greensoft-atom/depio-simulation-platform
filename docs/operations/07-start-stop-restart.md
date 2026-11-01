@@ -175,9 +175,17 @@ systemd 252: a broken nginx configuration refused by the reload while the old on
 restarted, then the store, each with the platform serving again unrestarted; a pattern stopping the
 arena and the worker, and the units started again by name.
 
-On a
-machine installed alone, by the install guide, the order is
-[03 §10](03-install-guide.md#10-start-everything)'s.
+**On the launch's one machine** ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)), installed by the install guide, every role at once, in
+[03 §10](03-install-guide.md#10-start-everything)'s order; the stop above serves as it is:
+
+```bash
+systemctl start backend-mysql backend-store@session backend-store@events backend-scratch-mysql backend-binlog-stream
+systemctl start backend-platform backend-gateway backend-worker@c1 backend-worker@c2 \
+    backend-arena@a1 backend-arena@a2 backend-arena@a3 backend-nginx
+```
+
+A restart of the machine itself starts them all, enabled, by themselves (checked by the install guide's check,
+which restarts its machine).
 
 ## 2. On a development machine
 

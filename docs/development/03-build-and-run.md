@@ -534,7 +534,7 @@ With Docker, each on a release:
 |---|---|
 | `check-release-el9.sh` | the release in UBI 9 with nothing installed: every binary's libraries, MySQL, j-redis, the four processes, nginx |
 | `check-units-el9.sh` | the units under RHEL 9's systemd, installed as the deploy document says, nginx as one machine's front: HTTPS and a match connection through 9001, the backend's root trusted alone |
-| `check-install-guide-el9.sh` | the [install guide](../operations/03-install-guide.md), every step as written, with no network |
+| `check-install-guide-el9.sh` | the [install guide](../operations/03-install-guide.md), every step as written, with no network: the launch's one machine (D-93), again after a restart, and the runbook's restore on one machine |
 | `check-ports-el9.sh` | in Rocky Linux 9.5 with RHEL 9's firewalld: the [ports and the firewall](../operations/05-ports-and-firewall.md) as written, the front's nginx ending TLS with a certificate from the backend's own CA, and the C# headless driver playing through 443 and 9001 (.NET 8 too; about ten minutes) |
 
 Without Docker, `backend/scripts/check-certificates.sh` checks the certificate scripts, with

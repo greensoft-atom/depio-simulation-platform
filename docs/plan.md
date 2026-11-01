@@ -42,7 +42,7 @@ rather than followed.
 
 **Scope decisions of 2026-09-23:** launch at **5 000–10 000 concurrent
 players** (two machines with replication, not the full three-machine
-scale-out); v1 includes the **full meta layer** — leaderboards, accounts and
+scale-out; since 2026-11-01 up to about 5 000 on one machine, [D-93](architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)); v1 includes the **full meta layer** — leaderboards, accounts and
 progression, shop and currency, equipment and inventory, teams and tournaments,
 and fixed-phrase chat
 ([D-14](architecture/03-decision-log.md#d-14--communication-is-a-fixed-phrase-list-never-free-text)).
@@ -53,8 +53,8 @@ and fixed-phrase chat
 |---|---|
 | **j-redis-service** | **2.2.1 shipped** (2026-10-01): a subscriber follows the primary as every other connection does (plan item 50). 2.2.0 (2026-09-29) added replication, a primary and its replicas with promotion guarded by epochs; 2.1.0 (the same day) streams, on 2.0.0's Java 21 base. 229 tests, crash-tested with and without a replica, offline build, documented. See its [README](../j-redis-service/README.md). |
 | `java21-offline` bundle | Built and verified: 244 jars, 0 above Java 21, offline build proven from an empty repository. |
-| Requirements | [Written](requirements/01-scope-and-nfrs.md), with 54 questions recorded. Four wait on the owner's machines or players: Q-1 uplink, Q-2 in-battle ratio, Q-3 production measurements, Q-4 how players cluster. Two wait on the owner's choices: Q-52, a real payment provider (the flow is built, its provider simulated), and Q-53, where the backups' copies off the site go. The rest are answered, or built on their recommendations unless the owner decides otherwise. |
-| Architecture | [Topology](architecture/01-system-topology.md), [availability](architecture/02-availability.md) and the [decision log](architecture/03-decision-log.md), D-1 to D-75, written. What runs where at launch on two machines is not written yet (topology §2). |
+| Requirements | [Written](requirements/01-scope-and-nfrs.md), with 62 questions recorded. Four wait on the owner's machines or players: Q-1 uplink, Q-2 in-battle ratio, Q-3 production measurements, Q-4 how players cluster. Six wait on the owner's choices: Q-52, a real payment provider (the flow is built, its provider simulated); Q-53, where the backups' copies off the site go; Q-58, a day of results past 20 000 players; Q-59, the app's updates; Q-60, where alerts go; Q-62, the launch's machine. The owner held Q-53, Q-58, Q-59, Q-60 and Q-62 on 2026-11-01. The rest are answered, or built on their recommendations unless the owner decides otherwise. |
+| Architecture | [Topology](architecture/01-system-topology.md), [availability](architecture/02-availability.md) and the [decision log](architecture/03-decision-log.md), D-1 to D-75, written. At launch, every role on one machine (D-93, topology §2). |
 | `arena` design | [Current](detailed-design/01-arena.md), with what is not built marked in place: replays, the in-room events beyond the kill feed, and co-op's tiers. The modes, the maze's walls, the whole tank tree and the kill feed are built. |
 | `networking` design | **[Written](detailed-design/02-networking.md)** — transport, wire format, snapshot protocol, client-side simulation contract, traffic profiles, the own tank's prediction. |
 | `gateway` design | **[Written](detailed-design/03-gateway.md)** — lobby connection, auth handshake, push routing, rate limiting. |
@@ -3791,6 +3791,54 @@ team, and nothing changes a shape's), so that guard was taken out. Checked: the 
 (`EveryUpdateFieldIsApplied`). Live drill: `play` and `domination` on a release with the fix, as a regression; the
 drill captures no dominator, so a capture over the network is not drilled. Not measured: the change adds a byte to a
 frame only when a team changes, once a capture, nothing a tick could show.
+#### 113. ~~The site on one machine at launch, for up to about 5 000 players (D-93).~~ — **done 2026-11-01**
+
+The owner, 2026-11-01: at the first launch there will be fewer than about 5 000 users, so the backend runs on one
+machine; and they held the open questions Q-53, Q-58, Q-59 and Q-60 (Q-62, the machine, recorded and held with them).
+D-93 and C-11: the front and every role on one machine, the three machines' names, units and ports on loopback: three
+arenas (5 400 places), two workers, `session` and `events` apart, MySQL, the backups beside it with their copies on a
+disk of their own; heaps for one machine, 32 cores and 48 GB allocated of 64; NFR-4 given up until a second machine.
+**The install guide installs that machine**: both stores, three arenas by name in nginx's map and the certificate, two
+workers with metrics, every process watched, the backup and binlog accounts, the scratch server, the stream and the
+timers, the first dump and proof taken at once. **The runbook has one machine's recoveries**: a reboot; the database's
+disk lost and restored from the copies, the old copies and dumps set aside, since the new server's binlogs number from
+000001 again and the next dump would prune the new copies by an old dump's start (found writing it). **The guide's check
+proves it**: failed first against the old guide for 30 reasons, each a part of D-93; then, against the new, every check:
+the launch's units active and enabled, each arena by its name passed to its port, the metrics ports and the watch's
+targets equal, the stream on `events` alone, `maxmemory` under half the heap, a dump and a proof recorded and reported by
+both workers; again after the container's restart, a session from before served; and after the database's disk was
+removed, the runbook's restore as written, an account registered after the dump logging in, the next proof passing.
+About eleven minutes alone. Eleven mutants, with the release given and the guide or the runbook changed, each caught
+for its own reason: `a3` left out of nginx's map; a worker's metrics, and the workers in the watch, left out; the
+arenas without the `events` store, which survived first (a result is written only when a match ends, and the check
+plays none), so the check reads each arena's and worker's own `events` store connection; the grant on `backup_run`;
+the proof's timer; `maxmemory` over the heap; the old copies not set aside (the next proof fails); the restore
+without the backups' account, and without the copies (both refused by the restore); and the replay stopped at the
+dump, added because the copies' mutant was caught only by a refusal: the account registered after the dump is lost
+(401). Found by the runs under load, three stacks and a build at once: the guide's wait for the platform's first
+start before the grant, 90 s, too short (five minutes now, and what to do if it is not enough); the check's own
+waits for a starting JVM; and O-61, open, item 114. Found and fixed:
+O-59 (the guide's worker served no metrics and was not watched, so a stopped worker or backup never alerted) and O-60
+(the small machine's store with a 3 GB `maxmemory` in a 1 GB heap). Docs: D-93, C-11, Q-62, §5's launch and NFR-4, the
+topology, the availability model's one machine, operations/01, 02, 03, 04, 05, 07, 08 and 09, diagrams 01 and 07, the
+glossary, the deploy and scripts READMEs, development/02 and 03, docs/README, CLAUDE.md. Not checked: a real machine of
+that size, so no figure here is one machine's at 5 000 (Q-3); a real second disk (the container's `/var/lib/backend` is
+on its one); the restore of a machine lost for good, whose steps are the install guide's and this restore's, each run,
+not run together.
+
+#### 114. A start on a starved machine: the platform and the workers exit on a slow first connection to MySQL (O-61).
+
+Found by item 113's check under overload: after a restart of the one machine the platform restarted 19 times in
+five minutes and never served, each exit its database pool's first connection failing. Reproduce by construction (a
+MySQL whose answer to a new connection is slower than the 2 s connect timeout, as a starved machine's), read the
+window in the code, then decide how a start waits for what it needs rather than exiting into a restart every 2 s.
+
+#### 115. Growing from one machine to two (D-93).
+
+A second machine: the replicas of MySQL and both stores made from the running primaries, which gives failover back,
+then arenas on it; written step by step and run as written in containers, with the site serving throughout. When the
+owner needs it: past about 4 000 in battle, or for failover.
+
 ---
 
 ### Completed 2026-09-23

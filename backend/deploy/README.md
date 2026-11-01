@@ -17,6 +17,9 @@ The addresses in the examples are the three machines' private ones: A `10.0.0.1`
 C `10.0.0.3` ([01 §1](../../docs/operations/01-deploy.md#1-what-runs-where)). `203.0.113.10` stands
 for the site's one public address, which the provider forwards to the front (D-82); the arenas'
 names, `a1.arena.internal` and the rest, are labels nginx routes by, in no DNS.
+On the launch's one machine ([D-93](../../docs/architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)) the
+[install guide](../../docs/operations/03-install-guide.md) rewrites them to loopback, with three arenas, two workers'
+`worker-<id>.env` and smaller heaps; the shipped heaps are the three machines'.
 
 ## Files
 

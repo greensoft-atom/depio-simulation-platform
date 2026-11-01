@@ -1,4 +1,4 @@
-# The rehearsal on the three machines
+# The rehearsal on the three machines, or the launch's one
 
 The readiness review's first step on the owner's hardware ([plan item 100's list](../plan.md)): every
 check that this repository could not run on a development machine, in order, each with its expected
@@ -12,6 +12,21 @@ named one ([Q-60](../requirements/01-scope-and-nfrs.md#7-open-questions)); and t
 §8's table to fill in.
 
 The addresses are the examples': the site's `203.0.113.10`, the machines' `10.0.0.1`, `.2`, `.3`.
+
+## On the launch's one machine (D-93)
+
+The site launches on one machine ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)), and is rehearsed there: the sections below, on it, with
+these differences. A second machine is still needed, for the bots.
+
+| § | On one machine |
+|---|---|
+| 1 | The install guide's one machine, §1 to §12. No `curl` to the others; the platform's journal says `the watch reads 7 target(s), 0 peer(s)`; `ss -ltnp` shows 443, 9001 and sshd's 22 on every address and the rest on `127.0.0.1` alone. `df -h /var/lib/backend /var/lib/backend-mysql`: two disks, not one |
+| 2 | As written |
+| 3 | As written, on the one machine; no `PeerUnreachable` row, since there is no peer |
+| 4 | **No failover**: instead the two recoveries the runbook has for one machine ([02 §4](02-runbook.md#on-the-launchs-one-machine-d-93)), before the first player, when nothing can be lost. `reboot`, then the install guide's §11: every unit back by itself, a session from before still served; the time from the reboot to the first login. Then the database's disk lost: `systemctl stop backend-mysql`, its directory moved aside (`mv /var/lib/backend-mysql /var/lib/backend-mysql.before`), and the runbook's restore; the time it took, the restore's own lines. These two times are NFR-4's real figures on one machine |
+| 5 | As written, on the one machine |
+| 6 | The bots on the second machine, 1 000, 2 500 and 5 000: six cores for them there. The platform and the gateway listen on `127.0.0.1` alone here, so for the run alone give them the machine's private address too (`PLATFORM_BIND`, `GATEWAY_BIND`, and `PLATFORM_URL` with it), the bots' address in a zone with 8080 and 8090 and in `BACKEND_TRUSTED_PROXIES`, and restart both; then all of it back, and restart them again |
+| 7 | `systemctl restart backend-arena@a1` as written; a platform's or a gateway's restart is a few seconds' refusal here, with no other to pass to: record it |
 
 ## 1. Install the three machines
 

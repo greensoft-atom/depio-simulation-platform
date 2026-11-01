@@ -1,8 +1,8 @@
 # Backend documentation
 
 Backend for a diep.io-style realtime multiplayer arena with a Unity mobile
-client, self-hosted. Launch target **5 000–10 000 concurrent players** on two
-machines; the architecture is sized to grow to 50 000 on three.
+client, self-hosted. Launch target **up to about 5 000 concurrent players on one machine**
+(the owner, 2026-11-01, D-93); the architecture is sized to grow to 50 000 on three.
 
 Documents are grouped by **what kind of document they are**, because they answer
 different questions and change at different rates.
@@ -44,7 +44,7 @@ Then the detailed design of whatever you are working on.
 
 | Document                                                   | Content                                                                                                                                                              |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [01 — System topology](architecture/01-system-topology.md) | The four process types, machine layout (and the launch on two machines, open), capacity derivation, client flow, data and control plane, technology, core principles |
+| [01 — System topology](architecture/01-system-topology.md) | The four process types, machine layout (and the launch on one machine, D-93), capacity derivation, client flow, data and control plane, technology, core principles |
 | [02 — Availability](architecture/02-availability.md)       | Failure table, degradation tiers, failover policy, what is not covered, the gaps left, failover rehearsed under load, a replica's health measured                    |
 | [03 — Decision log](architecture/03-decision-log.md)       | D-1…D-75: every significant choice, its reasoning and its cost, and what later revisited it                                                                          |
 

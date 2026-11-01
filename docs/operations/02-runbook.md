@@ -357,6 +357,63 @@ In all three cases the surviving machines keep serving. The thing to watch is
 whether the remaining arena capacity is being oversubscribed; if so, cap
 matchmaking rather than letting every room overfill.
 
+### On the launch's one machine (D-93)
+
+Nothing fails over: the machine is the site
+([availability](../architecture/02-availability.md#on-one-machine-the-launch-d-93)). What to do depends on what
+was lost:
+
+- **The machine stopped** (power, a panic, a reboot): start it. Every unit is enabled and starts at
+  boot; check it as the [install guide's §11](03-install-guide.md#11-check-it) does. Nothing is lost:
+  the stores reload their logs, MySQL its own.
+- **MySQL's disk**, the copies' disk (`/var/lib/backend`) intact: the site refuses logins and
+  everything that reads the database. A new disk, then the restore below: nothing committed is lost,
+  since the binlog stream holds every write to within milliseconds.
+- **The machine, for good**: another, installed by the [install guide](03-install-guide.md) to the end
+  of §5, the copies' disk moved to it, then the restore below in place of the guide's §6 database, and
+  the guide on from §6's backups. With the copies' disk lost too, the copy off the site
+  ([a last resort](#a-last-resort-restore-with-no-source-left)) once Q-53 names a host; with neither,
+  the database is gone.
+
+**The restore**, as root, on the machine (checked as written: the install guide's check loses the
+database's disk on purpose and runs it):
+
+<!-- one-machine-restore -->
+```bash
+systemctl stop 'backend-arena@*' backend-gateway backend-platform 'backend-worker@*' backend-binlog-stream backend-mysql
+# MySQL made again on the new, empty disk at /var/lib/backend-mysql, as the install guide's §6: its users,
+# not the database, which the restore makes.
+install -d -o mysql -g mysql -m 0750 /var/lib/backend-mysql
+/opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/mysql/backend.cnf --initialize-insecure --user=mysql
+systemctl start backend-mysql
+/opt/backend/mysql/bin/mysql -S /run/backend-mysql/mysqld.sock -u root \
+    -e "ALTER USER root@localhost IDENTIFIED BY '$(cat /etc/backend/credentials/mysql-root)'"
+/opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf -e "
+    CREATE USER 'backend'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/db-password)';
+    GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON backend.* TO 'backend'@'127.0.0.1';
+    CREATE USER 'backup'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/backup-password)';
+    GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, RELOAD, REPLICATION CLIENT ON *.* TO 'backup'@'127.0.0.1';
+    CREATE USER 'binlog'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/binlog-password)';
+    GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'binlog'@'127.0.0.1'"
+# The newest dump, carried through the binlog copies to their end, under the production name
+dump=$(ls /var/lib/backend/mysql-dumps/backend-*.sql.gz | sort | tail -1)
+NO_SOURCE=1 SCRATCH_CNF=/etc/backend/credentials/mysql-root.cnf \
+    /opt/backend/scripts/restore-drill.sh "$dump" backend backend /var/lib/backend/binlog
+/opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf \
+    -e "GRANT INSERT ON backend.backup_run TO 'backup'@'127.0.0.1'"
+# The old server's copies and dumps set aside: the new server's binlogs are numbered from 000001 again, so the
+# stream would write over copies of the same name, and the next dump would prune the new copies by an old dump's.
+aside=/var/lib/backend/before-$(date -u +%Y%m%dT%H%M%S)
+mkdir "$aside" && mv /var/lib/backend/binlog /var/lib/backend/mysql-dumps "$aside"/
+systemctl start backend-platform backend-worker@c1 backend-worker@c2 backend-gateway \
+    backend-arena@a1 backend-arena@a2 backend-arena@a3 backend-binlog-stream
+systemctl start backend-mysql-backup          # the new server's first dump: the copies' new starting point
+```
+<!-- /one-machine-restore -->
+
+`restore-drill.sh` ends naming every table restored, the newest migration, and the ledger reconciled
+(06 §10). The set-aside copies are kept until the next weekly proof has passed on the new ones.
+
 ## 5. What to watch
 
 Alert on the first group; look at the second when investigating. Each alert's

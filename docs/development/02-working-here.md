@@ -63,7 +63,9 @@ under `background/`.
 | The migrations squashed to V1 (schema) and V2 (seed) once, before launch; forward-only from V3 | 2026-10-04 | D-75 |
 | A result under five seconds counts for nothing but its row and a rated match's rating; a walkover is no win | 2026-10-05 | D-76 |
 | The Unity editor's check and an admin panel are put off: not proposed until the owner brings them back | 2026-10-05 | Q-54, Q-55 |
+| The open questions on the copy off the site's host, results past 20 000, the app's updates, where alerts go and the launch's machine are held: recorded, not raised again until the owner brings them back | 2026-11-01 | Q-53, Q-58, Q-59, Q-60, Q-62 |
 | The app is for Android alone, installed from the owner's own copy, not Google Play or the App Store: no store's rules, no iOS, updates by the owner's own channel (Q-59, open); a guest nobody plays for 180 days is erased by retention (Q-61, decided 2026-10-26) | 2026-10-24 | C-10, D-1, D-84, D-87 |
+| The site launches on one machine, for up to about 5 000 players: every role on it, the three machines' names and ports on loopback, the backups beside the database on a disk of their own; three machines stay the design for 50 000 | 2026-11-01 | C-11, D-93, plan items 113 and 115 |
 | Java 21 only (no Java 8 line); MySQL 8.4 LTS; the release carries its own Java runtime, MySQL and nginx, nothing installed as an OS package | 2026-10-05 | Q-56, plan item 80 |
 | The production machines run RHEL 9.x (the owner thinks 9.5) | 2026-09-22 | requirements C-1; §3 below |
 | Everything a development machine builds, tests, runs and debugs stays inside the checkout (`work/`); a Java and a MySQL already installed there (the owner's: Java 8, MySQL 5) are neither used nor changed | 2026-10-17 | D-80, [03](03-build-and-run.md) |

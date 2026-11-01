@@ -2891,3 +2891,72 @@ recommendations below agreed).
 and the commands in the documents with them: `./run-local.sh bots` is `./dev-backend.sh bots`, a process restarted
 alone is `./dev-backend.sh restart platform`. Running as root is the owner's, on their machine; the site still runs
 each service as `backend` under systemd.
+
+### D-93 — The site launches on one machine, for up to about 5 000 players
+
+**Decided 2026-11-01** (plan item 113; the owner: at the first launch there will be fewer than about 5 000
+users, so the backend runs on one machine, and the system is to run that way and be ready for it). Read as
+5 000 at once, every one of them in battle, the case requirements §5 designs for.
+
+**Decision.**
+- **One machine at launch**, the front, with the site's 443 and 9001 forwarded to it, and every role A, B and C
+  have. It replaces the launch target of 5 000 to 10 000 players on two machines with replication (the scope
+  decision of 2026-09-23), whose layout was never written ([architecture/01 §2](01-system-topology.md#2-machine-topology)).
+  Three machines stay the design for 50 000, and the way the site grows.
+- **The three machines' processes, names, units and ports, on loopback**, so that a machine added later takes
+  roles as the three machines' do (a replica made from the running primary and promoted, an arena added), with the
+  scripts, the runbook and the watch as they are:
+
+  | | On the machine | Heap, or its pool | Allocated |
+  |---|---|---|---|
+  | nginx | the front: 443 and 9001 | | 1c / 1G |
+  | platform, gateway | one each, 8080 and 8090 | 2g each | 4c / 6G |
+  | arenas | `a1`, `a2`, `a3` on 9011, 9012 and 9013, TLS names `a1.arena.internal` to `a3`; 1 800 places each, 5 400 | 4g each | 12c / 15G |
+  | workers | `c1`, `c2`: two apply 18 to 27 results a second, and 5 000 players make about 17 | 1g each | 4c / 3G |
+  | j-redis | `session` on 6379 and `events` on 6380, apart as D-7 keeps them; no replica | 4g each, `maxmemory` 1600mb: a day of results at 5 000 is 0.8 GB | 4c / 10G |
+  | MySQL | the primary on 3306, no replica | buffer pool 8G | 6c / 10G |
+  | the backups | the binlog stream, the nightly dump, the weekly proof onto the scratch server (3309), as `backend-backup` | scratch pool 2G | 1c / 3G |
+  | **the machine** | | | **32c / 48G of 64 GB**, the rest for the system's file cache |
+
+  Recommended: **32 cores, 64 GB and two disks**. The allocation is a ceiling: the load measured at 5 000 is about
+  8 cores of rooms at level 1, more as they mature ([operations/04 §5](../operations/04-scaling-and-performance.md#5-what-50-000-players-would-take-on-these-numbers)).
+- **Heaps for one machine**, smaller than the three machines' (an arena 6g, the platform and the gateway 3g, a
+  worker 1.5g, a store 8g), which would take 61 GB of 64 before the JVMs' own memory. Every live heap measured is
+  tens of MB (an arena's 43 MB at full rooms, [07 §4](../detailed-design/07-threading-and-performance.md#4-tick-budget-and-what-to-measure)), so a heap is
+  headroom for ZGC. The install guide's step 8 sets them, a drop-in a unit and the stores' files; under 48 GB 1g each as
+  before, the stores' `maxmemory` 400mb with it (O-60).
+- **The backups run on the machine**, as they do on C: the binlog stream from MySQL over loopback, the nightly dump,
+  the weekly proof, as `backend-backup`, whose copies the `backend` processes cannot read. **They cover a mistake (a
+  table dropped, a migration gone wrong) and a lost database disk, not a lost machine.** So `/var/lib/backend`, where
+  the copies go, belongs on a disk of its own, and the copy off the site (Q-53, held by the owner) is the only one that
+  outlives the machine.
+- **The watch names every process here**: the platform, the gateway, the three arenas and the two workers, whose
+  metrics carry the backups' state (O-59); no peers.
+- **NFR-4 is given up until a second machine.** A process that fails is restarted by systemd, as on three; the
+  machine failing is the site down until it is back, since nothing stands beside it. A lost machine is a new one,
+  installed by the guide, the database restored onto it from the copies ([runbook §4](../operations/02-runbook.md#4-whole-machine-loss)).
+  Lost with it: sessions, queues and parties (a login again), results in flight (seconds of them); the boards come
+  back from MySQL (D-31).
+- **Growing**: a second machine takes the replicas first, MySQL's and both stores', made from the running primaries
+  as 01 §9 and §3 describe, which gives failover back; then arenas. Not written step by step, nor run: plan item 115.
+
+**Why.**
+- **The owner's numbers.** 5 000 in battle are 34 rooms of 150: three arenas, about 8 cores of rooms, two workers
+  (04 §5's launch column, halved). One 64 GB machine holds every role at the sizes above with 16 GB to spare.
+- **The three machines' names and ports cost nothing here** and make growing a move, not a migration: the stores
+  and MySQL replicate to the new machine and are promoted as the runbook's failover already does; an arena is added
+  by its env file, its name in nginx's map and the certificate; consumer and arena names stay unique.
+- **Two stores, not one.** D-7's reason holds on one machine: a backlog of results must not evict sessions. And
+  `events` moves to another machine as it is.
+- **The backups on the machine**, not nowhere: a dump on the disk it protects is lost with it (01 §10), but on a
+  disk of its own it outlives that disk, and it covers the commoner loss, a mistake. Off the site waits for Q-53.
+
+**Cost.**
+- **No failover.** An outage of the machine is an outage of the site; replacing it is hours, an install and a
+  restore, where three machines promote in minutes.
+- **The copies share the machine.** With one disk, the disk lost is the data lost; with no copy off the site, the
+  machine lost is.
+- **Unmeasured**: 5 000 players on one machine, with the bots on another (Q-3), and nginx's TLS for every match byte,
+  about 0.15 Gbit/s each way at 5 000.
+- The install guide's one machine becomes the launch's: three arenas, two workers, two stores and the backups,
+  where it had one of each and no backups.

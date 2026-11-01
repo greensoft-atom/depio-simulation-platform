@@ -246,6 +246,7 @@ from the measured size of a result, not measured on the production load:
 
 | Players | Hours kept | Results held | `maxmemory` | `STORE_HEAP` | Fits B and C at 64 GB |
 |---|---|---|---|---|---|
+| 5 000 | 24 | 0.8 GB | `1600mb`, the launch's one machine (D-93) | `4g` | one machine at 64 GB: yes |
 | 10 000 | 24 | 1.6 GB | `3gb`, as shipped | `8g`, as shipped | yes |
 | 15 000 | 24 | 2.4 GB | `3gb`: its 80 % mark | `8g` | yes |
 | 20 000 | 24 | 3.2 GB | `4gb` | `10g` | yes, closely |
@@ -341,22 +342,26 @@ a rewrite holds the command thread 20–30 ms (100 000 members) to 120–250 ms 
 
 ## 5. What 50 000 players would take, on these numbers
 
-| | At 10 000 (the launch, two machines) | At 50 000 (the design, three) |
-|---|---|---|
-| Rooms of 150 | 67 | 333 |
-| Arena CPU at 0.24 cores a room | ~16 cores | ~80 cores, more as rooms mature |
-| Arena processes at ~2 300 players each | 5 | 22, against the design's 7 |
-| `events` store, a day of results | 1.6 GB, inside 3 GB | 7.8 GB: raise it (O-37) |
-| Results a second | ~34: three or four workers | ~170: ten or more |
-| Downstream | ~0.2 Gbit/s | ~1.1 Gbit/s: 10 GbE |
+| | At 5 000 (the launch, one machine) | At 10 000 | At 50 000 (the design, three) |
+|---|---|---|---|
+| Rooms of 150 | 34 | 67 | 333 |
+| Arena CPU at 0.24 cores a room | ~8 cores | ~16 cores | ~80 cores, more as rooms mature |
+| Arena processes at ~2 300 players each | 3, set for 1 800 each (5 400 places) | 5 | 22, against the design's 7 |
+| `events` store, a day of results | 0.8 GB, inside one machine's 1.6 GB | 1.6 GB, inside 3 GB | 7.8 GB: raise it (O-37) |
+| Results a second | ~17: two workers | ~34: three or four workers | ~170: ten or more |
+| Downstream | ~0.1 Gbit/s | ~0.2 Gbit/s | ~1.1 Gbit/s: 10 GbE |
 
-The launch fits these machines on every figure here. 50 000 does not, on the VM's figures:
+The launch fits its one machine, 32 cores and 64 GB ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)), on every figure here, and 10 000 fits three. 50 000 does not, on the VM's figures:
 80 arena cores against 72 in three machines, and three times the arena processes the design
 names. Both are upper bounds measured over loopback, and the real network cards should cost
 less; whether 50 000 fits is Q-3's to settle on the production hardware, with the bots on
 another machine.
 
 ## 6. When to add capacity
+
+On the launch's one machine the first answer to most of these is the second machine (plan item 115): its
+arenas carry 5 400 in battle, its two workers 18 to 27 results a second, its stores 1.6 GB of `maxmemory` each.
+Past about 4 000 in battle, or for failover, it is time.
 
 | Signal | Metric | Act when |
 |---|---|---|

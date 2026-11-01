@@ -4,7 +4,7 @@ Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
 re-ordered around it rather than the other way round. **Open as of 2026-11-01:**
-nothing; O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
+O-61 (plan item 114); O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
 Every entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
@@ -1129,6 +1129,40 @@ their own or not yet run on the site:
   `dev-nginx.sh` refuses. It takes the first IPv4 address in bash alone; four cases checked, a fake `hostname`
   with IPv6 first, a `PATH` without `awk` or `hostname`, an address given; the mutant that takes any first word
   caught.
+
+**O-59 (M), found 2026-11-01, FIXED the same day** (plan item 113, [D-93](architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)). The install guide's one machine runs a worker
+with no metrics: `worker.env` names no `BACKEND_METRICS_ADDR` (each worker's own file does, `worker-<id>.env`,
+which the guide never made), so it served none, and step 8's watch named the platform, the gateway and the arena
+alone. A worker stopped raised no `TargetDown`, and results queued with no alert; and the backups' rules
+(`BackupDumpStale`, `BackupProofStale`, `BackupFailed`) read the workers' metrics, so on a machine that backs
+itself up, as 01 §10 says one may, a backup that stopped would never have been said. Seen in the guide's last
+check: listening on 9101, 9103 and 9110, not 9102. The check compared nothing with the watch's targets.
+**Fixed:** step 8 writes each worker's `worker-<id>.env`, and the watch names both workers and the three arenas;
+the guide's check requires every metrics port listening on loopback to be a target and every target to listen, and
+both workers to report the dump's and the proof's success. Failed first against the old guide (no 9102, three
+targets); two mutants (a worker's metrics left out, the workers left out of the watch), both caught.
+
+**O-60 (L), found 2026-11-01, FIXED the same day** (plan item 113). On a machine under 48 GB the install guide's step 8 gave the
+store a 1 GB heap and left its `maxmemory` at the shipped 3 GB, so the store would run out of heap before it
+refused a write at its limit. Never met: a trial holds little. **Fixed:** step 8 sets `maxmemory` with the heap,
+400mb under 48 GB and 1600mb of 4g on the launch's machine; the guide's check requires each store's `maxmemory` at
+most half its heap, and the mutant that keeps 3gb on a 1g heap is caught.
+
+**O-61 (M), found 2026-11-01, OPEN** (plan item 114). On a starved machine the platform and the workers can fail to
+start for minutes. Each opens its database pool at start with a 2 s connect timeout (`Database.Limits`), and a
+first connection that fails ends the process (`Failed to initialize pool: Communications link failure`, no packet
+received), which systemd starts again 2 s later, at the cost of another JVM's start. Seen in item 113's check with
+three of these stacks and a build on this VM's 12 shared cores at once: in the first phase the platform restarted 8
+times and each worker once before they served; after the container's restart, as a reboot of the one machine, the
+platform restarted 19 times in five minutes and never served. MySQL itself never restarted. Not seen in four other
+runs under the same load, nor in any run alone. Matters most on one machine (D-93), where every process starts at
+once at a boot, and on a small one such as the owner's VM. The deepest cause, kept by the check since: `java.net.
+SocketException: Connection attempt exceeded defined timeout`, the driver's connect timeout, with MySQL already up
+(the platform starts after it). It happens alone too: in the check's run alone on this VM, the platform's first
+connection after the restart failed so, once, and it served after systemd started it again. With the restart report,
+three runs under that load had the platform restart 8 to 22 times; two of them never served. Beside it, harmless:
+the binlog stream's unit is ordered after the network alone, so at a boot of the one machine it tries MySQL before
+MySQL listens, and starts again 10 s later.
 
 **DOC-34, found 2026-11-01 by the same review, FIXED the same day** (plan item 111). Eight reviews of every
 document against the code, the units, the scripts and the release's configuration, each finding checked against

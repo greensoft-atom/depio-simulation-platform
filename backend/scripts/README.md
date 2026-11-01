@@ -19,7 +19,7 @@ Every setting a script or unit reads is also in the
 | [`check-release-el9.sh`](#check-release-el9sh) | Release | no | hand, on a machine with Docker |
 | [`check-ports-el9.sh`](#check-ports-el9sh) | Release | no | hand, on a machine with Docker |
 | [`check-units-el9.sh`](check-units-el9.sh) | Release | no | hand, on a machine with Docker: the release's units under systemd in UBI 9 (its header) |
-| [`check-install-guide-el9.sh`](check-install-guide-el9.sh) | Release | no | hand, on a machine with Docker: the install guide's blocks as written, in UBI 9 with no network (its header) |
+| [`check-install-guide-el9.sh`](check-install-guide-el9.sh) | Release | no | hand, on a machine with Docker: the install guide's blocks as written, in UBI 9 with no network; then the launch's one machine checked (D-93), again after a restart, and the runbook's restore after the database's disk is lost (its header) |
 | [`check-certificates.sh`](#check-certificatessh) | Certificates | no | hand, on any machine with openssl |
 | [`rotate-nginx-logs.sh`](#rotate-nginx-logssh) | Logs | yes | `backend-nginx-logs.timer`, nightly, on every machine |
 | [`check-nginx-logs.sh`](#check-nginx-logssh) | Logs | no | hand, on a machine with a release and curl |

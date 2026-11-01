@@ -75,13 +75,14 @@ cores carry a ~25-core load at full occupancy. Each arena is set for 1 800 playe
 battle (12 rooms), short of where its two network threads fill, 2 100 to 2 300: about 2.9
 cores of rooms each at full.
 
-**Open: the launch on two machines.** The launch target is 5 000–10 000
-players on two machines with replication (the scope decision of 2026-09-23,
-[requirements §5](../requirements/01-scope-and-nfrs.md#5-capacity-targets)),
-and this layout is for three. No document yet says what runs where on two:
-in particular where MySQL's replica, the `events` store's replica and the two
-workers go, which this table puts on C. It is to be settled with the owner's
-machines (Q-3), before the first install.
+**The launch: one machine** ([D-93](03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players), the owner, 2026-11-01).
+Up to about 5 000 players, on one machine that is the front and holds every role above, with the
+same names and ports on loopback: nginx; a platform and a gateway; arenas `a1` to `a3`, 5 400 places;
+workers `c1` and `c2`; `session` and `events`, with no replica; MySQL's primary, with no replica; and
+the backups beside it. 32 cores, 64 GB and two disks, with heaps sized for one machine (D-93's table).
+It replaces the earlier launch target, 5 000–10 000 on two machines with replication, whose layout
+was never written. Nothing fails over until a second machine
+([02](02-availability.md#on-one-machine-the-launch-d-93)); growing to it is plan item 115.
 
 ## 3. Capacity model
 

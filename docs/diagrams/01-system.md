@@ -43,7 +43,8 @@ lobby go on to a platform and a gateway, match traffic to the arena its TLS name
 gives, unread and never through the gateway (D-5). Pushes and an operator's room commands are
 published on the `session` store and reach the gateway and the arena by
 pub/sub. Each process also serves Prometheus metrics on a loopback address
-(`BACKEND_METRICS_ADDR`), not drawn.
+(`BACKEND_METRICS_ADDR`), not drawn. Drawn for three machines; at launch all of it is one machine,
+the front, on loopback ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players), [07](07-deploy-and-operations.md#the-launchs-one-machine)).
 
 ```mermaid
 flowchart LR
@@ -191,8 +192,8 @@ sequenceDiagram
 ### Primaries, replicas and promotion
 
 The three stateful roles, each a primary with a replica on another machine, on
-the three-machine layout of the topology. What runs where at launch on two
-machines is still open (topology §2). Promotion is a script an operator runs
+the three-machine layout of the topology. At launch the site is one machine, with no replica, and
+nothing here fails over until a second (D-93, topology §2). Promotion is a script an operator runs
 (D-8); an epoch only a promotion raises keeps every process off an old primary.
 The classes and scripts: `StoreClients` and the j-redis client (the stores),
 `PrimaryDataSource` (MySQL), `ReplicaWatch` (the heartbeat and the lag),

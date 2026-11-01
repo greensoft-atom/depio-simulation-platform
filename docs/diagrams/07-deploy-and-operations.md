@@ -1,6 +1,6 @@
 # 07 — Deployment and operations
 
-How the backend is laid out on its three machines, what a release holds, and how the operations
+How the backend is laid out on its one machine at launch and on its three, what a release holds, and how the operations
 that change it run: a rolling deploy, a store's failover, MySQL's failover, the backups with their
 timers, and a restore to a moment. The text these pictures follow is
 [operations/01-deploy](../operations/01-deploy.md) and the
@@ -8,6 +8,46 @@ timers, and a restore to a moment. The text these pictures follow is
 [deploy/README](../../backend/deploy/README.md) and
 [scripts/README](../../backend/scripts/README.md), which also hold the catalogues of settings,
 ports and timers.
+
+## The launch's one machine
+
+At launch every role is on one machine, the front
+([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)),
+as the [install guide](../operations/03-install-guide.md) installs it: the three machines' processes, names and
+ports, on loopback but for nginx's 443 and 9001, with no replica. The backups' copies go to a disk of their
+own, so that they outlive MySQL's; nothing here outlives the machine but the copy off the site, once there is a
+host for it.
+
+```mermaid
+flowchart LR
+    client["client device<br/>trusts the backend's root"]
+    forward["the site's public address<br/>443 and 9001, forwarded"]
+    offsite["off-site host, named by the owner (Q-53)"]
+    subgraph M["The one machine, the front"]
+        nginx["nginx 443 and 9001, ends TLS<br/>backend-nginx"]
+        gw["gateway 127.0.0.1:8090"]
+        pf["platform 127.0.0.1:8080"]
+        ar["arenas a1, a2, a3<br/>127.0.0.1:9011 to 9013"]
+        wk["workers c1, c2"]
+        ses["j-redis session 127.0.0.1:6379<br/>backend-store@session"]
+        ev["j-redis events 127.0.0.1:6380<br/>backend-store@events"]
+        my["MySQL primary 127.0.0.1:3306<br/>backend-mysql"]
+        bk["backups: binlog copies and dumps on the second disk<br/>proofs onto scratch MySQL 127.0.0.1:3309"]
+    end
+    client -->|"HTTPS, WSS, match TLS"| forward
+    forward --> nginx
+    nginx -->|"/v1/"| pf
+    nginx -->|"/lobby"| gw
+    nginx -->|"9001, by the arena's name"| ar
+    gw --> pf
+    pf --> ses
+    pf --> my
+    ar -->|"results"| ev
+    wk -->|"results"| ev
+    wk --> my
+    my -->|"binlogs as written, dumps"| bk
+    bk -.->|"once Q-53 names a host"| offsite
+```
 
 ## The three machines
 

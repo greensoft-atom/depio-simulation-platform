@@ -39,6 +39,13 @@ The two store primaries are on different machines, each replicated to another
 ([D-34](../architecture/03-decision-log.md#d-34--each-store-has-a-replica-every-process-knows-both-a-promotion-is-a-script)),
 so losing one machine costs at most one primary, and its replica is promoted.
 
+**At launch, one machine has every role** ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)), up to about 5 000 players: the primaries
+with no replica, three arenas (`a1` to `a3`), two workers (`c1`, `c2`), and the backups beside the
+database, against the rule above: their copies on a disk of their own, so that they outlive that disk,
+though not the machine.
+The [install guide](03-install-guide.md) installs it. Everything this document says of A, B and C holds
+on it, on loopback, but what needs a second machine: a replica, a promotion, a front to move to.
+
 ## 2. Conventions
 
 These apply to every process type and are settled:
@@ -892,7 +899,8 @@ the primary, and the ledger reconciled with every balance. Copies with a file
 missing in the middle are refused before anything is loaded
 ([runbook](02-runbook.md#the-restore-drill)).
 
-**Install**, on the backup machine:
+**Install**, on the backup machine; on the launch's one machine the install guide does the same over
+loopback, without TLS ([03 §6](03-install-guide.md#its-backups-on-this-machine)):
 
 1. `useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin backend-backup`;
    the client tools are the release's (`/opt/backend/mysql/bin`), which the

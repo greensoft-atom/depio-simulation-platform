@@ -95,6 +95,13 @@ On the database's machine, root uses MySQL through its socket,
 MySQL at `10.0.0.1`, A's own private address, and never at `127.0.0.1`, where nothing
 listens.
 
+### On the launch's one machine
+
+Every port of both tables is on the one machine ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)), with three arenas (9011, 9012 and 9013,
+their metrics 9110, 9111 and 9113) and two workers (9102, 9112), and everything but 443, 9001 and SSH on
+`127.0.0.1` alone: MySQL and both stores too, which nothing on another machine reaches. So its firewall
+opens 443 and 9001, and SSH to the internal network, and nothing private ([03 §12](03-install-guide.md#12-open-the-firewall)).
+
 ### What does not listen, and is sometimes looked for
 
 - **80**: nothing, on any machine (§1).

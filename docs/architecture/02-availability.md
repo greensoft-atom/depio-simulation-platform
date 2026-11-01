@@ -11,6 +11,22 @@ are unproven ([01 §3](01-system-topology.md#3-capacity-model)). Since [D-82](03
 nginx is also the one way in. Everything below is about making that degradation orderly
 rather than total.
 
+## On one machine (the launch, D-93)
+
+**At launch the site is one machine** ([D-93](03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)), and NFR-4 is not met: nothing stands beside it,
+so nothing fails over. The sections after this one are the three machines'. On one:
+
+| What fails | Players see | Recovery | Lost |
+|---|---|---|---|
+| A process (an arena, a gateway, a platform, a worker, nginx, a store, MySQL) | as in §1's row for it: an arena's battles end, a store's or MySQL's requests are refused | systemd restarts it, about 5 s for a Java process; a store or MySQL reloads its data from its disk | nothing, but an arena's battles; a store's last second of writes if the machine stopped too (its log is written each second) |
+| The machine, stopped or rebooted | nothing works, every battle ends | it starts again: every unit is enabled and starts at boot, MySQL before the platform and the workers (checked: the install guide's check restarts its machine) | nothing: the stores reload their logs, so a session survives and its player is not asked to log in again |
+| MySQL's disk | logins and everything that reads or writes MySQL are refused; matches go on, results wait | a new disk, and a restore from the dump and the binlog copies onto it ([runbook](../operations/02-runbook.md#the-restore-drill)): an hour or more | nothing, if the copies are on a disk of their own; everything since the last copy elsewhere, if they are not |
+| The machine, for good | nothing works until another is installed | another machine, the install guide, then the restore: hours | as the row above, and the store's state: sessions, queues, parties (a login again), results in flight (seconds of them); the boards come back from MySQL (D-31). With no copy off the site (Q-53), the database |
+
+So on one machine the copies decide what a loss costs: `/var/lib/backend`, where they go, on a disk of
+its own, and a copy off the site once the owner names a host. A second machine with the replicas gives
+§1's failover back (plan item 115).
+
 ## 1. Failure table
 
 | Component | Impact of failure | Players see | Recovery |
