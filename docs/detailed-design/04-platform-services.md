@@ -2631,7 +2631,9 @@ once unbanned.
 A ban now also kicks, so a banned player does not play their match out.
 
 **Arenas are told on a channel of their own**, `arena-admin:{name}`, which each
-subscribes to on the session store; `platform` publishes `{"cmd": "close",
+subscribes to on the session store, before its first announcement; a store not
+up yet does not end its start, the subscription made once the store answers
+(O-62, [D-94](../architecture/03-decision-log.md#d-94--a-start-waits-for-its-database-in-the-same-process-for-up-to-a-minute)); `platform` publishes `{"cmd": "close",
 "room"}` or `{"cmd": "kick", "player"}`. A kick goes to every live arena, since
 a player is in at most one and `platform` does not know which. The calls are
 answered 202, sent, with how many arenas heard: the arena acts on its room's

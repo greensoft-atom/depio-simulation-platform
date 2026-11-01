@@ -70,8 +70,14 @@ public final class ArenaAnnouncer implements AutoCloseable {
     }
 
     public void start() {
-        // An operator's commands (04 §10): heard before the first announcement names the rooms.
-        directory.listen(name, this::command).join();
+        // An operator's commands (04 §10): heard before the first announcement names the rooms. A store not up yet
+        // does not end the start (O-62, D-94): the subscription stays registered, and is made once the store answers.
+        try {
+            directory.listen(name, this::command).join();
+        } catch (java.util.concurrent.CompletionException e) {
+            log.warn("the operator's channel is not confirmed yet; it is made once the store answers: {}",
+                    e.getCause().toString());
+        }
         announceOnce();                 // immediately, so the arena is usable without a first delay
         scheduler.scheduleAtFixedRate(this::announceOnce,
                 ArenaDirectory.REFRESH_SECONDS, ArenaDirectory.REFRESH_SECONDS, TimeUnit.SECONDS);

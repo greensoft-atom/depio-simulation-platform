@@ -3826,18 +3826,40 @@ that size, so no figure here is one machine's at 5 000 (Q-3); a real second disk
 on its one); the restore of a machine lost for good, whose steps are the install guide's and this restore's, each run,
 not run together.
 
-#### 114. A start on a starved machine: the platform and the workers exit on a slow first connection to MySQL (O-61).
+#### 114. ~~A start on a starved machine: the platform and the workers exit on a slow first connection to MySQL (O-61).~~ — **done 2026-11-01**
 
 Found by item 113's check under overload: after a restart of the one machine the platform restarted 19 times in
-five minutes and never served, each exit its database pool's first connection failing. Reproduce by construction (a
-MySQL whose answer to a new connection is slower than the 2 s connect timeout, as a starved machine's), read the
-window in the code, then decide how a start waits for what it needs rather than exiting into a restart every 2 s.
+five minutes and never served, each exit its database pool's first connection failing. **The window, read in the
+driver and the pool**: a new connection's whole login must finish within the driver's login timeout, which HikariCP
+sets for the whole JVM from its 3 s wait, and the pool tries its first connection once as it is made; a cold JVM's
+first login on a starved CPU took longer, and each restart was a cold JVM again. One host's alone: with two, nothing
+sets that timeout. D-94: `Database` tries the first connection again in the same process, for up to a minute, each
+failure a warning with its cause; every limit as it was. Test first (`DatabaseLimitsTest`, MySQL behind a proxy that
+holds the next connection's greeting 5 s): it failed with O-61's own exception; a frozen server is given up at the
+wait. Six mutants, each caught. By hand from the release: a platform started with MySQL stopped served 28 s later,
+the same process; kept down, it exited after 62 s. **Under the load that showed it** (three of the guide's checks and
+the full build with its tests at once on this VM): the platform and the workers 0 restarts in three runs, where 8 to
+22; and **O-62 found**: the arenas restarted at the reboot in two of three, their operator's channel waited for on a
+store still starting; fixed as the gateway's already was, a warning (`ArenaAnnouncerTest`, failed first; the mutant
+that never subscribes caught). The same load again with both: nothing but the binlog stream restarted, in three runs.
+The full build with every test passed under that load (its counts not kept: quiet Maven, and the release's clean).
+Docs: D-94, 06 §7 (the login's limit and the start), 04 §10, the persistence and arena READMEs, the install guide's
+record. Not measured: a real machine's start, which is the same code; the drill's `play` from a release was not run
+for this item, the install check's three phases being the start it changes.
 
 #### 115. Growing from one machine to two (D-93).
 
 A second machine: the replicas of MySQL and both stores made from the running primaries, which gives failover back,
 then arenas on it; written step by step and run as written in containers, with the site serving throughout. When the
 owner needs it: past about 4 000 in battle, or for failover.
+
+#### 116. Every shell script reviewed again, line by line (the owner, 2026-11-01).
+
+The owner: check all shell scripts again, carefully. Every tracked script, 40 files and j-redis's four launchers,
+about 5 000 lines: read line by line against what documents it (its header, the scripts' README, the guides and
+the runbook, the units that run it), with ShellCheck's every warning judged; each finding checked against the code
+before it is changed, given an ID, and its fix proved by the script's own check or a run. Item 115 waits for the
+owner, so this one comes before it.
 
 ---
 

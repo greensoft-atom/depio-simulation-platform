@@ -18,7 +18,9 @@ runs the [runbook's restore on one machine](02-runbook.md#on-the-launchs-one-mac
 an account registered after the dump logs in after the restore, and the next proof passes. Last run
 2026-11-01, in UBI 9.5: every check passed, about eleven minutes; eleven mutants of the guide and the
 runbook, each caught (plan item 113). With two more such checks and a build on the same machine at once, a start
-could take minutes ([O-61](../defects.md), open). Run 2026-10-05 for the guide of the time: every unit
+could take minutes ([O-61](../defects.md#6-operations)); since a start waits for its database in the same process
+and an arena for its store (D-94, O-61, O-62), three such checks and the full build with its tests at once passed,
+no platform, worker or arena restarted (plan item 114). Run 2026-10-05 for the guide of the time: every unit
 `active`, the registration `201`, about twenty-five minutes. Also run the same day
 in Rocky Linux 9 with the system's own Java 8 and MySQL 8.0 installed and running
 (`MYSQL_PORT=3307`, §1): the same result, the system's MySQL still running beside

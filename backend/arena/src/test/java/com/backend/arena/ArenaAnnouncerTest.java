@@ -69,6 +69,56 @@ class ArenaAnnouncerTest {
     }
 
     @Test
+    @DisplayName("a store not up at the start does not end it: the operator's channel is made, and the arena announced, once it is (O-62)")
+    void aStoreNotUpYet(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        int port;
+        try (java.net.ServerSocket free = new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+            port = free.getLocalPort();
+        }
+        JRedisClient client = JRedisClient.builder().address("127.0.0.1", port).clientName("arena-t")
+                .reconnectBackoffMillis(100, 500).build().start();
+        RoomRegistry registry = new RoomRegistry(1_000f, 2_048, 10, 10, 2);
+        registry.startInitialRoom();
+        ArenaDirectory directory = new ArenaDirectory(client);
+        com.jredis.server.JRedisServer server = null;
+        try (ArenaAnnouncer announcer = new ArenaAnnouncer(directory, "arena-t", "127.0.0.1", 9001, registry)) {
+            announcer.start();                                   // as at a boot: the store not listening yet
+            com.jredis.server.config.ServerConfig c = new com.jredis.server.config.ServerConfig();
+            c.port(port);
+            c.bind(java.util.List.of("127.0.0.1"));
+            c.appendonly(false);
+            c.dir(dir.toString());
+            server = com.jredis.server.JRedisServer.start(c, com.jredis.server.core.Clock.system(),
+                    (reason, cause, code) -> { }, null);
+            long deadline = System.nanoTime() + 30_000_000_000L;
+            long heard = 0;
+            while (heard == 0 && System.nanoTime() < deadline) {
+                try {
+                    heard = directory.command("arena-t", JSON.createObjectNode().put("cmd", "dance"))
+                            .get(5, TimeUnit.SECONDS);
+                } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+                    // not connected yet
+                }
+                if (heard == 0) {
+                    Thread.sleep(200);
+                }
+            }
+            assertThat(heard).as("the operator's channel, heard").isEqualTo(1L);
+            while (directory.live().isEmpty() && System.nanoTime() < deadline) {
+                Thread.sleep(200);
+            }
+            assertThat(directory.live()).as("announced").singleElement()
+                    .satisfies(e -> assertThat(e.name()).isEqualTo("arena-t"));
+        } finally {
+            registry.close();
+            client.close();
+            if (server != null) {
+                server.close();
+            }
+        }
+    }
+
+    @Test
     @DisplayName("behind the front (D-82), an arena announces the public address, port and its TLS name, and TLS though it speaks none")
     void behindTheFront() throws Exception {
         JRedisEmbedded store = JRedisEmbedded.start();

@@ -246,6 +246,8 @@ rules:
 | Waiting for a connection | 3 s, then an error |
 | A connection's life | 1 700 s, under MySQL's `wait_timeout` |
 | Connect, socket | 2 s, 30 s; migrations have no socket limit |
+| Login, on one host | 3 s: the greeting, TLS and the account, the driver's login timeout, which the pool sets for the JVM from its wait |
+| A start | the pool's first connection tried again after each failure for up to a minute, each failure a warning, then the start fails ([D-94](../../docs/architecture/03-decision-log.md#d-94--a-start-waits-for-its-database-in-the-same-process-for-up-to-a-minute)) |
 | Lock wait | `innodb_lock_wait_timeout = 20` on every session, so a wait ends as 1205, which `Tx` retries, before the socket gives up |
 | Time zone | `connectionTimeZone=+00:00`, forced onto the session: what the driver binds and what MySQL stamps are both UTC |
 | Prepared statements | server-side, 256 cached a connection |
@@ -288,7 +290,7 @@ never point `JDBC_URL` at a database that matters. The development database,
 | `BoostRepositoryTest`, `EquipmentRepositoryTest`, `PaymentRepositoryTest`, `SeasonPassRepositoryTest` | Each economy repository, once a key, under concurrency where it matters; a refund written with its `admin_audit` row |
 | `SeasonRepositoryTest`, `RatingBoardsTest`, `TeamBoardsTest` | Season ends, places, gems, resets; the boards' order and a place read by key |
 | `TeamRepositoryTest`, `FriendRepositoryTest`, `InboxRepositoryTest`, `TournamentRepositoryTest`, `StatsRepositoryTest` | The rest of the repositories, each with its purge; an erased player out of the team, a leader's handed over (D-87) |
-| `PrimaryDataSourceTest`, `DatabaseLimitsTest`, `StoredTimesTest` | The primary's choice and the heartbeat; the time limits (a slow migration from `src/test/resources/db/slow` is not cut); UTC stored whatever the process's zone |
+| `PrimaryDataSourceTest`, `DatabaseLimitsTest`, `StoredTimesTest` | The primary's choice and the heartbeat; the time limits (a slow migration from `src/test/resources/db/slow` is not cut), and a start's wait for a first connection slower than the login's limit, given up at its end (D-94); UTC stored whatever the process's zone |
 | `DatabaseSettingsTest`, `BracketTest`, `RoundRobinTest`, `DailyGoalsTest` | No database: settings, the bracket, the schedule, the goals' draw |
 
 ## Build and test

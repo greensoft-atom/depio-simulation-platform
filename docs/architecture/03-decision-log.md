@@ -2960,3 +2960,46 @@ users, so the backend runs on one machine, and the system is to run that way and
   about 0.15 Gbit/s each way at 5 000.
 - The install guide's one machine becomes the launch's: three arenas, two workers, two stores and the backups,
   where it had one of each and no backups.
+
+### D-94 — A start waits for its database in the same process, for up to a minute
+
+**Decided 2026-11-01** (plan item 114, defect [O-61](../defects.md#6-operations)).
+
+**The window.** `Database` opens its pool as it is made, and HikariCP tries one connection for it: a failure
+is `PoolInitializationException`, the platform's and the worker's `main` end with it, and systemd starts them
+again 2 s later. A new connection's login, the server's greeting, TLS and the account, must finish within the
+driver's login timeout, which a pool on one host sets for the whole JVM from its own wait: 3 000 + 500 ms, in
+whole seconds, 3 s ([06 §7](../detailed-design/06-persistence-mysql.md#7-connection-pooling)). A JVM's first login
+is the slowest it ever does, the driver's and TLS's classes loaded and their code interpreted, and on a starved
+CPU it took longer than 3 s. A restart is a cold JVM again, so the restarts repeated the window rather than
+leaving it: 19 in five minutes after the one machine's restart, never serving (O-61). With two hosts the window
+is not there: nothing sets the JVM's login timeout, and a login has the socket's 30 s.
+
+**Decision.**
+- **`Database` opens its pool by trying again until the database answers, for up to a minute**
+  (`Limits.startWaitMillis`, 60 000): each failed first connection a warning with its cause and HikariCP's
+  second before the next. Past the minute the start fails as before, the exception and exit 1.
+- **Every attempt keeps the limits** of 06 §7: 2 s to connect, 3 s to log in. Only the start waits.
+- **Only the pool's first connection.** The migrations' connection is opened just after, when the database has
+  answered, and its own pool's wait gives its login 30 s.
+- **The stores the same way**: their client connects in the background (`StoreClients`), and what a start waits for
+  on them does not end it. The arena's operator's channel did (O-62, found by this item's check once the platform
+  no longer restarted): its subscription's confirmation, waited for before the first announcement, timed out on a
+  store still starting and ended the arena's start. Now a warning, as the gateway's push channels already were; the
+  subscription stays registered and is made once the store answers.
+
+**Why.**
+- **In the same process each attempt is warmer than the last**: the classes stay loaded and the handshake's code
+  is compiled; a restart throws exactly that away, and costs another JVM's start on the machine that is short of
+  CPU.
+- **The limits stay as they are**, since they bound every new connection in operation (O-9); a longer one at
+  the start alone would still be a figure a starved machine can pass.
+- **A minute** is a cold JVM's first slow logins many times over (one to a few were seen) and a MySQL still
+  starting; past it the database is down or refuses the account, not slow, and the start fails where systemd
+  shows it, a JVM's start a minute instead of one every few seconds.
+- **Our loop, not HikariCP's `initializationFailTimeout`**, which waits the same way but logs each failure at
+  debug: a start that waits says why.
+
+**Cost.**
+- A start against a database that is down, or refuses the account, fails after a minute rather than at once,
+  the warnings saying why meanwhile; the leaderboard rebuild and the tools wait the same.

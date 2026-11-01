@@ -6,8 +6,11 @@ import javax.sql.DataSource;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.pool.HikariPool;
 
 import org.flywaydb.core.Flyway;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The connection pool and the schema.
@@ -20,12 +23,14 @@ import org.flywaydb.core.Flyway;
  */
 public final class Database implements AutoCloseable {
 
+    private static final Logger log = LoggerFactory.getLogger(Database.class);
+
     private final HikariDataSource dataSource;
     private final HikariConfig config;
 
-    /** Each call's limits (06 §7, O-9). */
-    record Limits(int connectMillis, int socketMillis, int probeMillis, int lockWaitSeconds) {
-        static final Limits DEFAULT = new Limits(2_000, 30_000, 2_000, 20);
+    /** Each call's limits (06 §7, O-9), and how long a start waits for the database (D-94). */
+    record Limits(int connectMillis, int socketMillis, int probeMillis, int lockWaitSeconds, int startWaitMillis) {
+        static final Limits DEFAULT = new Limits(2_000, 30_000, 2_000, 20, 60_000);
     }
 
     public Database(String jdbcUrl, String user, String password, int poolSize) {
@@ -76,7 +81,32 @@ public final class Database implements AutoCloseable {
             cfg.setPassword(password);
         }
         this.config = cfg;
-        this.dataSource = new HikariDataSource(cfg);
+        this.dataSource = open(cfg, limits.startWaitMillis());
+    }
+
+    /**
+     * The pool, once its first connection is made: tried again after each failure for up to
+     * {@code waitMillis}, then the failure is thrown (D-94, O-61). A cold JVM's first logins on a starved
+     * machine can take longer than their limit; a restart would be a cold JVM again, where each attempt here
+     * is warmer than the last. HikariCP waits a second after a failed first connection before it says so.
+     */
+    private static HikariDataSource open(HikariConfig cfg, long waitMillis) {
+        long deadline = System.nanoTime() + waitMillis * 1_000_000;
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return new HikariDataSource(cfg);
+            } catch (HikariPool.PoolInitializationException e) {
+                if (System.nanoTime() - deadline >= 0) {
+                    throw e;
+                }
+                Throwable cause = e;
+                while (cause.getCause() != null) {
+                    cause = cause.getCause();
+                }
+                log.warn("the database's first connection failed at the start (attempt {}), trying again: {}",
+                        attempt, cause.toString());
+            }
+        }
     }
 
     public DataSource dataSource() {

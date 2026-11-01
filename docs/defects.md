@@ -4,7 +4,7 @@ Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
 re-ordered around it rather than the other way round. **Open as of 2026-11-01:**
-O-61 (plan item 114); O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
+none; O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
 Every entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
@@ -1148,7 +1148,7 @@ refused a write at its limit. Never met: a trial holds little. **Fixed:** step 8
 400mb under 48 GB and 1600mb of 4g on the launch's machine; the guide's check requires each store's `maxmemory` at
 most half its heap, and the mutant that keeps 3gb on a 1g heap is caught.
 
-**O-61 (M), found 2026-11-01, OPEN** (plan item 114). On a starved machine the platform and the workers can fail to
+**O-61 (M), found 2026-11-01, FIXED the same day** (plan item 114, D-94). On a starved machine the platform and the workers can fail to
 start for minutes. Each opens its database pool at start with a 2 s connect timeout (`Database.Limits`), and a
 first connection that fails ends the process (`Failed to initialize pool: Communications link failure`, no packet
 received), which systemd starts again 2 s later, at the cost of another JVM's start. Seen in item 113's check with
@@ -1163,6 +1163,31 @@ connection after the restart failed so, once, and it served after systemd starte
 three runs under that load had the platform restart 8 to 22 times; two of them never served. Beside it, harmless:
 the binlog stream's unit is ordered after the network alone, so at a boot of the one machine it tries MySQL before
 MySQL listens, and starts again 10 s later.
+**The window, read in the driver and the pool**: a new connection's whole login (the greeting, TLS, the account) must
+finish within the driver's login timeout, which HikariCP sets for the whole JVM from its 3 s wait (3 000 + 500 ms, in
+whole seconds), and the pool tries its first connection once as it is made; a cold JVM's first login on a starved CPU
+took longer, and each restart was a cold JVM again. With two hosts nothing sets that timeout, so the window is one
+host's: the launch's machine. **Fixed:** `Database` tries the first connection again after each failure, in the same
+process, for up to a minute, each failure a warning with its cause, then fails as before (D-94). Test first
+(`DatabaseLimitsTest`, against MySQL behind a proxy that holds the next connection's greeting 5 s): it failed with
+O-61's own exception at 4 s; a frozen server is given up at the wait, having tried again. Six mutants (never waiting,
+never giving up, the default's wait 0, the warning left out, the warning without its cause, the wait read in
+microseconds), each caught. By hand, from the release: the platform started with the development MySQL stopped
+served 28 s later when MySQL was started, the same process after 21 refused attempts; kept down, it exited 1 after
+62 s. Under the load that showed it, three of the install guide's checks and the full build with its tests on this
+VM's 12 cores at once: the platform and the workers restarted 0 times in all three runs, where 8 to 22 before; every
+check passed. The arenas restarted instead, O-62; with its fix too, the same load again: in three runs no platform,
+worker or arena restarted, the binlog stream alone, once at the boot and once at the restore, as before.
+
+**O-62 (M), found 2026-11-01, FIXED the same day** (plan item 114, D-94). An arena whose store was not up yet ended its
+start: the announcer waited for its operator's channel's subscription to be confirmed (`join`), and the store's client
+times that out after its 2 s, so the exception ended `main` and systemd started it again. Found by item 114's check
+under load once the platform no longer restarted: after the container's restart the arenas restarted in two of three
+runs (`no confirmation for arena-admin:a1 yet`), in none of item 113's runs kept. The gateway's push channels were already
+a warning in the same case. **Fixed:** the same here, a warning, the subscription kept by the client and made once the
+store answers. Test first (`ArenaAnnouncerTest`, a store started on the client's port after the arena's start): it
+failed with that exception; the arena now hears a command and is announced once the store is up. The mutant that
+never subscribes is caught. Under item 114's load after the fix, no arena restarted in three runs.
 
 **DOC-34, found 2026-11-01 by the same review, FIXED the same day** (plan item 111). Eight reviews of every
 document against the code, the units, the scripts and the release's configuration, each finding checked against

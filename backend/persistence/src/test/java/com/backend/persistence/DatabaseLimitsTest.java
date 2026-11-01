@@ -12,7 +12,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-/** Every MySQL call has a time limit (06 §7, O-9), against a real MySQL behind a proxy that can fall silent. */
+/**
+ * Every MySQL call has a time limit (06 §7, O-9), and a start waits for the database (D-94), against a real
+ * MySQL behind a proxy that can fall silent or answer late.
+ */
 class DatabaseLimitsTest {
 
     private static final String URL = System.getenv().getOrDefault("JDBC_URL", DatabaseSettings.TEST_URL);
@@ -22,7 +25,7 @@ class DatabaseLimitsTest {
     private static final String USER = System.getenv().getOrDefault("DB_USER", "backend");
     private static final String PASSWORD = System.getenv().getOrDefault("DB_PASSWORD",
             "backend-dev-password");
-    private static final Database.Limits SHORT = new Database.Limits(1_000, 1_000, 500, 20);
+    private static final Database.Limits SHORT = new Database.Limits(1_000, 1_000, 500, 20, 0);
 
     /**
      * As in a process whose one pool is the primary's source: a pool on one host here sets the
@@ -63,7 +66,7 @@ class DatabaseLimitsTest {
             // from before the pool is made, which opens its first connection, and so probes, at once.
             asOnlyThePrimarysSource();
             long start = System.nanoTime();
-            try (Database db = new Database(both, USER, PASSWORD, 1, new Database.Limits(20_000, 20_000, 500, 20))) {
+            try (Database db = new Database(both, USER, PASSWORD, 1, new Database.Limits(20_000, 20_000, 500, 20, 0))) {
                 try (Connection c = db.dataSource().getConnection(); Statement s = c.createStatement()) {
                     assertThat((System.nanoTime() - start) / 1_000_000).as("ms").isLessThan(5_000);
                     s.executeQuery("SELECT SLEEP(1)").close();          // the pool's limit, not the probe's
@@ -84,11 +87,54 @@ class DatabaseLimitsTest {
         String both = URL.replace(SERVER, "192.0.2.1:3306," + SERVER);
         asOnlyThePrimarysSource();
         start = System.nanoTime();                                              // the pool probes as it is made
-        try (Database db = new Database(both, USER, PASSWORD, 1, new Database.Limits(20_000, 20_000, 500, 20))) {
+        try (Database db = new Database(both, USER, PASSWORD, 1, new Database.Limits(20_000, 20_000, 500, 20, 0))) {
             try (Connection c = db.dataSource().getConnection()) {
                 assertThat(c.isValid(2)).isTrue();
             }
             assertThat((System.nanoTime() - start) / 1_000_000).as("ms, the probe's limit").isLessThan(5_000);
+        }
+    }
+
+    @Test
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)   // a blocked read ignores an interrupt
+    @DisplayName("a first connection slower than the login's limit is waited for, in the same process, each failure told (O-61)")
+    void aSlowFirstConnectionIsWaitedFor() throws Exception {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(Database.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> told =
+                new ch.qos.logback.core.read.ListAppender<>();
+        told.start();
+        logger.addAppender(told);
+        try (SilentProxy slow = new SilentProxy(SERVER_PORT, false)) {
+            slow.holdNext(1, 5_000);                         // the greeting past the login's 3 s, as a starved machine's
+            long start = System.nanoTime();
+            try (Database db = new Database(through(slow), USER, PASSWORD, 1);          // the processes' own limits
+                 Connection c = db.dataSource().getConnection(); Statement s = c.createStatement()) {
+                s.executeQuery("SELECT 1").close();
+                assertThat((System.nanoTime() - start) / 1_000_000).as("ms: the first given up at the login's limit")
+                        .isGreaterThanOrEqualTo(3_000);
+                assertThat(slow.accepted()).as("connections: the first, then another").isGreaterThanOrEqualTo(2);
+            }
+        } finally {
+            logger.detachAppender(told);
+        }
+        assertThat(told.list).anySatisfy(e -> {
+            assertThat(e.getLevel()).isEqualTo(ch.qos.logback.classic.Level.WARN);
+            assertThat(e.getFormattedMessage()).contains("attempt 1").contains("java.net.");
+        });
+    }
+
+    @Test
+    @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)   // a blocked read ignores an interrupt
+    @DisplayName("a start gives up at its wait on a server that never answers, having tried again until then")
+    void aStartGivesUpAtItsWait() throws Exception {
+        try (SilentProxy frozen = new SilentProxy(SERVER_PORT, true)) {
+            long start = System.nanoTime();
+            assertThatThrownBy(() -> new Database(through(frozen), USER, PASSWORD, 1,
+                    new Database.Limits(2_000, 30_000, 2_000, 20, 5_000)).close()).isInstanceOf(RuntimeException.class);
+            long ms = (System.nanoTime() - start) / 1_000_000;
+            assertThat(ms).as("ms: not before the wait").isGreaterThanOrEqualTo(5_000);
+            assertThat(ms).as("ms: nor much after it, an attempt at most").isLessThan(15_000);
+            assertThat(frozen.accepted()).as("connections: tried again").isGreaterThanOrEqualTo(2);
         }
     }
 

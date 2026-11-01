@@ -315,7 +315,7 @@ tick or the payload is measured with `tools/TickBenchmark`
 | `DominationTest` | 3 | Dominators placed and captured; the 60 s hold |
 | `MotionVectorTest` | 2 | The golden vector `motion-2026.txt` the client's prediction must reproduce bit for bit; the move bits as a direction |
 | `TagTest` | 2 | Conversions; one team; head counts |
-| `ArenaAnnouncerTest` | 2 | Announcements carry the rooms; operators' commands reach them; behind the front, the public address, port and TLS name, and TLS announced though the arena speaks none (D-82) |
+| `ArenaAnnouncerTest` | 3 | Announcements carry the rooms; operators' commands reach them; a store not up at the start does not end it, the operator's channel made and the arena announced once it is (O-62); behind the front, the public address, port and TLS name, and TLS announced though the arena speaks none (D-82) |
 | `ConnectionTest` | 1 | A burst of point requests is held to 10 |
 | `RoomThreadTimersTest` | 1 | The simulation timed apart from the whole tick |
 

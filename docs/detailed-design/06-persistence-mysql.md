@@ -1199,6 +1199,10 @@ runbook's `DROP` rule, held each statement in flight for about two hours:
 
 ```
 connectTimeout                 2000 ms   TCP to a host that does not answer
+the login, on one host         3 s       the greeting, TLS and the account: the driver's login timeout,
+                                         which the pool sets for the JVM from its wait (3000 + 500 ms, in
+                                         whole seconds); the migrations' pool sets its 30 s when it opens,
+                                         and with two hosts nothing sets it: the socket's limit holds
 socketTimeout                  30000 ms  a statement that has had no reply for that long
 innodb_lock_wait_timeout       20 s      the session's: a lock wait is told as 1205, which Tx
                                          retries, before the socket gives up on it
@@ -1221,6 +1225,14 @@ migrations                     none      their own connection: one may run for m
   that much while it is listed.
 - **Migrations are not cut**: Flyway is given a connection of its own without a
   socket limit, opened for `migrate()` and closed after it.
+- **A start waits for its database** (designed 2026-11-01, plan item 114,
+  [D-94](../architecture/03-decision-log.md#d-94--a-start-waits-for-its-database-in-the-same-process-for-up-to-a-minute),
+  defect O-61): the pool's first connection, which HikariCP tries once as the
+  pool is made, is tried again a second after each failure, in the same process,
+  for up to a minute, each failure a warning with its cause; past it the start
+  fails, exit 1. Every attempt keeps the limits above. A cold JVM's first login on
+  a starved machine can take longer than 3 s, and a restart, a cold JVM again,
+  repeated it: the platform restarted 19 times in five minutes and never served.
 
 ## 8. Migrations
 
