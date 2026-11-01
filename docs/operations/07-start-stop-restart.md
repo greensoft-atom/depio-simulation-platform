@@ -16,7 +16,7 @@ restart. nginx is the exception: it reloads.
 |---|---|---|---|---|---|
 | `backend-nginx` | nginx: TLS on 443 and 9001, the front | every one | `/etc/backend/nginx/*.conf` | `systemctl reload backend-nginx` | up to 30 s |
 | `backend-mysql` | MySQL | A (primary), C (replica) | `/etc/backend/mysql/backend.cnf` | restart | up to 15 min, flushing |
-| `backend-scratch-mysql` | the backups' scratch MySQL | C | `/etc/backend/scratch-my.cnf` | restart | |
+| `backend-scratch-mysql` | the backups' scratch MySQL | C | `/etc/backend/scratch-my.cnf` | restart | up to 10 min |
 | `backend-store@session` | j-redis `session` | A (primary), B (replica) | `/etc/backend/store-session.conf`, `.env` | restart | up to 60 s |
 | `backend-store@events` | j-redis `events` | B (primary), C (replica) | `/etc/backend/store-events.conf`, `.env` | restart | up to 60 s |
 | `backend-platform` | the API | every one | `/etc/backend/platform.env` | restart | up to 30 s |
@@ -60,12 +60,14 @@ machine, since any can be the front ([05](05-ports-and-firewall.md)): reload eac
 
 **Restart it** (`systemctl restart backend-nginx`) only for a new nginx, from a new release, or a
 changed unit (`daemon-reload` first), and on the front only in a maintenance window. A restart
-stops nginx gently: it waits for its connections to end, and lobby and match connections do not.
-After the unit's 30 seconds they are cut. Every player's app reconnects to the lobby, but a match
-waits only 10 seconds for a player to come back
-([D-18](../architecture/03-decision-log.md#d-18--a-lost-connection-waits-in-the-arenas-memory-not-the-store)),
-so the matches in progress lose their players. This follows from the unit's settings; it was not
-measured.
+stops nginx gently: it stops accepting at once and waits for its connections to end, and lobby and
+match connections do not. After the unit's 30 seconds they are cut, and only then does the new
+nginx start, so for up to 30 s the front takes no new connection (a login, a lobby, a resume).
+Then every app reconnects to the lobby and resumes its match: the tank waits 10 s where it was and
+the stay a minute
+([D-18](../architecture/03-decision-log.md#d-18--a-lost-connection-waits-in-the-arenas-memory-not-the-store),
+02 §10), so a player back within the minute plays on. This follows from nginx's and the unit's
+settings; it was not measured.
 
 A new certificate needs neither: `install-certificate.sh` reloads nginx itself
 ([06 §4](06-certificates.md#4-installing-it-on-every-machine)). Its logs are in `/var/log/backend-nginx/`:
@@ -144,6 +146,7 @@ for stopping:
 ```bash
 systemctl stop 'backend-arena@*' backend-gateway backend-platform 'backend-worker@*'
 systemctl stop 'backend-store@*' backend-mysql backend-nginx
+systemctl stop backend-binlog-stream backend-scratch-mysql          # on C, the backups' machine
 ```
 
 **Start**, the database first. Name each unit: systemd matches a pattern only against units in
@@ -159,7 +162,7 @@ systemctl start backend-platform backend-gateway backend-arena@a1 backend-arena@
 systemctl start backend-store@session backend-store@events
 systemctl start backend-platform backend-gateway backend-arena@b1 backend-arena@b2 backend-arena@b3 backend-nginx
 # C
-systemctl start backend-mysql backend-store@events
+systemctl start backend-mysql backend-store@events backend-scratch-mysql backend-binlog-stream
 systemctl start backend-platform backend-gateway backend-worker@c1 backend-worker@c2 \
     backend-arena@c1 backend-arena@c2 backend-nginx
 ```
@@ -178,21 +181,25 @@ machine installed alone, by the install guide, the order is
 
 ## 2. On a development machine
 
-The repository's scripts, from its root. Nothing here is a systemd unit, and there is no nginx: the
-checks run it in a container.
+The repository's scripts, from its root, a script a service as the site has a unit a service
+(D-92). Nothing here is a systemd unit.
 
 ```bash
-./dev-mysql.sh start | stop | restart | status       # the development MySQL, 127.0.0.1:3314
-./run-local.sh start                                  # the store, platform, worker, gateway, arena
-./run-local.sh restart platform                       # one alone, the others untouched
-./run-local.sh stop arena                             # one alone
-./run-local.sh restart                                # all five
-./run-local.sh stop                                   # all five; the MySQL keeps running
-./run-local.sh status
+./dev-mysql.sh  start | stop | restart | status | test    # the development MySQL, 127.0.0.1:3314
+./dev-jredis.sh start | stop | restart | status | test    # j-redis, 127.0.0.1:6380
+./dev-backend.sh restart platform                         # one alone, the others untouched
+./dev-backend.sh stop arena                               # one alone
+./dev-backend.sh restart                                  # all four
+./dev-backend.sh status
+./dev-nginx.sh  start | stop | restart | status | test    # the release's nginx, 80, 443, 9001
+./run-local.sh  start | stop | restart | status           # the four in order; stop leaves the MySQL running
 ```
 
-The names are `store`, `platform`, `worker`, `gateway` and `arena`. A restart starts the
-development MySQL if a platform or a worker needs it. The MySQL can be restarted under a running
-backend: it reconnects. Each process's log is `work/run/<name>.log`, MySQL's
-`work/mysql/mysqld.err`. Step by step: [development/03 §3.1](../development/03-build-and-run.md#31-the-development-mysql-step-by-step)
+The backend's names are `platform`, `worker`, `gateway` and `arena`. Its `start` refuses, and its
+`restart` stops the processes named and then refuses, while the MySQL (for a platform or a worker)
+or j-redis is not running, naming the script that starts it. The MySQL and j-redis can be
+restarted under a running backend: it reconnects (checked, plan item 110). `dev-nginx.sh`, and so
+`run-local.sh start`, needs root for 80 and 443, or `NGINX_HTTP_PORT` and `NGINX_HTTPS_PORT` above
+1023 (D-92): as another user, `run-local.sh start` stops at nginx with the other three up. Each process's log is `work/run/<name>.log`, j-redis's `work/run/store.log`,
+nginx's `work/nginx/logs/`, MySQL's `work/mysql/mysqld.err`. Step by step: [development/03 §3.1](../development/03-build-and-run.md#31-the-development-mysql-step-by-step)
 and [§5](../development/03-build-and-run.md#5-running-it-by-hand).

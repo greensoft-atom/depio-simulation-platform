@@ -21,12 +21,12 @@ By the [install guide](03-install-guide.md), §1 to §12 on each, with the diffe
 | Check | Expected | Record |
 |---|---|---|
 | `cat /opt/backend/VERSIONS.md` | the release's commit, runtime, MySQL, nginx, j-redis | the commit |
-| `systemctl status 'backend-*'` | every unit of that machine active ([07 §1](07-start-stop-restart.md#1-on-a-server)'s table) | |
+| `systemctl status 'backend-*'` | every unit of that machine active ([07 §1](07-start-stop-restart.md#1-on-a-server)'s table): its oneshot services inactive between their timers' runs, the timers active | |
 | `ss -ltnp` | what [05 §2](05-ports-and-firewall.md#2-every-port-in-production) lists for that machine, nothing else | anything else that listens |
-| `firewall-cmd --list-all-zones` | `public`: 443 and 9001 alone; `backend`: the two other machines' addresses and [05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9)'s ports | |
+| `firewall-cmd --list-all-zones` | `public`: services `dhcpv6-client https`, port `9001/tcp`, and the SSH rule for the internal network ([05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9)); `backend`: the two other machines' addresses and [05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9)'s ports | |
 | from each machine, `curl -s http://10.0.0.X:8080/health` for the two others | `{"status":"ok"}` from both | |
 | `journalctl -u backend-platform -n 20` | `the watch reads N target(s), 2 peer(s)…` and no `ERROR` | |
-| `getenforce`, then `ausearch -m avc -ts boot \| grep -c -E 'comm="(java\|mysqld\|nginx)"'` | the owner's mode (`Enforcing` is expected), and `0`: no denial for a backend process. One found: its line, and `runuser -u <the unit's user> -- /opt/backend/scripts/check-bind.sh <its port>` ([D-88](../architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)); SELinux enforcing was never seen by a check here ([05 §9](05-ports-and-firewall.md#9-what-was-checked-and-what-was-not)) | the mode; any denial, whole |
+| `getenforce`, then `ausearch -m avc -ts boot \| grep -c -E 'comm="(java\|mysqld\|nginx)"'` | the owner's mode (`Enforcing` is expected), and `0`: no denial for a backend process. One found: its line, and `runuser -u <the unit's user> -- /opt/backend/scripts/check-bind.sh <its port>` ([D-88](../architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)); the units were never run under SELinux enforcing here ([05 §9](05-ports-and-firewall.md#9-what-was-checked-and-what-was-not)); `check-selinux-el9.sh` saw it for a confined login's binds alone (D-90) | the mode; any denial, whole |
 | `sysctl net.ipv4.ip_unprivileged_port_start` | `1024`: a higher value keeps the units' ports for root, and they fail with `Permission denied` | the value |
 
 **The private network's speed**, once, from A to C: a transfer of the release tarball with `scp -v`, its
@@ -40,8 +40,8 @@ From the fourth machine, the site's public address alone:
 
 | Check | Expected | Record |
 |---|---|---|
-| `openssl s_client -connect 203.0.113.10:443 -CAfile ca.pem < /dev/null` | `Verify return code: 0 (ok)`, `subject=CN = backend`, the names listed ([06 §4](06-certificates.md#4-installing-it-on-every-machine)) | the certificate's `notAfter` |
-| the same on `9001 -servername a1.arena.internal`, and each arena's name | the same certificate | |
+| `openssl s_client -connect 203.0.113.10:443 -verify_ip 203.0.113.10 -CAfile ca.pem < /dev/null` | `Verify return code: 0 (ok)`, `subject=CN = backend`; the names by piping the same to `openssl x509 -noout -ext subjectAltName -enddate` ([06 §4](06-certificates.md#4-installing-it-on-every-machine)) | the certificate's `notAfter` |
+| the same on `9001 -servername a1.arena.internal -verify_hostname a1.arena.internal`, for each arena's name | `0 (ok)` each | |
 | `curl -sv --cacert ca.pem https://203.0.113.10/health` | 404: `/health` is for the machines, not the internet ([05 §1](05-ports-and-firewall.md#1-three-kinds-of-port)) | |
 | `curl http://203.0.113.10/` | nothing answers on 80 | |
 | the Postman collection with `baseUrl=https://203.0.113.10` and `--ssl-extra-ca-certs ca.pem` ([api/README](../api/README.md)) | every request as on the development machine; the admin folders skipped (the admin API is not public) | the run's summary |
@@ -62,7 +62,7 @@ On any machine, over an SSH tunnel to its admin API ([08 §5](08-monitoring.md#5
 | `systemctl stop backend-worker@c2` on C; wait | within 2 min 15 s, `TargetDown` for `worker 127.0.0.1:9112` on every machine's `/admin/alerts`; the `ALERT firing` line in C's platform journal; the webhook's `POST`, once, if Q-60 named one | how long it took; whether the receiver showed it |
 | `systemctl start backend-worker@c2` | resolved within 30 s, the `resolved` `POST` once | |
 | `POST /admin/silences` `{"alertname":"TargetDown","hours":1,"reason":"rehearsal"}`, then stop the worker again | listed, `silenced: true`, nothing sent; `DELETE` lifts it | |
-| pull B's private network cable (or `systemctl stop backend-platform` on B) | `PeerUnreachable {peer=B}` from A and C within 2 min 15 s, **sent once**; B's row gone from `/admin/watch` within a minute | |
+| `systemctl stop backend-platform` on B (pulling its cable fires the `events` store's and the stores' replica alerts too: that is §4's failover) | `PeerUnreachable {peer=B}` from A and C within 2 min 15 s, **sent once**; B's row gone from `/admin/watch` within a minute | |
 
 ## 4. The failovers
 
@@ -91,17 +91,24 @@ On C, by hand, as the timers would ([01 §10](01-deploy.md#10-copies-off-the-dat
 
 ## 6. The load test from outside (Q-3)
 
-The bots on the fourth machine, through the front, as players come: `BotClient` with the backend's
-root in a PKCS#12 trust store, since the bots check the certificate as the app does
-([tools/README](../../backend/tools/README.md#botclient)):
+The bots on the fourth machine, with the backend's root in a PKCS#12 trust store, since the bots
+check the certificate as the app does ([tools/README](../../backend/tools/README.md#botclient)).
+**Not every bot through 443**: they all have the fourth machine's one address, which nginx lets log
+in twice a second (a burst of 30) and the platform 30 times a minute, so all but a few dozen of a
+thousand would be refused with 429. For the run, the bots' API and lobby go to one machine's
+platform and gateway on the private network, each bot from an address of its own, and their matches
+through the front's 9001, where the grants send them, as `./dev-backend.sh bots` does (D-92). The
+fourth machine's address goes, for the run alone, into that machine's `backend` zone (8080, 8090)
+and into `BACKEND_TRUSTED_PROXIES` in its `platform.env` and `gateway.env` (restart both), so each
+bot's own `X-Forwarded-For` is believed; take both out afterwards. 443's TLS is then not under
+load, the matches' is.
 
 ```bash
 # once: the root into a trust store the JDK reads
 keytool -importcert -noprompt -alias backend -file ca.pem -keystore ca.p12 -storetype PKCS12 -storepass rehearsal
-# the lobby and the API over TLS too: the JVM's own trust store for them, the bots' for the arenas
+# the API and the lobby straight to A, the matches through the front's 9001, every arena certificate checked
 BACKEND_BOT_TRUSTSTORE=ca.p12 BACKEND_BOT_TRUSTSTORE_PASSWORD=rehearsal \
-java -Djavax.net.ssl.trustStore=ca.p12 -Djavax.net.ssl.trustStorePassword=rehearsal \
-     -cp tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.BotClient 1000 300 https://203.0.113.10 wss://203.0.113.10/lobby
+java -cp tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.BotClient 1000 300 http://10.0.0.1:8080 ws://10.0.0.1:8090/lobby
 ```
 
 Then 2 500, 5 000 and 10 000 for 300 s each, a quiet minute between; the bots cost about a core a

@@ -53,8 +53,9 @@ history.
 
 `build-offline.sh`, at the repository's root: the committed JDK and Maven, `java21-offline` as
 Maven's only repository (a mirror, without `-o`) and a local repository of its
-own, so nothing comes from `~/.m2`; it builds `j-redis-service`, then the backend
-with its tests (or without, `SKIP_TESTS=1`), then the release. It needs bash,
+own, so nothing comes from `~/.m2`; it runs `dev-jredis.sh build` (j-redis-service) and then
+`dev-backend.sh build` (the backend, then the release), each with its tests (or without,
+`SKIP_TESTS=1`) (D-92). It needs bash,
 coreutils, findutils, sed, tar and gzip: no Java, no Maven, no MySQL, no network.
 
 Everything it writes is inside the checkout, in `work/`
@@ -66,15 +67,22 @@ Everything it writes is inside the checkout, in `work/`
 | `m2/` | Maven's local repository, filled from the bundle | Maven |
 | `tmp/` | `TMPDIR`, and `java.io.tmpdir` for Maven and the tests' JVMs | Maven, the tests, MySQL |
 | `mysql/` | the development MySQL: `vendor/`'s 8.4, on 127.0.0.1:3314, its data, socket and logs | `dev-mysql.sh` |
-| `run/` | a run by hand: each process's log and pid, the store's files, the arena's spool | `run-local.sh` |
+| `run/` | a run by hand: each process's log and pid, the store's files, the arena's spool | `dev-jredis.sh`, `dev-backend.sh` |
+| `nginx/` | the release's nginx in front of a run by hand: its configuration rewritten from the release's, its logs and pid, the certificate and its root (D-92) | `dev-nginx.sh` |
+| `probe/` | a throwaway copy that fetches the dependency plugin from the bundle before the offline release | `dev-backend.sh build` |
+| `el9/` | the Rocky 9 guest of the SELinux check: its image, disk, seed, key and console log | `check-selinux-el9.sh` |
 
 `dev-env.sh`, sourced, makes the environment every script runs in, and a shell
 too: `JAVA_HOME` and `PATH` on `vendor/`'s JDK and Maven, Maven reading
 `work/settings.xml` (by `MAVEN_ARGS`) and neither `/etc/mavenrc` nor `~/.mavenrc`
 (`MAVEN_SKIP_RC`), `java.io.tmpdir` in `work/tmp`, and the tests' `JDBC_URL` on
-the development MySQL. The machine's own Java, Maven and MySQL are neither used
-nor changed. With the tests, `build-offline.sh` starts the development MySQL and
-stops it after, unless `JDBC_URL` names another server.
+the development MySQL; and, since D-92, a run by hand's ports and address, the same for each of
+its scripts: `MYSQL_PORT` 3314, `STORE_PORT` 6380, `PLATFORM_PORT` 8080, `GATEWAY_PORT` 8081,
+`ARENA_PORT` 9021, `ARENA_TLS_NAME` `a1.arena.internal`, `NGINX_HTTP_PORT`, `NGINX_HTTPS_PORT` and
+`NGINX_MATCH_PORT` 80, 443 and 9001, and `PUBLIC_ADDRESS`, the machine's first address unless
+given. The machine's own Java, Maven and MySQL are neither used nor changed. With the tests,
+`dev-backend.sh build` starts the development MySQL and stops it after, unless it was running or
+`JDBC_URL` names another server.
 
 ## 4. The release
 
@@ -91,10 +99,13 @@ with `/opt/backend` pointing at it (operations/01 §2):
 | `systemd/`, `env/`, `scripts/` | as before; the units and the scripts name the paths above | |
 | `mysql-conf/`, `nginx-conf/` | their configuration (`deploy/mysql`, `deploy/nginx`), under names apart from the binaries | |
 | `VERSIONS.md` | what is inside, with versions | |
+| `COMMIT` | the commit it was made from | |
+
+`make-release.sh` also packs it as `backend-<version>.tar.gz`, beside the directory.
 
 ### 4.1 The runtime
 
-Its modules are named, not computed: `java.se` (every `java.*` module) and the
+Its modules are named, not computed: `java.se` (every `java.*` module but `java.smartcardio`) and the
 `jdk.*` ones the processes use: `jdk.httpserver` (the platform's API and every
 metrics endpoint), `jdk.unsupported` (Netty, JCTools), `jdk.jfr`, `jdk.net`,
 `jdk.crypto.ec` (the elliptic curves TLS negotiates, which no static reading
@@ -148,7 +159,7 @@ A security fix to nginx or OpenSSL is ours to take: a new version in
 `backend-mysql.service` runs `/opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/mysql/backend.cnf`
 as the system user `mysql` (created by the install, as the package did), its data
 in `/var/lib/backend-mysql`. The configuration of operations/01 §9 moves there
-unchanged. The scratch server of the weekly proof (§10) runs the same binary. The
+unchanged. The scratch server of the weekly proof (operations/01 §10) runs the same binary. The
 scripts that call `mysql`, `mysqldump` and `mysqlbinlog` put `../mysql/bin`,
 beside themselves in the release, first on `PATH`; run from the source tree they
 use whatever the machine has.

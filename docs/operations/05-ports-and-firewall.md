@@ -382,7 +382,7 @@ other.
 
 | Port | Change together | Then |
 |---|---|---|
-| The platform's, 8080 | `PLATFORM_PORT` in `platform.env`; `PLATFORM_URL` in `gateway.env`; the three `server …:8080` lines in `backend-upstreams.conf`, on every machine; the `backend` zone's port on every machine | restart the platform and the gateway; reload nginx |
+| The platform's, 8080 | `PLATFORM_PORT` in `platform.env`; `PLATFORM_URL` in `gateway.env`; the three `server …:8080` lines in `backend-upstreams.conf`, on every machine; this machine's entry in `BACKEND_WATCH_PEERS` in the other two machines' `platform.env` ([08 §2](08-monitoring.md)); the `backend` zone's port on every machine | restart the platform and the gateway, then the other two machines' platforms; reload nginx |
 | The gateway's, 8090 | `GATEWAY_PORT` in `gateway.env`; the three `server …:8090` lines in `backend-upstreams.conf`, on every machine; the `backend` zone's port | restart the gateway; reload nginx |
 | An arena's, 9011 to 9013 | its `ARENA_PORT`; its line in `backend-stream.conf`'s map, on every machine; the `backend` zone's port on its machine | restart that arena (it drains first: 01 §5); reload nginx |
 | An arena's name | its `BACKEND_ADVERTISE_TLS_NAME`; its line in the map, on every machine; the site's certificate, issued again with it ([06](06-certificates.md)) | install the certificate; restart that arena; reload nginx |
@@ -390,28 +390,30 @@ other.
 | The admin API's | `BACKEND_ADMIN_ADDR`, loopback only; and the port in the SSH tunnel | restart the platform |
 | A store's, 6379 or 6380 | `port` in that store's configuration on both machines, primary and replica; the replica's `replicaof`; on every machine, `STORE_PORT` and `BACKEND_STORE_ADDRESSES` (6379) or `BACKEND_EVENTS_STORE` (6380) in every `.env` file that has them; the `backend` zone's port on both store machines; the port argument of the store's scripts (`backup-store.sh`'s third, the restore drill's second, the old primary's `host:port` given to `promote-store.sh`) | restart the stores, then every process |
 | MySQL's, 3306 | a `port` line in `backend.cnf`, on A and C; every `BACKEND_DB_URL`; a `port=` line in the backups' option files (`mysql-backup.cnf`, `mysql-binlog.cnf`); the replica's `SOURCE_PORT` and `clone_valid_donor_list`; the old primary's `host:port` given to `promote-mysql.sh`; the `backend` zone's port on A and C | restart MySQL, then the platforms and the workers |
-| The public 9001 | `listen 9001` in `backend-stream.conf`; every arena's `BACKEND_ADVERTISE_PORT`; the `public` zone's port; the provider's forwarding | reload nginx; restart the arenas |
-| The public 443 | `listen 443` in `backend.conf`; the app's endpoints (`https://203.0.113.10:<port>`), a client release; the `public` zone; the provider's forwarding | reload nginx |
+| The public 9001 | `listen 9001` and `listen [::]:9001` in `backend-stream.conf`; every arena's `BACKEND_ADVERTISE_PORT`; `install-certificate.sh`'s `STREAM_PORT`; the `public` zone's port; the provider's forwarding | reload nginx; restart the arenas |
+| The public 443 | `listen 443` and `listen [::]:443` in `backend.conf`; the app's endpoints (`https://203.0.113.10:<port>`), a client release; `install-certificate.sh`'s `EDGE_PORT`; the `public` zone (its `https` service becomes an `--add-port`); the provider's forwarding | reload nginx |
 
 ## 8. Ports that are not production
 
-These are on a developer's machine, not on A, B or C. All of them are bound to `127.0.0.1`.
+These are on a developer's machine, not on A, B or C. All of them are bound to `127.0.0.1` but nginx's.
 
 | Port | What | Started by |
 |---|---|---|
 | 3314 | the development MySQL (`backend_test`, `backend_dev`), `vendor/`'s 8.4 | `dev-mysql.sh`, and `build-offline.sh` for the tests (D-80) |
-| 6380, 8080, 8081, 9001 | the store, the platform, the gateway, the arena | `run-local.sh start` ([development/03](../development/03-build-and-run.md)) |
+| 6380, 8080, 8081, 9021 | the store, the platform, the gateway, the arena | `dev-jredis.sh`, `dev-backend.sh`, or `run-local.sh start` ([development/03](../development/03-build-and-run.md), D-92) |
+| 80, 443, 9001, every IPv4 address | the release's nginx in front of them: a redirect, the API and the lobby, matches | `dev-nginx.sh`, as root |
 | 5005 to 5009 | the debugger, one per process | `DEBUG=1 ./run-local.sh start` ([development/05](../development/05-vscode.md)) |
 | 6390, 6392, 8093, 8094, 9011, 9195 to 9199, 3307, 3308 | the live drill's processes, MySQL servers and metrics | `client/headless-drill.sh` |
 | 3307, 3309 | the backup drill's MySQL servers | `backup-drill.sh` |
-| 3306 | the development VM's MySQL 8.0, `backend_dev`, which both drills use | the VM |
 
 The catalogue in [deploy/README](../../backend/deploy/README.md#ports) says which drill uses
 which.
 
-**`run-local.sh` is not for a production machine.** Its ports are production's (8080, 9001), and
-6380, its store's, is the `events` store's on B and C. It refuses a port already taken rather than
-share it, so on a production machine it would stop at the first one.
+**`run-local.sh` and its scripts are not for a production machine.** Their ports are production's
+(8080, 80, 443, 9001), and 6380 is the `events` store's on B and C. Each refuses a port already
+taken on 127.0.0.1, but the units bind their private address, so on a production machine much of
+it is free there: 3314 always, and on A 6380, 8080, 8081 and 9021 too. It would start those before
+stopping at nginx's 443.
 
 ## 9. What was checked, and what was not
 

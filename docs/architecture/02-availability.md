@@ -4,28 +4,33 @@ What breaks when something fails, what players see, and how it recovers. The
 targets this satisfies are NFR-4, NFR-5, NFR-8 and NFR-9 in
 [requirements](../requirements/01-scope-and-nfrs.md#4-non-functional-requirements).
 
-The honest summary: **three machines carrying 50 000 players have no spare
-machine.** Losing one degrades capacity to roughly 30 000. Everything below is
-about making that degradation orderly rather than total.
+The honest summary: **three machines have no spare machine.** As set, seven arenas
+of 1 800 carry 12 600 players in battle, and losing one machine leaves 7 200 (B, three
+arenas) to 9 000 (A or C, two); the design's 50 000, and the 30 000 left after a loss,
+are unproven ([01 §3](01-system-topology.md#3-capacity-model)). Since [D-82](03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name) the front's
+nginx is also the one way in. Everything below is about making that degradation orderly
+rather than total.
 
 ## 1. Failure table
 
 | Component | Impact of failure | Players see | Recovery |
 |---|---|---|---|
-| One `arena` process | its rooms end (~7 000 players at design capacity) | "match ended", back to lobby | systemd restart ~5 s; rooms recreated on demand |
-| One `gateway` | its lobby connections drop | reconnect to another endpoint | client-side, seconds |
+| One `arena` process | its rooms end: up to 1 800 players as set (12 rooms of 150) | "match ended", back to lobby | systemd restart ~5 s; rooms recreated on demand |
+| One `gateway` | its lobby connections drop | reconnect through the front, whose nginx passes over the lost gateway | client-side, seconds |
 | One `platform` | in-flight lobby requests fail | retry | stateless; restart |
 | One `worker` | results queue backs up | nothing immediately | restart it; what it had in flight stays pending for it in the result stream, and if it is gone for good any other worker takes that over once idle a minute ([05](../detailed-design/05-worker-and-events.md#the-move-onto-streams-designed-2026-09-29-plan-item-10)) |
 | j-redis `session` primary | no logins, no new matches, no request that needs a session | running matches continue; everything else refused | promote replica (scripted, manual trigger) |
 | j-redis `events` primary | results stop draining; arenas spool to disk | nothing immediately | promote replica |
 | MySQL primary | no logins, and no request that reads or writes it: purchases, progression, profiles, inventories; results wait in the stream | running matches continue; everything else refused | promote replica (scripted, manual trigger) |
-| nginx on one machine | that machine's lobby endpoint is gone | client retries the next endpoint in its list | client-side, seconds |
-| One whole machine | all of the above for that machine | ~1/3 of battles end | N−1 capacity ≈ 30 000 players |
+| nginx on the front | the site's only way in: the API, the lobby and every match connection pass it | nothing works; matches in progress end | the provider forwards the address's 443 and 9001 to another machine, set up the same ([runbook §4](../operations/02-runbook.md#4-whole-machine-loss)); minutes, by hand |
+| nginx on another machine | nothing until that machine becomes the front | nothing | restart |
+| One whole machine | all of the above for that machine; if it is the front, everything until the forwarding moves | its arenas' battles end (B: 3 of 7 arenas; A or C: 2 of 7); every battle if it is the front | as set, 7 200 to 9 000 in battle |
 
 Note the asymmetry that shapes the design: **a stateless process failing is a
 non-event; a stateful primary failing is an incident.** There are exactly three
 stateful roles — MySQL, j-redis `session`, j-redis `events` — and they are the
-only things that need a promotion procedure.
+only things that need a promotion procedure. The front's loss needs a hand too: not a
+promotion, but the provider forwarding the public address to another machine (D-82).
 
 ## 2. Degradation is graded, not binary
 
@@ -34,12 +39,13 @@ the failover work small:
 
 | Tier | Components | If it is down |
 |---|---|---|
-| **Must not break** | MySQL, j-redis `session` | Nobody can log in or spend anything. Minutes matter. |
+| **Must not break** | MySQL, j-redis `session`, the front's nginx | Nobody can log in or spend anything; without the front, nobody reaches the site at all. Minutes matter. |
 | **Degrades play** | `arena`, `gateway` | Some matches end, some players reconnect. Annoying, not an outage. |
 | **Invisible for a while** | `worker`, j-redis `events` | Results queue up and drain later. Tolerable for tens of minutes because the streams are durable and arenas spool to local disk. |
 
 A match already in progress survives the loss of `platform`, `worker`, MySQL and
-the `events` store. It only ends if its own `arena` dies. That is deliberate:
+the `events` store. It only ends if its own `arena` dies, or the front's nginx, which
+carries every match connection since D-82. That is deliberate:
 the thing players are actively doing has the fewest dependencies.
 
 ## 3. Failover is scripted and human-triggered
@@ -85,7 +91,7 @@ These are real gaps between this document and reality:
 | Gap | Consequence today | Tracked in |
 |---|---|---|
 | No fencing tokens | No lease carries one, and none needs one yet: every singleton job is made safe to repeat instead. The ledger check (`job:ledger-check`) only reads. The matcher (`mm:leader`) can run twice for a moment when a slow round outlives its lease, and every move it makes is a watched transaction on the players' own records, so a player is never in two matches (D-55). A season's close (`job:season`) writes, and records each step in MySQL in the transaction that does it, so a second run, or one after a crash, pays and halves nobody twice (D-63). The tournament clock runs in every worker and claims a match in MySQL before writing its tickets (D-41). A singleton job that writes and cannot be made safe to repeat would need a fencing token first. | [05 §9](../detailed-design/05-worker-and-events.md#9-scheduled-work) |
-| N−1 capacity unverified | 30 000 is derived from the core budget, not measured, and the load run (2026-09-30) found socket I/O missing from that budget and larger than the rooms' own cost ([01 §3](01-system-topology.md#3-capacity-model)). | Q-3 in [requirements](../requirements/01-scope-and-nfrs.md#7-open-questions) |
+| N−1 capacity unverified | 30 000 is derived from the core budget, not measured (as set since D-82 the arenas carry 12 600, and 7 200 to 9 000 after a loss), and the load run (2026-09-30) found socket I/O missing from that budget and larger than the rooms' own cost ([01 §3](01-system-topology.md#3-capacity-model)). | Q-3 in [requirements](../requirements/01-scope-and-nfrs.md#7-open-questions) |
 
 The three stateful roles now run as described: each with a replica on another
 machine that an operator promotes with a script, and every process following the

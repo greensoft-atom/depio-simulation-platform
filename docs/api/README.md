@@ -21,7 +21,7 @@ Why each rule is as it is: [04 — platform services](../detailed-design/04-plat
 ## The Postman collection
 
 [`backend.postman_collection.json`](backend.postman_collection.json) (Postman's format 2.1):
-131 requests in 13 folders, one scenario from the health check to the end of a season. Three
+135 requests in 14 folders (00 to 13), one scenario from the health check to the end of a season. Three
 players (A, B, C) and a guest are made, with names unique to the run; each request tests its
 status and keeps in the collection's variables what later ones need (tokens, ids, an order,
 a team, a tournament).
@@ -30,9 +30,9 @@ a team, a tournament).
 
 | Variable | Default | Set it to |
 |---|---|---|
-| `baseUrl` | `http://127.0.0.1:8080` | the platform; from another machine, `https://<address>:8443` through `run-front.sh`'s nginx ([development/03 §5.0](../development/03-build-and-run.md#50-clients-on-other-machines-the-front)); or `https://<the site's address>` through the front's nginx, trusting the backend's root, `ca.pem` ([operations/06](../operations/06-certificates.md)): in Postman, Settings, Certificates, CA certificates; with newman, `--ssl-extra-ca-certs ca.pem` |
+| `baseUrl` | `http://127.0.0.1:8080` | the platform; from another machine, `https://<address>` through `dev-nginx.sh`'s nginx, trusting `work/nginx/ca/ca.pem` ([development/03 §5.0](../development/03-build-and-run.md#50-clients-on-other-machines-the-front)); or `https://<the site's address>` through the front's nginx, trusting the backend's root, `ca.pem` ([operations/06](../operations/06-certificates.md)): in Postman, Settings, Certificates, CA certificates; with newman, `--ssl-extra-ca-certs ca.pem` |
 | `adminUrl` | `http://127.0.0.1:9120` | the admin API, through an SSH tunnel |
-| `adminToken` | | the admin secret (`/etc/backend/credentials/admin-token`) |
+| `adminToken` | | the admin secret (`/etc/backend/credentials/admin-token`; on a run by hand, `work/admin-token`, [development/03 §5.1](../development/03-build-and-run.md#51-trying-each-interface)) |
 | `password` | `example-password-1` | any, 8 to 128 characters |
 
 **Run** it whole, in order (Run collection): a folder alone lacks what earlier ones set.
@@ -50,8 +50,8 @@ What it needs and does:
   payments answer 503 `payments_off` and the purchases after them fail.
 - **The admin API on** (`BACKEND_ADMIN_ADDR` and its secret) for folders 09 and 12, and **a live
   arena** for folder 08.
-- **At most twice a minute**: a run makes 13 logins and registrations, and an address may make
-  30 a minute.
+- **At most twice a minute**: a run makes 15 logins, registrations and password-checked
+  deletions, and an address may make 30 a minute.
 - Matching a duel needs players connected to the lobby, which a collection cannot be: folder 08
   queues and leaves, and the whole duel is in `lobby-example.mjs` ([02](02-lobby-websocket.md) §9).
 
@@ -60,7 +60,9 @@ From the command line, with [newman](https://github.com/postmanlabs/newman) (Nod
 ```bash
 npx newman run docs/api/backend.postman_collection.json \
     --env-var baseUrl=http://127.0.0.1:8080 --env-var adminUrl=http://127.0.0.1:9120 \
-    --env-var adminToken="$(cat admin-token)"
+    --env-var adminToken="$(cat work/admin-token)"
+# from another machine, through dev-nginx.sh's nginx (D-92):
+#   --env-var baseUrl=https://<address> --ssl-extra-ca-certs work/nginx/ca/ca.pem
 ```
 
 **The lobby** is not in the collection: a collection file cannot hold WebSocket requests.

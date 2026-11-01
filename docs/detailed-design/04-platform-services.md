@@ -6,14 +6,14 @@ equipment.
 
 `platform` is a **modular monolith**, not a cluster of services
 ([D-4](../architecture/03-decision-log.md#d-4--split-by-workload-shape-not-by-business-domain)).
-Modules are plain classes sharing a `Context` (j-redis client, MySQL
-repositories, configuration, scheduler). No dependency-injection container.
+Modules are plain classes, each given what it uses (the store client, its repositories,
+settings) by its constructor in `PlatformMain`. No dependency-injection container.
 Each owns its tables and its j-redis key namespace, and exposes a small Java
 interface.
 
 ```
 platform
- ├── net          HTTP API behind this machine's nginx; the gateway calls it for match requests (03-gateway.md)
+ ├── net          HTTP API behind the front's nginx (D-82); the gateway calls it for match requests (03-gateway.md)
  ├── auth         register, login, sessions, bans
  ├── player       profile, settings, progression, cache-aside
  ├── team         create/invite/apply/roles/kick/transfer/disband
@@ -24,7 +24,8 @@ platform
  ├── economy      wallet, shop, purchases, ledger
  ├── items        catalogue, inventory, equipment, boosts → modifiers
  ├── social       friends, block list, presence
- └── notify       pushes via the gateway; inbox for offline players
+ ├── notify       pushes via the gateway; inbox for offline players
+ └── watch        monitoring and alerts (§12)
 ```
 
 **What is deliberately *not* here:** applying match results, granting rewards,
@@ -36,7 +37,8 @@ request/response and its clock is a scheduled job.
 
 Threading: the JDK's HTTP server, with a virtual thread per request (they block
 on MySQL, which is what they are for). Periodic work: the matcher's round, once
-a second on a thread of its own, whichever platform holds the lease (§4).
+a second on a thread of its own, whichever platform holds the lease (§4), and the watch's round
+every 15 s on its own thread (§12).
 
 **As built**, route by route with every answer and refusal: the
 [platform README](../../backend/platform/README.md); the flows are drawn in
@@ -346,7 +348,7 @@ signs in, and the API guide at `POST /v1/guests`. `backend_worker_guests_erased_
 
 Rules: at most two vice leaders, capacity 30, one team per player, name unique
 case-insensitively, and a 24-hour cooldown after leaving before joining another
-(anti-hopping). All configurable.
+(anti-hopping). Constants in code (`TeamRepository`, the capacity in `PlatformMain`); a change is a release.
 
 Every action is a single MySQL transaction that locks the team row first:
 
@@ -865,7 +867,7 @@ Each is forwarded by the gateway to `platform` (`POST /v1/party/invite`,
 `/accept`, `/leave`, `/kick`, `/say`; `GET /v1/party`), as `queue.join` is. In the store:
 
 ```
-HSET party:{partyId} leader, members, names, v     EX 3600, renewed on every change
+HSET party:{partyId} leader, members, n:{playerId}…, v     EX 3600, renewed on every change
 SET  partyOf:{playerId} partyId                     EX 3600
 SET  pinv:{playerId}:{partyId} 1                    EX 60, one invitation per party
 SET  rl:say:{playerId} 1                            NX PX 2000, a phrase's turn
@@ -1660,7 +1662,7 @@ client doing it and one of them forgetting.
 | `GET /v1/leaderboards/{board}/me` | rank, score and five rows either side. Needs a session. **404 `not_ranked`** when the player has no score there, so the client can say "play a match to be ranked" rather than render a rank of 0 |
 
 `{board}` is `alltime`, `daily` or `weekly`, or a rating board, `duel`, `rffa`
-or `tvt` (below); anything else is a 404 `unknown_board`.
+or `tvt`, or `teams` (below); anything else is a 404 `unknown_board`.
 
 Around-me is one command, `J.ZAROUND`, which returns the rank and the window
 together. As `ZREVRANK` then `ZRANGE` it would be two round trips against a
@@ -1790,8 +1792,7 @@ with its reason.
   the current one at once (`POST /admin/seasons/end`), for a drill or to bring
   the calendar into line; the next then runs to the next boundary.
 - **The three player boards are the season's**: duel, ranked free-for-all and
-  team-vs-team. Team matches' team ratings have no board yet (Q-40) and are
-  left alone.
+  team-vs-team; the board of teams and its seasons came with plan item 73 (below).
 - **When a season ends**, `worker`'s season job closes it in three steps, each
   safe to run again after a crash or by a second worker:
   1. **Places.** Each board's listed players, in the board's order (rating, then
@@ -1942,7 +1943,7 @@ release and every instance sells the same things at the same prices; changing it
 is a release. A list of offers:
 
 ```json
-{ "sku": "barrel_steel", "itemId": "eq_barrel_steel", "price": 200,
+{ "sku": "barrel_steel", "itemId": "barrel_steel", "price": 1500,
   "requiresLevel": 5, "availableFrom": "2026-10-01T00:00:00Z", "availableTo": null }
 ```
 
@@ -2819,10 +2820,11 @@ not before (`RulesTest`), as `promtool test rules` would; a rule's threshold is 
 
 - **State**: a rule's series firing for less than its wait is *pending*; for its wait or longer, *firing*;
   a firing alert whose condition stops holding is *resolved* on that round and forgotten after it is
-  sent. The fingerprint is the alert's name and labels (`job`, `instance`, `mount`, `peer`, …), with the
-  machine's name.
-- **In the store**: each firing alert as `alert:{machine}:{fingerprint}` (a hash: `name`, `labels`,
-  `summary`, `runbook`, `since`, `machine`), set with a 60 s expiry each round, so a platform that dies
+  sent. The fingerprint is the alert's name and labels (`job`, `instance`, `mount`, `peer`, …); a
+  target's and the machine's own series carry `machine` as a label, a peer's does not, so a
+  `PeerUnreachable` for C is one alert whichever machine raised it.
+- **In the store**: each firing alert as `alert:{fingerprint}`, a JSON string (`name`, `labels`,
+  `summary`, `runbook`, `since`), set with a 60 s expiry each round, so a platform that dies
   takes its alerts away within a minute, while the others raise `PeerUnreachable` for it.
 - **Listed**: `GET /admin/alerts` scans `alert:*` and returns every machine's firing alerts, with
   `silenced` where a silence covers one ([api/03](../api/03-admin-api.md)).
@@ -2834,8 +2836,10 @@ not before (`RulesTest`), as `promtool test rules` would; a rule's threshold is 
 - **Sent**: when `BACKEND_ALERT_WEBHOOK_URL` (or `_FILE`) is set, a `POST` of
   `{"status": "firing"|"resolved", "machine", "alerts": [{"name", "labels", "summary", "runbook", "since"}]}`
   for what changed this round, and again every `BACKEND_ALERT_REPEAT_HOURS` (default 4, 1 to 24) for
-  what still fires; 10 s to answer, three tries a minute apart; a failure logged and counted. **Once for
-  the site**: before sending, `SET alert:sent:{fingerprint}:{status} NX EX <repeat>`; the platform that
+  what still fires; 10 s to answer, tried once more at once; a failure is logged, counted, and its
+  claim given back, so the next round, 15 s later, or another machine, sends it. **Once for the
+  site**: before sending, `SET alertsent:{fingerprint}:{status} NX PX <repeat>` (a resolution's for an
+  hour); the platform that
   gets it sends, the others count a `duplicate`. A `PeerUnreachable` for C raised by A and B is thus sent
   once.
 - **Its own metrics**: `backend_watch_scrapes_total{job, outcome}`, `backend_watch_alerts_firing`,

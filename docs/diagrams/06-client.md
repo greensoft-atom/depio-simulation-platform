@@ -405,7 +405,7 @@ sequenceDiagram
     participant L as layer above
     participant M as MatchConnection
     participant T as receive thread
-    participant A as arena
+    participant A as arena, through the front's nginx
     L->>M: Join with the grant's ticket
     M->>T: a new attempt dials
     T->>A: TCP connect, then TLS when the grant says, as its TlsName

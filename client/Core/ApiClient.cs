@@ -502,8 +502,8 @@ namespace Backend.Client.Core
     /// <summary>
     /// The platform API, over HTTPS (docs 04; the backend's API table), for the lobby screens.
     ///
-    /// Three endpoints, tried in turn (D-13): one that cannot be reached, or whose certificate is
-    /// refused, moves the call to the next, never to plain text. An HTTP answer is an answer,
+    /// Endpoints tried in turn (D-13; the site has one since D-82, its public address): one that cannot be
+    /// reached, or whose certificate is refused, moves the call to the next, never to plain text. An HTTP answer is an answer,
     /// whatever its status, and moves nothing. The one that answered is tried first next time.
     /// Calls complete on the thread pool; the Unity layer hands results to the main thread.
     /// </summary>
@@ -513,7 +513,7 @@ namespace Backend.Client.Core
         private readonly HttpClient _http;
         private int _preferred;
 
-        /// <param name="endpoints">https://a.example.com and so on: the app's list.</param>
+        /// <param name="endpoints">https://203.0.113.10, the site's address: the app's list, of one.</param>
         /// <param name="handler">Null for the platform's own; a test's may trust a test CA.</param>
         public ApiClient(IReadOnlyList<string> endpoints, HttpMessageHandler handler = null, TimeSpan? timeout = null)
         {

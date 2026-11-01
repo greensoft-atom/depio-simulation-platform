@@ -1,11 +1,13 @@
-// Debugging the backend from VS Code (docs/development/05-vscode.md, D-80), two ways:
-//  - "Attach": to a process ./run-local.sh started with DEBUG=1 (DEBUG=1 ./run-local.sh start),
+// Debugging the backend from VS Code (docs/development/05-vscode.md, D-80, D-92), two ways:
+//  - "Attach": to a process dev-backend.sh started with DEBUG=1 (DEBUG=1 ./run-local.sh start),
 //    each listening on its own port;
 //  - "Launch": one process from its sources, the rest from the release. Start what it needs
-//    first: ./run-local.sh start store (the platform, worker, gateway and arena need the store;
-//    the platform and worker, the development MySQL, which run-local.sh starts with them) and
-//    leave out the process you launch here.
-// Ports and arguments as run-local.sh gives them.
+//    first: ./dev-mysql.sh start, ./dev-jredis.sh start (all four need the store; the platform
+//    and the worker, the MySQL), ./dev-nginx.sh start for matches, and the others with
+//    ./dev-backend.sh start <process ...>, leaving out the process you launch here.
+// Ports and arguments as dev-backend.sh gives them, but the arena's advertised host: 127.0.0.1
+// here, through nginx's 9001; put PUBLIC_ADDRESS in its place for a client on another machine.
+// nginx's 9001 is NGINX_MATCH_PORT: change "Launch: arena"'s BACKEND_ADVERTISE_PORT with it.
 {
     "version": "0.2.0",
     "configurations": [
@@ -48,10 +50,11 @@
         {
             "type": "java", "request": "launch", "name": "Launch: arena",
             "projectName": "arena", "mainClass": "com.backend.arena.ArenaMain",
-            "args": ["9001", "5700", "150", "1500", "4", "127.0.0.1", "6380", "arena-1", "0",
+            "args": ["9021", "5700", "150", "1500", "4", "127.0.0.1", "6380", "arena-1", "0",
                      "${workspaceFolder}/work/run/spool", "127.0.0.1", "127.0.0.1"],
             "javaExec": "${workspaceFolder}/vendor/jdk-21/bin/java",
             "vmArgs": "-XX:+UseZGC -XX:+ZGenerational --add-opens java.base/java.nio=ALL-UNNAMED -Djava.io.tmpdir=${workspaceFolder}/work/tmp",
+            "env": { "BACKEND_ADVERTISE_PORT": "9001", "BACKEND_ADVERTISE_TLS_NAME": "a1.arena.internal" },
             "cwd": "${workspaceFolder}/work/run"
         }
     ]

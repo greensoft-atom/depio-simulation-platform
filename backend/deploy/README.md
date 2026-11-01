@@ -71,15 +71,16 @@ made at install ([01 §7](../../docs/operations/01-deploy.md#7-installing-a-mach
 | `backend-nginx.service` | `/opt/backend/nginx/sbin/nginx`: the master as root, which binds 443 and 9001 (D-82), the workers as `nginx` | `/etc/backend/nginx/nginx.conf` ([nginx/](#nginx)) | `Type=forking`; `nginx -t` before a start, and a reload is `nginx -t` then `HUP`, so a broken file is refused and no connection dropped; stopped with `SIGQUIT`, the workers finishing what they serve; logs in `/var/log/backend-nginx/`, rotated by `backend-nginx-logs.timer`; `LimitNOFILE=262144`, two descriptors a player's connection |
 | `backend-nginx-logs.service` | `rotate-nginx-logs.sh`, once: nginx's logs renamed with a UTC stamp, nginx told to reopen them, the renamed ones compressed, those older than `KEEP_DAYS` deleted (D-85) | `LOG_DIR`, `PID_FILE`, `KEEP_DAYS=14` (1 to 365) in the unit | started by its timer; root, as nginx's master is, under the backup units' sandbox, writing in `/var/log/backend-nginx` alone |
 
-`backend-mysql` and `backend-nginx` run with `ProtectSystem=full` (not `strict`), `PrivateTmp`,
-`PrivateDevices` and `NoNewPrivileges`; `backend-store@` sets no sandboxing beyond its private
-directories.
+`backend-mysql` and `backend-nginx` run with `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`,
+`PrivateDevices`, `NoNewPrivileges` and the kernel and control-group protections, writing only in
+the directories their units make; `backend-store@` is sandboxed as the process units are;
+`backend-scratch-mysql` sets none.
 
 **Drop-ins**, examples installed under a unit's `.d/` directory
 
 | File | Installed as | Configures |
 |---|---|---|
-| `arena-tls.conf.example` | `/etc/systemd/system/backend-arena@.service.d/tls.conf` | TLS for match traffic: credentials `arena-tls.p12` and `arena-tls-password` from `/etc/backend/credentials/`, `BACKEND_ARENA_TLS_KEYSTORE` and `BACKEND_ARENA_TLS_PASSWORD_FILE`. Installed once both files exist (the certificate is deferred) |
+| `arena-tls.conf.example` | `/etc/systemd/system/backend-arena@.service.d/tls.conf` | TLS for match traffic: credentials `arena-tls.p12` and `arena-tls-password` from `/etc/backend/credentials/`, `BACKEND_ARENA_TLS_KEYSTORE` and `BACKEND_ARENA_TLS_PASSWORD_FILE`. Only for an arena that ends TLS itself, reached directly (a drill, a machine alone): not the site's layout (D-82), where an arena with `BACKEND_ADVERTISE_TLS_NAME` refuses a keystore and stops (exit 2) |
 | `platform-admin.conf.example` | `/etc/systemd/system/backend-platform.service.d/admin.conf` | The admin API's secret: credential `admin-token`, `BACKEND_ADMIN_TOKEN_FILE`. With `BACKEND_ADMIN_ADDR` in `platform.env` ([runbook §3a](../../docs/operations/02-runbook.md#3a-the-admin-api)) |
 
 **The backup machine**, C ([01 §10](../../docs/operations/01-deploy.md#10-copies-off-the-databases-machine)).
@@ -148,7 +149,7 @@ machines run but the operating system's base
 | `systemd/` | every unit, timer and drop-in example above |
 | `env/` | as above |
 | `mysql-conf/`, `nginx-conf/` | this folder's `mysql/` and `nginx/`, under names apart from the binaries |
-| `scripts/` | `backup-mysql.sh`, `backup-store.sh`, `binlog-stream.sh`, `restore-drill.sh`, `store-restore-drill.sh`, `install-certificate.sh`, `promote-store.sh`, `promote-mysql.sh`, `record-backup.sh`, `restore-proof.sh`, `backup-offsite.sh`, `fetch-offsite.sh`; they find `mysql/`, `jredis/` and `runtime/` beside them |
+| `scripts/` | `backup-mysql.sh`, `backup-store.sh`, `binlog-stream.sh`, `restore-drill.sh`, `store-restore-drill.sh`, `install-certificate.sh`, `promote-store.sh`, `promote-mysql.sh`, `record-backup.sh`, `restore-proof.sh`, `backup-offsite.sh`, `fetch-offsite.sh`, `private-ca.sh`, `rotate-nginx-logs.sh`, `check-bind.sh`; they find `mysql/`, `jredis/` and `runtime/` beside them |
 | `VERSIONS.md` | what is inside, with versions: `vendor/VERSIONS.md`, then the backend's version and commit, j-redis's version, and the runtime's version and modules |
 | `COMMIT` | the git commit it was built from |
 
@@ -216,10 +217,10 @@ file into an empty argument, and an empty number means exit 2.
 | `ADVERTISE_HOST` | arena; `install-certificate.sh` | `127.0.0.1` | `203.0.113.10` |
 | `STORE_HOST` | arena, gateway, platform, worker, rebuild | `127.0.0.1` | `10.0.0.1` |
 | `STORE_PORT` | same | 6379 | 6379 |
-| `GATEWAY_BIND` | gateway | `127.0.0.1` | `127.0.0.1` |
+| `GATEWAY_BIND` | gateway | `127.0.0.1` | `10.0.0.1` |
 | `GATEWAY_PORT` | gateway | 8081 | 8090 |
-| `PLATFORM_URL` | gateway | `http://127.0.0.1:8080` | the same |
-| `PLATFORM_BIND` | platform | `127.0.0.1` | `127.0.0.1` |
+| `PLATFORM_URL` | gateway | `http://127.0.0.1:8080` | `http://10.0.0.1:8080` |
+| `PLATFORM_BIND` | platform | `127.0.0.1` | `10.0.0.1` |
 | `PLATFORM_PORT` | platform | 8080 | 8080 |
 
 The units also pass the instance: the arena's name (`%i`; code default `arena-<port>`) and spool
@@ -274,12 +275,13 @@ Each script's own settings are in [scripts/README](../scripts/README.md). Those 
 | `BACKEND_DRILL_SQL`, `BACKEND_ADMIN_URL`, `BACKEND_ADMIN_TOKEN` | the headless client | set by `client/headless-drill.sh` |
 | `TMPDIR`, `SEED_DB`, `SEED_PASSWORD` | `backup-drill.sh` | `/tmp`, `backend_dev`, `backend-dev-password` |
 | `RELEASE` | `backup-drill.sh` | none: the machine's `/usr/sbin/mysqld` and tools; given a release with `mysql/`, its MySQL 8.4 |
-| `SKIP_TESTS` | `build-offline.sh` | 0 (every test run) |
+| `SKIP_TESTS` | `dev-jredis.sh build`, `dev-backend.sh build`, and so `build-offline.sh` | 0 (every test run) |
 | `WORK` | `dev-env.sh`, so every script beside it | `work/` in the checkout: Maven's settings and local repository, `TMPDIR`, the development MySQL, a run by hand (D-80) |
-| `MYSQL_PORT` | `dev-env.sh`, `dev-mysql.sh`, `run-local.sh` | 3314, the development MySQL's |
-| `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT`, `DEBUG` | `run-local.sh` | 6380, 8080, 8081, 9001; `DEBUG=1` for debugger ports 5005 to 5009 |
-| `ARENA_ADVERTISE_HOST` | `run-local.sh` | 127.0.0.1: the host the arena tells clients to dial; `run-front.sh` sets it to its address (D-91) |
-| `FRONT_PORT`, `FRONT_MATCH_PORT` | `run-front.sh` | 8443 (the player API and the lobby), 9443 (matches): the site's 443 and 9001 for a run by hand (D-91) |
+| `MYSQL_PORT` | `dev-env.sh`, so every script beside it | 3314, the development MySQL's |
+| `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT` | `dev-env.sh`: `dev-jredis.sh`, `dev-backend.sh`, `dev-nginx.sh` | 6380, 8080, 8081, 9021, each on 127.0.0.1 (D-92) |
+| `NGINX_HTTP_PORT`, `NGINX_HTTPS_PORT`, `NGINX_MATCH_PORT` | `dev-env.sh`: `dev-nginx.sh`, and `dev-backend.sh`, whose arena announces the last | 80 (a redirect), 443 (the player API and the lobby), 9001 (matches), every IPv4 address; 80 and 443 need root (D-92) |
+| `PUBLIC_ADDRESS`, `ARENA_TLS_NAME` | `dev-env.sh`: `dev-nginx.sh` (the certificate), `dev-backend.sh` (the arena's announcement) | the machine's first address (`hostname -I`), else 127.0.0.1; `a1.arena.internal` (D-92) |
+| `DEBUG` | `dev-backend.sh`, `dev-jredis.sh` | unset; `DEBUG=1` for debugger ports 5005 to 5009 |
 | `IMAGE` | `check-release-el9.sh` | `registry.access.redhat.com/ubi9/ubi-minimal:9.5` |
 | `RELEASE`, `JREDIS_JAR`, `JREDIS_CLI_JAR`, `TOOLS_JAR`, `JAVA`, `MYSQLD_BIN`, `DOTNET`, `TLS`, `FAILOVER`, `MYSQL_FAILOVER`, `BOTS`, `ARENA_OPTS`, `SOAK`, `STAYS`, `SAMPLE_EVERY`, `JUDGE_FROM`, `WORKERS`, `TAKEOVER`, `DRAIN_AFTER`, `BACKEND_DB_PASSWORD` | `client/headless-drill.sh` | its header |
 
@@ -328,11 +330,12 @@ primary's port; the copy off the site leaves C by SSH, to the host the owner nam
 | 3307, 3308 | MySQL primary and replica (`MYSQL_FAILOVER`) | `client/headless-drill.sh` |
 | 3307, 3309 | MySQL primary and scratch server | `backup-drill.sh` (not at the same time as `MYSQL_FAILOVER`) |
 | 3314 | the development MySQL, `vendor/`'s 8.4 (`backend_test`, `backend_dev`) | `dev-mysql.sh`: the tests, the benchmarks, `run-local.sh` and both drills, which start it when it is not running; the processes' and the tests' built-in defaults (D-80, O-40). Nothing here uses a machine's own 3306 |
-| 6380, 8080, 8081, 9001 | j-redis, platform, gateway, arena | `run-local.sh`, and the by-hand example in [backend/README](../README.md#running-it) |
+| 6380, 8080, 8081, 9021 | j-redis, platform, gateway, arena | `dev-jredis.sh`, `dev-backend.sh` (D-92) |
+| 6380, 8080, 8081, 9001 | the same, in the by-hand example of [backend/README](../README.md#running-it), with no nginx | that example |
+| 80, 443, 9001 | the release's nginx in front of a run by hand, on every IPv4 address: a redirect, the API and the lobby, matches | `dev-nginx.sh` (D-92) |
 | 5005 to 5009 | the debugger, one per process | `DEBUG=1 ./run-local.sh start` |
-| 8443, 9443 | the release's nginx in front of a run by hand, on every address: the API and the lobby, matches | `run-front.sh` (D-91) |
 
-All bind `127.0.0.1`. 6381 and 8082 belong to other processes on the development machine.
+All bind `127.0.0.1` but nginx's. 6381 and 8082 belong to other processes on the development machine.
 
 ## Timers
 

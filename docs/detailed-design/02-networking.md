@@ -21,7 +21,7 @@ and is specified with the gateway.
 by an arena reached directly (below). There is no WebSocket framing and no
 HTTP upgrade, because there is no browser client
 ([D-1](../architecture/03-decision-log.md#d-1--unity-native-mobile-client-no-browser-build)).
-Unity's `System.Net.Sockets` speaks this directly on iOS and Android.
+Unity's `System.Net.Sockets` speaks this directly on Android (C-10).
 
 ```
 event loop, boss    (1 thread)  accept
@@ -70,8 +70,8 @@ AES-GCM (RFC 5288), both inside the per-packet overhead the bandwidth budget in
 
 - **`Join` (or `Resume`) within 10 s** of connecting, the TLS handshake included. Without this
   a connection that pinged and never joined kept its socket for ever.
-- **A whole frame at least every 30 s.** A client in the foreground sends 20
-  inputs a second, and **every client sends `Ping` every 10 s in every state,
+- **A whole frame at least every 30 s.** A client in the foreground sends ten
+  `Input` frames a second, and **every client sends `Ping` every 10 s in every state,
   dead or alive**, so this is three missed pings. A frame sent a byte at a time
   is not activity.
 - **Unwritable for at most 5 s** straight ([§11](#11-backpressure)).
@@ -433,7 +433,7 @@ them; then creates, so updates can refer to them.
 |---|---|---|
 | Header | ~6 | four small varints |
 | Tank update | ~6 | handle 1, mask 1, dx 1–2, dy 1–2, angle 1, hp occasionally |
-| Predicted create | ~12 | position, heading, speed, spawn offset, lifetime, owner |
+| Predicted create | ~13 | handle, kind, position, heading, speed, spawn offset, lifetime, owner, radius |
 | Remove | 1 | just the handle |
 | Event | 3–6 | type plus a couple of fields |
 
@@ -793,8 +793,8 @@ say what real players cost; decide from those, at a real fight's density.
 - **`seq` is 24 bits and wraps.** The client's counter runs modulo 2^24; the
   snapshot carries the advance modulo 2^24, so it is never negative, and the
   client adds it modulo 2^24. To ask "is a newer than b", use
-  `((a - b) & 0xFFFFFF)` in `1 .. 2^23 - 1`, never `a > b`. At 20 Hz the counter
-  wraps after about nine days; an open match on a server that is never restarted
+  `((a - b) & 0xFFFFFF)` in `1 .. 2^23 - 1`, never `a > b`. At ten packets a second the counter
+  wraps after about nineteen days; an open match on a server that is never restarted
   can get there.
 - The echo survives death, respawn and background, like the rest of the view
   (§5): while the tank is dead or parked no input drives it, and the value holds
@@ -839,7 +839,7 @@ like a knock.) On each frame:
    every 50 ms. One of more than 64 units is not a correction but a jump (a
    respawn, a resume, a teleport), and is taken at once.
 
-A frame whose echo is older than the steps kept (two seconds), or before any
+A frame whose echo is older than the steps kept (64 steps, 2.56 s), or before any
 input, has nothing to replay: the tank is put where the server says and
 predicted on from there. Dead, parked or backgrounded, the client predicts
 nothing and draws the server's tank; a new tank, a resume or a new match starts
@@ -881,7 +881,7 @@ onto a cellular network, into a lift or a tunnel, loses its connection without a
 word; its player comes back to the same stay:
 
 - **Every Welcome carries a resume secret**, 128 random bits, as a string after
-  the other fields (§3). A client that loses its connection dials the same arena
+  the other fields and before the maze seed (§3). A client that loses its connection dials the same arena
   and sends `Resume` (id 10) with it in place of `Join`: `u8 protocolVersion`,
   `string resumeSecret`, optionally `u8 profile` (§8). It gets a Welcome, with a
   **new** secret, since the one just used is spent, and a fresh view: the first
@@ -969,8 +969,8 @@ the bug class that will cost the most time, so it is designed against:
 - `contentVersion` and `phraseListVersion` in `Welcome` let the client check
   that its tables match the server's before it renders anything from them.
 - **Golden test vectors** are checked into the repository: encoded byte arrays
-  with their expected decoded values, exercised by the Java test suite *and*
-  the Unity test runner. This costs an afternoon and catches drift at build
+  with their expected decoded values, exercised by the Java tests and the C# core's
+  (`Core.Tests`, `dotnet test`). This costs an afternoon and catches drift at build
   time rather than in production.
 
 The snapshot codec is hand-written on both sides — one message type,

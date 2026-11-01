@@ -131,7 +131,7 @@ network threads' share, three quarters of that the kernel's; 333 rooms at that
 rate are ~87 cores, more than the three machines have. It is an upper bound: the
 bots were on the same machine, over loopback, where the kernel also does the
 receiving side's work, on a shared virtual machine. And one process's two Netty
-workers would be full near 2 100 players, not the ~7 000 above. Whether the model
+workers would be full near 2 100 players, not the ~7 000 a process that 333 rooms in seven arenas would need. Whether the model
 holds is Q-3's to settle, with the bots on another machine and the production
 NICs; until then the 50 000 is unproven, and the arena's shape with it.
 
@@ -161,12 +161,15 @@ launch's 10 000 all in battle, not the 50 000, which needs more arenas than thes
 network threads give, or the threads raised (a code change, not made).
 
 **Provision 10 GbE.** 1.1 Gbit/s sustained on a 1 Gbit uplink leaves nothing for
-bursts and would run at 85 % of line rate at peak.
+bursts and would run at 85 % of line rate at peak. Since D-82 the front's link carries the
+site's traffic twice, about 1.5 Gbit/s each way at 50 000, and the front's nginx allocation
+above (1c / 1G) is not measured for it.
 
 ## 4. Client flow end to end
 
 ```
-1. Launch → nginx (HTTPS, one of 3 endpoints from the client's list: a.<domain>, b.<domain>, c.<domain>)
+1. Launch → the front's nginx (HTTPS :443 on the site's one public address, an IP with no domain;
+             certificate from the backend's own CA, whose root the app ships: D-82)
              login → platform verifies against MySQL → session in j-redis:
                HSET sess:{token} playerId …, EXPIRE a day ±10 %
            then the lobby, wss://…/lobby → nginx → gateway, authenticated with that token
@@ -176,13 +179,16 @@ bursts and would run at 85 % of line rate at peak.
                  first, 04 §4, and their room made by the first ticket, D-20)
                  writes the join ticket, loadout already resolved:
                    HSET ticket:{id} playerId, name, team, match, mode, bonus, skin   EXPIRE 60
-                 replies { arenaHost, arenaPort, ticketId, tls }
-4. Client opens a *direct* TCP connection to that arena, TLS when the grant says, and sends Join{ticketId}
+                 replies { arenaHost, arenaPort, ticketId, tls, tlsName }: the site's address, 9001,
+                 and the arena's name
+4. Client opens TCP to arenaHost:arenaPort (the front's 9001), TLS sending and checking tlsName; the
+   front's nginx ends TLS and passes the connection, plaintext, to the arena that name maps to, on
+   its private address; the client sends Join{ticketId}
    arena: MULTI · HGETALL ticket · DEL · EXEC (single use) → validate → spawn tank
 5. In match: input ≤ 20 Hz coalesced; snapshots at the traffic profile's rate (15 Hz, 10 at saver):
              tanks updated every frame, bullets created once and extrapolated client-side,
              shapes updated only when they move
-6. Match end: arena XADD s:match-result MINID ~ <a day ago> * e {json} on the events store
+6. Match end: arena XADD s:match-result MINID ~ <now − BACKEND_RESULT_RETENTION_HOURS, 24 by default (D-83)> * e {json} on the events store
               (spooled to local disk first)
               worker XREADGROUP GROUP rewards <workerId> → MySQL transaction (xp, currency, stats)
                                         → ZADD ... GT leaderboards → XACK
@@ -201,7 +207,7 @@ The rule that matters most at 50 000 players:
 | Match traffic (client ↔ arena) | TCP + TLS, ended on the front by nginx's `stream`, passed by the arena's name (D-82) | **yes**, passed through by name | **no** |
 | Lobby (client ↔ gateway ↔ platform) | WebSocket over TLS, JSON, `/lobby` | yes | yes |
 | API: accounts, login, match requests, leaderboards, the shop (client ↔ platform) | HTTPS, JSON, `/v1/` | yes | **no** |
-| Domain events (arena/platform → worker) | j-redis `events` streams | no | no |
+| Match results (arena → worker) | j-redis `events` stream `s:match-result` (and the `q:match-result` inbox) | no | no |
 | Commands (platform → arena) | j-redis pub/sub, `arena-admin:{name}`: an operator's kick and room close (04 §10) | no | no |
 | System of record | MySQL | no | no |
 
@@ -210,6 +216,8 @@ load and add a hop to the one path that cannot afford it. The matchmaker hands
 out a specific arena, by its name since D-82: **the allocator is the load balancer for
 match traffic, not nginx**, which only follows the name it was given
 ([D-5](03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway), revised by D-82).
+Since D-82 the front's nginx carries it, with that hop and that load, but routes only by
+the name the allocator gave.
 
 No VIP and no keepalived: the client holds the site's endpoint and retries on failure; with one
 public address since D-82, a lost front is covered by the provider forwarding to another
@@ -223,7 +231,7 @@ Rationale for each is in the [decision log](03-decision-log.md).
 |---|---|
 | Language | Java 21 (Temurin), on the release's own runtime, made by `jlink` ([D-77](03-decision-log.md#d-77--everything-the-backend-builds-and-runs-with-is-in-the-repository-and-in-the-release), [09 §4.1](../detailed-design/09-release-and-packaging.md#41-the-runtime)) |
 | GC | Generational ZGC (`-XX:+UseZGC -XX:+ZGenerational`) |
-| Network | Netty 4.2, native epoll, raw TCP; TLS from the JDK's provider, not `netty-tcnative` (a native library per platform, for speed nobody has measured a need for: [02 §1](../detailed-design/02-networking.md#1-transport)) |
+| Network | Netty 4.2, native epoll, raw TCP; match traffic's TLS ended by the front's nginx (D-82), the arena's own TLS, from the JDK's provider, only without the front; not `netty-tcnative` (a native library per platform, for speed nobody has measured a need for: [02 §1](../detailed-design/02-networking.md#1-transport)) |
 | Wire format | Hand-written binary; deltas against the last frame sent, in world space ([D-16](03-decision-log.md#d-16--deltas-are-measured-against-the-last-frame-sent), which superseded D-11's ack-based baseline) |
 | Database | MySQL 8.4 LTS, the release's own (D-77, Q-56) + `mysql-connector-j`, HikariCP, Flyway |
 | Cache / coordination | [j-redis-service](../../j-redis-service/README.md), two instances |

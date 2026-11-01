@@ -12,7 +12,7 @@ archived at [archive/persistence-mongodb.md](../archive/persistence-mongodb.md).
 schema as one baseline, `V1__schema.sql` with its first rows in `V2__seed.sql` (§8),
 every table shown in [§3](#3-schema) with what it serves; the pool; and all three
 transactions in [§4](#4-the-three-transactions-that-matter) (a match result, a purchase,
-a reward), with tests that run against a real MySQL 8.0.
+a reward), with tests that run against a real MySQL 8.4, the development MySQL (`dev-mysql.sh`, D-80).
 
 ## 1. Boundaries
 
@@ -45,7 +45,7 @@ only involvement.
 | Data | Strategy | Why |
 |---|---|---|
 | Currency, inventory, purchases | **Write-through**, MySQL authoritative | A lost write here is a support ticket and a refund |
-| Profile, aggregate stats | **Cache-aside** in j-redis, TTL 5 min | Stale by a few minutes is harmless |
+| Profile, aggregate stats | Read from MySQL on each request; **not built:** a cache-aside copy in j-redis, TTL 5 min | Stale by a few minutes would be harmless |
 | Leaderboards | j-redis authoritative, rebuilt from `player_stat` and `matches` after a loss | Rebuild path, not a query path |
 
 ## 2. Conventions
@@ -401,8 +401,8 @@ a tournament decides it by the higher seed (Q-45). Mode 9, the sandbox, publishe
 no result and so has no rows.
 
 Note the consequence for `player_stat.matches`: it counts **both kinds**, but only
-results long enough to be paid. Splitting it needs a second counter and can wait
-until a ranked mode exists to disagree with it.
+results long enough to be paid. Splitting it needs a second counter; the ranked modes keep their
+own: `player.rated_duels`, `rated_tvts` and `rated_rffas`, and `team.rated_matches`.
 
 ```sql
 -- Each player's part of a match.
@@ -714,7 +714,8 @@ CREATE TABLE season_pass (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-A row is made by a player's first points or premium in a season, under the
+A row is made by a player's first result in a season, whatever its points (0 for one too short to
+count), or by premium, under the
 player's row lock, and only ever raised
 ([D-69](../architecture/03-decision-log.md#d-69--a-season-pass-pays-each-tier-as-its-points-cross-it-each-track-to-its-own-mark-and-its-premium-never-pays-coins)):
 points, premium from false to true, each mark to the tier paid. A tier's coins
@@ -930,7 +931,7 @@ UPDATE player
    SET xp = xp + ?, level = GREATEST(level, ?),
        rating_duel = GREATEST(0, CAST(rating_duel AS SIGNED) + ?),
        rated_duels = rated_duels + ?,
-       first_played_on = LEAST(COALESCE(first_played_on, ?), ?)
+       first_played_on = IF(?, LEAST(COALESCE(first_played_on, ?), ?), first_played_on)   -- only a result long enough to count (D-45)
  WHERE id = ?;
 -- Each account level crossed that has a milestone, level 5 and every tenth: 20 gems through
 -- the ledger (step 7's path), keyed milestone:{player}:{level} (D-61).
@@ -952,6 +953,7 @@ ON DUPLICATE KEY UPDATE progress = progress + VALUES(progress);   -- each of the
 SELECT progress FROM daily_goal WHERE player_id = ? AND day = ? AND goal_id = ? FOR UPDATE;
 -- Each goal that reached its target: its coins, keyed daily:{player}:{day}:{goal}; the
 -- result that meets the day's third: the set's gems, keyed daily:{player}:{day}:set (D-66).
+-- Every newly applied player, long enough or not: the pass's points, 0 under five seconds.
 INSERT INTO season_pass (player_id, season_id, points) VALUES (?,?,?)
 ON DUPLICATE KEY UPDATE points = points + VALUES(points);         -- 10, and 50 a goal met
 SELECT points, premium, free_paid, premium_paid FROM season_pass
@@ -1088,10 +1090,11 @@ achievement, a goal, a pass tier, a season's place, a tournament's place or a pa
 order brings. Until D-13 the match path had its own copy, and reconciliation
 held because the two happened to agree.
 
-Limited-stock items take a `DECR stock:{sku}` in j-redis *before* this
-transaction and `INCR` it back if the transaction fails. The store is the
-right place for a hot counter; the database is the right place for the
-consequence.
+**Not built: limited stock.** The design takes a `DECR stock:{sku}` in j-redis before this
+transaction and `INCR`s it back if the transaction fails: the store is the right place for a hot
+counter, the database for the consequence. A catalogue that sets `stock` is refused at start
+(`platform/Catalogue`, 04 §8), since after a store loss the counter would have to be rebuilt from
+the ledger.
 
 ### Granting a reward
 
@@ -1160,9 +1163,9 @@ is not throughput, it is **deadlock**.
   before each retry — by `Tx` itself, since InnoDB rolls back all of it only on
   a deadlock and just the statement on a lock wait timeout — so a retry is safe
   by construction, and idempotency makes it safe even so.
-- Optimistic `version` columns are used only where a human is in the loop and a
-  conflict should be reported rather than retried — editing team settings, for
-  instance.
+- Optimistic `version` columns: `tournament.version`, checked by every change of a tournament's
+  state, the worker's tick included (D-41). `player.version` is unused, and `team` has none:
+  nothing edits a team's settings yet.
 
 ## 7. Connection pooling
 
@@ -1361,7 +1364,7 @@ a design decision rather than an afterthought. **Built 2026-09-26**
 
 | What | How | Target |
 |---|---|---|
-| Nightly full | `mysqldump --single-transaction` or a snapshot of the data directory | Restore tested monthly |
+| Nightly full | `mysqldump --single-transaction`, taken from the backup machine (a physical copy: designed, not built, below) | Proved weekly (`restore-proof`), drilled by hand monthly |
 | Point-in-time | binlog shipping, `binlog_format=ROW`, retained 7 days | RPO ≈ 1 minute |
 | Replica | asynchronous with GTIDs, on machine C, read-only | Promotion is a script an operator runs ([D-8](../architecture/03-decision-log.md#d-8--failover-is-scripted-not-automatic)), below |
 
@@ -1411,15 +1414,18 @@ hand once a month. Four things are added.
 
   The monthly drill by hand stays, with its exact row counts, from the copy off
   the site when there is one.
-- **Kept off the site.** `backup-offsite.sh`, run after each dump: the newest
-  dump and every binlog copy since the oldest dump kept, each encrypted
+- **Kept off the site.** `backup-offsite.sh`, hourly (`backend-backup-offsite.timer`). It flushes
+  the primary's binary logs first, so only closed binlogs leave, then the newest dump and every
+  closed binlog copy since the oldest dump kept, each encrypted
   (`openssl enc -aes-256-cbc -pbkdf2`, a key in
   `/etc/backend/credentials/offsite.key` that is also kept away from the
   machines) into a local mirror. The mirror is pushed by `rsync --delete` over
   SSH to `OFFSITE_TARGET`, so the host off the site holds what the backup
   machine does: 8 days of dumps, and every binlog since the oldest. Unset, the
   copy is off and records nothing (Q-53). `fetch-offsite.sh` brings a copy back
-  and decrypts it for a restore, and the drill restores from it.
+  and decrypts it for a restore. The drill by hand restores from it, and
+  `backend-restore-proof-offsite.timer` (the first Sunday of each month, 05:00 UTC) runs the proof
+  from it by itself, into `backend_proof_offsite`, recorded as a proof.
 - **Watched.** Each step records its outcome in `backup_run` (V32, `seconds` V33;
   its DDL in [§3](#operations)), through `scripts/record-backup.sh`: its kind (1
   dump, 2 proof, 3 off the site), when it started and finished, whether it worked,
@@ -1557,7 +1563,7 @@ and may be restarted by systemd before it ever succeeds.
 ## 11. Read replicas (Phase 4)
 
 Not needed at launch scale: the write rate is modest and the read rate is
-absorbed by the j-redis cache-aside layer. When it becomes necessary:
+absorbed by MySQL itself; a j-redis cache-aside layer (not built) is the step before replicas. When it becomes necessary:
 
 - Route **only** queries that tolerate staleness — profile views, match
   history, leaderboard snapshots.

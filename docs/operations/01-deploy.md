@@ -14,8 +14,8 @@ and so have arena TLS (§8), MySQL's own setup with TLS (§9), the binlog stream
 and the dump under systemd (§10), the scratch server's unit (§10), and nginx
 with a certificate from placeholder to renewal (§4, §11). The proofs and the
 copy off the site are drilled as scripts (`backup-drill.sh`), not yet as
-units. What remains is listed in [§6](#6-still-to-be-written): the domain and
-the CA. The pictures are in
+units. Nothing of the certificate remains to be decided ([§6](#6-still-to-be-written)): its source
+and the site's address were settled by [D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name) (§11). The pictures are in
 [diagrams/07](../diagrams/07-deploy-and-operations.md).
 
 ## 1. What runs where
@@ -326,8 +326,9 @@ Which processes a change reaches, and a change to the schema or the wire:
 
 On each machine the new release is unpacked beside the running one and
 switched to by the symlink (§2): `tar -xzf backend-<version>.tar.gz -C /opt`;
-any unit, drop-in or nginx file that changed is copied from the release's
-`systemd/` and `nginx-conf/` and followed by `systemctl daemon-reload` (and
+a unit or drop-in that changed is copied from the release's `systemd/`, an nginx file that
+changed is merged by hand into `/etc/backend/nginx/` (keeping this site's `server_name`,
+upstreams and map, which a copy would overwrite), then `systemctl daemon-reload` (and
 `systemctl reload backend-nginx`, which tests the configuration first); then
 `ln -sfn /opt/backend-<version> /opt/backend`. The release carries its runtime,
 MySQL, nginx and j-redis too (09 §4): a new version of one is a new release,
@@ -380,7 +381,7 @@ without the other is no worse than 2.2.0; the files carry over.
 
 | Item | Blocked by |
 |---|---|
-| The certificate, for nginx and the arenas | Two choices: the domain and the CA ([S-6](../defects.md#5-security-and-input)). Obtaining, checking, installing, renewing and watching it are built (§11) |
+| The certificate | Settled 2026-10-19 ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)): no domain, the backend's own CA, on the front's nginx alone ([S-6](../defects.md#5-security-and-input)); issuing, checking, installing, renewing and watching it are built (§11, [06](06-certificates.md)) |
 
 **No longer open: the store's copies off its machine.**
 [D-31](../architecture/03-decision-log.md#d-31--the-store-is-not-copied-off-its-machine-on-a-timer-before-replication)
@@ -437,8 +438,10 @@ unit **3.1 (OK)**, down from 9.0 before the sandbox.
    (`worker-instance.env.example`), with its metrics port: read after
    `worker.env`, so it wins. A drop-in's `Environment=` would not, as a file's
    settings override it; checked with systemd 255.
-5. **Units.** Copy the release's `systemd/*.service` to `/etc/systemd/system/`, then
-   `systemctl daemon-reload` and enable: `backend-platform`, `backend-gateway`,
+5. **Units.** Copy the release's `systemd/*.service` and `systemd/*.timer` to
+   `/etc/systemd/system/` (as the install guide's step 5 does), then `systemctl daemon-reload`
+   and enable: `backend-store@<name>` where a store runs (§3), `backend-mysql` on A and C (§9),
+   `backend-platform`, `backend-gateway`,
    `backend-worker@<id>` and `backend-arena@<name>`, each id and name unique
    across the fleet and stable (§2). Pin each arena to its own cores with a drop-in
    (`CPUAffinity=`), since the core ranges belong to the machine. The backup
@@ -660,13 +663,22 @@ openssl x509 -req -in server.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial -d
     -extfile <(printf "subjectAltName=IP:10.0.0.1\nextendedKeyUsage=serverAuth") -out server-cert.pem
 ```
 
+On the database machine (A, and C for the replica), the three files where `backend.cnf` reads
+them, the key readable by `mysqld` alone; `ca-key.pem` stays off the machine:
+
+```
+install -d -m 0755 /etc/mysql-tls
+install -m 0644 ca.pem server-cert.pem /etc/mysql-tls/
+install -m 0640 -o root -g mysql server-key.pem /etc/mysql-tls/
+```
+
 **The processes' trust store** holds that CA and nothing else, as PKCS#12
 with no password: it holds only a public certificate, so there is no secret to
 put in a URL or a unit. `/etc/backend/tls/mysql-ca.p12`, mode 0644, on every
 machine that runs `platform` or `worker`:
 
 ```
-keytool -J-Dkeystore.pkcs12.certProtectionAlgorithm=NONE -J-Dkeystore.pkcs12.macAlgorithm=NONE \
+/opt/backend/runtime/bin/keytool -J-Dkeystore.pkcs12.certProtectionAlgorithm=NONE -J-Dkeystore.pkcs12.macAlgorithm=NONE \
     -importcert -noprompt -alias mysql-ca -file ca.pem \
     -storetype PKCS12 -keystore /etc/backend/tls/mysql-ca.p12 -storepass unused
 ```
@@ -748,6 +760,7 @@ which it does not name, and fails.
 [client]
 user     = failover
 password = …
+socket   = /run/backend-mysql/mysqld.sock
 
 [client_remote]
 ssl-mode = VERIFY_IDENTITY
@@ -933,7 +946,7 @@ server's unit was run under systemd on its own (below).
 2. Initialise it once, `/opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/scratch-my.cnf
    --initialize-insecure --user=mysql`; enable and start
    `backend-scratch-mysql.service`; set root's password over its socket
-   (`mysql -S /run/backend-scratch-mysql/mysqld.sock -u root`, then
+   (`/opt/backend/mysql/bin/mysql -S /run/backend-scratch-mysql/mysqld.sock -u root`, then
    `ALTER USER 'root'@'localhost' IDENTIFIED BY '…'`) and put it in
    `/etc/backend/credentials/mysql-scratch.cnf` (mode 0600, `[client]` with
    `host=127.0.0.1`, `port=3309`, `user=root`, `password`). The unit is
@@ -975,10 +988,11 @@ server's unit was run under systemd on its own (below).
 **Watch it** ([runbook §5](02-runbook.md#5-what-to-watch)): every worker
 reports, from `backup_run`, when each step last succeeded and whether its last
 run failed (`backend_backup_succeeded_timestamp_seconds{kind}`,
-`backend_backup_failed{kind}`, §7). Those are what alerts should read. No alert
-rules ship (§7), so until something alerts on them the daily check reads them,
-or `backup_run`, by hand, with `systemctl status backend-binlog-stream`
-(above).
+`backend_backup_failed{kind}`, §7). The watch's rules read them (`BackupDumpStale`,
+`BackupProofStale`, `BackupOffsiteStale`, `BackupFailed`, `RestoreTooSlow`;
+[08](08-monitoring.md), D-86), on C's platform, whose `BACKEND_WATCH_TARGETS` names both workers.
+The stream records nothing, so `systemctl status backend-binlog-stream` stays in the daily
+check (above).
 
 ## 11. The certificate
 
@@ -997,8 +1011,9 @@ this file's history (git).
 at every scrape, as `backend_gateway_edge_certificate_expiry_timestamp_seconds`
 (`BACKEND_EDGE_CERTIFICATE` in `gateway.env`). An unreadable file reads as 0, so the alert fires
 rather than the series vanishing. It is the earliest expiry in the chain, not the leaf's: a device
-refuses the chain when an intermediate has expired, too. Alert under 30 days: the certificate is
-renewed by hand once a year (06 §6).
+refuses the chain when an intermediate has expired, too. The watch's `CertificateExpiring` fires
+under 14 days ([08](08-monitoring.md)); renew a month before the end, by the yearly routine (06 §6),
+not on the alert.
 
 **What the client must do**, for whoever builds it ([06 §5](06-certificates.md#5-in-the-app)):
 - `https://` and `wss://` only, with no plaintext fallback, and TLS on 9001;

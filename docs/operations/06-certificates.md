@@ -102,7 +102,8 @@ It then puts the certificate in `/etc/backend/tls/fullchain.pem` and the key in
 `/etc/backend/credentials/privkey.pem` (0600). It checks them with `nginx -t`, putting the
 previous ones back if nginx refuses them. It reloads nginx, which drops no connection, and
 checks what nginx then serves on 443 and on 9001. Before nginx has ever started, it installs the
-files and says nginx serves them when started.
+files and says nginx serves them when started; it makes nginx's log directory for `nginx -t`
+first (O-49), as the unit does at its first start.
 
 `--check` connects to each port as a device would, for every name, and fails on anything wrong
 or within 14 days:
@@ -131,7 +132,7 @@ The headless driver does the same with `--trust ca.pem` ([client/Headless/README
 
 **Not proved here**: the app in Unity on a phone. The core's trust is tested in `Core.Tests`
 (`TrustRootTests`), and the Unity scripts compile against stubs (`client/unity-check.sh`). Whether
-Unity's own runtime honours the core's certificate checks, on Android and iOS, is to be seen on
+Unity's own runtime honours the core's certificate checks, on Android (C-10), is to be seen on
 devices: nothing here runs Unity.
 
 ## 6. Renewing, every year
@@ -143,9 +144,11 @@ A certificate lasts 398 days. Renew it a month before its end:
 Nothing else changes. Players are not interrupted: nginx reloads without dropping a connection, and
 the app trusts the root, not the certificate.
 
-**Know when.** `install-certificate.sh --check` prints the days left. The gateway also reports the
-certificate's end as `backend_gateway_edge_certificate_expiry_timestamp_seconds` (01 §7): alert
-under 30 days. The runbook's routine lists the renewal ([02 §6](02-runbook.md#6-routine)).
+**Know when.** `install-certificate.sh --check` prints the days left and fails within 14. The
+gateway reports the certificate's end as `backend_gateway_edge_certificate_expiry_timestamp_seconds`
+(01 §11), and the watch raises `CertificateExpiring` within 14 days of it
+([08 §3](08-monitoring.md#3-the-alerts)): two weeks after the renewal was due, so renew on the
+routine's date, not on the alert ([02 §6](02-runbook.md#6-routine)).
 
 ## 7. Adding an arena, or changing the address
 
@@ -184,9 +187,10 @@ under 30 days. The runbook's routine lists the renewal ([02 §6](02-runbook.md#6
   and connect to it directly, without nginx: that tests the arena's own TLS, which the site does
   not use.
 - **On a developer's machine**, `private-ca.sh root` and `issue` make a test CA in any directory,
-  for `127.0.0.1` and the arena's name. `run-front.sh` does it in `work/front` for the address
-  clients dial, keeps the root, and issues the certificate again when the address changes
-  ([D-91](../architecture/03-decision-log.md#d-91--a-run-by-hand-gets-the-sites-front-of-its-own-from-the-releases-nginx-and-configuration)).
+  for `127.0.0.1` and the arena's name. `dev-nginx.sh` does it in `work/nginx` for the address
+  clients dial, 127.0.0.1 and the arena's name, keeps the root, and issues the certificate again
+  when the address changes
+  ([D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)).
 
 ## 10. When something goes wrong
 
@@ -197,7 +201,7 @@ under 30 days. The runbook's routine lists the renewal ([02 §6](02-runbook.md#6
 | A match connection closed at once, `stream.log` with the name and no upstream | the name is not in `backend-stream.conf`'s map on the front (05 §3) |
 | `install-certificate.sh`: `does not verify` | `/etc/backend/tls/ca.pem` is not the root that signed it |
 | `install-certificate.sh`: `does not name …` | issued before a name was added to the map or the address changed: issue again |
-| Expired | renew (§6); the alert should have come 30 days before |
+| Expired | renew (§6); `CertificateExpiring` should have fired 14 days before (08 §3) |
 | By hand, what 443 serves | `openssl s_client -connect 203.0.113.10:443 -verify_ip 203.0.113.10 -CAfile ca.pem </dev/null` |
 | By hand, what 9001 serves for an arena | `openssl s_client -connect 203.0.113.10:9001 -servername a1.arena.internal -verify_hostname a1.arena.internal -CAfile ca.pem </dev/null` |
 

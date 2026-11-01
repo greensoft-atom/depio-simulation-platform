@@ -1,4 +1,4 @@
-# The platform API (docs/operations/01-deploy.md). One per machine, behind that machine's nginx.
+# The platform API (docs/operations/01-deploy.md). One per machine, behind the front's nginx (D-82).
 #
 # Install: see docs/operations/01-deploy.md §7. Settings in /etc/backend/platform.env
 # (deploy/env/platform.env.example); credentials in /etc/backend/credentials/.

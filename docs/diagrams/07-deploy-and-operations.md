@@ -132,8 +132,8 @@ flowchart LR
     sd["systemd/<br/>units, timers, drop-in examples"]
     ev["env/<br/>the six env examples"]
     mc["mysql-conf/<br/>backend.cnf.example, scratch-my.cnf.example"]
-    nc["nginx-conf/<br/>nginx.conf, backend.conf, backend-platform.conf"]
-    sc["scripts/<br/>the twelve operational scripts"]
+    nc["nginx-conf/<br/>nginx.conf, backend.conf, backend-platform.conf,<br/>backend-upstreams.conf, backend-stream.conf"]
+    sc["scripts/<br/>the fifteen operational scripts"]
     vs["VERSIONS.md<br/>what is inside, with versions"]
     cm["COMMIT<br/>the git commit"]
     tgz --> root

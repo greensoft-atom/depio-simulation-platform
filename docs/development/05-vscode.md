@@ -98,10 +98,10 @@ own.
 in the Run and Debug view.
 
 **Attach: platform, worker, gateway, arena.** Attach to a process
-`run-local.sh` started with a debugger port:
+`dev-backend.sh` started with a debugger port:
 
 ```bash
-DEBUG=1 ./run-local.sh start          # every process; or: DEBUG=1 ./run-local.sh start store platform
+DEBUG=1 ./run-local.sh start          # every process; or one: DEBUG=1 ./dev-backend.sh restart platform
 ```
 
 Then pick "Attach: platform" (5005), "Attach: worker" (5006), "Attach: gateway"
@@ -110,18 +110,18 @@ since the release was built from them. Rebuild the release after changing the
 sources.
 
 **Launch: platform, worker, gateway, arena.** Runs one process from its sources,
-on `vendor/`'s JDK, with `run-local.sh`'s arguments, ports and database. Start what
-it needs first, leaving it out:
+on `vendor/`'s JDK, with `dev-backend.sh`'s arguments, ports and database; the
+arena launched so announces 127.0.0.1 through nginx's 9001, for clients on this
+machine. Start what it needs first, leaving it out:
 
 ```bash
-./run-local.sh start store                        # for "Launch: platform"
-./run-local.sh start store platform worker arena  # for "Launch: gateway"
+./dev-mysql.sh start && ./dev-jredis.sh start && ./dev-nginx.sh start   # nginx as root; else 03 §5.0's ports
+./dev-backend.sh start worker gateway arena       # for "Launch: platform"
+./dev-backend.sh start platform worker arena      # for "Launch: gateway"
 ```
 
 Then run the matching configuration, and the bots through it with
-`./run-local.sh bots`. The development MySQL starts with the platform or the
-worker through `run-local.sh`; for "Launch: platform" alone, start it first with
-`./dev-mysql.sh start`.
+`./dev-backend.sh bots`.
 
 **A test**: the Testing view, or the "Debug Test" link above a test method. These
 use `java.test.config`.
@@ -171,5 +171,5 @@ extensions' code say, and was not seen working here.
 | `pom.xml` errors such as "Failed to read artifact descriptor", or "Could not transfer artifact … from/to central" | `work/settings.xml` is missing, or the import ran before it existed: `./build-offline.sh` or `. ./dev-env.sh`, then the command "Java: Clean Java Language Server Workspace". |
 | A project on the wrong Java (Java Projects view → the project's JRE System Library) | `vendor/jdk-21` missing or not executable (§2 of [03](03-build-and-run.md#1-what-you-need-and-what-the-repository-touches)); then "Java: Clean Java Language Server Workspace". |
 | The database tests fail with `Communications link failure` | `./dev-mysql.sh start` |
-| "Attach" says "Failed to attach to remote debuggee VM" | The process was started without `DEBUG=1`, or has ended: `./run-local.sh status`. |
+| "Attach" says "Failed to attach to remote debuggee VM" | The process was started without `DEBUG=1`, or has ended: `./dev-backend.sh status`. |
 | The language server's own log | Output panel → "Language Support for Java"; or the command "Java: Open Java Language Server Log File" |

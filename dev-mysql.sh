@@ -8,6 +8,7 @@
 # hand's), and of their user, backend / backend-dev-password.
 #
 #   ./dev-mysql.sh start | stop | restart | status
+#   ./dev-mysql.sh test      it answers: backend logs in over TCP to both databases, backend_dev's schema named (D-92)
 set -euo pipefail
 . "$(dirname "$0")/dev-env.sh"
 M=$B/vendor/mysql-8.4/bin
@@ -52,6 +53,18 @@ status)
     if up; then echo "the development MySQL runs on 127.0.0.1:$(cd "$D/data" && "$M/mysql" --no-defaults \
                      -S mysqld.sock -u root -N -e 'SELECT @@port'), its files in $D"
     else echo "the development MySQL is not running"; exit 1; fi ;;
+test)
+    up || { echo "FAILED  the development MySQL is not running: $0 start"; exit 1; }
+    echo "ok      the development MySQL on 127.0.0.1:$MYSQL_PORT"
+    # As the backend logs in: over TCP, its user and password.
+    as_backend() { MYSQL_PWD=backend-dev-password "$M/mysql" --no-defaults -h 127.0.0.1 -P "$MYSQL_PORT" -u backend -N -e "$1" "$2"; }
+    as_backend 'SELECT 1' backend_test > /dev/null && as_backend 'SELECT 1' backend_dev > /dev/null \
+        || { echo "FAILED  backend could not log in to backend_test and backend_dev: $0 start makes them"; exit 1; }
+    echo "ok      backend logs in over TCP to backend_test and backend_dev"
+    v=$(as_backend "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1" \
+        backend_dev 2> /dev/null || true)
+    if [ -n "$v" ]; then echo "ok      backend_dev's schema: version $v"
+    else echo "ok      backend_dev has no schema yet: the platform makes it as it starts"; fi ;;
 *)
-    echo "usage: $0 start | stop | restart | status" >&2; exit 2 ;;
+    echo "usage: $0 start | stop | restart | status | test" >&2; exit 2 ;;
 esac

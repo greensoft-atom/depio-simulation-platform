@@ -15,9 +15,12 @@ Postman collection's run of 2026-10-06 against a stack built from this repositor
 |---|---|
 | Production, through the front's nginx (TLS) | `https://<the site's address>/v1/...`, for example `https://203.0.113.10/v1/shop`; the certificate is the backend's own CA's, so a client trusts its root, `ca.pem` (`curl --cacert ca.pem`; [operations/06](../operations/06-certificates.md)) |
 | One machine, straight to `platform` (tests, the examples below) | `http://127.0.0.1:8080/v1/...` (`PLATFORM_PORT`; the examples ran on 8180) |
+| A run by hand, through `dev-nginx.sh`'s nginx ([D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)) | `https://<address>/v1/...`, trusting `work/nginx/ca/ca.pem` (`curl --cacert work/nginx/ca/ca.pem`; [development/03 §5.0](../development/03-build-and-run.md#50-clients-on-other-machines-the-front)); `http://<address>/...` answers a 308 to it |
 
 nginx proxies `/v1/` and `/lobby` only, so `/health` is not reachable from outside. It also
-limits the four login and registration `POST`s to 2 a second per address (burst 30), answering
+limits every request to the four login and registration paths (`/v1/sessions`, `/v1/accounts`,
+`/v1/guests`, `/v1/accounts/upgrade`; a logout and an account deletion included) to 2 a second
+per address (burst 30), answering
 its own 429 (not JSON) over that, and takes bodies of 4 KB at most (its own 413, not JSON).
 
 ### Requests
@@ -59,13 +62,15 @@ Any route can also answer:
 | 503 | `storage_unavailable` | MySQL or the store did not answer: try again shortly |
 | 500 | `internal` | a fault: report it |
 
-A path no route knows gets the server's own 404 page (HTML), not JSON.
+A path under no route's prefix gets the server's own 404 page (HTML), not JSON; a wrong path
+under one (`/v1/sessions/x`, `/v1/teams/x`) is a JSON 404 `no_such_route`, or `not_found` under
+`/v1/queue/` and `/v1/party/`.
 
 ### Limits
 
 | What | Limit | Answer over it |
 |---|---|---|
-| Registrations, logins (password and guest key), guests made, upgrades | 30 a minute per address, all together | 429 `too_many_attempts` `try again in <N> s`, header `Retry-After: <N>` |
+| Registrations, logins (password and guest key), guests made, upgrades, account deletions with a password | 30 a minute per address, all together | 429 `too_many_attempts` `try again in <N> s`, header `Retry-After: <N>` |
 | Password logins naming one username | 10 in 15 minutes | the same |
 | Password hashing busy (168 at once) | | 503 `busy`, `Retry-After: 1..5` |
 | Friend requests, team invitations, team applications | 20 an hour each, per player | 429 `too_soon` (no `Retry-After`) |
@@ -218,8 +223,8 @@ The name is free to register again. There is no undo.
 
 ```http
 DELETE /v1/accounts
-Authorization: Bearer 1eOf0B5d...
-{"password": "hunter2-hunter2"}
+Authorization: Bearer <B's token>
+{"password": "example-password-1"}
 ```
 ```json
 204
@@ -229,7 +234,7 @@ Authorization: Bearer 1eOf0B5d...
 |---|---|---|
 | 400 | `invalid_body` | a registered account sent no password |
 | 401 | `no_token`, `invalid_session` | no session |
-| 403 | `wrong_password` | not the account's password; counted as a failed login |
+| 403 | `wrong_password` | not the account's password; every attempt, right or wrong, counts as a login attempt |
 | 409 | `leader_with_members` | the player leads a team with others in it: hand it over first |
 | 429, 503 | `too_many_attempts`, `busy` | as a login |
 | 503 | `storage_unavailable` | try again: the same call, with the same session, finishes it |
@@ -595,6 +600,8 @@ against `arenaHost`, as before:
 ```
 200 {"arenaHost":"203.0.113.10","arenaPort":9001,"ticketId":"<22 characters>","tls":true,"tlsName":"b1.arena.internal"}
 ```
+
+The examples come from runs with the arena reached directly (`127.0.0.1:9021`, no TLS). A run by hand since [D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it) has nginx in front of its arena, as the site does: every grant names `<address>`, 9001, `"tls":true` and `"tlsName":"a1.arena.internal"`.
 
 The modes: `ffa` (the public arena, by a match request), `duel`, `rffa` (ranked free-for-all),
 `maze` (1 a side); `tvt`, `coop`, `domination`, `tag` (3 a side, a party of up to 3 queues

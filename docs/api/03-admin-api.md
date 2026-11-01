@@ -60,6 +60,9 @@ The live arenas (an arena's entry lapses 10 s after its last announcement), as a
 200 [{"name":"arena-1","host":"127.0.0.1","port":9021,"players":0,"maxPlayers":600,"tls":false,"rooms":1,"maxRooms":4}]
 ```
 
+From a run with the arena reached directly; behind nginx (the site, or a run by hand since D-92)
+an arena announces the public address, 9001 and `"tls":true`.
+
 ### `GET /admin/rooms`
 
 Every room of every live arena, as last announced (up to 3 s old). `stage`: `open` (the

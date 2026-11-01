@@ -216,8 +216,8 @@ it was never refused.
 
 | Component | Impact | Action |
 |---|---|---|
-| One `arena` | Its rooms end; up to `MAX_ROOMS` × `MAX_PLAYERS` players (600 with the example settings) returned to the lobby | systemd restarts it; rooms are recreated on demand. Investigate only if it loops. |
-| One `gateway` | Its connections drop | Clients retry another endpoint. Restart; no state to recover. |
+| One `arena` | Its rooms end; up to `MAX_ROOMS` × `MAX_PLAYERS` players (1 800 with the example settings: 12 rooms of 150) returned to the lobby | systemd restarts it; rooms are recreated on demand. Investigate only if it loops. |
+| One `gateway` | Its connections drop | Clients reconnect through the front, whose nginx passes over the lost gateway. Restart; no state to recover. |
 | One `platform` | In-flight lobby requests fail | Stateless; restart. |
 | One `worker` | Results back up | Restart it. What it had in flight stays pending for it in the stream: the same instance name re-drives it at once, and if the machine is gone for good any other worker takes it over once idle a minute, so nothing is lost ([05](../detailed-design/05-worker-and-events.md#the-move-onto-streams-designed-2026-09-29-plan-item-10)). Confirm `backend_worker_pending` and `backend_worker_queue_depth` drain. |
 | j-redis `events` | Results stop draining; arenas spool to local disk | Promote its replica ([§2](#2-stateful-primary-failure)); the arenas' spools drain into it, and the workers apply the backlog at their own rate: 600 results took one worker 76 s after a promotion on the development machine (rehearsed under load, [architecture/02 §6](../architecture/02-availability.md#6-rehearsed-under-load-designed-2026-09-30-plan-item-23)). Without a replica: restore the store, then watch spool files drain, checking disk on the arena machines. Started empty, the store has no result group: the workers make it again at their next read or re-drive ([defect D-27](../defects.md#3-data-and-the-result-pipeline)). |
@@ -347,9 +347,11 @@ machine:
   start `backend-worker@c1` and `@c2` elsewhere only for the capacity. Rebuild
   replicas when the machine returns.
 
-A replacement machine takes the lost one's name and gets its own certificate
-once the name points at it ([01 §11](01-deploy.md#11-the-certificate)): the
-old one's key went with its disk, and nothing needs it.
+A replacement machine is installed as the others are and given the site's `ca.pem`,
+`fullchain.pem` and `privkey.pem` ([06 §4](06-certificates.md#4-installing-it-on-every-machine)): nothing is issued
+for it, since one certificate serves every machine (D-82). If the lost disk could be read by
+others, the site's key went with it: issue a new certificate (06 §6) and install it on every
+machine.
 
 In all three cases the surviving machines keep serving. The thing to watch is
 whether the remaining arena capacity is being oversubscribed; if so, cap
@@ -409,13 +411,13 @@ stand.
 
 | When | Task |
 |---|---|
-| Daily | Until the owner names where alerts go (Q-60), `GET /admin/alerts` on a machine ([08 §5](08-monitoring.md#5-reading-and-silencing-alerts)): what the watches are raising, disks included. On the backup machine, `systemctl status backend-binlog-stream`: the stream records nothing, so nothing else says it stopped (§5). Until alert rules read the backups' metrics (§5), read them by hand: each step's last success and last outcome, `SELECT kind, MAX(finished_at), MAX(IF(ok, finished_at, NULL)) FROM backup_run GROUP BY kind` on the primary (kind 1 the dump, 2 a proof, 3 the copy off the site), or the worker's `backend_backup_*` (01 §7). The store is not copied on a timer ([D-31](../architecture/03-decision-log.md#d-31--the-store-is-not-copied-off-its-machine-on-a-timer-before-replication)); `backup-store.sh` is for a copy by hand, before an upgrade. Log rotation, disk check |
+| Daily | Until the owner names where alerts go (Q-60), `GET /admin/alerts` on a machine ([08 §5](08-monitoring.md#5-reading-and-silencing-alerts)): what the watches are raising, disks included. On the backup machine, `systemctl status backend-binlog-stream`: the stream records nothing, so nothing else says it stopped (§5). If the watch is off, read the backups' metrics by hand (the watch's backup rules read them, §5): each step's last success and last outcome, `SELECT kind, MAX(finished_at), MAX(IF(ok, finished_at, NULL)) FROM backup_run GROUP BY kind` on the primary (kind 1 the dump, 2 a proof, 3 the copy off the site), or the worker's `backend_backup_*` (01 §7). The store is not copied on a timer ([D-31](../architecture/03-decision-log.md#d-31--the-store-is-not-copied-off-its-machine-on-a-timer-before-replication)); `backup-store.sh` is for a copy by hand, before an upgrade. Log rotation, disk check |
 | Weekly | Restart arenas one at a time during low traffic (while one drains, the others take every new match). A few minutes before, tell the players: `POST /admin/notice {"text", "reason"}` reaches everyone in the lobby ([04 §10](../detailed-design/04-platform-services.md#the-third-slice-a-notice-to-the-lobby-designed-2026-10-01-plan-item-44)). A stop drains ([01 §8.6](../detailed-design/01-arena.md#86-draining-an-arena-designed-2026-09-29-plan-item-7)): public players go back to the lobby at once with their results, made matches play out, so `systemctl stop` may take up to eleven minutes; the journal says `drained in N s`, or `the drain ran out` if a match was cut short (paid, not rated). Review `WARN` counts; `install-certificate.sh --check` on each machine |
 | Per release | Rolling deployment ([01-deploy §5](01-deploy.md#5-rolling-deployment)) |
 | Weekly, by itself | **The restore proof** (`backend-restore-proof.timer`, Sundays 04:00 UTC): the newest dump and the copies restored onto the scratch server, into `backend_proof`, and checked; its outcome recorded in `backup_run` whichever it is. Its alert, or the daily check above, is the check. |
 | Monthly | **The restore drill** (below), by hand, with its exact counts, at a quiet hour; from the copy off the site once there is one (`fetch-offsite.sh`). The store's drill on each store's primary. The proof from off the site also runs by itself, the first Sunday at 05:00 UTC (`backend-restore-proof-offsite.timer`), into `backend_proof_offsite`, never at the same time as the weekly one. |
 | Monthly, by itself too | **Security fixes for what the release carries** (D-77): the operating system's updates no longer reach the Java runtime, MySQL, nginx or the OpenSSL compiled into it. Read the advisories for Temurin 21, MySQL 8.4, nginx and OpenSSL 3.5 (the versions are the release's `VERSIONS.md`); a fix is a new version in `vendor/` (`vendor/VERSIONS.md`, "Moving a version") and a release, rolled out as §5 of the deploy document says. |
-| Yearly, a month before its end | **The site's certificate**: issued again from the backend's root and installed on every machine ([06 §6](06-certificates.md#6-renewing-every-year)). `install-certificate.sh --check` says the days left; the gateway's `backend_gateway_edge_certificate_expiry_timestamp_seconds` too, to alert on under 30 days. |
+| Yearly, a month before its end | **The site's certificate**: issued again from the backend's root and installed on every machine ([06 §6](06-certificates.md#6-renewing-every-year)). `install-certificate.sh --check` says the days left; the gateway's `backend_gateway_edge_certificate_expiry_timestamp_seconds` too; the watch alerts under 14 days. |
 | Quarterly | **Rehearse a failover.** A promotion procedure that has never been run is a hypothesis. |
 
 ### Recovering to a moment
@@ -520,7 +522,7 @@ with the grants in [01 §9](01-deploy.md#9-mysql), into files only its own user,
 `backend-backup`, can read (0600 in 0700 directories):
 `--single-transaction` (one snapshot, no table locks), with the binlog position
 it was taken at, and with no `USE` statement, so it restores under any name.
-`backend/scripts/restore-drill.sh <dump> <source> <scratch>` restores it into a
+`/opt/backend/scripts/restore-drill.sh <dump> <source> <scratch>` restores it into a
 scratch database on the same server. It then replays the binlog from the
 dump's position to the moment the drill began, and checks the result. Every
 table's row count must equal the source's, which is exact only if nothing
@@ -560,14 +562,16 @@ published and not yet consumed, and the dead list (copied out when it alerts,
 each store's replica, on another machine, holds what one would
 ([01 §6](01-deploy.md#6-still-to-be-written)). Both scripts run on the store's
 own machine, as root (they read its data directory and the password file), and
-reach it on `127.0.0.1` (01 §3). For `events`, give its port, and its password
-file in `BACKEND_STORE_PASSWORD_FILE` if it has its own.
-`backend/scripts/backup-store.sh <data-dir> <out>
+reach it on `127.0.0.1` (01 §3). Both read the store's password from
+`BACKEND_STORE_PASSWORD_FILE`, needed for either store:
+`BACKEND_STORE_PASSWORD_FILE=/etc/backend/credentials/store-password /opt/backend/scripts/backup-store.sh /var/lib/backend-store/session <out> 6379`.
+For `events`, port 6380, and its own file if it has one.
+`/opt/backend/scripts/backup-store.sh <data-dir> <out>
 [port]` follows j-redis's own procedure (j-redis-service `docs/08` §12): stop
 automatic rewrites, compact, copy the manifest first and then every file it
 names, and put the setting back even if the copy fails. That is consistent
 because files are deleted only when a rewrite commits.
-`backend/scripts/store-restore-drill.sh <backup> <source-port> <scratch-port> session|events`
+`/opt/backend/scripts/store-restore-drill.sh <backup> <source-port> <scratch-port> session|events`
 starts a second server on a copy and compares what matters, each instance's
 own keys, named by the fourth argument: on `session`, the key count, the
 all-time board member by member with scores, and the names; on `events`, the

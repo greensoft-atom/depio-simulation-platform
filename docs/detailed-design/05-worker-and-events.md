@@ -160,6 +160,11 @@ boards and the stream, as in it: where to look first if it must go faster.
 | `s:platform` | platform | `analytics` | 7 days | Low. Purchases, team changes, tournament transitions. |
 | `s:audit` | platform | `audit` | 90 days | **None.** Admin actions and bans. |
 
+**As built, only `s:match-result` exists, read by the one group `rewards`.** The `analytics` group
+was not made (§6, D-47); `s:match-event` and `s:platform` are not built, and `s:audit` will not be
+(D-50): admin actions are recorded in MySQL's `admin_audit`, in the change's own transaction
+([06 §3](06-persistence-mysql.md)).
+
 **The seven days are not affordable** (defect [D-26](../defects.md#3-data-and-the-result-pipeline)):
 j-redis keeps a stream in memory, and a week of `s:match-result` is about 54 GB at
 the design's load. 24 hours is recommended, replay beyond it reading MySQL
@@ -203,8 +208,8 @@ without parsing the payload:
 }
 ```
 
-**As built, there is no `key`**: the interim queue has one consumer per entry and
-nothing to partition, so the envelope is `id, type, v, ts, payload`. The key
+**As built, there is no `key`**: one group reads the stream and nothing is partitioned (§2, §5),
+so the envelope is `id, type, v, ts, payload`. The key
 belongs to the streams design (§5).
 
 `id` is the idempotency key that reaches MySQL. `v` exists because a consumer
@@ -301,6 +306,8 @@ delivery 1..3   retry with backoff 1 s, 5 s, 30 s
 delivery 4      move to s:dlq:{stream} with the error and stack, then XACK
 ```
 
+(The design's; as built the dead letters go to the list `q:match-result:dead`, §3.)
+
 The distinction that matters:
 
 | Failure | Response |
@@ -308,7 +315,7 @@ The distinction that matters:
 | Transient — MySQL unreachable, deadlock, lock timeout | Retry. Do not count toward the dead-letter limit; the entry is fine, the world is not. |
 | Permanent — unknown schema version, malformed payload, referential violation | Dead-letter immediately. Retrying a malformed entry three times just delays the alert. |
 
-**As built, in the interim queue**, a failure the worker did not expect (an
+**As built**, a failure the worker did not expect (an
 exception that is neither a database error nor a refusal it recognises) is not
 dead-lettered after three deliveries: it is retried at every re-drive, every
 30 s, for as long as it fails. An unexplained failure may be a bug the next
@@ -352,8 +359,8 @@ worker/rewards     XREADGROUP → MySQL transaction (06 §4):
                        matches, match_player, player, player_stat, ledger,
                        daily_goal, season_pass, inventory_item, player_day,
                        match_team and team for a team match
-                   → ZADD ... GT leaderboards in j-redis
-                   → push "evt.rewards" via the gateway (best effort, 03 §7)
+                   → push "evt.rewards" via the gateway to each player newly paid (best effort, 03 §7)
+                   → ZADD ... GT leaderboards in j-redis, every delivery
                    → XACK
                                  ──────────────────────────────────────────
 worker/analytics   XREADGROUP → append to the analytics table → XACK
@@ -396,10 +403,12 @@ its inventory as before. A player in no lobby is not found, and that is all.
 player paid in the call; `MatchResultConsumer.telling`, wired to the lobby push
 in `WorkerMain`). Clients get it through `LobbyClient.OnPush`.
 
-**The arena spools to local disk when j-redis is unreachable.** A match result
-is the one thing the arena produces that must not be lost, and the arena cannot
-block a room thread waiting for a store to come back. The spool is drained by
-the housekeeper thread on a timer.
+**The arena spools every result to local disk first.** A match result is the one thing the arena
+produces that must not be lost, and a room thread cannot wait for a store. The room hands the
+outcome to `MatchResultPublisher`, whose own thread (`match-result-publisher`) writes everything
+waiting to the spool directory before it touches the network, pushes from there, and deletes each
+file once the stream has it. A failing push is tried again after 2 s, and new results still reach
+the disk meanwhile.
 
 Leaderboards are updated *after* the MySQL commit, not inside the transaction.
 They live in j-redis and cannot participate in it. The board write is idempotent
@@ -440,7 +449,8 @@ read-back row of the table above. None exists yet.
 
 ## 8. Rebuilding after a store loss
 
-j-redis holds the live leaderboards and has no replica until Phase 4. Every
+j-redis holds the live leaderboards on the session store. Its replica (j-redis 2.2, promoted by
+script) covers a lost machine, not a store restored empty or a key deleted. Every
 score on them came from a result MySQL committed first, so they are a
 projection, and **built 2026-09-26** is the command that projects them again:
 `worker`'s `LeaderboardRebuild`, run as `systemctl start

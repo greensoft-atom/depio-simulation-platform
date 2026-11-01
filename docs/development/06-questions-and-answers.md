@@ -296,10 +296,11 @@ the development MySQL is not running
 ```
 
 **Other scripts that start and stop it:**
-- `./build-offline.sh` starts it for the tests and stops it at the end. If it was already
-  running, the build leaves it running.
-- `./run-local.sh start` starts it with the backend. `./run-local.sh stop` leaves it
-  running; stop it with `./dev-mysql.sh stop`.
+- `./dev-backend.sh build`, and so `./build-offline.sh`, starts it for the tests and stops it
+  at the end, unless it was running, `SKIP_TESTS=1`, or `JDBC_URL` names another.
+- `./run-local.sh start` starts it first, then j-redis, the backend and nginx.
+  `./run-local.sh stop` leaves it running; stop it with `./dev-mysql.sh stop`.
+- `./dev-mysql.sh test` says whether it answers as the backend logs in.
 - It does not start with the machine: after a reboot, `./dev-mysql.sh start`.
 
 **Connecting to it**, with the repository's client:
@@ -390,13 +391,16 @@ Then:
 
 | Interface | Address, on a run by hand | Test it with |
 |---|---|---|
-| the player API, HTTP | `http://127.0.0.1:8080/v1/...` | `curl`, Postman |
+| the player API, HTTP | `http://127.0.0.1:8080/v1/...`; from another machine `https://<address>/v1/...` through nginx | `curl`, Postman |
 | the admin API, HTTP | `http://127.0.0.1:9120/admin/...`, with `Authorization: Bearer <secret>` | `curl`, Postman |
-| the lobby, WebSocket | `ws://127.0.0.1:8081/lobby` | Postman's WebSocket request; `docs/api/lobby-example.mjs` (Node 22 or later) |
-| a match, binary over TCP | `127.0.0.1:9001` | `./run-local.sh bots`; `curl` and Postman cannot speak it |
+| the lobby, WebSocket | `ws://127.0.0.1:8081/lobby`; through nginx `wss://<address>/lobby` | Postman's WebSocket request; `docs/api/lobby-example.mjs` (Node 22 or later) |
+| a match, binary over TCP | `<address>:9001`, TLS, through nginx | `./dev-backend.sh bots`; `curl` and Postman cannot speak it |
+
+From another machine, Postman trusts `work/nginx/ca/ca.pem` (Settings, Certificates, CA
+certificates), and the firewall opens 80, 443 and 9001 ([03 §5.0](03-build-and-run.md#50-clients-on-other-machines-the-front)).
 
 **Start it with payments simulated and the admin API on.** The Postman collection needs
-both, and `run-local.sh` passes these to the backend:
+both, and `run-local.sh` (through `dev-backend.sh`) passes these to the backend:
 
 ```bash
 (umask 077; head -c 24 /dev/urandom | base64 > work/admin-token)    # the admin API's secret
@@ -405,7 +409,8 @@ export BACKEND_PAYMENT_PROVIDER=simulated BACKEND_ADMIN_ADDR=127.0.0.1:9120 \
 ./run-local.sh start
 ```
 
-**HTTP, with `curl`.** Output on fresh data; your token will differ:
+**HTTP, with `curl`.** Output on fresh data; your token will differ, and the arena's line, from
+2026-11-01 behind nginx (D-92), names this machine's address:
 
 ```console
 $ curl -s http://127.0.0.1:8080/health
@@ -419,7 +424,7 @@ $ curl -s -X POST http://127.0.0.1:8080/v1/sessions -H 'Content-Type: applicatio
 $ curl -s http://127.0.0.1:8080/v1/inventory -H "Authorization: Bearer <the token>"
 {"coins":0,"gems":0,"items":[]}
 $ curl -s http://127.0.0.1:9120/admin/arenas -H "Authorization: Bearer $(cat work/admin-token)"
-[{"name":"arena-1","host":"127.0.0.1","port":9001,"players":0,"maxPlayers":600,"tls":false,"rooms":1,"maxRooms":4}]
+[{"name":"arena-1","host":"<address>","port":9001,"players":0,"maxPlayers":600,"tls":true,"rooms":1,"maxRooms":4}]
 ```
 
 Every route, with its body and errors: [docs/api/01](../api/01-http-api.md) and
@@ -465,12 +470,13 @@ $ node docs/api/lobby-example.mjs http://127.0.0.1:8080 ws://127.0.0.1:8081/lobb
 they log in, get a seat from the lobby, connect to the arena, play, and leave.
 
 ```console
-$ ./run-local.sh bots 20 15
-lobby: 20 of 20 bots registered, logged in and got a ticket in 1.7 s (87 ms of wall time per bot)
-20 bots connected to 127.0.0.1:9001
+$ ./dev-backend.sh bots 20 15
+lobby: 20 of 20 bots registered, logged in and got a ticket in 4.4 s (220 ms of wall time per bot)
+20 bots connected to <address>:9001
+
 welcomes 20   disconnects 0   kicks 0 (last reason 0)   lobby failures 0
-over 15.0 s with every bot in: snapshots 4500   bytes 373722
-mean frame 83.0 B   per bot 15.00 snapshots/s, 1.22 KB/s (payload only)
+over 15.0 s with every bot in: snapshots 4499   bytes 364981
+mean frame 81.1 B   per bot 15.00 snapshots/s, 1.19 KB/s (payload only)
 stays 20, each joined and left on purpose
 ```
 
@@ -479,7 +485,7 @@ Healthy means:
 - `disconnects` and `kicks` are 0;
 - each bot gets 15 snapshots a second.
 
-To check only that the port is open: `(exec 3<>/dev/tcp/127.0.0.1/9001) && echo open`.
+To check only that the port is open: `(exec 3<>/dev/tcp/127.0.0.1/9021) && echo open` for the arena, 9001 for nginx in front of it.
 
 ## 9. How are VS Code's Java extensions set?
 
@@ -502,4 +508,4 @@ Before the first opening:
 3. Trust the workspace when VS Code asks.
 
 The debugger's configurations (`.vscode/launch.json`) attach to a process started with
-`DEBUG=1 ./run-local.sh start`, or launch one from its sources.
+`DEBUG=1 ./run-local.sh start` (or one: `DEBUG=1 ./dev-backend.sh restart platform`), or launch one from its sources.

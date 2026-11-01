@@ -42,17 +42,18 @@ added to a machine, or a port moved, is a change here and a platform restart
 
 ## 3. The alerts
 
-Every alert is `severity: page`: each needs a person. The names, from 04 §12's table; the meaning and
+Every alert pages: each needs a person (the payload has no severity field, §4). The names, from 04 §12's table; the meaning and
 the action are the runbook's:
 
 | Alert | It means | Runbook |
 |---|---|---|
 | `TargetDown` | a process's metrics cannot be read: it is down, or its port is wrong | [§5](02-runbook.md#5-what-to-watch) |
-| `PeerUnreachable` | another machine's platform cannot be reached: the machine, its platform or the private network | [§1](02-runbook.md#4-whole-machine-loss) |
+| `PeerUnreachable` | another machine's platform cannot be reached: the machine, its platform or the private network | [§4](02-runbook.md#4-whole-machine-loss) |
 | `StoreConnectionDown`, `EventsStoreConnectionDown`, `StoreWithoutReplica`, `EventsStoreWithoutReplica`, `StoreReplicaSilent`, `EventsStoreReplicaSilent` | a store lost, or its replica | [§2](02-runbook.md#2-stateful-primary-failure) |
 | `MysqlReplicaLagging`, `MysqlReplicaDown` | the MySQL replica behind, or unreadable | [§2](02-runbook.md#2-stateful-primary-failure) |
 | `GatewaySubscriptionDown`, `PushesUnheard` | pushes to a gateway's lobbies are lost | [§5](02-runbook.md#5-what-to-watch) |
-| `ResultSetAside`, `ResultsBacklogGrowing`, `WorkerFailing`, `ResultTrimmedUnapplied`, `ResultsUnreplicated`, `TournamentsStalling` | the result pipeline | [§3](02-runbook.md#3-per-component-procedures) |
+| `ResultSetAside`, `ResultsBacklogGrowing`, `WorkerFailing`, `ResultTrimmedUnapplied`, `TournamentsStalling` | the result pipeline | [§3](02-runbook.md#3-per-component-procedures) |
+| `ResultsUnreplicated` | results not confirmed by the `events` replica: each lives on one machine until it is back | [§2](02-runbook.md#2-stateful-primary-failure) |
 | `LedgerMismatch`, `LedgerCheckStale` | the ledger's nightly check | [§3](02-runbook.md#3-per-component-procedures) |
 | `HasherLineFull`, `TickSlow`, `ArenaCrashLoop` | the platform's logins turned away; a room's tick; an arena restarting | [§5](02-runbook.md#5-what-to-watch) |
 | `DiskFilling`, `DiskFillsWithinAWeek`, `MemoryLow` | the machine | [§5](02-runbook.md#5-what-to-watch) |

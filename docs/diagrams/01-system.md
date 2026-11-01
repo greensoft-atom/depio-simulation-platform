@@ -52,7 +52,7 @@ flowchart LR
     subgraph edgeTier["The front, one of the three machines"]
         nginx["nginx<br/>443 and 9001, ends TLS"]
     end
-    subgraph procs["Processes, on each machine"]
+    subgraph procs["Processes: gateway, platform and arenas on each machine, the workers on C"]
         gateway["gateway<br/>8090 on the private address"]
         platform["platform<br/>8080 on the private address<br/>admin API 9120 on loopback"]
         arena["arena<br/>9011 to 9013 on the private address"]
@@ -69,7 +69,7 @@ flowchart LR
     nginx -->|"HTTP"| platform
     nginx -->|"WebSocket"| gateway
     nginx -->|"the same frames, by the TLS name"| arena
-    gateway -->|"HTTP /v1/queue"| platform
+    gateway -->|"HTTP /v1/match-requests, /v1/queue, /v1/party"| platform
     gateway -->|"sessions, conn: registry"| session
     session -.->|"pub/sub push: channels"| gateway
     platform -->|"sessions, tickets, queues, parties, leases, pushes"| session
@@ -101,9 +101,11 @@ flowchart BT
     worker["worker"]
     gateway["gateway"]
     tools["tools<br/>benchmarks, bots, soak judge"]
+    cx["crypto-examples<br/>never in the release"]
     jredis["j-redis-client 2.2.1"]
     netty["Netty 4.2"]
     mysqllibs["mysql-connector-j<br/>HikariCP, Flyway"]
+    bc["Bouncy Castle<br/>bcprov, bcpkix"]
     sim --> common
     handoff --> common
     handoff --> jredis
@@ -125,6 +127,7 @@ flowchart BT
     tools --> arena
     tools --> handoff
     tools --> persistence
+    cx --> bc
 ```
 
 ## 4. From a login to the rewards
@@ -166,7 +169,7 @@ sequenceDiagram
     PL->>S: publish evt.match.found with the grant
     S-->>G: on the push: channel
     G-->>P: evt.match.found, arena host, port, ticket, TLS name
-    P->>A: TLS to the front's 9001 as the name, nginx passing it on; Join with the ticket
+    P->>A: TLS to the front's 9001 as the name, nginx passing it on, then Join with the ticket
     A->>S: claim the ticket, MULTI HGETALL DEL EXEC
     A-->>P: Welcome, then snapshots 15 a second
     P->>A: Input, 10 packets a second

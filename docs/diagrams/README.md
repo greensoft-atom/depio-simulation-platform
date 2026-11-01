@@ -1,7 +1,8 @@
 # Diagrams
 
 The backend and its client drawn whole, in [Mermaid](https://mermaid.js.org/): 67 diagrams in
-seven files, each drawn from the code as of 2026-10-04 and linked to the design document that
+seven files, each drawn from the code as of 2026-10-04 (01 and 07 redrawn for D-82 on 2026-10-19, and
+02, 03, 04 and 06's match path for it on 2026-11-01) and linked to the design document that
 gives its reasons. GitHub, GitLab and most editors render them in place; nothing here is an
 image to keep in step by hand.
 

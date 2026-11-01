@@ -3,7 +3,7 @@
 Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
-re-ordered around it rather than the other way round. **Open as of 2026-10-24:**
+re-ordered around it rather than the other way round. **Open as of 2026-11-01:**
 nothing; O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
 Every entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
@@ -1065,6 +1065,81 @@ documentation ([03 §10](development/03-build-and-run.md#10-when-something-fails
 every port above 1023 refused while the boolean is off, the labelled ones too; the check names the policy; the
 boolean, the module from the port's own denial and the unconfined mapping each seen to lift it, and the check
 now names the module as the exact grant. WSL stays from the documentation.
+
+
+**O-47 (L), found 2026-11-01, FIXED the same day** (plan item 110, [D-92](architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)).
+`run-front.sh` (D-91) run as root, as the owner runs everything, gave nginx's workers `nobody` and its
+temporary files `work/front/temp`, inside a checkout under `/root`, which no other user may enter (mode 700). A
+response larger than nginx's buffers and the sockets' together, to a client reading slowly, goes to a
+temporary file there, which the workers cannot open: the client gets `200` and a body cut short, and the log
+`open() ".../temp/proxy/0000000001" failed (13: Permission denied)`. Never met: the largest response is 32.5
+KB (`/v1/content/classes`), and the harness of item 109 ran as `devtest`, whose workers are its own. Found
+writing `dev-nginx.sh`, whose workers run as `nobody` too. **Fixed:** no response is buffered to a file
+(`proxy_max_temp_file_size 0`); a request body is at most 4 KiB, under its buffer. Checked with a 30 MB
+response to a client at 5 MB/s, through nginx to a stand-in on the platform's place: cut at 5.3 MB with the
+denial above without the line, whole with it. A first check with 300 KB passed either way, the sockets'
+buffers on loopback taking all of it, and its mutant survived until the check was made larger.
+
+**O-48 (L), found 2026-11-01, FIXED the same day** (plan item 110). `check-bind.sh` (D-88) had only ever been
+given ports above 1023, and said of any refusal that "a port above 1023 is any user's on Linux: a refusal is a
+policy of this machine". Given nginx's 80 and 443 by a user who is not root, it said so of them too, and named
+the unprivileged-port threshold, 1024, with "lift it: `sudo sysctl -w net.ipv4.ip_unprivileged_port_start=1024`",
+the value it already had. **Fixed:** a refused port below 1024 and below the threshold is named root's by
+Linux's own line, with the ways round it (root, the threshold lowered to the lowest such port, ports from 1024
+up); the other refusals keep their message and their policies. Checked as `devtest` in its namespace: 80 and 443
+refused and named so, 9001 free; 9001 under a threshold raised to 9100 named the policy, as before. Two
+mutants (every refusal a policy's; the threshold to lower read from the highest port), both caught. Not
+checked: a port below 1024 refused by another policy under a lowered threshold, which this machine cannot
+make.
+
+
+**O-49 to O-58 (M), found 2026-11-01 by a review of every document against the code, FIXED the same day** (plan
+item 111, at the owner's request after item 110). Each would have failed an operator, or a developer, following
+the documents as written; none had been met, since the procedures they sit in were drilled with settings of
+their own or not yet run on the site:
+- **O-49**: `install-certificate.sh` on a machine whose nginx never started (deploy §7 step 6 installs the
+  certificate before nginx is enabled) runs `nginx -t`, which opens its logs in `/var/log/backend-nginx`; only
+  the unit's `LogsDirectory` makes that, so the check failed and the script refused. It makes it now, as it made
+  the pid and cache directories.
+- **O-50**: the failover account's option file had no `socket`, and `promote-mysql.sh` reaches this machine's
+  server through it alone: the release's client defaults to `/tmp/mysql.sock`, the server listens on
+  `/run/backend-mysql/mysqld.sock`, so a promotion stopped at its first statement. The drills connect over TCP
+  and never met it. The option file names the socket (operations/01 §9), and the script's header says so.
+- **O-51**: MySQL's certificate steps wrote the files in the working directory and never put them where
+  `backend.cnf` reads them, `/etc/mysql-tls/`, the key readable by `mysqld` (operations/01 §9).
+- **O-52**: the install guide's one machine kept machine A's watch settings, an arena that does not exist there
+  and peers B and C, so `TargetDown` and `PeerUnreachable` fired for good. Step 8 sets this machine's, and the
+  three machines' section says each `platform.env` names its own.
+- **O-53**: the deploy README's arena TLS drop-in, installed as it said, applies to every arena; since D-82 an
+  arena given a TLS name refuses a keystore and stops (exit 2). It is for an arena that ends TLS itself.
+- **O-54**: deploy §7 copied the units' `.service` files alone, then enabled a `.timer`, and never enabled the
+  stores or MySQL.
+- **O-55**: the runbook's store backup and drill gave the password file for `events` alone; both stores have a
+  password, so on `session` every command was refused (`NOAUTH`).
+- **O-56**: the rehearsal's load test sent a thousand bots through 443 from one address, which nginx lets log in
+  twice a second and the platform 30 times a minute: all but a few dozen would have been refused (429). The
+  API and the lobby go to a machine's platform and gateway for the run, matches through the front.
+- **O-57**: development/03's "a change to the backend" built while the run was up; the backend's build empties
+  `backend/target/`, the running release and nginx's with it (D-92's own text). It stops the run first.
+- **O-58**: `dev-env.sh` took `hostname -I`'s first word with `awk`, which the build had never needed and a minimal
+  RHEL 9 may lack (sourced under `set -e`, the build stopped there), and an IPv6 address first gave an address
+  `dev-nginx.sh` refuses. It takes the first IPv4 address in bash alone; four cases checked, a fake `hostname`
+  with IPv6 first, a `PATH` without `awk` or `hostname`, an address given; the mutant that takes any first word
+  caught.
+
+**DOC-34, found 2026-11-01 by the same review, FIXED the same day** (plan item 111). Eight reviews of every
+document against the code, the units, the scripts and the release's configuration, each finding checked against
+its source before it was changed: the failure model without the front (a lost front is a lost site since D-82;
+availability §1, §2), the client flow, the gateway's place and the match path still drawn before D-82
+(topology §4, gateway §1 and §2, diagrams 02, 03, 04, 06), capacity from before D-81 (1 800 an arena as set, not
+~7 000), the requirements' Java and MySQL constraints from before D-77, five decision-log markers (D-3, D-5, D-13,
+D-80, D-88) and D-86's keys as built, the API's counts, limits and pushes (`evt.session.revoked` for a deletion,
+`replaced` across gateways), D-92 missing from the API's "where" tables, the worker's streams, spool and order as
+built, the persistence design's cache and stock (not built), the backups' timers, the release's contents and
+scripts, the thread table, the platform's alert store, the operations' certificate alert (14 days, not 30), the
+port tables, the restart of nginx, and D-92's own text (log paths, an IPv4 nginx, what deleting `work/` costs).
+One semicolon in a Mermaid message (diagrams/01) that may end the statement there, written as a comma. Not
+changed: recorded outputs and "run on <date>" records, and figures only a run could check.
 
 ## 7. Documentation
 

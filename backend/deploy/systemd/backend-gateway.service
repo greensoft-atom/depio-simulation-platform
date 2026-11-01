@@ -1,4 +1,4 @@
-# The lobby gateway. One per machine, behind that machine's nginx; its id is the host name,
+# The lobby gateway. One per machine, behind the front's nginx (D-82); its id is the host name,
 # which is what a push is routed by.
 [Unit]
 Description=backend lobby gateway

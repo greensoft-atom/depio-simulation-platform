@@ -3,15 +3,15 @@
 # distribution's package. Its configuration is /etc/backend/nginx/ (the release's nginx-conf/).
 #
 # Install: the system user (useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin
-# nginx), /etc/backend/nginx/{nginx.conf,backend.conf,backend-platform.conf}, then
+# nginx), the five files of the release's nginx-conf/ in /etc/backend/nginx/, then
 # systemctl enable --now backend-nginx, and backend-nginx-logs.timer, which rotates its logs (D-85).
 [Unit]
-Description=backend: nginx, the TLS edge for the lobby and the API
+Description=backend: nginx, the TLS edge for the lobby, the API and match traffic
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-# The master runs as root to bind 443; its workers run as nginx (nginx.conf's user).
+# The master runs as root to bind 443 and 9001; its workers run as nginx (nginx.conf's user).
 Type=forking
 PIDFile=/run/backend-nginx/nginx.pid
 RuntimeDirectory=backend-nginx

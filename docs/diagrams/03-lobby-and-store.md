@@ -21,7 +21,7 @@ sequenceDiagram
     participant R as ConnectionRegistry
     participant S as session store
     C->>N: wss upgrade to /lobby
-    N->>L: WebSocket upgrade, plain on loopback
+    N->>L: WebSocket upgrade, plain, over the private network to a gateway's 8090, least_conn
     L-->>C: handshake complete
     Note over L: auth deadline starts, 5 s
     C->>L: auth with d.token
@@ -35,7 +35,7 @@ sequenceDiagram
         else a player
             L->>R: register playerId and channel
             Note over R: an older connection here is sent evt.session.replaced and closed
-            R->>S: MULTI SET conn:{playerId} gatewayId-nonce-n EX 60 EXEC
+            R->>S: MULTI GETSET conn:{playerId} gatewayId#nonce-n, EXPIRE 60, EXEC
             S-->>R: OK
             R-->>L: written
             L-->>C: auth.ok with playerId
@@ -107,8 +107,8 @@ sequenceDiagram
     Note over P: the live arena with the most free places less its seats promised (D-79)
     P->>S: MULTI ZREMRANGEBYSCORE seats:promised:{name} -inf now, ZADD now+60s playerId, PEXPIRE 60 s, EXEC
     P->>S: MULTI HSET ticket:{id} playerId name team bonus skin, EXPIRE 60, EXEC
-    P-->>C: arenaHost, arenaPort, ticketId, tls
-    C->>A: Join with ticketId, over TLS when the grant says
+    P-->>C: arenaHost, arenaPort, ticketId, tls, tlsName
+    C->>A: TLS to the front's 9001 as tlsName, nginx passing it on, then Join with ticketId
     A->>S: MULTI HGETALL ticket:{id}, DEL ticket:{id}, EXEC
     alt fields came back
         S-->>A: the fields, and the ticket is gone

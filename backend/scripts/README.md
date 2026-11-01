@@ -4,7 +4,7 @@ The backend's operational scripts: the release build and its check on RHEL 9, th
 their proofs, the promotions, the certificate, and a drill of the backups. Each script's header is
 its own reference; this page lists them together, with what each needs and what runs it.
 
-The release ships fourteen of them in `scripts/`, installed as `/opt/backend/scripts/`
+The release ships fifteen of them in `scripts/`, installed as `/opt/backend/scripts/`
 ([make-release.sh](#make-releasesh)); the backup units run them from there. `make-release.sh`, the
 other `check-*.sh` and `backup-drill.sh` stay in the source tree.
 Every setting a script or unit reads is also in the
@@ -18,10 +18,12 @@ Every setting a script or unit reads is also in the
 | [`make-release.sh`](#make-releasesh) | Release | no | hand, on the build machine; `build-offline.sh` |
 | [`check-release-el9.sh`](#check-release-el9sh) | Release | no | hand, on a machine with Docker |
 | [`check-ports-el9.sh`](#check-ports-el9sh) | Release | no | hand, on a machine with Docker |
+| [`check-units-el9.sh`](check-units-el9.sh) | Release | no | hand, on a machine with Docker: the release's units under systemd in UBI 9 (its header) |
+| [`check-install-guide-el9.sh`](check-install-guide-el9.sh) | Release | no | hand, on a machine with Docker: the install guide's blocks as written, in UBI 9 with no network (its header) |
 | [`check-certificates.sh`](#check-certificatessh) | Certificates | no | hand, on any machine with openssl |
 | [`rotate-nginx-logs.sh`](#rotate-nginx-logssh) | Logs | yes | `backend-nginx-logs.timer`, nightly, on every machine |
 | [`check-nginx-logs.sh`](#check-nginx-logssh) | Logs | no | hand, on a machine with a release and curl |
-| [`check-bind.sh`](#check-bindsh) | Ports | yes | `dev-mysql.sh`, `run-local.sh` and the drill, before they start anything; hand, on a server whose unit says `Permission denied` on its port |
+| [`check-bind.sh`](#check-bindsh) | Ports | yes | `dev-mysql.sh`, `dev-jredis.sh`, `dev-backend.sh`, `dev-nginx.sh` and the drill, before they start anything; hand, on a server whose unit says `Permission denied` on its port |
 | [`check-selinux-el9.sh`](#check-selinux-el9sh) | Ports | no | hand, on a machine with QEMU: `check-bind.sh`'s SELinux branch and the three grants, in a Rocky 9 guest with SELinux enforcing (D-90) |
 | [`binlog-stream.sh`](#binlog-streamsh) | Backups | yes | `backend-binlog-stream.service`, always on |
 | [`backup-mysql.sh`](#backup-mysqlsh) | Backups | yes | `backend-mysql-backup.timer`, nightly |
@@ -77,7 +79,7 @@ j-redis's, and **a module they use outside the list stops the release** ("the ru
 it to modules"; [09 §4.1](../../docs/detailed-design/09-release-and-packaging.md#41-the-runtime)).
 
 Last it copies `deploy/systemd` and `deploy/env`, `deploy/mysql` as `mysql-conf/` and
-`deploy/nginx` as `nginx-conf/`, the twelve operational scripts, `COMMIT` (the git commit) and
+`deploy/nginx` as `nginx-conf/`, the fifteen operational scripts, `COMMIT` (the git commit) and
 `VERSIONS.md` (`vendor/VERSIONS.md`, then the backend's, j-redis's and the runtime's versions),
 packs the directory, and prints the jars in each `lib/` and the sizes of `runtime/`, `mysql/`,
 `nginx/` and `jredis/`. The layout is in the [deploy README](../deploy/README.md#the-release).
@@ -154,7 +156,8 @@ explained: the policy of this machine that refuses it (the unprivileged-port thr
 SELinux-confined login, WSL's reserved ranges), the command that lifts it, and the way round it
 ([D-88](../../docs/architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)).
 A port above 1023 is any user's on Linux, so `Permission denied` on one is a policy, which the
-process's own error does not name. `dev-mysql.sh`, `run-local.sh` and the drill run it before they
+process's own error does not name; one below 1024, nginx's 80 and 443 to a user who is not root, is
+root's by Linux's own line, and named so with the ways round it (O-48). `dev-mysql.sh`, `dev-jredis.sh`, `dev-backend.sh`, `dev-nginx.sh` and the drill run it before they
 start anything, in place of their old test of a port in use; on a server, run it as the unit's user
 when the unit's journal says `Permission denied` on its port.
 
@@ -166,7 +169,7 @@ runuser -u backend -- /opt/backend/scripts/check-bind.sh 8080    on a server, as
 | | |
 |---|---|
 | Needs | python3 (RHEL 9 and Ubuntu carry it) or, in the source tree, `vendor/jdk-21`; `ss`, for who holds a port in use |
-| Runs | anywhere, in a second. Checked as a user who is not root in a network namespace with the threshold raised (both refusals the owner met reproduced first, O-46), in Rocky Linux 9 as uid 1000, and with a port in TIME_WAIT, free to it as to a server; the SELinux branch in a Rocky 9 guest with SELinux enforcing and a confined login, where each remedy it names was seen to work ([`check-selinux-el9.sh`](#check-selinux-el9sh), plan item 108); the WSL branch is from the documentation, not run |
+| Runs | anywhere, in a second. Checked as a user who is not root in a network namespace with the threshold raised (both refusals the owner met reproduced first, O-46), in Rocky Linux 9 as uid 1000, and with a port in TIME_WAIT, free to it as to a server; the SELinux branch in a Rocky 9 guest with SELinux enforcing and a confined login, where each remedy it names was seen to work ([`check-selinux-el9.sh`](#check-selinux-el9sh), plan item 108); the WSL branch is from the documentation, not run; 80 and 443 refused to `devtest`, named root's (plan item 110) |
 
 ### check-selinux-el9.sh
 

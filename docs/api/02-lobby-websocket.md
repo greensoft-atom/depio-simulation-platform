@@ -15,6 +15,7 @@ protocol ([02-networking](../detailed-design/02-networking.md)).
 |---|---|
 | Production, through the front's nginx (TLS) | `wss://<the site's address>/lobby`, for example `wss://203.0.113.10/lobby`, the backend's root trusted ([operations/06](../operations/06-certificates.md)) |
 | One machine, straight to `gateway` | `ws://127.0.0.1:8081/lobby` (`GATEWAY_PORT`: 8090 under systemd; the examples ran on 8181) |
+| A run by hand, through `dev-nginx.sh`'s nginx ([D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)) | `wss://<address>/lobby`, trusting `work/nginx/ca/ca.pem` |
 
 No subprotocol, no compression; a query string is accepted and ignored. Anything that is not
 a WebSocket upgrade on `/lobby` is an empty 404, and the gateway has no `/health`.
@@ -99,6 +100,8 @@ Bob <- {"t":"error","id":6,"d":{"code":"unknown_phrase","message":"platform refu
 Everything else (the shop, friends, teams, a sandbox...) is HTTP only.
 
 ## 5. A whole session
+
+The examples come from runs with the arena reached directly (`127.0.0.1:9021`, no TLS). A run by hand since [D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it) has nginx in front of its arena, as the site does: every grant names `<address>`, 9001, `"tls":true` and `"tlsName":"a1.arena.internal"`.
 
 **A ping:**
 
@@ -194,8 +197,8 @@ them.
 | `evt.rewards` | `{"matchUid","mode","placement","coins","xp","ratingDelta","gems","achievements":[],"goals":[],"goalCoins","pass":{"points","tier","coins","gems","items":[]}}` | a match's result was paid | `GET /v1/inventory` |
 | `evt.tournament.match` | `{"tournamentId","round","arenaHost","arenaPort","ticketId","tls","mode"}`, and `"tlsName"` behind the front | a tournament's match is ready | `GET /v1/tournaments/{id}/match` |
 | `evt.notice` | `{"text"}` | an operator's notice, to everyone | |
-| `evt.session.revoked` | `{"reason":"banned"}` or `"suspended"` | the account was banned: the connection closes; do not reconnect | |
-| `evt.session.replaced` | `{}` | the player connected elsewhere on this gateway: this connection closes; do not reconnect | |
+| `evt.session.revoked` | `{"reason":"banned"}`, `"suspended"` or `"deleted"` | the account was banned or suspended by an operator, or deleted by its player (D-84): the connection closes; do not reconnect | |
+| `evt.session.replaced` | `{}` | the player connected again, on this gateway or another: this connection closes; do not reconnect | |
 | `evt.resync` | `{}` | pushes were lost (a slow connection, or the gateway's link to the store came back): fetch the queue, the party and a tournament match again | |
 
 ## 7. Errors from the gateway itself
@@ -239,6 +242,7 @@ then runs everything in §3 and §5 and checks each answer; exit 1 if any differ
 ```bash
 node docs/api/lobby-example.mjs http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby
 NODE_EXTRA_CA_CERTS=ca.pem node docs/api/lobby-example.mjs https://203.0.113.10 wss://203.0.113.10/lobby
+NODE_EXTRA_CA_CERTS=work/nginx/ca/ca.pem node docs/api/lobby-example.mjs https://<address> wss://<address>/lobby   # a run by hand, through nginx
 # with an operator's notice too: the admin API's URL and secret
 node docs/api/lobby-example.mjs http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby http://127.0.0.1:9120 "$(cat admin-token)"
 ```

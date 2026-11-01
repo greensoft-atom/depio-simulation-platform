@@ -9,10 +9,12 @@ Java 21 with generational ZGC
 |---|---|---|---|
 | Netty boss | 1 | accept | no |
 | Netty workers | 2 (pin to 2 cores) | TLS, frame decode, `InputQueue.offer`, socket writes | no |
-| Room threads | 4–6 per process | simulation + snapshot encoding | **only their own room** |
-| j-redis client IO | 1 (Netty, shared) | async commands; callbacks re-enqueued to the room queue | no |
-| Housekeeper | 1 | heartbeats, metrics dump, idle room reaping, spool retry | via messages only |
-| Logback async appender | 1 | disk | no |
+| Room threads | one a room: `MAX_ROOMS`, 4 by default, 12 on the site, made matches' rooms included | simulation + snapshot encoding | **only their own room** |
+| j-redis client IO | 1 per store client (2 with `BACKEND_EVENTS_STORE`) | async commands; callbacks re-enqueued to the room queue | no |
+| `arena-announce` | 1 | the directory entry every 3 s, operators' commands | reads the registry |
+| `match-result-publisher` | 1 | results to the stream, the spool and its retry | via its deque |
+| `metrics` | 1 when configured | the scrape | reads volatiles |
+| Logback async appender | 1 | standard output, to the journal, dropping when full (§8) | no |
 | Room watchdog | 1 per registry | stall detection; abandons a room stuck for 10 s (§8) | reads volatiles; kicks through concurrent sets |
 | GC threads | JVM | | |
 
@@ -107,8 +109,8 @@ measurement says so.
 | RNG | xorshift128+ in a final class, one per room |
 | modifiers | arrays bucketed by stat: `StatModifier[8][]` + counts |
 
-Sorting scoreboard: keep tanks in an `int[]` and do an insertion sort by score
-every 25 ticks (n ≤ 200 → trivial).
+Sorting scoreboard (not built: no scoreboard exists in arena or sim): keep tanks in an `int[]` and
+do an insertion sort by score every 25 ticks (n ≤ 200 → trivial).
 
 ## 4. Tick budget and what to measure
 
@@ -125,6 +127,9 @@ simulation's total and failed against the simulation's budget (O-3). The phases:
 ```
 drainInputs | tanks | bullets | shapes | grid | collide | deaths | encode | write | total
 ```
+
+As built: `tanks | bullets | shapes | hash | collide | sweep` (the step), `encode+write`, and the
+whole tick.
 
 Targets on a 3 GHz core, 150 tanks + 1 500 bullets + 1 500 shapes:
 
@@ -146,8 +151,8 @@ Micro-benchmarks: JMH 1.37 (in the [java21-offline](../../java21-offline/README.
 bundle). Bench the collision pass and the snapshot encoder in isolation with
 synthetic worlds before optimising.
 
-Load test: headless bot client (`tools/botclient`) that opens N TCP
-connections, sends random inputs at 30 Hz, decodes snapshots, and reports
+Load test: headless bot client (`tools/BotClient`) that opens N TCP
+connections, sends ten input packets a second and a ping every ten seconds, as a client does, decodes snapshots, and reports
 receive rate and tick echo latency. Run 200 bots against one room; watch the
 tick histogram and `skippedSnapshots`.
 
@@ -205,8 +210,8 @@ KB/s, a quarter of NFR-2's ceiling, at the density bots make.
   the bots on another machine (Q-3). Fewer wakeups of the loops were tried and
   gained nothing (§1).
 - **Two workers a process fill up first.** At these costs an arena's two Netty
-  workers would be full near 2 100 players, against ~7 000 in one arena process
-  in the capacity model (Q-3, [architecture/01 §3](../architecture/01-system-topology.md#3-capacity-model)).
+  workers would be full near 2 100 players: above the 1 800 an arena is set for (12 rooms), below
+  the ~7 000 a process that 50 000 over seven arenas would need (Q-3, [architecture/01 §3](../architecture/01-system-topology.md#3-capacity-model)).
 - **The report at shutdown misnamed the whole tick** as the simulation's total
   (O-3), fixed.
 - **The generator costs about a core a thousand bots**, and onboarding is
@@ -319,7 +324,8 @@ against 75.5, as item 70 measured.
 
 **What the shipped units use is in `backend/deploy/systemd/`**, and differs from
 this list: the arena runs without `-Xss512k`, `MetaspaceSize`, the Netty
-recycler setting and `preferIPv4Stack`, and `platform` and `worker` have 3 GB
+recycler setting, `-Dio.netty.allocator.type=pooled` and `preferIPv4Stack`, its heap dumps go to
+`/var/log/backend`, and `platform` and `worker` have 3 GB
 and 1.5 GB, not 4. The reasoning below still holds; the list is the design's.
 
 Arena process (6 GB heap):
@@ -373,6 +379,9 @@ j-redis: its own flags, documented with the service
 ([j-redis guide 4](../../j-redis-service/docs/guide/04-run-and-operate.md)).
 
 ## 6. Linux and process placement
+
+As built, each unit's `LimitNOFILE` sets it (65 536; 262 144 for nginx, 10 000 for MySQL); a `limits.d` file does not
+apply to systemd's services and is not shipped. The design's:
 
 ```
 # /etc/security/limits.d/backend.conf

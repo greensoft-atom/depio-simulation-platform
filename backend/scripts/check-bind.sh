@@ -2,7 +2,8 @@
 # Can this user bind these TCP ports, here? Each is bound on 127.0.0.1 and let go, and a refusal is
 # explained: the policy of this machine that refuses it, the command that lifts it, and the way round
 # it (D-88, O-46). A port above 1023 is any user's on Linux, so "Permission denied" on one is never the
-# user's rank: it is a policy, which the process's own error does not name. The development scripts
+# user's rank: it is a policy, which the process's own error does not name; one below 1024 is root's, and
+# said to be (O-48). The development scripts
 # run this before they start anything; on a server, when a unit fails with Permission denied:
 #
 #   check-bind.sh PORT...          0: every port is free; 1: one is in use or refused, and why; 2: usage
@@ -112,8 +113,21 @@ while read -r port state; do
     esac
 done <<< "$out"
 [ ${#free[@]} = 0 ] || echo "free for this user: ${free[*]}"
-if [ ${#refused[@]} -gt 0 ]; then
-    top=${refused[0]}; for port in "${refused[@]}"; do [ "$port" -gt "$top" ] && top=$port; done
+# Below the unprivileged-port threshold and below 1024, a port is root's by Linux's own line, as nginx's 80 and 443
+# are (D-92, O-48): no policy to find. The others refused are a policy's.
+start=$(cat /proc/sys/net/ipv4/ip_unprivileged_port_start 2> /dev/null || echo 1024)
+low=(); policy=()
+for port in "${refused[@]}"; do
+    if [ "$port" -lt 1024 ] && [ "$port" -lt "$start" ]; then low+=("$port"); else policy+=("$port"); fi
+done
+if [ ${#low[@]} -gt 0 ]; then
+    least=${low[0]}; for port in "${low[@]}"; do [ "$port" -lt "$least" ] && least=$port; done
+    echo "Ports below 1024 are root's on Linux: ${low[*]}. Run it as root,"
+    echo "    or give them to users:   sudo sysctl -w net.ipv4.ip_unprivileged_port_start=$least   (and that line in /etc/sysctl.d/90-ports.conf, to keep it over a reboot)"
+    echo "    or use ports from 1024 up"
+fi
+if [ ${#policy[@]} -gt 0 ]; then
+    top=${policy[0]}; for port in "${policy[@]}"; do [ "$port" -gt "$top" ] && top=$port; done
     echo "A port above 1023 is any user's on Linux: a refusal is a policy of this machine. Found:"
     explain "$top"
 fi

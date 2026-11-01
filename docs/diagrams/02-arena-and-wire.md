@@ -80,11 +80,14 @@ the room thread admits the player
 ```mermaid
 sequenceDiagram
     participant C as client
+    participant N as nginx on the front
     participant H as MatchFrameHandler
     participant S as store
     participant G as RoomRegistry
     participant R as RoomThread
-    C->>H: TCP connect, then TLS when the grant says so
+    C->>N: TCP to the site's 9001, TLS with the grant's tlsName
+    N->>H: the connection, plaintext on the private network, to the arena the name maps to
+    Note over C,H: every later frame passes nginx, and without the front an arena ends TLS itself
     Note over H: Join or Resume due within 10 s
     C->>H: Join with version, ticket, optional profile
     alt another protocol version
@@ -239,8 +242,8 @@ sequenceDiagram
     C->>P: queue for a mode over the lobby connection
     P->>P: the matcher fills a roster and picks an arena with a free room
     P->>S: one ticket per player, with the match id, mode and team
-    P-->>C: grant with arena host, port, ticket, tls
-    C->>A: Join with the ticket
+    P-->>C: grant with arena host and port (the site's address, 9001), ticket, tls, tlsName
+    C->>A: through the front's nginx by tlsName, Join with the ticket
     A->>S: claim the ticket
     A->>A: allocateMatch makes the room on the first ticket
     A->>S: mark the match's first arrival

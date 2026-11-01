@@ -19,7 +19,7 @@ ordinary user:
   `JAVA_HOME`, and an `/etc/mavenrc` pointing Maven at it), `/tmp` mounted `noexec`, and a
   listener on 3306 standing in for its MySQL;
 - `./build-offline.sh` with every test, which passed;
-- `run-local.sh` with twenty bots; `DEBUG=1` with `jdb` attached; `jcmd` on a running process;
+- `run-local.sh` with twenty bots (the script of then, before D-92); `DEBUG=1` with `jdb` attached; `jcmd` on a running process;
 - by hand, the store's install (§2) and one test class on the development MySQL (§3); the
   other by-hand lines were not run separately, though `build-offline.sh` runs them all.
 
@@ -32,7 +32,7 @@ day. Commands run from the repository's root.
 
 | For | Needs |
 |---|---|
-| Building, testing, running and debugging the backend | Linux on x86-64 with bash, coreutils, findutils, `sed`, `tar` and `gzip`. No Java, Maven, MySQL or network. |
+| Building, testing, running and debugging the backend | Linux on x86-64 with bash, coreutils, findutils, `sed`, `tar` and `gzip`; for nginx in front of a run by hand (§5.0), `openssl`, `curl` for its `test`, and `hostname` for the default address. No Java, Maven, MySQL or network. |
 | The checks on RHEL 9, and compiling nginx again | Docker |
 | The client, the Unity package and the drills | the .NET 8 SDK, which the repository does not carry (§7) |
 
@@ -41,13 +41,17 @@ made file by file can lose the files' execute bits, and then nothing runs
 (`dev-env.sh` says so). **Its path may hold letters, digits and `. _ - + @ /`
 only**: no spaces. A symbolic link without spaces to it will do.
 
-**Any user may run it, root or not**: nothing here needs root, and every port is above 1023.
-A port the machine refuses to the user all the same (`Permission denied`) is a policy of that
-machine, which the scripts name before they start anything (§10).
+**Any user may run it, root or not**: nothing here needs root but nginx in front of a run by
+hand, on the site's 80 and 443 (§5.0, D-92); every other port is above 1023. A port the machine
+refuses to the user all the same (`Permission denied`) is a policy of that machine, which the
+scripts name before they start anything (§10).
 
 **Everything a build, a test or a run writes is in `work/`**, beside this
 repository's `README.md`. It is never committed. Delete it to start afresh: the
-next build copies the libraries it needs from the bundle again.
+next build copies the libraries it needs from the bundle again. It also holds the development
+MySQL's data and nginx's root, `work/nginx/ca/ca.pem` (§5.0): after a delete, `dev-nginx.sh start`
+makes a new root, and every client given the old one, the app's build among them, must be given
+the new.
 
 | In `work/` | What it holds | Written by |
 |---|---|---|
@@ -55,8 +59,8 @@ next build copies the libraries it needs from the bundle again.
 | `m2/` | Maven's local repository, copied from the bundle as the build needs it | Maven |
 | `tmp/` | temporary files of Maven, the tests and MySQL (`TMPDIR`, `java.io.tmpdir`) | all of them |
 | `mysql/` | the development MySQL's data, socket and logs (§3) | `dev-mysql.sh` |
-| `run/` | a run by hand: each process's log and pid, the store's files, the arena's spool (§5) | `run-local.sh` |
-| `front/` | the front of a run by hand: nginx's configuration, rewritten from the release's, its logs and pid, the certificate and its root (§5.0) | `run-front.sh` |
+| `run/` | a run by hand: each process's log and pid, the store's files, the arena's spool (§5) | `dev-jredis.sh`, `dev-backend.sh` |
+| `nginx/` | nginx in front of a run by hand: its configuration, rewritten from the release's, its logs and pid, the certificate and its root (§5.0) | `dev-nginx.sh` |
 
 **`dev-env.sh` is the environment**, and each script beside it starts by reading it:
 - `JAVA_HOME` and `PATH` on `vendor/jdk-21` and `vendor/maven-3.9`, whatever the machine's `JAVA_HOME` says;
@@ -165,10 +169,12 @@ the development MySQL is not running
 ```
 
 **Who else starts and stops it.**
-- `./build-offline.sh` starts it for the tests and stops it at the end. If it was
-  already running, the build leaves it running.
-- `./run-local.sh start` starts it with the platform or the worker. `./run-local.sh
-  stop` leaves it running; stop it with `./dev-mysql.sh stop`.
+- `./dev-backend.sh build`, and so `./build-offline.sh`, starts it for the tests and stops it
+  at the end, unless it was running, `SKIP_TESTS=1`, or `JDBC_URL` names another.
+- `./run-local.sh start` starts it first, before j-redis, the backend and nginx.
+  `./run-local.sh stop` leaves it running; stop it with `./dev-mysql.sh stop`.
+- `./dev-mysql.sh test` checks it answers: the `backend` user logs in over TCP to
+  both databases, and `backend_dev`'s schema version is named.
 - It does not start with the machine. After a reboot, run `./dev-mysql.sh start`.
 
 **Connecting to it**, with `vendor/`'s client:
@@ -238,88 +244,141 @@ already holds.
 
 ## 5. Running it by hand
 
-The whole chain on this machine, from the release, on the release's own runtime:
-the store, the platform, a worker, the gateway and an arena, against the
-development MySQL's `backend_dev`, which is started if it is not running.
+The whole backend on this machine, from the release, each service by its own script
+([D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)):
+the development MySQL, j-redis, the backend (the platform, a worker, the gateway and an arena,
+on the release's own runtime, against `backend_dev`), and the release's nginx in front of
+them on the site's ports (§5.0). `run-local.sh` runs the four in order.
 
 ```bash
-./run-local.sh start             # or some: ./run-local.sh start store platform
-./run-local.sh bots              # twenty bots for fifteen seconds; or: bots 100 30
+./run-local.sh start             # dev-mysql.sh, dev-jredis.sh, dev-backend.sh, dev-nginx.sh, each started
 ./run-local.sh status
-./run-local.sh restart platform  # one alone, the others untouched; all: ./run-local.sh restart
-./run-local.sh stop arena        # one alone; all: ./run-local.sh stop
-./run-local.sh stop              # the development MySQL keeps running: ./dev-mysql.sh stop
+./run-local.sh stop              # nginx, the backend, j-redis; the MySQL keeps running: ./dev-mysql.sh stop
 ```
+
+Each service alone:
+
+| Script | Commands | What it runs |
+|---|---|---|
+| `dev-mysql.sh` | `start` `stop` `restart` `status` `test` | the development MySQL (§3) |
+| `dev-jredis.sh` | `build` `start` `stop` `restart` `status` `test` | j-redis from its own build, on `vendor/`'s JDK |
+| `dev-backend.sh` | `build` `start` `stop` `restart` `status` `test` `bots` | the platform, the worker, the gateway and the arena; one or some by name |
+| `dev-nginx.sh` | `start` `stop` `restart` `status` `test` | the release's nginx in front of them (§5.0) |
+
+```bash
+./dev-backend.sh restart platform                              # one alone, the others untouched; all: restart
+./dev-backend.sh stop arena                                    # one alone
+./dev-backend.sh bots                                          # twenty bots for fifteen seconds; or: bots 100 30
+./dev-jredis.sh build && ./dev-jredis.sh restart               # a change to j-redis, running
+./run-local.sh stop && SKIP_TESTS=1 ./dev-backend.sh build && ./run-local.sh start   # a change to the backend
+```
+
+**`build`** compiles, runs the tests and, for the backend, makes the release; `SKIP_TESTS=1`
+skips the tests. The backend's needs j-redis built first; `build-offline.sh` is the two in
+order. **The backend's `build` empties `backend/target/`**, the running release with it, nginx's
+too: stop the run first ([07](07-after-a-code-change.md)). **`test` checks the running service now**, through the path a client takes, a line
+`ok` or `FAILED` for each check, and exit 1 on a failure:
+
+| | `test` checks |
+|---|---|
+| `dev-mysql.sh` | the `backend` user logs in over TCP to both databases; `backend_dev`'s schema version |
+| `dev-jredis.sh` | `PING`, then a key of its own set, read and deleted |
+| `dev-backend.sh` | the four running, nginx running, and two bots through nginx: registered, logged in, the lobby, a ticket, five seconds played and left |
+| `dev-nginx.sh` | `nginx -t`; 80 a 308 to `https`; 443's certificate for the address and the platform behind it; 9001's for the arena's name |
+
+**Each refuses what it needs and does not have**, naming the script that gives it: the
+backend's `start` with no MySQL or no j-redis, its `test` and `bots` with no nginx, j-redis's
+`start` with no build. None starts another's service but `dev-backend.sh build`, which starts the
+development MySQL for its tests and stops it after; `run-local.sh` does them in order.
 
 A process restarted alone picks up what changed for it: a new release, or settings given
 to the command. Each service on a server, and on this machine, is in
 [operations/07](../operations/07-start-stop-restart.md).
 
 The bots play as a client does: they register, log in, open the lobby, ask for a
-match and join the arena they are given. The run ends with `welcomes 20
-disconnects 0   kicks 0` and `stays 20, each joined and left on purpose`. Each
-process logs to `work/run/<process>.log`.
+match and join the arena they are given, the API and the lobby straight on 8080 and 8081,
+each bot from an address of its own, and the match through nginx on 127.0.0.1:9001
+(`BACKEND_BOT_VIA`), the certificate checked for the name the grant gives: they do not show the
+announced `<address>` reachable, a client on another machine does. The run ends with `welcomes 20
+disconnects 0   kicks 0` and `stays 20, each joined and left on purpose`. Each backend process logs
+to `work/run/<process>.log`, j-redis to `work/run/store.log`, nginx to `work/nginx/logs/`.
 
-| Process | Listens on | To change |
+| Service | Listens on | To change |
 |---|---|---|
-| store (j-redis) | 127.0.0.1:6380 | `STORE_PORT` |
+| MySQL | 127.0.0.1:3314 | `MYSQL_PORT` |
+| j-redis | 127.0.0.1:6380 | `STORE_PORT` |
 | platform (the API) | 127.0.0.1:8080, `GET /health` | `PLATFORM_PORT` |
 | gateway (the lobby) | 127.0.0.1:8081, `ws://…/lobby` | `GATEWAY_PORT` |
-| arena | 127.0.0.1:9001 | `ARENA_PORT`; `ARENA_ADVERTISE_HOST`, 127.0.0.1, the host it tells clients to dial, which `run-front.sh` sets (§5.0) |
+| arena | 127.0.0.1:9021; it announces `<address>:9001`, TLS as `a1.arena.internal`, which nginx routes to it | `ARENA_PORT`, `ARENA_TLS_NAME` |
 | worker | none | |
+| nginx | every IPv4 address: 80, 443, 9001 (§5.0) | `NGINX_HTTP_PORT`, `NGINX_HTTPS_PORT`, `NGINX_MATCH_PORT` |
 
-A port already taken, or one a policy of the machine refuses to this user, is named before
-anything starts, with its cause (§10). `stop` stops only processes it
-started from this checkout's release, whatever their pid files say. An arena still
-running a match drains it first, for up to eleven minutes (D-29). Give every command the same
-settings, `start` and `bots` alike. What each process's arguments mean:
-[backend/README](../../backend/README.md#running-it).
+The settings are `dev-env.sh`'s, the same for every script: give every command the same,
+`start` and `bots` alike. A port already taken, or one a policy of the machine refuses to
+this user, is named before anything starts, with its cause (§10). `stop` stops only
+processes it started from this checkout, whatever their pid files say. An arena still
+running a match drains it first, for up to eleven minutes (D-29). What each process's
+arguments mean: [backend/README](../../backend/README.md#running-it).
 
 ### 5.0 Clients on other machines: the front
 
-Everything above listens on 127.0.0.1. For a client on another machine, `run-front.sh` puts the
-release's own nginx in front of the run, as the site's front is put in front of a machine
-([D-91](../architecture/03-decision-log.md#d-91--a-run-by-hand-gets-the-sites-front-of-its-own-from-the-releases-nginx-and-configuration)):
+Everything but nginx listens on 127.0.0.1. nginx is the way in, as on the site (D-82): the
+release's own, with the release's configuration rewritten into `work/nginx/conf`, on the
+site's ports and every IPv4 address.
 
 ```bash
-./run-local.sh start
-./run-front.sh start                 # or: ./run-front.sh start 192.168.56.10, the address clients dial
-./run-front.sh status
-./run-front.sh stop                  # the arena announces 127.0.0.1 again
+./dev-nginx.sh start             # for this machine's first address; another: export PUBLIC_ADDRESS=192.168.56.10 before ./run-local.sh start (both read it)
+./dev-nginx.sh test
+./dev-nginx.sh status
 ```
 
 | | Here | On the site |
 |---|---|---|
-| The player API and the lobby | `https://<address>:8443/v1/...`, `wss://<address>:8443/lobby` | 443 |
-| Matches | `<address>:9443`, TLS, routed by the arena's name | 9001 |
-| The configuration | the release's `nginx-conf/`, rewritten into `work/front/conf` | `/etc/backend/nginx` |
-| The certificate | `work/front/tls`, from a root of its own, `work/front/ca/ca.pem` | operations/06 |
+| The player API and the lobby | `https://<address>/v1/...`, `wss://<address>/lobby` | the same, 443 |
+| Plain HTTP | `http://<address>/...`: a 308 to `https`, the method and the body kept | closed (D-82) |
+| Matches | `<address>:9001`, TLS, routed by the arena's name to 127.0.0.1:9021 | 9001, to each machine's arenas |
+| The configuration | the release's `nginx-conf/`, rewritten into `work/nginx/conf` | `/etc/backend/nginx` |
+| The certificate | `work/nginx/tls`, naming the address, 127.0.0.1 and the arena's name, from a root of its own, `work/nginx/ca/ca.pem` | operations/06 |
 
-Give a client `work/front/ca/ca.pem` to trust: `curl --cacert ca.pem`, Postman's Settings,
-Certificates, CA certificates, the headless client's `--trust`. `start` restarts the local
-arena so that it announces the address and 9443, and `./run-local.sh bots` then plays
-through nginx too. It needs the platform and the gateway running, tries both ports first
-(§10), and prints the firewall's line rather than running it; `FRONT_PORT` and
-`FRONT_MATCH_PORT` move them. A port below 1024 needs root, so the site's 443 and 9001 are
-not used here.
+**80 and 443 need root**, or a lowered threshold; its workers run as `nobody`. As another
+user, move them (9001 too, by choice), for `dev-nginx.sh` and `dev-backend.sh` alike, whose arena announces
+nginx's: `export NGINX_HTTP_PORT=8088 NGINX_HTTPS_PORT=8443 NGINX_MATCH_PORT=9443`.
+
+**The address** is `PUBLIC_ADDRESS`, this machine's first IPv4 address (`hostname -I`) unless
+given: the certificate names it and the arena announces it. `hostname -I` keeps no order, so read
+the address `dev-nginx.sh start` prints (`… for <address>`), and give it when it is not the one
+clients dial. Give both the same; another:
+`export PUBLIC_ADDRESS=<it>`, then `./dev-backend.sh restart arena && ./dev-nginx.sh restart`.
+
+**Clients trust `work/nginx/ca/ca.pem`, and nothing else.** The root is made once and kept,
+so a copy given to a client stays good; the certificate is issued again when the address
+changes. `curl --cacert ca.pem`; Postman's Settings, Certificates, CA certificates; the
+headless client's `--trust`; the app on a phone trusts the root it was built with alone, so
+the build for these phones carries this `ca.pem` (`BackendClient`'s root certificate).
+
+**The firewall is the machine's administrator's**: `start` prints the line that opens 80,
+443 and 9001 (`firewall-cmd` on RHEL and CentOS) and runs nothing. A VM on NAT networking
+is reached by its host alone: give it bridged networking, or have the host forward the
+three ports.
 
 ### 5.1 Trying each interface
 
 | Interface | Where, on a run by hand | Try it with |
 |---|---|---|
-| The player API, HTTP | `http://127.0.0.1:8080/v1/...` | `curl`, Postman |
-| The admin API, HTTP | `http://127.0.0.1:9120/admin/...`, with `Authorization: Bearer <secret>` | `curl`, Postman |
-| The lobby, WebSocket | `ws://127.0.0.1:8081/lobby` | Postman's WebSocket request; `docs/api/lobby-example.mjs` (Node 22 or later) |
-| A match, binary over TCP | `127.0.0.1:9001`, the address a grant names | `./run-local.sh bots`. `curl` and Postman cannot speak it. |
+| The player API, HTTP | on this machine `http://127.0.0.1:8080/v1/...`; from another, through nginx, `https://<address>/v1/...` (§5.0) | `curl`, Postman |
+| The admin API, HTTP | `http://127.0.0.1:9120/admin/...`, with `Authorization: Bearer <secret>`; this machine's alone | `curl`, Postman |
+| The lobby, WebSocket | `ws://127.0.0.1:8081/lobby`; through nginx, `wss://<address>/lobby` | Postman's WebSocket request; `docs/api/lobby-example.mjs` (Node 22 or later) |
+| A match, binary over TCP | `<address>:9001`, TLS, through nginx: the address a grant names | `./dev-backend.sh bots`. `curl` and Postman cannot speak it. |
 
 Every route, message and frame, with real examples: [docs/api](../api/README.md). Each
 command below was run as written on 2026-10-19, on fresh data, and the outputs shown are what
-it printed. Your token will differ. The arena has four rooms of 150 places, the public
+it printed; the arena's line and the bots' run again on 2026-11-01, behind nginx (D-92), this
+machine's address shown as `<address>`. Your token will differ. The arena has four rooms of 150 places, the public
 area's and three for matches and private rooms.
 
 **Start it with payments simulated and the admin API on.** The Postman collection needs
-both. `run-local.sh` passes the shell's environment to every process, and these three
-are read by the platform:
+both. `run-local.sh` and `dev-backend.sh` pass the shell's environment to every process,
+and these three are read by the platform:
 
 ```bash
 (umask 077; head -c 24 /dev/urandom | base64 > work/admin-token)   # the admin API's secret, kept in work/
@@ -342,7 +401,7 @@ $ curl -s -X POST http://127.0.0.1:8080/v1/sessions -H 'Content-Type: applicatio
 $ curl -s http://127.0.0.1:8080/v1/inventory -H "Authorization: Bearer vEw_g8LL08jNXDiHOeFlswTCagwkg-lykE9z9u2mNYw"
 {"coins":0,"gems":0,"items":[]}
 $ curl -s http://127.0.0.1:9120/admin/arenas -H "Authorization: Bearer $(cat work/admin-token)"
-[{"name":"arena-1","host":"127.0.0.1","port":9001,"players":0,"maxPlayers":600,"tls":false,"rooms":1,"maxRooms":4}]
+[{"name":"arena-1","host":"<address>","port":9001,"players":0,"maxPlayers":600,"tls":true,"rooms":1,"maxRooms":4}]
 ```
 
 **HTTP, with Postman**: import `docs/api/backend.postman_collection.json`, set its
@@ -388,12 +447,13 @@ does: they log in, ask the lobby for a seat, dial the arena the grant names, joi
 input ten times a second, and leave.
 
 ```console
-$ ./run-local.sh bots 20 15
-lobby: 20 of 20 bots registered, logged in and got a ticket in 1.7 s (87 ms of wall time per bot)
-20 bots connected to 127.0.0.1:9001
+$ ./dev-backend.sh bots 20 15
+lobby: 20 of 20 bots registered, logged in and got a ticket in 4.4 s (220 ms of wall time per bot)
+20 bots connected to <address>:9001
+
 welcomes 20   disconnects 0   kicks 0 (last reason 0)   lobby failures 0
-over 15.0 s with every bot in: snapshots 4500   bytes 373722
-mean frame 83.0 B   per bot 15.00 snapshots/s, 1.22 KB/s (payload only)
+over 15.0 s with every bot in: snapshots 4499   bytes 364981
+mean frame 81.1 B   per bot 15.00 snapshots/s, 1.19 KB/s (payload only)
 stays 20, each joined and left on purpose
 ```
 
@@ -404,7 +464,7 @@ Read it as follows:
 
 Its options (a profile, a proxy, staying and coming back) are in
 [tools/README](../../backend/tools/README.md#botclient). Whether the port answers at all:
-`(exec 3<>/dev/tcp/127.0.0.1/9001) && echo open`.
+`(exec 3<>/dev/tcp/127.0.0.1/9021) && echo open` for the arena, 9001 for nginx in front of it.
 
 ## 6. Debugging
 
@@ -412,7 +472,7 @@ Its options (a profile, a proxy, staying and coming back) are in
 process listen for one, on 127.0.0.1 only, without waiting for it.
 
 ```bash
-DEBUG=1 ./run-local.sh start
+DEBUG=1 ./run-local.sh start                  # every Java process; one alone: DEBUG=1 ./dev-backend.sh restart platform
 ```
 
 | Process | Debugger port |
@@ -421,10 +481,10 @@ DEBUG=1 ./run-local.sh start
 | worker | 5006 |
 | gateway | 5007 |
 | arena | 5008 |
-| store | 5009 |
+| j-redis, the store | 5009 |
 
-With `DEBUG=1` the processes run on `vendor/jdk-21`, the same Java version, not
-the release's runtime: its modules leave out the debugger's agent,
+With `DEBUG=1` the backend's processes run on `vendor/jdk-21`, the same Java version, not
+the release's runtime (j-redis always does): its modules leave out the debugger's agent,
 `jdk.jdwp.agent` ([09 §4.1](../detailed-design/09-release-and-packaging.md#41-the-runtime)). Attach VS Code ([05 §4](05-vscode.md#4-debugging)), or the
 JDK's own debugger:
 
@@ -499,15 +559,20 @@ here runs Unity). [client/README](../../client/README.md).
 | `dev-env.sh: vendor/jdk-21/bin/java is not executable` | the copy lost the files' modes | copy again with `git clone` or `tar` |
 | `dev-env.sh: … holds a character the build cannot carry` | a space or another character in the path | move the checkout, or link to it from a path without one |
 | `127.0.0.1:3314: in use (…)`, then `another port for it: MYSQL_PORT=…` | another server on the development MySQL's port | `MYSQL_PORT=<a free port>` |
-| `127.0.0.1:8080: in use (…)`, then `another port for it: STORE_PORT, PLATFORM_PORT, …` | another program on that port | `PLATFORM_PORT=<a free port>`, and the same for every later command |
-| `127.0.0.1:3314: refused (Permission denied)` (or 6380, 8080, 8081, 9001, the drill's), then `A port above 1023 is any user's on Linux: a refusal is a policy of this machine. Found:` and the policy | Not the user's rank: a policy of this machine keeps the port from users. `check-bind.sh` names the one it finds, the unprivileged-port threshold raised above the port (`net.ipv4.ip_unprivileged_port_start`), a login SELinux confines (`user_u`, `staff_u`) with `selinuxuser_tcp_server` off, or WSL's reserved port ranges; or says it knows none ([D-88](../architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)). Reproduced here: the threshold, as a user who is not root, and SELinux, in a Rocky 9 guest with a confined login, where the three remedies were each seen to work (`backend/scripts/check-selinux-el9.sh`, [D-90](../architecture/03-decision-log.md#d-90--the-port-checks-selinux-branch-is-proven-in-a-rocky-9-guest-and-names-the-exact-grant)); the WSL lines are from the documentation. | the command under the policy (`sudo sysctl -w net.ipv4.ip_unprivileged_port_start=1024`; `sudo setsebool -P selinuxuser_tcp_server on`, or the module from the port's own denial, or the login mapped `unconfined_u`; ports outside Windows' ranges), or other ports: `MYSQL_PORT`, `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT`. By hand: `backend/scripts/check-bind.sh 3314 8080` |
-| `the platform or the gateway is not running from this checkout's release: ./run-local.sh start first` | `run-front.sh start` with no run to stand in front of | `./run-local.sh start`, then again, with the same `PLATFORM_PORT`, `GATEWAY_PORT` and `ARENA_PORT` given to both |
-| `127.0.0.1:8443: in use (…)`, then `another port for it: FRONT_PORT or FRONT_MATCH_PORT` | another program on the front's port | `FRONT_PORT=<a free port>` (or `FRONT_MATCH_PORT`), the same for `status` and `stop` |
-| `the release's nginx configuration has what this script cannot rewrite for this machine (D-91):` and the lines | the release's `nginx-conf/` gained a path, an address, a port or an upstream that `run-front.sh` does not rewrite; nothing was started | teach the rewrite the new line ([D-91](../architecture/03-decision-log.md#d-91--a-run-by-hand-gets-the-sites-front-of-its-own-from-the-releases-nginx-and-configuration)); the generated files are left in `work/front/conf.new` to read |
-| On the client: `curl: (60) SSL certificate problem: unable to get local issuer certificate` | the client does not trust the front's root | give it `work/front/ca/ca.pem`: `--cacert`, Postman's CA certificates, the headless client's `--trust` |
-| On the client: `no alternative certificate subject name matches` | it dialled an address the certificate does not name | `./run-front.sh stop`, then `start <the address it dials>`: the certificate is issued again, the root kept |
-| On the client: the connection times out | the machine's firewall, or a VM on NAT networking that only its host can reach | the `firewall-cmd` line `run-front.sh start` printed; a bridged network or a port forward for the VM |
+| `127.0.0.1:8080: in use (…)`, then `another port for it: PLATFORM_PORT, GATEWAY_PORT or ARENA_PORT, …` | another program on that port | `PLATFORM_PORT=<a free port>`, and the same for every later command |
+| `127.0.0.1:3314: refused (Permission denied)` (or 6380, 8080, 8081, 9021, nginx's 9001, the drill's), then `A port above 1023 is any user's on Linux: a refusal is a policy of this machine. Found:` and the policy | Not the user's rank: a policy of this machine keeps the port from users. `check-bind.sh` names the one it finds, the unprivileged-port threshold raised above the port (`net.ipv4.ip_unprivileged_port_start`), a login SELinux confines (`user_u`, `staff_u`) with `selinuxuser_tcp_server` off, or WSL's reserved port ranges; or says it knows none ([D-88](../architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)). Reproduced here: the threshold, as a user who is not root, and SELinux, in a Rocky 9 guest with a confined login, where the three remedies were each seen to work (`backend/scripts/check-selinux-el9.sh`, [D-90](../architecture/03-decision-log.md#d-90--the-port-checks-selinux-branch-is-proven-in-a-rocky-9-guest-and-names-the-exact-grant)); the WSL lines are from the documentation. | the command under the policy (`sudo sysctl -w net.ipv4.ip_unprivileged_port_start=1024`; `sudo setsebool -P selinuxuser_tcp_server on`, or the module from the port's own denial, or the login mapped `unconfined_u`; ports outside Windows' ranges), or other ports: `MYSQL_PORT`, `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT`, `NGINX_MATCH_PORT`. By hand: `backend/scripts/check-bind.sh 3314 8080` |
+| `j-redis is not running on 127.0.0.1:6380: ./dev-jredis.sh start first`, or `the development MySQL is not running: ./dev-mysql.sh start first` | `dev-backend.sh start` before what it needs | the script it names, or `./run-local.sh start` for all four in order |
+| `j-redis is not built: …/dev-jredis.sh build first`, or from the backend's build `j-redis is not built, and the backend needs its client, the release its server: ./dev-jredis.sh build first` | `dev-jredis.sh start`, or the backend's build, before j-redis's | `./dev-jredis.sh build` (`SKIP_TESTS=1` for speed) |
+| `FAILED  nginx is not running: ./dev-nginx.sh start` (from `test`), or `nginx is not running, and matches go through it: ./dev-nginx.sh start first` (from `bots`) | `dev-backend.sh test` or `bots` with no nginx: matches go through it | `./dev-nginx.sh start` |
+| `127.0.0.1:80: refused (Permission denied)` (and 443), then `Ports below 1024 are root's on Linux: 80 443` and `another port for it: NGINX_HTTP_PORT, …` | nginx started by a user who is not root: 80 and 443 are below 1024 (O-48) | as root; or `sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80`, as the check prints; or other ports, for `dev-nginx.sh` and `dev-backend.sh` alike: `export NGINX_HTTP_PORT=8088 NGINX_HTTPS_PORT=8443 NGINX_MATCH_PORT=9443` |
+| `127.0.0.1:443: in use (…)`, then `another port for it: NGINX_HTTP_PORT, NGINX_HTTPS_PORT or NGINX_MATCH_PORT` | another program on one of nginx's ports: another web server, or an nginx of the machine's own | stop it, or other ports, as the line above |
+| `PUBLIC_ADDRESS=…: an IPv4 address or a host name, the one clients dial` | `PUBLIC_ADDRESS` given something else, an IPv6 address | `export PUBLIC_ADDRESS=<the IPv4 address clients dial>`, then `./dev-backend.sh restart arena && ./dev-nginx.sh start` |
+| `the release's nginx configuration has what this script cannot rewrite for this machine (D-92):` and the lines | the release's `nginx-conf/` gained a path, an address, a port or an upstream that `dev-nginx.sh` does not rewrite; nothing was started | teach the rewrite the new line ([D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)); the generated files are left in `work/nginx/conf.new` to read |
+| `FAILED  443: the certificate verifies, but the platform behind it does not answer (502)` | nginx is up, the platform is not | `./dev-backend.sh start` |
+| On the client: `curl: (60) SSL certificate problem: unable to get local issuer certificate` | the client does not trust nginx's root | give it `work/nginx/ca/ca.pem`: `--cacert`, Postman's CA certificates, the headless client's `--trust`, the app's build |
+| On the client: `no alternative certificate subject name matches` | it dialled an address the certificate does not name | `export PUBLIC_ADDRESS=<the address it dials>`, then `./dev-backend.sh restart arena && ./dev-nginx.sh restart`: the certificate is issued again, the root kept |
+| On the client: the connection times out | the machine's firewall, or a VM on NAT networking that only its host can reach | the `firewall-cmd` line `dev-nginx.sh start` printed; a bridged network or a port forward for the VM |
 | `Cannot access java21-offline in offline mode` | `-o` with the bundle's settings | drop `-o` (§2) |
 | `class file has wrong version 65.0, should be 52.0`, or `release version 21 not supported` | Maven ran on Java 8: `dev-env.sh` was not sourced, or `/etc/mavenrc` won | `. ./dev-env.sh` first; it sets `MAVEN_SKIP_RC` |
-| `Could not resolve dependencies … com.jredis:j-redis-client` | the backend built before the store | `(cd j-redis-service && mvn install -DskipTests)` first, or `./build-offline.sh` |
-| `no release in backend/target/release` | `run-local.sh` before a build | `./build-offline.sh` (`SKIP_TESTS=1` for speed) |
+| `Could not resolve dependencies … com.jredis:j-redis-client` | the backend built before the store, by hand | `./dev-jredis.sh build` first, or `./build-offline.sh` |
+| `no release in backend/target/release: …/dev-backend.sh build first`, or from `dev-nginx.sh` `no release with nginx in backend/target/release: ./dev-backend.sh build first` | `dev-backend.sh` or `dev-nginx.sh` before a build | `./dev-backend.sh build`, or `./build-offline.sh` for both (`SKIP_TESTS=1` for speed) |

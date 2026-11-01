@@ -418,7 +418,7 @@ sequenceDiagram
     participant S as session store
     participant G as gateway
     A->>A: spool the result to disk
-    A->>E: XADD to the result stream, trimmed to 24 hours
+    A->>E: XADD to the result stream, trimmed to BACKEND_RESULT_RETENTION_HOURS, 24 by default
     A->>A: delete the spooled file
     W->>E: XREADGROUP as group rewards, one entry
     E-->>W: the entry, pending for this worker

@@ -23,7 +23,8 @@
 #
 # MYSQL_FAILOVER_CNF: the option file of the account it uses, `failover` (operations/01 §9):
 # [client] with its user and password, and [client_remote], read only for the old primary, with
-# the TLS settings. This machine's server is reached as [client] says: by default, its socket.
+# the TLS settings. This machine's server is reached as [client] says: its socket, which the file must name
+# (socket = /run/backend-mysql/mysqld.sock), since the release's client defaults to /tmp/mysql.sock (O-50).
 # BACKEND_DB_NAME: the backend's database (backend). MYSQL: the client (mysql).
 set -euo pipefail
 # The release's MySQL tools first, from mysql/ beside scripts/ in /opt/backend (docs/detailed-design/09

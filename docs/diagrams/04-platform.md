@@ -117,8 +117,8 @@ sequenceDiagram
     else an arena
         P->>S: the seat promised to the player, 60 s
         P->>S: MULTI, HSET ticket with player, name, team 0, bonus, skin, EXPIRE 60, EXEC
-        P-->>C: 200 arenaHost, arenaPort, ticketId, tls
-        C->>A: connect, Join with the ticket
+        P-->>C: 200 arenaHost, arenaPort, ticketId, tls, tlsName
+        C->>A: TLS to the front's 9001 as tlsName, nginx passing it on, then Join with the ticket
         A->>S: MULTI, HGETALL ticket, DEL ticket, EXEC
         A-->>C: Welcome, or Kick with a reason
     end

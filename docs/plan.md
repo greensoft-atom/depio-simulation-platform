@@ -3718,6 +3718,72 @@ its reason (one first written wrong, caught by a shell error, written again). Th
 client ran on the host's network, dialling the Docker bridge's address. Docs: D-91, 03 §2, §5, §5.0 and §10, the API guide's
 `baseUrl`, operations/06 §9, the root README, the deploy README's variables and ports, CLAUDE.md.
 
+
+#### 110. ~~A script for each service of a run by hand, and nginx on the site's ports in front of it (D-92).~~ — **done 2026-11-01**
+
+The owner, who runs the system as root, asked that clients on other machines, a phone's app and a laptop's Postman,
+reach it through nginx on 80, 443 and 9001, and for a script of its own for nginx, MySQL, j-redis and the backend, each
+with start, status, stop, restart and test, and build for j-redis and the backend; they agreed the recommendations
+D-92 records. `dev-nginx.sh` (from `run-front.sh`, which is gone, and D-91 with it), `dev-mysql.sh` (`test` added),
+`dev-jredis.sh` (j-redis from its own build) and `dev-backend.sh` (from `run-local.sh`'s four processes, with `build`,
+`test` and `bots`); `run-local.sh` the four in order, `build-offline.sh` the two builds, the run's ports and address in
+`dev-env.sh`. nginx on 80 (a 308 to `https`), 443 and 9001 on every address, its workers `nobody`; the arena moved to
+127.0.0.1:9021 behind it, announcing `PUBLIC_ADDRESS`:9001, TLS as `a1.arena.internal`, so every match takes the site's
+path. `test` checks the running service through a client's path; each script refuses what it lacks, naming the script
+that gives it. Found and fixed: O-47 (nginx's workers, `nobody`, cannot reach a checkout under `/root`: a response
+larger than the buffers to a slow client was cut short under a `200`; no response is buffered to a file now) and O-48
+(`check-bind.sh` called 80 and 443 a policy's and advised the threshold it already had). Checked as root, the owner's
+way: 68 harness cases (each script's commands and refusals; the configuration rewritten and production's settings kept;
+an outside client in Rocky 9 on the host's network: the API, a guest, a guest posted to 80 and redirected, the lobby,
+404 elsewhere, refused without `ca.pem`; the bots and the C# headless client playing through 443 and 9001 by the
+arena's name; restarts one by one with the rest running; another address, another arena name, other ports, an address
+this machine cannot reach as behind NAT; each `test` made to fail by what it checks; three drifts of the release's
+configuration; a port in use; j-redis not built; `run-local.sh` in order, the MySQL left running), the whole run once
+from a clean start (67 passed; the one failing was the harness's order, fixed and passed with the cases after it);
+36 mutants, each caught (two first survived: one written wrong, `true || a && b` testing only `a`, written again; one
+for a check too small to reach a file, O-47, made larger). As `devtest` in its namespace: 80 and 443 refused and named
+so; the whole run on 8088, 8443 and 9443, every `test` passing, nginx its own user's. The full build with every test,
+the development MySQL started for the tests and stopped after: every module passed but `tools`, whose `DocsLinksTest`
+found a link item 111's review had just written wrong; fixed, and the build resumed from `tools`, passing, the release
+made; the stack from it, every script's `test` passing. Seen once and not reproduced in five tries: a
+`run-local.sh start` whose output was discarded left nginx stopped with an empty error log; every run since keeps its
+output. Not checked: a phone or a laptop across a real firewall (this VM's lets 80 in and keeps 443 and 9001 shut,
+and opening it was refused), the owner's firewalld and VMware networking; the Unity app with this `ca.pem`. Docs: D-92,
+D-91 superseded, 03 §1, §2, §3.1, §5, §5.0, §5.1, §6 and §10, 05, 06, 07, operations/05, 06 and 07, the API guide's
+`baseUrl`, 09's `work/`, the glossary, the deploy and scripts READMEs, the root README, working-here §2 and §3,
+CLAUDE.md, `.vscode/launch.json`.
+
+#### 111. ~~Every document reviewed against the code, and what the review found fixed (O-49 to O-58, DOC-34).~~ — **done 2026-11-01**
+
+The owner asked, while item 110's build ran, for the documents (the API, architecture, deploy, operations, diagrams and
+the rest) to be checked against today's state, concretely. Eight reviews, read-only, each of one area against the code,
+the units, the scripts, the release's configuration and the other documents, each finding cited to its source; every
+finding checked again here before it was changed. **Found and fixed, each one that would have failed someone following
+the documents**: O-49 (`install-certificate.sh` before nginx's first start: no log directory for `nginx -t`; fixed in
+the script, reproduced first in a Rocky 9 container, then passing), O-50 (the failover option file without the socket
+`promote-mysql.sh` needs), O-51 (MySQL's TLS files never where `backend.cnf` reads them), O-52 (the one-machine
+install's watch kept A's targets and peers), O-53 (the arena TLS drop-in would stop every arena behind the front),
+O-54 (deploy §7's timers never copied), O-55 (the store backup without the session store's password), O-56 (the
+rehearsal's load test through 443 against nginx's login limit), O-57 (development/03 built the backend under its
+running release) and O-58 (`dev-env.sh` needed `awk`, and took an IPv6 address first; bash alone now, four cases and a
+mutant). **DOC-34**: stale text in every area, D-82 above all (the front missing from the failure model, the client
+flow, diagrams 02, 03, 04 and 06 still drawing the arena dialled directly), capacity from before D-81, five decision-log
+markers, D-86's keys as built, the API's counts, limits and pushes, the worker's and persistence's built claims, the
+operations' certificate alert (14 days), and item 110's own text; the units' and code's stale comments (nginx's unit,
+`GatewayMain`, the client's `ApiClient`, `make-release.sh`, `install-certificate.sh`'s certbot lines). **Found, not a
+document's**: P-60, the snapshot encoder never sends a team change, so a dominator captured in a client's view keeps
+its old team there; item 112. Checked: `DocsLinksTest` and `ReadmeTestListsTest`; the gateway compiled and the C# core
+built, 0 warnings; `check-certificates.sh`; the install guide as written in UBI 9.5 again (its step 8 changed). Not
+changed: recorded outputs and dated records; figures only a run could check (bandwidth arithmetic in 02 §10, the
+front's nginx allocation, which D-82 already calls unmeasured). Not run: Mermaid's rendering, so the semicolon in
+diagrams/01 that may end its statement there was written as a comma rather than proven to break.
+
+#### 112. A team change sent in the snapshot, so a captured dominator shows its new team (P-60).
+
+Found by item 111's review: `SnapshotEncoder` never sets `F_TEAM`, though both reference readers read it, and
+domination changes a dominator's team in place (`Room`). Test first: a dominator captured in a client's view, the next
+snapshot carrying `TEAM` with the new team; then the encoder sends it when the team differs from the one sent
+(`ClientView`), no protocol change.
 ---
 
 ### Completed 2026-09-23

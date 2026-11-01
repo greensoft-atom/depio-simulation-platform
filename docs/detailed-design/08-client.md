@@ -283,8 +283,8 @@ client adds:
   by 10 s in which nothing at all is heard is a lost connection
   (`LobbyClient.PingAnswerMs`), found before the socket would say so. A message the socket delivers in fragments is
   joined and decoded once whole. On `evt.session.replaced` the lobby does not
-  reconnect: the player signed in elsewhere; nor on `evt.session.revoked`, an
-  operator's ban or suspension, after which logging in says whether the
+  reconnect: the player signed in elsewhere; nor on `evt.session.revoked`: an
+  operator's ban or suspension, or the account deleted (D-84), after which logging in says whether the
   account may play. A match an operator ends is `Kick(7)`, `MatchEnd.Removed`:
   back to the lobby, nothing to reconnect to
   ([03 §4](03-gateway.md#4-connection-lifecycle)). Nor after `invalid_session`,
@@ -387,11 +387,12 @@ client adds:
   kind and an id, never words: the Unity layer writes them (FR-11).
 - **Guests** ([04 §1](04-platform-services.md#1-auth-and-sessions), designed
   2026-09-30): `ApiClient.CreateGuest` answers a `Guest`, its `GuestKey` and
-  `DisplayName`; the key goes to the device's secure store beside the session
-  token, and `LoginGuest` takes it when the session is gone. `UpgradeAccount`,
+  `DisplayName`; the key goes to the device's secure store (`AccountKeeper` over
+  `ISecureStore`, the package's `SecureStores`, §8), and `LoginGuest` takes it on every launch; the
+  session token is held in memory only (above). `UpgradeAccount`,
   with the guest's session, a username, a password and a display name or none,
   makes it a full account, the same player; from then `Login` by name, and the
-  key is refused. Where the key is kept is the Unity layer's.
+  key is refused.
 - **The class table is fetched, not built in**
   ([D-24](../architecture/03-decision-log.md#d-24--the-class-table-reaches-the-device-from-platform-versioned-by-its-content)):
   `ApiClient.Classes()` reads `GET /v1/content/classes` into the core's own

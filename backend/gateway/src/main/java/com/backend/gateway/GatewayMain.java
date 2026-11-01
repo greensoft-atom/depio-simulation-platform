@@ -19,8 +19,8 @@ import org.slf4j.LoggerFactory;
  *
  * Usage: GatewayMain [bindHost] [port] [platformUrl] [storeHost] [storePort] [gatewayId]
  *
- * Binds to loopback by default: clients reach it through this machine's nginx, which
- * terminates TLS. Listening on every interface put a plaintext lobby, around the TLS, in
+ * Binds to loopback by default; on the site, its machine's private address: clients reach it through the
+ * front's nginx, which terminates TLS (D-82). Listening on every interface put a plaintext lobby, around the TLS, in
  * front of anyone who could reach the port.
  */
 public final class GatewayMain {

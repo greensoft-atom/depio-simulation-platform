@@ -70,8 +70,8 @@ public final class RoomThread extends Thread {
 10 ticks (400 ms) behind runs its missed ticks back to back, sending the
 snapshots they fall due for in a burst; beyond that it drops the time and counts
 one overrun (`backend_arena_tick_overruns_total`). The two-tick cap above was not
-built. How far behind a room runs short of that shows in
-`backend_arena_tick_p99_seconds`.
+built. What each tick costs shows in `backend_arena_tick_p99_seconds`; how far behind its schedule
+a room runs short of the 400 ms is not exported.
 
 `Room.tick()` order matters and is fixed:
 
@@ -955,7 +955,7 @@ allocated.
 ## 7. Deaths, respawn, spectate
 
 - Tank death: `mode.onKill(victim, killer)`; killer gets XP; victim's client
-  gets `Death{killerName, score, level}`; entity slot freed; the **connection**
+  gets `Death{score, killerName}` (as built: varint score, u8 length, the name; no level); entity slot freed; the **connection**
   stays attached for spectating (camera follows killer) until `Respawn`.
 - Respawn: level resets per mode (FFA: back to level 1, but *score-based
   rebate*: respawn at level derived from a fraction of previous score, capped,
@@ -1138,8 +1138,8 @@ short of players plays short, and its result counts.
 ahead of it: placed as players are, the losing team of three came fourth, which
 the first run of the test showed. A walkover is fewer than two *sides* at the
 start, a side being a player in a duel and a team here, so two of one team who
-came are still a walkover. `platform` refuses to queue a mode with teams until
-the matcher fills teams.
+came are still a walkover. `platform` at first refused to queue a mode with teams; the matcher
+fills teams since ([04 §4](04-platform-services.md#4-matchmaking)).
 
 ### 8.5 Co-op waves (designed 2026-09-29, plan item 6)
 
@@ -1392,7 +1392,7 @@ activity.
 | Action | Value | What it does |
 |---|---|---|
 | 1, level | 1 to 45 | rebuilds the tank at that level where it stands: Basic, every point for that level unspent, full health; what the player wears stays |
-| 2, Guardian | 0 | summons a Guardian, co-op's boss (§8.5), into the room, hunting the players and enraged below half its health as there; refused while one is alive |
+| 2, Guardian | ignored | summons a Guardian, co-op's boss (§8.5), into the room, hunting the players and enraged below half its health as there; refused while one is alive |
 
 A value out of range, an action unknown, a tank that is dead, or any room but a
 sandbox: the message is dropped and the connection kept. Classes are chosen by

@@ -3,12 +3,13 @@
 # way a device will (docs/operations/06-certificates.md, D-82):
 #
 #   install-certificate.sh <fullchain.pem> <privkey.pem>   by hand: from scripts/private-ca.sh, or any CA
-#   install-certificate.sh                                 as certbot's --deploy-hook, which
-#                                                          sets RENEWED_LINEAGE
+#   install-certificate.sh                                 as a public CA's renewal hook (certbot's
+#                                                          --deploy-hook sets RENEWED_LINEAGE); the
+#                                                          site uses none since D-82
 #   install-certificate.sh --check                         what each port serves right now
 #   install-certificate.sh --placeholder                   a self-signed stand-in, so nginx can
-#                                                          start and answer the CA's first
-#                                                          challenge; devices refuse it
+#                                                          start before the real certificate is
+#                                                          there; devices refuse it
 #
 # nginx gets the PEM files and is reloaded, which drops nothing: it serves them on 443 (logins,
 # purchases, the lobby) and on 9001 (match traffic, whose TLS it ends, D-82). An arena that ends
@@ -40,10 +41,11 @@ CREDENTIALS_DIR=${CREDENTIALS_DIR:-/etc/backend/credentials}
 CONFIG_DIR=${CONFIG_DIR:-/etc/backend}
 NGINX_CONF=${NGINX_CONF:-/etc/backend/nginx/backend.conf}
 STREAM_CONF=${STREAM_CONF:-/etc/backend/nginx/backend-stream.conf}
-# nginx -t writes its pid file and makes its temporary directories, in the directories its unit
-# makes (RuntimeDirectory, CacheDirectory): on a machine where the unit has not run, they are made here.
+# nginx -t writes its pid file, makes its temporary directories and opens its logs, in the directories
+# its unit makes (RuntimeDirectory, CacheDirectory, LogsDirectory): on a machine where the unit has not
+# run, they are made here (O-49).
 nginx_test() {
-    install -d -m 0755 /run/backend-nginx /var/cache/backend-nginx
+    install -d -m 0755 /run/backend-nginx /var/cache/backend-nginx /var/log/backend-nginx
     /opt/backend/nginx/sbin/nginx -t -q
 }
 NGINX_TEST=${NGINX_TEST:-nginx_test}

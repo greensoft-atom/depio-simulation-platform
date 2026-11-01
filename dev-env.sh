@@ -7,7 +7,8 @@
 #   work/m2/            Maven's local repository
 #   work/tmp/           TMPDIR, and java.io.tmpdir for Maven and the tests' JVMs
 #   work/mysql/         the development MySQL (dev-mysql.sh), 127.0.0.1:3314 (MYSQL_PORT)
-#   work/run/           a run by hand (run-local.sh)
+#   work/run/           a run by hand: j-redis (dev-jredis.sh) and the backend (dev-backend.sh)
+#   work/nginx/         nginx in front of it (dev-nginx.sh): its configuration, certificate, logs
 #
 # The machine's own Java, Maven and MySQL are neither used nor changed: JAVA_HOME and PATH point
 # into vendor/, Maven skips /etc/mavenrc and ~/.mavenrc, and the tests' JDBC_URL is the
@@ -42,3 +43,17 @@ export TMPDIR=$WORK/tmp
 export MYSQL_PORT=${MYSQL_PORT:-3314}
 DEV_JDBC_URL="jdbc:mysql://127.0.0.1:$MYSQL_PORT/backend_test?useSSL=false&allowPublicKeyRetrieval=true"
 export JDBC_URL=${JDBC_URL:-$DEV_JDBC_URL}
+# A run by hand's ports and address, the same for each of its scripts (D-92): j-redis, the platform, the gateway
+# and the arena on 127.0.0.1, nginx on every address on the site's ports, and the arena announcing nginx's.
+STORE_PORT=${STORE_PORT:-6380} PLATFORM_PORT=${PLATFORM_PORT:-8080} GATEWAY_PORT=${GATEWAY_PORT:-8081}
+ARENA_PORT=${ARENA_PORT:-9021} ARENA_TLS_NAME=${ARENA_TLS_NAME:-a1.arena.internal}
+NGINX_HTTP_PORT=${NGINX_HTTP_PORT:-80} NGINX_HTTPS_PORT=${NGINX_HTTPS_PORT:-443} NGINX_MATCH_PORT=${NGINX_MATCH_PORT:-9001}
+# The address clients dial: the machine's first IPv4 address, unless given (hostname -I keeps no order, and
+# may give an IPv6 one first); 127.0.0.1 with none. Bash alone: the build needs no awk.
+if [ -z "${PUBLIC_ADDRESS:-}" ]; then
+    for _addr in $(hostname -I 2> /dev/null || true); do
+        case $_addr in *.*.*.*) PUBLIC_ADDRESS=$_addr; break ;; esac
+    done
+    unset _addr
+fi
+PUBLIC_ADDRESS=${PUBLIC_ADDRESS:-127.0.0.1}

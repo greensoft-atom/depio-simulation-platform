@@ -29,9 +29,9 @@ In a shell at the repository's root:
 . ./dev-env.sh && ./dev-mysql.sh start
 (cd backend && mvn -pl platform -amd install)   # the module, every module that uses it, and their tests
 ./run-local.sh stop                             # the release is about to be replaced under it
-(cd backend && scripts/make-release.sh)         # the release that run-local.sh and the drills run
+(cd backend && scripts/make-release.sh)         # the release dev-backend.sh, dev-nginx.sh and the drills run
 ./run-local.sh start
-./run-local.sh bots                             # bots play through it
+./dev-backend.sh test                           # two bots through nginx; ./dev-backend.sh bots for more
 ```
 
 - **`-amd`** builds the module and every module that uses it, with their tests: after changing

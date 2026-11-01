@@ -55,6 +55,8 @@ guarantee. Details in
 
 ### D-3 — MySQL is the system of record; MongoDB is cancelled
 
+**Superseded in part by [D-77](#d-77--everything-the-backend-builds-and-runs-with-is-in-the-repository-and-in-the-release)** (2026-10-05): MySQL 8.4 LTS, the release's own.
+
 **Decision.** MySQL 8.0 holds accounts, progression, inventory, economy,
 teams, tournaments and the ledger.
 
@@ -103,7 +105,7 @@ knows.
 **Consequence.** The **allocator is the load balancer** for match traffic. nginx is
 not, and no amount of nginx configuration would make it one.
 
-**Revised by [D-82](#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)** (2026-10-19), since the site has one public address: match traffic now
+**Superseded in part by [D-82](#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)** (2026-10-19), since the site has one public address: match traffic now
 passes the front's nginx, which ends its TLS and passes the connection to the arena the
 handshake names. The allocator still decides; nginx only follows the name the allocator gave.
 The extra hop is the cost.
@@ -326,7 +328,7 @@ rather than only during an incident.
 list should be generous and stable. A server-provided endpoint list fetched at
 login can supersede this later without changing the model.
 
-**Since [D-82](#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)** the site has one public address, so the list holds one endpoint: the
+**Superseded in part by [D-82](#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)** (2026-10-19): the site has one public address, so the list holds one endpoint: the
 retrying stays, and a lost front is covered by the provider forwarding to another machine.
 
 ### D-14 — Communication is a fixed phrase list, never free text
@@ -2155,6 +2157,10 @@ copied into a second key.
 
 ### D-80 — A checkout builds, tests, runs and is debugged from inside its own folder
 
+**Superseded in part by [D-92](#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it) on 2026-11-01:** a run by hand is four scripts, `dev-mysql.sh`,
+`dev-jredis.sh`, `dev-backend.sh` and `dev-nginx.sh`, which `run-local.sh` runs in order; j-redis from its
+own build, the arena on 127.0.0.1:9021 behind nginx on 80, 443 and 9001.
+
 **Decided 2026-10-17** by the owner (plan item 87, [O-38](../defects.md#6-operations)): on a
 machine with no network, where Java 8 and MySQL 5 are installed and must not be touched,
 everything is to be built, run and operated from inside the repository's folder. Extends
@@ -2496,6 +2502,8 @@ where D-84 had said "until rotated".
 
 ### D-86 — Monitoring is the backend's own: a watch in every platform, the runbook's rules in code, alerts in the store, sent by webhook
 
+**Revisited 2026-11-01** (as built, found by plan item 111's review): the store keys are `alert:{fingerprint}`, a JSON string, and `alertsent:{fingerprint}:{status}` (`NX PX`); a send is tried twice at once, and a failed one's claim is given back for the next round ([04 §12](../detailed-design/04-platform-services.md#12-the-watch-monitoring-and-alerts-designed-2026-10-24-plan-item-100)).
+
 **Decided 2026-10-24** (plan item 100). The owner agreed to monitoring and, the same day, refused
 third-party services for it, Prometheus and its kind included, even bundled in the release
 ([C-6](../requirements/01-scope-and-nfrs.md#3-constraints)): what watches the site is the backend's own
@@ -2623,6 +2631,9 @@ worker has no team service; a read shows it); a shorter or configurable period (
 
 ### D-88 — A port the machine refuses is named, with its policy, before anything starts
 
+**Revisited 2026-11-01** ([D-92](#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)): each development script checks its own ports, `run-local.sh` runs
+them, and a port below 1024 is named root's, not a policy's ([O-48](../defects.md#6-operations)).
+
 **Decided 2026-10-27** (plan item 106; [O-46](../defects.md#6-operations): the owner's run as a user
 who is not root, refused 3314 and 8080 with `Permission denied`).
 
@@ -2736,6 +2747,9 @@ CentOS VM while their store bound 6380, and they asked for a grant for the Java 
 
 ### D-91 — A run by hand gets the site's front of its own, from the release's nginx and configuration
 
+**Superseded by [D-92](#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)
+on 2026-11-01:** `run-front.sh` is `dev-nginx.sh`, on the site's ports, with the arena behind it.
+
 **Decided 2026-10-31** (plan item 109; the owner, after `./build-offline.sh` and `./run-local.sh start` on their
 VM: how to start nginx for a client on another machine, then: the release already has nginx and its
 configuration, and a script of its own beside `run-local.sh`).
@@ -2784,3 +2798,96 @@ configuration, and a script of its own beside `run-local.sh`).
 - **8443 and 9443, not 443 and 9001**: a port below 1024 needs root or a lowered threshold, and 9001 is the
   local arena's. A client takes the arena's port from its grant, so 9443 costs a client nothing; the API's and
   the lobby's port is the client's setting.
+
+### D-92 — A script for each service of a run by hand, and nginx on the site's ports in front of it
+
+**Decided 2026-11-01** (plan item 110; the owner, after D-91: they run the system as root; phones' app and a
+laptop's Postman are to reach it through nginx on 80, 443 and 9001; a script of its own for nginx, MySQL, j-redis
+and the backend, each with start, status, stop, restart and test, and build for j-redis and the backend; the
+recommendations below agreed).
+
+**Decision.**
+- **Four scripts at the checkout's root, one a service**, in `dev-mysql.sh`'s shape:
+
+  | Script | Commands | What it runs |
+  |---|---|---|
+  | `dev-nginx.sh` | `start`, `stop`, `restart`, `status`, `test` | the release's nginx, its configuration rewritten into `work/nginx` |
+  | `dev-mysql.sh` | the same | `vendor/`'s MySQL 8.4, `work/mysql` (D-80), unchanged but for `test` |
+  | `dev-jredis.sh` | `build` too | j-redis from its own build, on `vendor/`'s JDK, its data in `work/run/store` |
+  | `dev-backend.sh` | `build` too, and `bots` | the release's platform, worker, gateway and arena (one or some by name), `work/run` |
+
+  `run-local.sh` is the four in order: `start` MySQL, j-redis, the backend, nginx; `stop` nginx, the backend,
+  j-redis, the MySQL left running as before; `restart` both; `status` all four. `build-offline.sh` is
+  `dev-jredis.sh build` and then `dev-backend.sh build`. `run-front.sh` is gone, and D-91 with it.
+- **`build` is the compile with its tests**, and for the backend the release too (`SKIP_TESTS=1` without the
+  tests). The backend's needs j-redis's: its client is a dependency, and the release carries its server.
+  The backend's tests need the development MySQL, which `build` starts for them and stops after when it was not
+  running, as `build-offline.sh` did.
+- **`test` is the running service's own check, now**, not the unit tests, which `build` runs:
+  - nginx: `nginx -t` on its configuration; 80 answers a redirect to `https`; 443's certificate verifies against
+    `ca.pem` for the address, and the platform answers through it; 9001's handshake verifies for the arena's name.
+  - MySQL: the `backend` user logs in over TCP to both databases, and `backend_dev`'s schema version is named.
+  - j-redis: `PING`, then a key of its own set, read and deleted.
+  - the backend: each process running, and two bots registering, logging in, opening the lobby, given a ticket
+    and playing for five seconds, all through nginx, every certificate checked against `ca.pem`.
+
+  Each dials nginx on 127.0.0.1 and checks the certificate for the name a client would see (curl's
+  `--connect-to`, the bots' `BACKEND_BOT_VIA`), so a test holds on a machine whose address is not its own, a VM
+  behind NAT. `bots`, the load tool, sends the API and the lobby straight to 8080 and 8081, each bot from an
+  address of its own as before, and its matches through nginx, where the arena's grant sends them.
+- **nginx on the site's ports, on every IPv4 address** (the rewrite drops IPv6's listen lines): 80, 443 and 9001 (`NGINX_HTTP_PORT`, `NGINX_HTTPS_PORT`,
+  `NGINX_MATCH_PORT`). **80 answers only a 308 to `https`**: the site keeps 80 closed (D-82); here it is the
+  owner's, and a redirect is all it serves. **The arena moves behind it**, to 127.0.0.1:9021 (`ARENA_PORT`; the
+  site's arenas are on 9011 and up, and 9011 is the drills' here), and announces `PUBLIC_ADDRESS` on
+  `NGINX_MATCH_PORT`, TLS as `ARENA_TLS_NAME`, `a1.arena.internal`, which nginx routes to it. So every match goes
+  through nginx, the bots' too, as on the site. MySQL, j-redis, the platform, the gateway and the arena listen on
+  127.0.0.1 alone, so nginx is all another machine reaches.
+- **The settings the scripts share are `dev-env.sh`'s**, beside `MYSQL_PORT`: every port, `ARENA_TLS_NAME`, and
+  `PUBLIC_ADDRESS`, the address clients dial, the machine's first (`hostname -I`) unless given, 127.0.0.1 with none.
+- **Root for nginx alone.** 80 and 443 are below 1024: `dev-nginx.sh` needs root or a lowered threshold, tries
+  its ports with `check-bind.sh` (D-88), which names a port below 1024 root's rather than a policy's (O-48), and
+  its workers run as `nobody`. The other three run as whoever runs them.
+  A user who is not root moves nginx's ports (`NGINX_HTTP_PORT=8088 NGINX_HTTPS_PORT=8443 NGINX_MATCH_PORT=9443`; 8080 is the platform's), and the arena's announcement follows
+  `NGINX_MATCH_PORT`.
+- **The certificate is the backend's own CA's**, as D-91: a root made once in `work/nginx/ca` and kept, and a
+  certificate for `PUBLIC_ADDRESS`, 127.0.0.1 and `ARENA_TLS_NAME`, issued again when it does not name them, is not
+  the root's, or ends within a day. A phone's app trusts the root it was built with alone (D-82), so the build for
+  these phones carries this `ca.pem`; Postman takes it among its CA certificates.
+- **The configuration is the release's, rewritten**, as D-91, into `work/nginx/conf`: paths, upstreams to
+  127.0.0.1, the stream map to `ARENA_TLS_NAME` alone, the ports, `server_name`, what needs root or IPv6, and the
+  server on 80 added. What a rewrite missed is still refused, naming the line. **No response is buffered to a
+  file** (`proxy_max_temp_file_size 0`): the workers, `nobody`, cannot reach a checkout under `/root`, which is
+  closed to every other user, and a response larger than nginx's buffers to a slow client would otherwise go to a
+  temporary file they cannot open (O-47). A request body is at most 4 KiB, under its buffer, so none is written
+  either.
+- **Each script refuses what it needs and does not have**, naming the script that gives it: the backend's
+  `start` with no MySQL or no store answering, its `test` with no nginx, `dev-jredis.sh start` with no build. It
+  does not start another's service, but `dev-backend.sh build` the development MySQL for its tests, as
+  `build-offline.sh` did; `run-local.sh` does them in order.
+- **j-redis runs from its own build**, `j-redis-server/target`, not the release's copy, so a change to it runs
+  after its own build alone; the release still carries the same jar, built from the same source, for the site.
+  It listens on 127.0.0.1 and keeps its data in `work/run/store` as before. Debugger ports as before: the
+  platform 5005, the worker 5006, the gateway 5007, the arena 5008, the store 5009 (`DEBUG=1`).
+- **The firewall stays the administrator's**: `dev-nginx.sh start` prints the line that opens 80, 443 and 9001,
+  and runs nothing on it.
+
+**Why.**
+- **One service a script** is the owner's choice, and is the site's shape: each service is a unit of its own
+  there (`backend-nginx`, `backend-mysql`, `backend-store@`, `backend-platform`...).
+- **The site's ports** are the owner's: the app and Postman are set up once, as for the site. With the arena behind
+  nginx on its own port, the one machine is the site's front and its machine at once, and a match takes the
+  site's path.
+- **80 as a redirect**: the API in plain text would carry passwords and session tokens readable on the network,
+  and the app refuses plain HTTP anyway. A 308 keeps the method and the body, so a POST that tried 80 is sent on
+  as a POST, and Postman follows it.
+- **`test` as a check of the running service**: the unit tests already run in `build`; what a test can show of a
+  running service is whether it answers, now, through the path a client takes, which is the question after a
+  start.
+- **j-redis from its own build**: from the release's copy, a change to j-redis would need the backend's release
+  made again before it ran.
+
+**Cost.** The arena's port and the run's ports change from D-80's and D-91's: 9001 is nginx's, the arena's is
+9021, and a run by hand's matches need nginx running. Four scripts and a wrapper where there were three scripts,
+and the commands in the documents with them: `./run-local.sh bots` is `./dev-backend.sh bots`, a process restarted
+alone is `./dev-backend.sh restart platform`. Running as root is the owner's, on their machine; the site still runs
+each service as `backend` under systemd.

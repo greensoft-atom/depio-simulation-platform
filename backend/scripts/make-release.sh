@@ -77,7 +77,7 @@ cp -a "$VENDOR/nginx-1.30" "$OUT/nginx"
 cp -r deploy/systemd deploy/env "$OUT/"
 cp -r deploy/mysql "$OUT/mysql-conf"
 cp -r deploy/nginx "$OUT/nginx-conf"
-# The operational scripts: the backup units and certbot's deploy hook run them from
+# The operational scripts: the backup units, the log rotation and the operators run them from
 # /opt/backend/scripts; they find mysql/, jredis/ and runtime/ beside them.
 mkdir -p "$OUT/scripts"
 cp scripts/backup-mysql.sh scripts/backup-store.sh scripts/binlog-stream.sh \

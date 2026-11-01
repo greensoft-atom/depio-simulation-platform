@@ -12,10 +12,11 @@ gateway can be restarted, scaled or replaced without touching product rules.
 
 **Match traffic never passes through the gateway**
 ([D-5](../architecture/03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)).
-The client connects to an arena directly, on a different socket, with a
-different protocol ([02-networking](02-networking.md)). At 50 000 players that
-traffic is ~1.1 Gbit/s; proxying it would double internal network load and add
-a hop to the one path that cannot afford it.
+The client connects to an arena on a different socket, with a different protocol
+([02-networking](02-networking.md)): on the site through the front's nginx on 9001, which ends its
+TLS and hands the bytes, unread, to the arena the grant's `tlsName` names ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)); never through a
+gateway. At 50 000 players that traffic is ~1.1 Gbit/s: the front's hop is D-82's cost, and a
+gateway would add a second hop and a component of ours to the one path that cannot afford it.
 
 A player therefore has **two sockets** while in a match: the lobby connection
 to a gateway, and the match connection to an arena. They fail independently,
@@ -30,17 +31,17 @@ client ──WSS /lobby──► nginx ──WS──► gateway ──► platf
 client ──HTTPS /v1/──► nginx ──HTTP──► platform: login, registration, leaderboards, the shop
 ```
 
-nginx terminates TLS and load-balances across the gateways on that machine.
-One gateway per machine, three in total, all three advertised to the client,
-which retries the next on failure
-([D-13](../architecture/03-decision-log.md#d-13--the-client-holds-an-endpoint-list-no-vip)).
-Each machine is one name, `a.<domain>` for machine A, and its certificate
-names it ([operations/01 §11](../operations/01-deploy.md#11-the-certificate)).
-**The client uses `https://` and `wss://` only**, verifies against the device's
-trust store, pins nothing, and on a certificate error tries the next endpoint
-and then shows an error, never a plaintext fallback. Port 80 refuses
-everything but the CA's challenge, so a client configured with `http://` fails
-at once rather than sending passwords in the clear.
+nginx on the front ends TLS on 443 and spreads lobby connections over the three machines' gateways
+on the private network (`least_conn`; one that fails is passed over for 10 s,
+`deploy/nginx/backend-upstreams.conf`), [D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name). One gateway per machine, three in total, behind the
+site's one public address: the client holds that one endpoint
+([D-13](../architecture/03-decision-log.md#d-13--the-client-holds-an-endpoint-list-no-vip), superseded in
+part by D-82) and reconnects to it. The site has no domain; its certificate, from the backend's own
+CA, names the public address ([operations/01 §11](../operations/01-deploy.md#11-the-certificate),
+[06](../operations/06-certificates.md)). **The client uses `https://` and `wss://` only**, verifies
+against the backend's root alone (`TrustRoot`), pins nothing but that root, and on a certificate
+error shows an error, never a plaintext fallback. Port 80 is closed on the site (D-82), so a client
+configured with `http://` fails at once rather than sending passwords in the clear.
 
 | Property | Value |
 |---|---|
@@ -63,7 +64,7 @@ and changes constantly, so legibility and painless evolution beat bytes.
 ```json
 { "t": "party.invite", "id": 42, "d": { "playerId": 4711 } }
 { "t": "party.invite.ok", "id": 42, "d": { "partyId": "…", "leader": 1, "members": [ … ], "version": 1 } }
-{ "t": "evt.match.found", "d": { "arenaHost": "…", "arenaPort": 9001, "ticketId": "…", "tls": true, "mode": "duel" } }
+{ "t": "evt.match.found", "d": { "arenaHost": "…", "arenaPort": 9001, "ticketId": "…", "tls": true, "tlsName": "a1.arena.internal", "mode": "duel" } }
 ```
 
 `id` correlates a request with its reply. Messages without `id` are server
@@ -113,7 +114,8 @@ A push has no `id`: it answers nothing.
                     gateway: HGET sess:{token} playerId   (j-redis)
                     invalid or expired → close with a typed reason, no retry loop
                     not 43 base64url characters → the same, and no HGET (S-20)
-3. register         SET conn:{playerId} {gatewayId}#{nonce} EX 60
+3. register         MULTI GETSET conn:{playerId} {gatewayId}#{nonce}-{n}, EXPIRE 60, EXEC
+                    (the value replaced: another gateway's is told, T-60)
                     refreshed every 20 s with SET NX + EXPIRE: never overwritten
                     gateway adds playerId → Channel to its local table
                     auth.ok once the SET is acknowledged; if it fails, internal
@@ -364,7 +366,7 @@ one `evt.resync` and the next push went straight through.
 
 | Failure | Effect | Recovery |
 |---|---|---|
-| Gateway process dies | Its connections drop | Clients retry the next endpoint; systemd restarts it |
+| Gateway process dies | Its connections drop | Clients reconnect to the site's address; the front's nginx passes over the dead gateway for 10 s and `least_conn` places them on another; systemd restarts it |
 | `platform` unreachable | Requests fail with a typed error | Gateway stays up and keeps connections; it does not cascade the failure into a disconnect storm |
 | j-redis `session` unreachable | New authentications fail | **Existing connections keep working** — the token was validated once and the playerId is held on the connection |
 
@@ -380,7 +382,7 @@ ends every session the player has and their lobby connection, with
 
 | Metric | Why |
 |---|---|
-| Connections per instance, and the spread across three | Uneven balance means nginx or the client endpoint list is misbehaving |
+| Connections per instance, and the spread across three | Uneven balance means the front's `least_conn` is misbehaving |
 | Auth failures by reason | A spike in bad tokens is either a bug or an attack |
 | Push route misses (`conn:` lookup empty or stale) | High rates mean the presence TTL is too short |
 | Rate-limit closures per minute | Client bug or abuse |
@@ -395,7 +397,8 @@ among the rest), `backend_gateway_pushes_total{outcome}` (`delivered`,
 notice to every lobby; and `held` and `dropped` for a slow connection, §8),
 `backend_gateway_slow_closed_total`, `backend_gateway_platform_seconds{route}`,
 `backend_gateway_unwritable_seconds{end}`,
-`backend_gateway_store_subscribed`, `backend_gateway_resubscribed_total` (§5)
+`backend_gateway_store_subscribed`, `backend_gateway_resubscribed_total` (§5),
+`backend_gateway_registry_refresh_failures_total` (registrations a 20 s refresh could not renew)
 and `backend_gateway_edge_certificate_expiry_timestamp_seconds`.
 Auth failures show as `errors_total{code="invalid_session"}`. Push route misses
 are counted here when the route was stale (`not_here`); a lookup that found no

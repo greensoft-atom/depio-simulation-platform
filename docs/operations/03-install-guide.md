@@ -28,7 +28,8 @@ three. [Three machines](#three-machines) says what differs.
   Maven, MySQL, nginx and every library are in the repository (`vendor/`,
   `java21-offline/`).
 - Memory: the units' heaps and MySQL's buffer pool are sized for the production
-  machines (64 GB). On a smaller machine, step 8 gives them smaller ones by itself.
+  machines (64 GB). On a smaller machine, step 8 gives the Java processes and the store smaller
+  heaps by itself; set `MYSQL_BUFFER_POOL` (§2) to about a quarter of the memory.
 - Disk: about 2 GB for the repository and the build, and what the data takes.
 
 ### A Java or a MySQL already on the server
@@ -167,6 +168,8 @@ for p in platform gateway worker; do
     sed -e "s/^STORE_HOST=.*/STORE_HOST=127.0.0.1/" -e "s#^BACKEND_DB_URL=.*#BACKEND_DB_URL=$local_db#" \
         -e "s/^PLATFORM_BIND=.*/PLATFORM_BIND=127.0.0.1/" -e "s/^GATEWAY_BIND=.*/GATEWAY_BIND=127.0.0.1/" \
         -e "s#^PLATFORM_URL=.*#PLATFORM_URL=http://127.0.0.1:8080#" -e "s/^BACKEND_TRUSTED_PROXIES=.*/BACKEND_TRUSTED_PROXIES=/" \
+        -e "s/^BACKEND_WATCH_TARGETS=.*/BACKEND_WATCH_TARGETS=platform=127.0.0.1:9101,gateway=127.0.0.1:9103,arena=127.0.0.1:9110/" \
+        -e "s/^BACKEND_WATCH_PEERS=.*/BACKEND_WATCH_PEERS=/" \
         "/opt/backend/env/$p.env.example" > "/etc/backend/$p.env"
 done
 # The arena behind nginx: on loopback, announcing this machine's address, 9001 and its name.
@@ -310,7 +313,9 @@ The same steps on each, with these differences (01 §1, architecture/01 §2):
 | worker | | | yes |
 | Backups and their proof | | | yes (01 §10) |
 
-Each machine keeps the shipped examples' private addresses rather than step 8's loopback ones: the
+Each machine's `platform.env` names that machine's processes and peers for the watch
+(`BACKEND_WATCH_TARGETS`, `_PEERS`, `_MACHINE`: the example's are A's, and its comment gives B's and
+C's). Each machine keeps the shipped examples' private addresses rather than step 8's loopback ones: the
 platform, the gateway and the arenas listen on its private address, and reach the stores and MySQL
 on theirs (`STORE_HOST`, `BACKEND_STORE_ADDRESSES`, `BACKEND_DB_URL`, with MySQL's TLS settings,
 01 §9). nginx keeps the shipped `backend-upstreams.conf` and `backend-stream.conf`, the same file on

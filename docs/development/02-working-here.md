@@ -67,6 +67,7 @@ under `background/`.
 | Java 21 only (no Java 8 line); MySQL 8.4 LTS; the release carries its own Java runtime, MySQL and nginx, nothing installed as an OS package | 2026-10-05 | Q-56, plan item 80 |
 | The production machines run RHEL 9.x (the owner thinks 9.5) | 2026-09-22 | requirements C-1; §3 below |
 | Everything a development machine builds, tests, runs and debugs stays inside the checkout (`work/`); a Java and a MySQL already installed there (the owner's: Java 8, MySQL 5) are neither used nor changed | 2026-10-17 | D-80, [03](03-build-and-run.md) |
+| A run by hand is a script a service: nginx, MySQL, j-redis and the backend, each with start, status, stop, restart and test, and build for j-redis and the backend; the owner runs it as root, and clients on other machines (a phone's app, a laptop's Postman) reach it through nginx on 80, 443 and 9001 | 2026-11-01 | D-92, [03 §5](03-build-and-run.md#5-running-it-by-hand) |
 
 ## 3. The development machine
 
@@ -88,7 +89,10 @@ carries ([03 §1](03-build-and-run.md#1-what-you-need-and-what-the-repository-to
 | The internet | reachable | Maven Central, NuGet.org, GitHub, the vendors' downloads |
 
 **Ports taken by others:** 6379 (a valkey server, not ours: start j-redis on
-another port), 6381, 8082. **The drills' ports:** 6390 and 6392 (j-redis and its
+another port), 6381, 8082. **A run by hand's** (D-92): 3314, 6380, 8080, 8081, 9021, and
+nginx on 80, 443 and 9001 on every IPv4 address. This machine's firewall lets 80 in from the
+internet (ufw), so while `dev-nginx.sh` runs here its redirect is reachable from outside;
+443 and 9001 are not. **The drills' ports:** 6390 and 6392 (j-redis and its
 replica), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 to 9199 (metrics
 and the admin API), 3307 to 3309 (the drills' own MySQL servers).
 
@@ -96,7 +100,8 @@ and the admin API), 3307 to 3309 (the drills' own MySQL servers).
 network namespace `devtest` (loopback alone; after a reboot, `ip netns add devtest && ip netns exec devtest
 ip link set lo up` makes it again): the flow as a user who is not root, which until item 106 had only
 ever run as root here (O-46). A command there: `ip netns exec devtest runuser -u devtest -- bash -lc 'cd
-~/background && ./run-local.sh start'`; the unprivileged-port threshold raised there alone, to reproduce
+~/background && export NGINX_HTTP_PORT=8088 NGINX_HTTPS_PORT=8443 NGINX_MATCH_PORT=9443 && ./run-local.sh start'`
+(nginx's own 80 and 443 are root's); the unprivileged-port threshold raised there alone, to reproduce
 a refusal: `ip netns exec devtest sysctl -w net.ipv4.ip_unprivileged_port_start=9100` (and back to 1024).
 The namespace has no network: the clone builds (the bundle), but the client's NuGet restore does not.
 
@@ -235,3 +240,10 @@ image, which is RHEL 9's own userspace (plan item 80).
   write by hand is stamped in UTC (`drill-sql.sh` sets the session's zone).
 - **The full backend build takes about an hour**, beyond a 30-minute limit some
   tools put on a background command: run it under `nohup` and watch its log.
+- **nginx run as root gives its workers to `nobody`, and `/root` is closed to them** (mode 700): a
+  file they must open inside a checkout under `/root` fails `Permission denied`, as a temporary file
+  for a large response did (O-47). On loopback the sockets' buffers take a few MB, so a check that
+  nginx writes no such file needs a response larger than that: 300 KB never reached one.
+- **`true || a && b` is `(true || a) && b`** in the shell: a mutant that puts `true ||` before a
+  chain of `&&` removes the first check alone, and survives on the others. Replace the whole
+  condition (`if true; then`), as item 110's did once it had survived.

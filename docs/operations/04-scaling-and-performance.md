@@ -87,7 +87,7 @@ it. The design's seven: `a1`, `a2` on A, `b1` to `b3` on B, `c1`, `c2` on C, eac
 (§4.1); stop well short of the network threads' limit (§2.5).
 
 **Another arena on a machine**, `a3` beside `a1` and `a2`. No public port: it is reached through
-9001 by its name. Four steps:
+9001 by its name. Five steps:
 
 1. Its settings, on A:
 
@@ -109,6 +109,8 @@ it. The design's seven: `a1`, `a2` on A, `b1` to `b3` on B, `c1`, `c2` on C, eac
 3. The site's certificate, issued again with the new name and installed on every machine
    ([06 §3, §4](06-certificates.md#3-issuing-the-sites-certificate)).
 4. The arena started: `systemctl enable --now backend-arena@a3`.
+5. Its metrics in A's watch: `arena=127.0.0.1:9113` added to `BACKEND_WATCH_TARGETS` in A's
+   `platform.env`, then `systemctl restart backend-platform`.
 
 Check that it is live: `GET /admin/arenas` lists `a3` within a few
 seconds ([api/03](../api/03-admin-api.md)), and the platform starts sending players to it at
@@ -122,8 +124,9 @@ instance, the new one included.
 store and MySQL addresses of the existing ones (its "Three machines" section), its arena
 named for it (`d1`: **an arena's name must be unique across the fleet**, or two
 overwrite each other's directory entry), each arena's TLS name in every machine's map and on the
-site's certificate (05 §3, 06 §7), and the machine's address as a source in every `backend` zone
-(05 §5). Its arenas register in the same store and are used at once.
+site's certificate (05 §3, 06 §7), the machine's address as a source in every `backend` zone
+(05 §5), its platform and gateway in every machine's `backend-upstreams.conf` (then a reload), its
+address in `BACKEND_WATCH_PEERS`, and in every `BACKEND_TRUSTED_PROXIES` should it ever be the front. Its arenas register in the same store and are used at once.
 
 **Taking an arena out.** `systemctl stop backend-arena@a2` drains it: no new player or match
 is sent there, the public rooms stop and pay what their players are owed, made matches are
@@ -183,8 +186,9 @@ What it costs an operator:
 
 ### 3.1 nginx, gateway and platform: one of each per machine
 
-Each machine runs one nginx, one gateway and one platform; clients are given every machine's
-public name and try the next when one fails ([01 §4](01-deploy.md#4-nginx)). More machines are
+Each machine runs one nginx, one gateway and one platform; clients hold the site's one public
+address, and the front's nginx passes each request and lobby connection to the platforms and
+gateways of all three machines, passing over one that fails ([01 §4](01-deploy.md#4-nginx), D-82). More machines are
 more of all three. The platform holds no state of its own; the gateway holds its lobby
 connections, which reconnect elsewhere when it goes.
 
@@ -227,7 +231,7 @@ failover ([D-7](../architecture/03-decision-log.md#d-7--two-j-redis-instances-no
 executes commands on one thread, so it grows by a faster core and more memory, not by more
 instances. **The `events` store keeps a day of results** (~530 bytes each): 1.6 GB at 10 000
 players, 7.8 GB at 50 000. The shipped `maxmemory` is 3 GB, of an 8 GB heap: enough to about
-**19 000 players**, and its 80 % alert fires at about 15 000 (O-37). Both numbers are settings
+**19 000 players**, and its 80 % mark comes at about 15 000 (O-37; read by hand: no watch rule reads a store's memory, §6). Both numbers are settings
 ([D-83](../architecture/03-decision-log.md#d-83--the-result-streams-retention-is-a-setting-and-the-events-store-is-sized-by-a-table)):
 
 - **the size**: `STORE_HEAP` in `/etc/backend/store-events.env` and `maxmemory` in
@@ -237,13 +241,13 @@ players, 7.8 GB at 50 000. The shipped `maxmemory` is 3 GB, of an 8 GB heap: eno
   shortest wins. Each arena and worker logs the value at its start: `the result stream kept 24 h`.
 
 **What a number of players needs**, about 160 MB of results a day for every 1 000 players, with a
-fifth to spare under the 80 % alert, and the heap at 2.5 times `maxmemory` for ZGC. Arithmetic
+fifth to spare under the 80 % mark, and the heap at 2.5 times `maxmemory` for ZGC. Arithmetic
 from the measured size of a result, not measured on the production load:
 
 | Players | Hours kept | Results held | `maxmemory` | `STORE_HEAP` | Fits B and C at 64 GB |
 |---|---|---|---|---|---|
 | 10 000 | 24 | 1.6 GB | `3gb`, as shipped | `8g`, as shipped | yes |
-| 15 000 | 24 | 2.4 GB | `3gb`: its alert | `8g` | yes |
+| 15 000 | 24 | 2.4 GB | `3gb`: its 80 % mark | `8g` | yes |
 | 20 000 | 24 | 3.2 GB | `4gb` | `10g` | yes, closely |
 | 30 000 | 24 | 4.8 GB | `6gb` | `15g` | no |
 | 50 000 | 24 | 7.8 GB | `10gb` | `25g` | no: 96 GB would |

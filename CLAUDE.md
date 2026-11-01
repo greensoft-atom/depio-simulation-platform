@@ -156,11 +156,13 @@ for the backend, its docs and its client.
 - **Everything a build, a test or a run by hand writes goes in `work/`**, inside the checkout
   (D-80, owner 2026-10-17): the scripts source `dev-env.sh` (`vendor/`'s JDK and Maven, the bundle
   as the only repository, `work/m2`, `work/tmp`), the tests use the development MySQL
-  (`dev-mysql.sh`, 3314), a run by hand is `run-local.sh` (6380, 8080, 8081, 9001; debugger
-  5005 to 5009). Nothing in `/tmp`, `~/.m2` or `/opt` is needed by a clone; the drills, which
+  (`dev-mysql.sh`, 3314), a run by hand is a script a service (D-92, owner 2026-11-01: `dev-mysql.sh`,
+  `dev-jredis.sh` 6380, `dev-backend.sh` 8080, 8081, the arena 9021, `dev-nginx.sh` 80, 443, 9001 on every IPv4 address;
+  debugger 5005 to 5009), `run-local.sh` the four in order. Nothing in `/tmp`, `~/.m2` or `/opt` is needed by a clone; the drills, which
   need .NET, are the exception (03 §7). The built-in defaults name the development MySQL too
   (O-40): a process with no `BACKEND_DB_URL`, a test with no `JDBC_URL`, and the drills.
-- **Nothing on a development machine needs root**, and everything here runs as root, so a policy that
+- **Nothing on a development machine needs root but `dev-nginx.sh` on 80 and 443** (D-92: the owner runs it as
+  root, its workers as `nobody`; moved ports for anyone else), and everything here runs as root, so a policy that
   refuses a port to a user never shows (O-46): what must work for a user who is not root is run as
   `devtest`, in its network namespace (working-here §3), where the port threshold can be raised alone. SELinux is
   seen in a Rocky 9 guest alone (`check-selinux-el9.sh`, D-90): a confined login refuses every port above 1023 while
@@ -184,10 +186,12 @@ for the backend, its docs and its client.
 # Release, for drills (in that shell)
 (cd backend && scripts/make-release.sh)
 
-# The whole backend from the release, on the development MySQL; DEBUG=1 for debugger ports
-./run-local.sh start && ./run-local.sh bots && ./run-local.sh stop
-./run-local.sh restart platform                     # one alone; stop arena likewise (operations/07)
-./run-front.sh start [address] && ./run-front.sh stop   # the release's nginx in front of it, for clients elsewhere: 8443 API+lobby, 9443 matches; work/front/ca/ca.pem (D-91)
+# The whole backend from the release, a script a service (D-92); DEBUG=1 for debugger ports
+./run-local.sh start && ./run-local.sh stop         # dev-mysql, dev-jredis, dev-backend, dev-nginx in order; MySQL left running
+./dev-mysql.sh  start|stop|restart|status|test
+./dev-jredis.sh build|start|stop|restart|status|test          # j-redis from its own build, 127.0.0.1:6380
+./dev-backend.sh build|start|stop|restart|status|test|bots    # restart platform: one alone; the arena on 9021 announcing nginx's 9001
+./dev-nginx.sh  start|stop|restart|status|test      # the release's nginx on 80 (a redirect), 443, 9001, every IPv4 address; root; work/nginx/ca/ca.pem
 
 # Client core tests (look for "Total tests:")
 cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test --logger "console;verbosity=normal"
