@@ -2054,7 +2054,8 @@ is [09](../detailed-design/09-release-and-packaging.md).
 - **The release carries its own runtime** (made by `jlink`, about 60 MB), MySQL
   and nginx, and j-redis; units and scripts name them under `/opt/backend`.
 - **Built for RHEL 9's glibc 2.34**, whatever the development machine: nginx in a
-  Rocky Linux 9 container, and the release checked in UBI 9 with nothing installed.
+  Rocky Linux 9 container, and the release checked in UBI 9 with nothing installed. (Since D-100, for glibc 2.28:
+  nginx in Rocky Linux 8, the release checked in UBI 8 too.)
 
 **Why.**
 - **The machines may have no network**, and an operating-system package is a
@@ -3168,9 +3169,13 @@ front (nginx's configuration, its TLS, its routing by name) is not checked in th
 static nginx and over RHEL 9 alone).
 
 **Decision.** `vendor/build-nginx.sh` compiles nginx in a Rocky Linux 8 container, OpenSSL, PCRE2 and zlib compiled
-in as before. Every native binary of the release then needs glibc 2.28 at most: MySQL's own build is 2.28, the
-runtime 2.2.5. The release runs on RHEL 8 and 9 and their rebuilds, Ubuntu 20.04 and later, Debian 10 and later;
-it is checked in UBI 8 and UBI 9. Production's target stays RHEL 9 (Q-56).
+in as before, and refuses a build that needs more than glibc 2.28; `vendor/update.sh` takes MySQL's two private
+libraries, `libaio` and `libnuma`, from RHEL 8's packages, RHEL 9's `libnuma` needing 2.33 (found by the release's
+check in UBI 8). Every native binary of the release then needs glibc 2.28 at most: MySQL's own build is 2.28, the
+runtime 2.2.5. The binaries run on RHEL 8 and 9 and their rebuilds, Ubuntu 20.04 and later, Debian 10 and later,
+checked in UBI 8 and UBI 9. **The install does not reach RHEL 8**: the units hand the secrets with
+`LoadCredential=`, systemd 247's, and RHEL 8 has 239, so the install guide run in UBI 8 starts no process that has a
+secret (whether to offer RHEL 8 is Q-63). Production's target stays RHEL 9 (Q-56).
 
 **Why.** nginx links nothing of the machine's but the C library, and glibc's symbol versions run a binary on every
 glibc as new as the one it was built against, never older: built on 2.28, it runs where MySQL does. A static build

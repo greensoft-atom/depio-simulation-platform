@@ -130,6 +130,9 @@ start)
     [[ $PUBLIC_ADDRESS =~ ^[A-Za-z0-9.-]+$ ]] \
         || { echo "PUBLIC_ADDRESS=$PUBLIC_ADDRESS: an IPv4 address or a host name, the one clients dial" >&2; exit 2; }
     [ -n "$R" ] && [ -x "$NGINX" ] || { echo "no release with nginx in backend/target/release: ./dev-backend.sh build first" >&2; exit 1; }
+    # A machine whose C library is older than nginx's is told so, not that nginx refused its configuration (O-90).
+    out=$("$NGINX" -v 2>&1) || { echo "$out" >&2; echo "the release's nginx does not run on this machine: it needs glibc 2.28" \
+        "or later (docs/development/03 §1)" >&2; exit 1; }
     command -v openssl > /dev/null || { echo "no openssl: it makes the certificate (private-ca.sh)" >&2; exit 1; }
     if running; then
         echo "nginx: already running, pid $(cat "$F/nginx.pid"), for $(cat "$F/address" 2> /dev/null); $0 restart to change it"

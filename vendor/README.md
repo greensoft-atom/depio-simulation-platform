@@ -15,7 +15,7 @@ its version and where it came from: [VERSIONS.md](VERSIONS.md).
 | `src/` | `build-nginx.sh` | compiling nginx again |
 | `update.sh`, `build-nginx.sh` | whoever moves a version | refreshing the above |
 
-Every binary here runs on RHEL 9 (glibc 2.34) and on Ubuntu 24.04, and every
+Every binary here runs on glibc 2.28, RHEL 8's, and so on RHEL 9 and Ubuntu 24.04 (D-100), and every
 file is under GitHub's 100 MB limit.
 
 ## Using it
@@ -51,8 +51,8 @@ Docker for nginx.
 3. **Run it again**: it derives `jdk-21/`, `maven-3.9/`, `mysql-8.4/` and `src/` (the
    old ones are replaced). Downloads are kept in `CACHE` (default under `TMPDIR`).
 4. **For nginx, OpenSSL, PCRE2 or zlib**, then `vendor/build-nginx.sh`: it compiles
-   in a Rocky Linux 9 container and refuses a binary that needs a newer glibc than
-   RHEL 9's.
+   in a Rocky Linux 8 container and refuses a binary that needs a newer glibc than
+   RHEL 8's, 2.28 (D-100).
 5. **Check, then commit**: update [VERSIONS.md](VERSIONS.md); build a release
    (`../build-offline.sh`); run `backend/scripts/check-release-el9.sh`,
    `check-units-el9.sh` and `check-install-guide-el9.sh`, and the drills; then
@@ -76,4 +76,4 @@ ours, monthly ([runbook §6](../docs/operations/02-runbook.md#6-routine)).
 | nginx | https://nginx.org/en/security_advisories.html |
 | OpenSSL 3.5 | https://openssl-library.org/news/vulnerabilities/ |
 | PCRE2, zlib | their release notes, on GitHub and zlib.net |
-| libaio, numactl (RHEL 9's) | Red Hat's errata for those packages |
+| libaio, numactl (RHEL 8's) | Red Hat's errata for those packages |

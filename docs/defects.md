@@ -1358,11 +1358,18 @@ the runbook says how to see and raise it (a step's failure there would be needed
 put every MySQL account's password on `mysql -e`'s command line, which any local user can read in `/proc` while it
 runs. **Fixed:** the statements on standard input. By the install guide's check, its restore among them.
 
-**O-90 (L), found 2026-11-02, OPEN** (plan item 117). On a machine whose glibc is older than nginx's 2.34 (DOC-39),
+**O-90 (L), found 2026-11-02, FIXED the same day** (plan items 117 and 119). On a machine whose glibc is older than nginx's 2.34 (DOC-39),
 `dev-nginx.sh start` ends with "nginx refused its configuration": the loader's own line above it names the cause,
 `GLIBC_2.34' not found`, and the script's says another. Not met on the machines the scripts are for (RHEL 9, Ubuntu
-22.04 and later). The fix, three lines: `nginx -v` tried before the configuration, its failure said as the release's
-nginx not running here, with §1's systems; put to the owner with item 117.
+22.04 and later). **Fixed** with item 119, nginx then built for glibc 2.28 (D-100): `start` tries `nginx -v` before
+anything, and its failure is said as the release's nginx not running on this machine, glibc 2.28 named. Test first,
+with a stub failing as the loader does: the old line, then the new; the check skipped, the old line again.
+
+**O-92 (L), found 2026-11-02, OPEN** (plan item 119's run). `dev-nginx.sh start` as a user after a start by root, the
+way D-98 leaves open: `work/nginx` holds root's configuration and logs, and the user's start ends at `mkdir:
+cannot create directory '…/work/nginx/conf.new': Permission denied`, the cause plain but not its way out. Start nginx
+always the same way, by `sudo` or as the user; to change, `sudo rm -rf work/nginx/conf work/nginx/logs work/nginx/temp`
+first (the root CA and the certificate may stay).
 
 **O-91 (M), found 2026-11-02, FIXED the same day** (plan item 117, run as the owner's machine is: Rocky 9, a home of
 0700, nginx by `sudo` on 80 and 443 and the rest as the user, D-92). Beside root's nginx the user could not read
@@ -1416,7 +1423,9 @@ on their machine unchanged). The build guide's §1 asked for Linux on x86-64 and
 built on Rocky 9, needs glibc 2.34 (its symbols, by `objdump -T`), so `dev-nginx.sh` and `run-local.sh` cannot run on
 Ubuntu 20.04, Debian 11 or RHEL 8, which are 2.31 and 2.28; MySQL needs 2.28 and the machine's `libstdc++`, and its
 client, which `dev-mysql.sh` runs at every start, the machine's `libncurses.so.6` and `libtinfo.so.6`. Now §1 says
-so, and which systems that leaves; read from the binaries, not run on the older systems.
+so, and which systems that leaves; read from the binaries, not run on the older systems. **Corrected the same day**
+(plan item 119): MySQL's figure was its own binaries'; the `libnuma` beside them, RHEL 9's, needed 2.33, which the
+release's check in UBI 8 found. Since D-100 every binary is 2.28's, nginx built on Rocky 8 and both libraries RHEL 8's.
 
 ## 7. Documentation
 

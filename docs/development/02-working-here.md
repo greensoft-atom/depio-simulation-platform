@@ -111,8 +111,9 @@ The namespace has no network: the clone builds (the bundle), but the client's Nu
 **This is not the production platform.** Production is RHEL 9.x, with glibc
 2.34; this machine has glibc 2.39. Anything compiled here may need newer glibc
 symbols (2.38's, for one) and not start there: native code for the release is
-built in a Rocky Linux 9 container, and the release is checked in Red Hat's UBI 9
-image, which is RHEL 9's own userspace (plan item 80).
+built in a Rocky Linux 8 container, for glibc 2.28 (D-100), and the release is checked in Red Hat's UBI 8 and UBI 9
+images, RHEL's own userspace (plan items 80 and 119). RHEL 8 runs the binaries, not the units: its systemd 239
+lacks `LoadCredential=` (Q-63).
 
 ## 4. Traps, each met at least once
 
@@ -195,10 +196,11 @@ image, which is RHEL 9's own userspace (plan item 80).
 - **Maven's `-o` also blocks `file://` repositories**: building from
   `java21-offline` uses its `settings-offline.xml` as a mirror, without `-o`
   ([its README](../../java21-offline/README.md)).
-- **A binary compiled here may not start on RHEL 9**: this machine's glibc is
-  2.39, RHEL 9's 2.34 (§3). Native code for the release is compiled in the
-  Rocky Linux 9 container (`vendor/build-nginx.sh`, with Docker), never here, and
-  a release is checked in UBI 9 with nothing installed by
+- **A binary compiled here may not start on RHEL**: this machine's glibc is
+  2.39, RHEL 9's 2.34 and RHEL 8's 2.28 (§3). Native code for the release is compiled in a
+  Rocky Linux 8 container (`vendor/build-nginx.sh`, with Docker, D-100), never here, and so is any library taken
+  from a distribution's packages: RHEL 9's `libnuma` needed 2.33 (plan item 119). A release is checked in UBI 8
+  and UBI 9 with nothing installed by
   `backend/scripts/check-release-el9.sh`
   ([09 §7](../detailed-design/09-release-and-packaging.md#7-how-it-is-verified)).
 - **A mutant that "survives" because no test ran.** A mutation harness that reads

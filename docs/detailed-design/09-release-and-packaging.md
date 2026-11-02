@@ -18,13 +18,13 @@ included: the owner chose the backend only.
 | glibc | 2.39 | 2.34, on every 9.x |
 | CPU | x86-64 | x86-64 |
 
-Every binary in the repository is chosen or built to run on **glibc 2.34**, so
-that it runs on both: the JDK and MySQL are vendors' builds for older glibc
-(Temurin's for 2.17, MySQL's "generic" for 2.28); nginx is compiled in a Rocky
-Linux 9 container, never on the development machine, whose glibc 2.38 symbols
-RHEL 9 lacks; the two libraries MySQL takes from the system come from RHEL 9's
-own packages. Checked in Red Hat's UBI 9 image, RHEL 9's userspace with nothing
-installed (§7).
+Every binary in the repository is chosen or built to run on **glibc 2.28**, RHEL 8's (D-100), so that it runs on
+both and on RHEL 8: the JDK and MySQL are vendors' builds for older glibc (Temurin's for 2.17, MySQL's "generic"
+for 2.28); nginx is compiled in a Rocky Linux 8 container, never on the development machine, whose glibc 2.38
+symbols RHEL lacks; the two libraries MySQL takes from the system come from RHEL 8's own packages, RHEL 9's
+`libnuma` needing 2.33. Checked in Red Hat's UBI 8 and UBI 9 images, RHEL's userspace with nothing installed
+(§7). **The units need systemd 247** (`LoadCredential=`): RHEL 9's 252; RHEL 8's 239 runs the binaries, not the
+install (Q-63).
 
 ## 2. What is in the repository: `vendor/`
 
@@ -179,7 +179,8 @@ longer needed. On RHEL 9, SELinux runs a service started from `/opt` unconfined.
    started; j-redis; the platform migrating it and serving a registration and a
    login; the gateway, a worker and an arena (on Netty's native epoll); nginx
    proxying to the platform over HTTP and HTTPS; and `nginx -t` on the shipped
-   configuration. Mutation-checked: a release without `libaio` fails it.
+   configuration. Mutation-checked: a release without `libaio` fails it. The same in `ubi8/ubi-minimal:8.10`
+   (D-100): every binary on glibc 2.28, which a release with RHEL 9's `libnuma` and a Rocky 9 nginx failed.
 3. **The units run on RHEL 9's systemd**: `backend/scripts/check-units-el9.sh` runs
    a release and the repository's `deploy/` in `ubi9/ubi-init:9.5`, systemd 252 its
    first process; installs as the deploy document says, starts `backend-mysql`

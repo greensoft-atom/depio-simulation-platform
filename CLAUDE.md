@@ -121,8 +121,9 @@ for the backend, its docs and its client.
   20 000), Q-59 (the app's updates), Q-60 (where alerts go) and Q-62 (the launch's machine). Recorded, not raised
   again until the owner brings them back; what they cost stays in the documents.
 - **Java 21 only, MySQL 8.4, and the release carries its own runtime, MySQL and nginx**
-  (Q-56, plan item 80). **Production is RHEL 9.x** (glibc 2.34), this machine Ubuntu
-  24.04: native code is built in a Rocky Linux 9 container, releases checked in UBI 9.
+  (Q-56, plan item 80). **Production is RHEL 9.x** (systemd 252, which the units need), this machine Ubuntu
+  24.04: native code is built in a Rocky Linux 8 container for glibc 2.28 (D-100), releases checked in UBI 8 and UBI 9;
+  RHEL 8 runs the binaries but not the units (systemd 239, Q-63).
 - **Naming.** The word excluded by the naming rule in [docs/README.md](docs/README.md#naming)
   is never used: not in prose, identifiers, file names, paths or commit messages. That
   section is the only place it is written. The glossary has the substitutes.

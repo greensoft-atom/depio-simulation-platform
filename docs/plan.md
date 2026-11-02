@@ -3999,11 +3999,21 @@ asking for nginx's root, `test` asking for nginx, `status` listing it. The nginx
 `sudo` in Rocky 9: unchanged, 0 failed. Docs: D-99, development/03 §5.0, README. Not checked: an Android build
 allowing cleartext (no Unity here; D-99's cost).
 
-#### 119. The release's nginx built on Rocky 8: glibc 2.28, the release's floor MySQL's (the owner, 2026-11-02, D-100).
+#### 119. ~~The release's binaries on glibc 2.28: nginx built on Rocky 8, MySQL's libraries RHEL 8's (the owner, 2026-11-02, D-100).~~ — **done 2026-11-02**
 
 The owner, unsure the hosting machine has glibc 2.34, chose nginx built on Rocky 8 over a static build or RHEL 9
-alone. The release then runs on RHEL 8 and 9 and what has glibc 2.28; checked in UBI 8 and UBI 9. O-90's message
-with it.
+alone. **Test first**: the release's check in UBI 8.10 (glibc 2.28) failed, nginx needing 2.34 and, found by it,
+MySQL too: the `libnuma` `vendor/update.sh` takes from RHEL 9's packages needs 2.33, which DOC-39's reading of
+`mysqld` alone had missed (corrected). **Then**: `build-nginx.sh` compiles in Rocky 8 (GCC 8.5) and refuses a build
+past GLIBC_2.28; `update.sh` takes `libaio` and `libnuma` from Rocky 8's packages; rerun whole, every pinned download
+came back identical but those two. Every native file of the release now needs 2.28 at most. The release's check:
+UBI 8.10 and UBI 9.5, 0 failed each; the install guide's check in UBI 9.5, 0 failed; `check-ports-el9.sh` in Rocky
+9.5, 0 failed, the C# client's 16 scenarios through it. The guard's mutant, the build in Rocky 9: refused ("TOO NEW FOR RHEL 8"), nginx left as it was. O-90
+fixed with it, test first with a stub nginx failing as the loader does, its mutant caught; O-92 found, open. **Found,
+and put to the owner (Q-63)**: the install guide run in UBI 8 (`openssl` added, which a RHEL 8 server has and the
+image lacks) starts no process that has a secret: the units' `LoadCredential=` is systemd 247's, and RHEL 8 has 239.
+So RHEL 8 runs the binaries, not the install; production stays RHEL 9 (Q-56). Docs: D-100, D-77's pointer, Q-63,
+DOC-39, O-90, O-92, design 09, vendor's README and VERSIONS, development/02 and 03, docs/README, CLAUDE.md.
 
 ---
 

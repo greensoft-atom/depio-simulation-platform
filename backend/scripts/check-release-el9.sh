@@ -8,6 +8,7 @@
 #
 #   scripts/check-release-el9.sh [release-dir]       default: target/release/backend-*/; needs docker
 #   IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:9.6 scripts/check-release-el9.sh   another RHEL 9.x
+#   IMAGE=registry.access.redhat.com/ubi8/ubi-minimal:8.10 scripts/check-release-el9.sh  RHEL 8: the binaries, glibc 2.28 (D-100)
 set -u
 if [ "${1:-}" != --inside ]; then
     REL=${1:-$(ls -d "$(dirname "$0")"/../target/release/backend-*/ 2> /dev/null | head -1)}

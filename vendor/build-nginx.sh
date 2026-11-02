@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Compiles nginx for RHEL 9 (glibc 2.34) in a Rocky Linux 9 container, from the sources in src/, with
+# Compiles nginx for RHEL 8 and 9 (glibc 2.28, D-100) in a Rocky Linux 8 container, from the sources in src/, with
 # OpenSSL, PCRE2 (and its JIT) and zlib compiled in, and installs it as nginx-1.30/ beside this script
 # (docs/detailed-design/09 §5, D-77), with the stream module and its TLS for match traffic on
 # 9001 (D-82). Never compiled on the development machine: its glibc's newer
-# symbols would keep the binary from starting on RHEL 9. Needs docker; nothing installed on the host: it is stripped
+# symbols would keep the binary from starting on RHEL 8. Needs docker; nothing installed on the host: it is stripped
 # and checked in the container, and only a binary that passes replaces nginx-1.30 (O-87).
 #
 #   vendor/build-nginx.sh
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-IMAGE=rockylinux/rockylinux:9
+IMAGE=rockylinux/rockylinux:8
 OUT="$HERE/nginx-1.30"
 work=$(mktemp -d "${TMPDIR:-/tmp}/build-nginx.XXXXXX")
 trap 'rc=$?; [ "$rc" = 0 ] || tail -n 25 "$work"/*.log 2>/dev/null; rm -rf "$work"' EXIT
@@ -50,7 +50,7 @@ docker run --rm --name "backend-build-nginx-$$" -v "$HERE/src:/src:ro" -v "$work
     cp LICENSE /out/install/LICENSE
     /out/install/opt/backend/nginx/sbin/nginx -V > /out/nginx-V.txt 2>&1
     # Stripped and read here, with the binutils gcc brought: what it links, glibc alone (auth_basic, unused, would
-    # add libcrypt.so.2, which RHEL 9 has and Ubuntu not), and the newest glibc symbol it needs.
+    # add libcrypt, which RHEL has and Ubuntu not), and the newest glibc symbol it needs.
     strip /out/install/opt/backend/nginx/sbin/nginx
     readelf -d /out/install/opt/backend/nginx/sbin/nginx | grep NEEDED > /out/needed.txt
     objdump -T /out/install/opt/backend/nginx/sbin/nginx | grep -oE "GLIBC_[0-9.]+" | sort -V | tail -1 > /out/newest.txt'
@@ -58,8 +58,9 @@ docker run --rm --name "backend-build-nginx-$$" -v "$HERE/src:/src:ro" -v "$work
 cat "$work/needed.txt"
 newest=$(cat "$work/newest.txt")
 echo "nginx built: $(head -1 "$work/nginx-V.txt"); the newest glibc symbol it needs: $newest"
-# RHEL 9 has 2.34; checked before the committed nginx is replaced.
-case "$newest" in GLIBC_2.3[5-9]*|GLIBC_2.[4-9]*) echo "TOO NEW FOR RHEL 9: nginx-1.30 left as it was" >&2; exit 1 ;; esac
+# RHEL 8 has 2.28, the release's floor (D-100); checked before the committed nginx is replaced.
+[ "$(printf '%s\n' "$newest" GLIBC_2.28 | sort -V | tail -1)" = GLIBC_2.28 ] \
+    || { echo "TOO NEW FOR RHEL 8, past GLIBC_2.28: nginx-1.30 left as it was" >&2; exit 1; }
 rm -rf "$OUT"
 mkdir -p "$OUT/conf"
 cp -a "$work/install/opt/backend/nginx/sbin" "$OUT/"
