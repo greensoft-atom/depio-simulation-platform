@@ -490,7 +490,7 @@ private-ca.sh show  <out-dir>/fullchain.pem
 | | |
 |---|---|
 | Environment | `ROOT_DAYS` (3650), the root's validity; `DAYS` (398), a certificate's |
-| Needs | `openssl`, the system's (3.0 on RHEL 9) |
+| Needs | `openssl`, the system's, 1.1.1 or later (RHEL 8's 1.1.1, RHEL 9's 3.x; D-103) |
 | Runs | on the operators' machine that keeps the root's key, never a server ([06 §2](../../docs/operations/06-certificates.md#2-making-the-root-once)) |
 
 ### install-certificate.sh
@@ -515,7 +515,7 @@ keystore and its password in `TLS_DIR`, the `backend` group's to read, since the
 | | |
 |---|---|
 | Environment | for the release's nginx: `NGINX_CONF` (default `/etc/backend/nginx/backend.conf`), `STREAM_CONF` (default `/etc/backend/nginx/backend-stream.conf`), `NGINX_TEST` (default `/opt/backend/nginx/sbin/nginx -t -q`, after making the directories its unit would), `NGINX_RELOAD` (default `systemctl reload backend-nginx`), `NGINX_RUNNING` (default `systemctl is-active --quiet backend-nginx`), `CA_FILE` (default `TLS_DIR/ca.pem` when it is there; else the system's roots). The rest are in its header |
-| Needs | root; `openssl`; the release's nginx |
+| Needs | root; `openssl` 1.1.1 or later, refused below it (D-103); the release's nginx |
 | Runs | on every machine, the same certificate on each ([06 §4](../../docs/operations/06-certificates.md#4-installing-it-on-every-machine)) |
 
 ### check-certificates.sh
@@ -526,16 +526,21 @@ seven names in the shipped stream map; refused before anything is installed, a c
 of an arena's name or of the address, one from another root, and a key that is not the
 certificate's; with no root in `TLS_DIR`, the backend's certificate refused against the system's
 roots; installed, the key private; and when nginx refuses the new files, the previous ones put
-back. It ends `--- <n> failed` and exits non-zero on any failure. `CA=` and `IC=` name another
-`private-ca.sh` or `install-certificate.sh`, for a mutation check.
+back. And the machine's OpenSSL (D-103): one older than 1.1.1 refused, a later major taken, a root
+in `SSL_CERT_DIR` kept out while the backend's is in `TLS_DIR`, and a chain that does not verify
+refused in openssl's own words. It ends `--- <n> failed` and exits non-zero on any failure. `CA=`
+and `IC=` name another `private-ca.sh` or `install-certificate.sh`, for a mutation check;
+`IMAGE=` runs it in a container image instead, on that image's openssl.
 
 ```
 scripts/check-certificates.sh
+IMAGE=registry.access.redhat.com/ubi9/ubi:9.5 scripts/check-certificates.sh    # RHEL 9's OpenSSL 3.2.2
+IMAGE=backend-ubi8-openssl scripts/check-certificates.sh    # RHEL 8's 1.1.1k: UBI 8 with openssl added (the script's header)
 ```
 
 | | |
 |---|---|
-| Needs | `openssl` |
+| Needs | `openssl`; with `IMAGE`, docker |
 | Runs | anywhere, in a few seconds; its files in `TMPDIR`, removed at the end |
 
 ### rotate-nginx-logs.sh

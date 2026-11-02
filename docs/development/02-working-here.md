@@ -113,9 +113,10 @@ The namespace has no network: the clone builds (the bundle), but the client's Nu
 2.34; this machine has glibc 2.39. Anything compiled here may need newer glibc
 symbols (2.38's, for one) and not start there: native code for the release is
 built in a Rocky Linux 8 container, for glibc 2.28 (D-100), and the release is checked in Red Hat's UBI 8 and UBI 9
-images, RHEL's own userspace (plan items 80 and 119). RHEL 8 runs the binaries and, since D-102, the units (its
-systemd 239 ignores three sandbox settings), but not `install-certificate.sh`'s check, which needs OpenSSL 3 (O-94,
-Q-63).
+images, RHEL's own userspace (plan items 80 and 119). RHEL 8 runs the binaries, since D-102 the units (its
+systemd 239 ignores three sandbox settings), and since D-103 the certificate scripts on its OpenSSL 1.1.1: the
+install guide runs as written in UBI 8.10 (Q-63). Each certificate script's check runs on 1.1.1 and on 3.x
+(`check-certificates.sh` with `IMAGE=`).
 
 ## 4. Traps, each met at least once
 

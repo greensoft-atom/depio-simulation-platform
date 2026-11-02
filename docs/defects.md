@@ -1365,11 +1365,33 @@ runs. **Fixed:** the statements on standard input. By the install guide's check,
 anything, and its failure is said as the release's nginx not running on this machine, glibc 2.28 named. Test first,
 with a stub failing as the loader does: the old line, then the new; the check skipped, the old line again.
 
-**O-94 (L), found 2026-11-02, OPEN** (plan item 121's run of the install guide in UBI 8.10, for Q-63). On RHEL 8
-`install-certificate.sh` refuses every chain when it trusts the backend's root alone, as the install guide has it:
-it gives `openssl verify` `-no-CAstore`, OpenSSL 3.0's, and RHEL 8's 1.1.1k stops at "unknown option", so the
-guide stops at its step 9 ("does not verify"), before any unit starts. RHEL 9 alone is the host (Q-56), so it is
-left: a RHEL 8 host would want the option given only to an OpenSSL that has it (Q-63).
+**O-97 (L), found 2026-11-02, FIXED the same day** (plan item 122's mutation check). Nothing checked that the trust
+keeps the system's roots out when `ca.pem` is there: `install-certificate.sh` without `-no-CApath`, or without
+`-no-CAstore`, passed every check. The check's "another root" was made by `private-ca.sh`, whose roots are all named
+`backend root CA`, so OpenSSL, finding the backend's by that name, never looked elsewhere for it. **Fixed**:
+`check-certificates.sh` makes a root of a name of its own, puts it in `SSL_CERT_DIR`, sees openssl's defaults trust
+it, and its certificate refused while the backend's root is in `TLS_DIR`. Each option's mutant is caught: without
+`-no-CApath` on every version, without `-no-CAstore` on 3.0.13 and 3.2.2 (D-103).
+
+**O-96 (L), found 2026-11-02, FIXED the same day** (plan item 122). The keystore `install-certificate.sh` makes for
+an arena of its own TLS took the machine's OpenSSL's defaults: on RHEL 8's 1.1.1, 40-bit RC2 for the certificates,
+3DES for the key and a SHA-1 MAC; on 3.x AES-256 and SHA-256. Java reads both, and the password beside the file is
+what guards it, so nothing was open; but the file depended on the machine. **Fixed**: the algorithms named, OpenSSL
+3's defaults (D-103). Test first: the units' check asks for them, and in UBI 8.10 it failed on 1.1.1's.
+
+**O-95 (L), found 2026-11-02, FIXED the same day** (plan item 122, O-94 run on 1.1.1). A chain `openssl verify`
+refused was refused with the line of its output that says "error", and with the full-chain hint whenever the file
+held one certificate. Output with no such line, 1.1.1's "unknown option" for one, made the refusal "does not
+verify:" and nothing, and the hint, not the reason. **Fixed**: openssl's first line when it has no error line, and
+the hint only when the issuer is what is missing ("unable to get local issuer"). Test first, a stand-in openssl.
+
+**O-94 (L), found 2026-11-02, FIXED the same day** (plan item 121's run of the install guide in UBI 8.10, for Q-63;
+fixed by item 122, D-103). On RHEL 8 `install-certificate.sh` refused every chain when it trusts the backend's root
+alone, as the install guide has it: it gave `openssl verify` `-no-CAstore`, OpenSSL 3.0's, and RHEL 8's 1.1.1k
+stops at "unknown option", so the guide stopped at its step 9 ("does not verify"), before any unit starts.
+**Fixed**: `-no-CAstore` given where `openssl verify` has it, and an OpenSSL older than 1.1.1 refused by name.
+Test first: `check-certificates.sh` in UBI 8 (1.1.1k), 15 failed; after, 0 on 1.1.1k, on RHEL 9.5's 3.2.2 and on
+this machine's 3.0.13.
 
 **O-93 (L), found 2026-11-02, FIXED the same day** (plan item 120, reviewed again at the owner's asking).
 `dev-nginx.sh` read the command's way where it meant the running nginx's: `status` named the command's ports beside

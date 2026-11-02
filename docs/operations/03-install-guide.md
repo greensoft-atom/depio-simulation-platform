@@ -39,8 +39,8 @@ site grows: a second machine, its standby, is [10](10-two-machines.md) (D-96), a
 - RHEL 9.x on x86-64 (checked with 9.5), as root. A system derived from it needs at least what the release takes of
   the system ([09 §4.2](../detailed-design/09-release-and-packaging.md#42-what-the-host-still-provides)), not checked
   elsewhere: `uname -m` saying `x86_64`, `ldd --version` a glibc of 2.28 or later, `systemctl --version` a systemd of
-  245 or later (every sandbox setting of the units applied; 239 starts them, 09 §1), `openssl version` 3.0 or later
-  (O-94), and `libstdc++` and `ncurses-libs` installed, as on every RHEL 9.
+  245 or later (every sandbox setting of the units applied; 239 starts them, 09 §1), `openssl version` 1.1.1 or later
+  (D-103), and `libstdc++` and `ncurses-libs` installed, as on every RHEL 9.
 - What any RHEL 9 server installation has: systemd, bash, coreutils, util-linux,
   `tar`, `gzip`, `findutils`, `sed`, `openssl`, `curl`. Nothing else: the JDK,
   Maven, MySQL, nginx and every library are in the repository (`vendor/`,

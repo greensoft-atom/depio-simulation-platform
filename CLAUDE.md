@@ -123,8 +123,9 @@ for the backend, its docs and its client.
 - **Java 21 only, MySQL 8.4, and the release carries its own runtime, MySQL and nginx**
   (Q-56, plan item 80). **Production is RHEL 9.x** (systemd 252, OpenSSL 3), this machine Ubuntu
   24.04: native code is built in a Rocky Linux 8 container for glibc 2.28 (D-100), releases checked in UBI 8 and UBI 9;
-  RHEL 8 runs the binaries and, since D-102, the units (systemd 239, three sandbox settings ignored), but not
-  `install-certificate.sh`'s check (OpenSSL 1.1.1, O-94; Q-63).
+  RHEL 8 runs the binaries, the units (systemd 239, three sandbox settings ignored, D-102) and the certificate scripts
+  (OpenSSL 1.1.1, D-103): the install guide runs as written in UBI 8.10 (Q-63). The certificate scripts use the
+  machine's `openssl`, any from 1.1.1, checked on 1.1.1 and 3.x (`check-certificates.sh`, `IMAGE=`).
 - **No secret through systemd's units** (owner, 2026-11-02; D-102): each process takes its own from its settings
   file, `/etc/backend/<process>.env`, as plain variables, every such file `root:root 0600`; the backups' scripts read
   their own files in `/etc/backend/backup/`. No `LoadCredential=`, no `%d`, never a secret in `Environment=`.

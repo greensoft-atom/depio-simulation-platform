@@ -196,7 +196,7 @@ grep -q '"a1.arena.internal" 127.0.0.1:9011 ' /var/log/backend-nginx/stream.log 
 systemctl reload backend-nginx && sleep 1 && [ "$(systemctl is-active backend-nginx)" = active ] && ok "reloaded (tested first)" \
     || bad "reload"
 
-echo "--- an arena of its own TLS (01 §8, D-102): its keystore made by install-certificate.sh, read from /etc/backend/tls"
+echo "--- an arena of its own TLS (01 §8, D-102, D-103): its keystore made by install-certificate.sh, read from /etc/backend/tls"
 sed -i 's/^\([[:space:]]*\)server_name .*;/\1server_name 127.0.0.1;/' /etc/backend/nginx/backend.conf
 cp /tmp/ca/ca.pem /etc/backend/tls/ca.pem
 sed -e 's/^ARENA_PORT=.*/ARENA_PORT=9012/' -e '/^BACKEND_ADVERTISE_/d' -e 's/^BACKEND_METRICS_ADDR=.*/BACKEND_METRICS_ADDR=127.0.0.1:9111/' \
@@ -210,6 +210,11 @@ else bad "install-certificate.sh: $(tail -3 /tmp/install-certificate.log)"; fi
 modes=$(stat -c '%U %G %a' /etc/backend/tls/arena-tls.p12 /etc/backend/tls/arena-tls-password 2>&1 | paste -sd ' ')
 [ "$modes" = "root backend 640 root backend 640" ] && ok "the keystore and its password: root's, the backend group's to read" \
     || bad "the keystore's files: $modes"
+# The same keystore whichever OpenSSL made it (D-103): 3's defaults, not 1.1.1's 40-bit RC2 and SHA-1.
+p12=$(openssl pkcs12 -in /etc/backend/tls/arena-tls.p12 -passin file:/etc/backend/tls/arena-tls-password -noout -info 2>&1)
+[ "$(grep -c 'PBES2, PBKDF2, AES-256-CBC' <<< "$p12")" = 2 ] && grep -q '^MAC: sha256' <<< "$p12" \
+    && ok "the keystore: AES-256-CBC for the key and the certificates, a SHA-256 MAC" \
+    || bad "the keystore's algorithms: $(grep -E '^MAC:|Encrypted data|Keybag' <<< "$p12" | paste -sd ';')"
 systemctl start backend-arena@a2
 v=""
 for i in $(seq 40); do

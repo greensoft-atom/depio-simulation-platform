@@ -25,8 +25,9 @@ symbols RHEL lacks; the two libraries MySQL takes from the system come from RHEL
 `libnuma` needing 2.33. Checked in Red Hat's UBI 8 and UBI 9 images, RHEL's userspace with nothing installed
 (§7). **The units start on systemd 239**, RHEL 8's, since they carry no secret (D-102; checked in UBI 8.10): three of
 their sandbox settings are newer, `ProtectHostname=` (242), `ProtectKernelLogs=` (244) and `ProtectClock=` (245), and
-239 ignores them with a warning; RHEL 9's 252 applies them all. RHEL 8 still does not run the install as written:
-`install-certificate.sh` needs OpenSSL 3 (O-94, Q-63).
+239 ignores them with a warning; RHEL 9's 252 applies them all. **The certificate scripts take OpenSSL 1.1.1**,
+RHEL 8's, as well as RHEL 9's 3.x (D-103, O-94 fixed), and the install guide runs as written in UBI 8.10 as in UBI
+9.5 (Q-63).
 
 ## 2. What is in the repository: `vendor/`
 
@@ -145,7 +146,7 @@ load the system's NSS modules (users, groups, host names) and locale data, built
 different one fails; MySQL and the JDK have no static build; nginx alone could be static (musl), which frees nothing
 while MySQL needs glibc. So a host other than RHEL 9 needs x86-64 (`uname -m`), glibc 2.28 or later
 (`ldd --version`), the two libraries above, for the units systemd 245 or later, every sandbox setting applied
-(`systemctl --version`, §1; 239 starts them), and OpenSSL 3 for `install-certificate.sh` (`openssl version`, O-94);
+(`systemctl --version`, §1; 239 starts them), and OpenSSL 1.1.1 or later for the certificate scripts (`openssl version`, D-103);
 checked on RHEL 8 and 9's userspaces alone.
 
 The scripts and units need
@@ -217,8 +218,12 @@ longer needed. On RHEL 9, SELinux runs a service started from `/opt` unconfined.
    in `systemctl show`, neither the platform's environment nor its file readable by
    another user; and an arena of its own TLS serving, verified, the keystore
    `install-certificate.sh` wrote (until D-102 the check gave the processes their
-   secrets by a drop-in of its own: systemd in a container cannot deliver a credential).
-4. **The drills** run every process on the release's runtime, and their own MySQL
+   secrets by a drop-in of its own: systemd in a container cannot deliver a credential),
+   AES-256 with a SHA-256 MAC whichever OpenSSL made it (D-103). Run in UBI 8.10 too.
+4. **The certificate scripts on each OpenSSL** (D-103): `backend/scripts/check-certificates.sh`
+   on this machine's 3.0.13, and with `IMAGE=` in UBI 9.5 (3.2.2) and in UBI 8.10 with `openssl`
+   added (1.1.1k), every check the same on each.
+5. **The drills** run every process on the release's runtime, and their own MySQL
    servers on the release's MySQL 8.4: every scenario, the MySQL failover and the
    backup drill, which had only ever run on 8.0.
-5. **The backend's tests** against a MySQL 8.4 server from the release.
+6. **The backend's tests** against a MySQL 8.4 server from the release.

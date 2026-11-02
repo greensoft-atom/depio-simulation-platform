@@ -581,7 +581,8 @@ With Docker, each on a release:
 | `check-ports-el9.sh` | in Rocky Linux 9.5 with RHEL 9's firewalld: the [ports and the firewall](../operations/05-ports-and-firewall.md) as written, the front's nginx ending TLS with a certificate from the backend's own CA, and the C# headless driver playing through 443 and 9001 (.NET 8 too; about ten minutes) |
 
 Without Docker, `backend/scripts/check-certificates.sh` checks the certificate scripts, with
-openssl alone, in a few seconds ([operations/06 §9](../operations/06-certificates.md#9-testing-and-development)),
+openssl alone, in a few seconds ([operations/06 §9](../operations/06-certificates.md#9-testing-and-development);
+with Docker, `IMAGE=` runs it on RHEL 8's and 9's OpenSSL, D-103),
 `backend/scripts/check-nginx-logs.sh` the rotation of nginx's logs, with the release's nginx on a
 loopback port (D-85), and `backend/scripts/check-promote.sh` both promotions' refusals and the MySQL
 handover's order, with stand-in clients, in seconds (D-95).

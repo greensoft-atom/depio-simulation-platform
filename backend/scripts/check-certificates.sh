@@ -8,11 +8,18 @@
 # and the backend's certificate is refused.
 #
 #   scripts/check-certificates.sh      from anywhere; a few seconds. Ends "--- <n> failed", non-zero on any.
+#   IMAGE=<image> scripts/check-certificates.sh   the same, in that container image, on its openssl (D-103): UBI 9's
+#                                      3.x as it is, UBI 8's 1.1.1 with openssl added, which a RHEL 8 server has:
+#                                      docker build -t backend-ubi8-openssl - <<< $'FROM registry.access.redhat.com/ubi8/ubi:8.10\nRUN dnf install -y -q openssl'
 #
-# CA and IC name another private-ca.sh or install-certificate.sh, for a mutation check.
+# CA and IC name another private-ca.sh or install-certificate.sh, for a mutation check (on this machine).
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 DEPLOY=$HERE/../deploy
+if [ -n "${IMAGE:-}" ]; then
+    exec docker run --rm --network none -v "$HERE:/backend/scripts:ro" -v "$DEPLOY:/backend/deploy:ro" "$IMAGE" \
+        bash -c 'openssl version; /backend/scripts/check-certificates.sh'
+fi
 CA=${CA:-$HERE/private-ca.sh}
 IC=${IC:-$HERE/install-certificate.sh}
 T=$(mktemp -d "${TMPDIR:-/tmp}/check-certificates.XXXXXX")
@@ -28,6 +35,7 @@ expect_refused() {   # expect_refused <what> <the refusal's words> <command...>
     else fail "$d: refused, but not for '$pat': $out"
     fi
 }
+same() { [ "$(sha256sum < "$1")" = "$(sha256sum < "$2")" ]; }   # cmp is not in every image
 
 # ---- private-ca.sh ----
 
@@ -69,12 +77,12 @@ NT=false expect_refused "a first install that nginx refuses" "none where there w
 [ -z "$(ls -A "$T/etc/tls" | grep -v '^ca.pem$')" ] && [ -z "$(ls "$T/etc/credentials")" ] \
     && pass "and nothing left installed: no file, nothing kept (O-76)" || fail "left: $(ls -A "$T/etc/tls" "$T/etc/credentials" | tr '\n' ' ')"
 expect_ok "install the site's" install_with "$T/site/fullchain.pem" "$T/site/privkey.pem"
-cmp -s "$T/etc/tls/fullchain.pem" "$T/site/fullchain.pem" && pass "fullchain.pem installed" || fail "fullchain.pem not installed"
+same "$T/etc/tls/fullchain.pem" "$T/site/fullchain.pem" && pass "fullchain.pem installed" || fail "fullchain.pem not installed"
 [ "$(stat -c %a "$T/etc/credentials/privkey.pem")" = 600 ] && pass "privkey.pem 0600" \
     || fail "privkey.pem $(stat -c %a "$T/etc/credentials/privkey.pem")"
 NT=false expect_refused "install when nginx refuses the files" "previous files are back" \
     install_with "$T/site2/fullchain.pem" "$T/site2/privkey.pem"
-cmp -s "$T/etc/tls/fullchain.pem" "$T/site/fullchain.pem" && cmp -s "$T/etc/credentials/privkey.pem" "$T/site/privkey.pem" \
+same "$T/etc/tls/fullchain.pem" "$T/site/fullchain.pem" && same "$T/etc/credentials/privkey.pem" "$T/site/privkey.pem" \
     && pass "the previous certificate and key are back" || fail "the previous files were not put back"
 
 
@@ -82,7 +90,7 @@ cmp -s "$T/etc/tls/fullchain.pem" "$T/site/fullchain.pem" && cmp -s "$T/etc/cred
 
 cat "$T/site2/fullchain.pem" "$T/site2/privkey.pem" > "$T/bundle.pem"
 expect_ok "install a file that holds the key as well as the certificate" install_with "$T/bundle.pem" "$T/site2/privkey.pem"
-! grep -q "PRIVATE KEY" "$T/etc/tls/fullchain.pem" && cmp -s "$T/etc/tls/fullchain.pem" "$T/site2/fullchain.pem" \
+! grep -q "PRIVATE KEY" "$T/etc/tls/fullchain.pem" && same "$T/etc/tls/fullchain.pem" "$T/site2/fullchain.pem" \
     && pass "the certificate alone installed, readable by all; the key not with it (O-75)" || fail "fullchain.pem holds the key"
 [ ! -e "$T/etc/tls/fullchain.pem.previous" ] && [ ! -e "$T/etc/credentials/privkey.pem.previous" ] \
     && pass "the replaced certificate and key not kept once nginx accepts the new (O-76)" || fail "a .previous left"
@@ -109,6 +117,40 @@ leaf "$T/outlives" backend "IP:203.0.113.10,$(printf 'DNS:%s,' $NAMES | sed 's/,
 out=$(CA_FILE=$T/brief/ca.pem install_with "$T/outlives/fullchain.pem" "$T/outlives/privkey.pem" 2>&1) \
     && grep -q "or its root expires" <<< "$out" && pass "install one whose root ends in 5 days: warned, the root counted (O-73)" \
     || fail "the root's end not warned of: $out"
+
+
+# ---- the machine's OpenSSL, any from 1.1.1, and the trust the backend's root alone on each (D-103) ----
+
+REAL=$(command -v openssl)
+standin() {   # standin <dir> <what openssl's "version" says>: that openssl on PATH, the real one for the rest
+    mkdir -p "$1"
+    printf '#!/bin/bash\n[ "$1" = version ] && { echo "%s"; exit 0; }\nexec %s "$@"\n' "$2" "$REAL" > "$1/openssl"
+    chmod +x "$1/openssl"
+}
+standin "$T/old" "OpenSSL 1.0.2k-fips  26 Jan 2017"
+PATH=$T/old:$PATH expect_refused "install with an OpenSSL older than 1.1.1" "needs OpenSSL 1.1.1 or later; this is OpenSSL 1.0.2k" \
+    install_with "$T/site/fullchain.pem" "$T/site/privkey.pem"
+standin "$T/new" "OpenSSL 4.0.1 1 Jul 2026"
+PATH=$T/new:$PATH expect_ok "install with an OpenSSL of a later major" install_with "$T/site/fullchain.pem" "$T/site/privkey.pem"
+# A root of a name of its own, as a public CA's is: one named as the backend's is never looked for elsewhere. Its
+# configuration its own, as private-ca.sh's is: 1.1.1's -addext adds to the system's openssl.cnf, a second
+# basicConstraints, and the root is no root.
+mkdir -p "$T/public" "$T/roots"
+printf '[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = a public root\n[root]\nbasicConstraints = critical, CA:TRUE\nkeyUsage = critical, keyCertSign\n' \
+    > "$T/public/root.cnf"
+openssl req -x509 -new -config "$T/public/root.cnf" -extensions root -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+    -days 30 -keyout "$T/public/ca.key" -out "$T/public/ca.pem" 2> /dev/null
+leaf "$T/publicleaf" backend "IP:203.0.113.10,$(printf 'DNS:%s,' $NAMES | sed 's/,$//')" 30 "$T/public"
+cp "$T/public/ca.pem" "$T/roots/" && openssl rehash "$T/roots" 2> /dev/null
+SSL_CERT_DIR=$T/roots openssl verify -purpose sslserver "$T/publicleaf/fullchain.pem" > /dev/null 2>&1 \
+    && pass "a root in SSL_CERT_DIR is trusted by openssl's defaults" || fail "SSL_CERT_DIR's root not trusted even by openssl's defaults"
+SSL_CERT_DIR=$T/roots expect_refused "install one of a root in SSL_CERT_DIR, the backend's in TLS_DIR" "does not verify" \
+    install_with "$T/publicleaf/fullchain.pem" "$T/publicleaf/privkey.pem"
+mkdir -p "$T/odd"
+printf '#!/bin/bash\n[ "$1" = verify ] && { echo "verify: Unknown option: -x"; exit 1; }\nexec %s "$@"\n' "$REAL" > "$T/odd/openssl"
+chmod +x "$T/odd/openssl"
+PATH=$T/odd:$PATH expect_refused "a verify failing with no error line: refused in openssl's words" \
+    "does not verify: verify: Unknown option: -x$" install_with "$T/site/fullchain.pem" "$T/site/privkey.pem"
 
 echo "--- $fails failed"
 [ "$fails" = 0 ]

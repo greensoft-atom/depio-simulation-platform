@@ -61,12 +61,22 @@ WARN_DAYS=${WARN_DAYS:-14}
 refuse() { echo "refusing: $*" >&2; exit 1; }
 warn() { echo "WARNING: $*" >&2; }
 
+# The machine's openssl, 1.1.1 or later (D-103): an older one lacks x509 -ext and req -addext, and a check would
+# refuse for a reason that is not the certificate's.
+[[ $(openssl version) =~ ^OpenSSL\ (1\.1\.1|[3-9]\.|[1-9][0-9]) ]] \
+    || refuse "needs OpenSSL 1.1.1 or later; this is $(openssl version)"
+
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"; for f in "${STAGED[@]:-}"; do [ -z "$f" ] || rm -f "$f"; done' EXIT
 
-# What a device trusts: the system's roots, or CA_FILE's alone.
+# What a device trusts: the system's roots, or CA_FILE's alone. -no-CApath keeps out the system's directory and
+# SSL_CERT_DIR; OpenSSL 3's default store reads that directory again, and -no-CAstore, given where openssl has it,
+# keeps it out there; 1.1.1 has no store (D-103).
 TRUST=()
-[ -n "$CA_FILE" ] && TRUST=(-CAfile "$CA_FILE" -no-CApath -no-CAstore)
+if [ -n "$CA_FILE" ]; then
+    TRUST=(-CAfile "$CA_FILE" -no-CApath)
+    [[ $(openssl verify -help 2>&1) == *-no-CAstore* ]] && TRUST+=(-no-CAstore)
+fi
 
 # ---- what this machine serves -------------------------------------------------------------
 
@@ -157,9 +167,11 @@ check_certificate() {   # check_certificate <fullchain> <key>
     [ "$count" -gt 1 ] && untrusted=(-untrusted "$WORK/intermediates.pem")
     local verdict
     if ! verdict=$(openssl verify "${TRUST[@]}" -purpose sslserver "${untrusted[@]}" "$WORK/leaf.pem" 2>&1); then
-        local hint=""
-        [ "$count" -eq 1 ] && hint=" (the file holds the certificate alone: give the full chain, fullchain.pem)"
-        refuse "$chain does not verify: $(echo "$verdict" | grep -m1 -i error)$hint"
+        # openssl's own words: its error line, or its first when it has none (D-103)
+        local hint="" why; why=$(grep -m1 -i error <<< "$verdict" || head -1 <<< "$verdict")
+        [ "$count" -eq 1 ] && [[ $why == *'unable to get local issuer'* ]] \
+            && hint=" (the file holds the certificate alone: give the full chain, fullchain.pem)"
+        refuse "$chain does not verify: $why$hint"
     fi
 
     openssl x509 -in "$WORK/leaf.pem" -noout -ext subjectAltName 2>/dev/null | grep -q . \
@@ -245,7 +257,9 @@ install_arenas() {
         put "$WORK/password" "$password" 0640 backend
         echo "arenas: a keystore password was made, $password"
     fi
-    openssl pkcs12 -export -in "$1" -inkey "$2" -name arena -passout "file:$password" -out "$WORK/arena.p12"
+    # OpenSSL 3's defaults, named, so 1.1.1 makes the same file and not its 40-bit RC2 and SHA-1 (D-103)
+    openssl pkcs12 -export -in "$1" -inkey "$2" -name arena -passout "file:$password" \
+        -keypbe AES-256-CBC -certpbe AES-256-CBC -macalg sha256 -out "$WORK/arena.p12"
     openssl pkcs12 -in "$WORK/arena.p12" -passin "file:$password" -noout \
         || refuse "the arena keystore just made does not open with its password"
     put "$WORK/arena.p12" "$keystore" 0640 backend

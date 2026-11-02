@@ -556,7 +556,8 @@ expired or is not valid yet, the intermediates served with it included. Each
 was run against the release.
 
 **The keystore** is made from the PEM files a CA issues by
-`scripts/install-certificate.sh` (§11), with a password it generates once.
+`scripts/install-certificate.sh` (§11), with a password it generates once: AES-256 for the key and
+the certificates and a SHA-256 MAC, named, so it is the same whichever OpenSSL the machine has (D-103).
 
 **The settings.** The script writes both to `/etc/backend/tls/`,
 `arena-tls.p12` and `arena-tls-password`, root's and the `backend` group's to

@@ -3258,3 +3258,44 @@ in `/proc/<pid>/environ` (0400, the process's user's). The same user could read 
 so the exposure is the same. A settings file is now a secret: each new one, and each copy, must be 0600 (the guides
 say so where they make one, and the install's check fails one that is not). A password is in several files, the
 platform's, the worker's, the gateway's and each arena's: a change of it edits each, and the store's configuration.
+
+### D-103 — The certificate scripts use the machine's OpenSSL, any from 1.1.1, and check alike on each
+
+**Decided 2026-11-02** (plan item 122; the owner, told the certificate scripts needed OpenSSL 3: a lower OpenSSL
+should work too, more robustly and safely). Fixes O-94.
+
+**Decision.** `install-certificate.sh` and `private-ca.sh` keep using the machine's `openssl`, any version from
+1.1.1: RHEL 8's 1.1.1k, RHEL 9's 3.x (9.5's 3.2.2), Ubuntu 24.04's 3.0.13. What they ask of it is the same
+on each, and where a version differs the script says what it wants instead of taking the version's default:
+- **The trust is the backend's root alone, on every version**: `-CAfile <root> -no-CApath`, both 1.1.0's, and
+  OpenSSL 3's `-no-CAstore` wherever `openssl verify` has it. Each keeps out a way the system's roots come in, a root
+  of another name in `SSL_CERT_DIR` or hashed in the system's directory standing for them (measured): on 1.1.1
+  `-no-CApath` alone keeps it out, there being no store; on 3.0.13 and RHEL 9.5's 3.2.2 the default store is that
+  same directory again, and the root is trusted with `-no-CApath` alone. (3.5.9's source adds nothing for a store
+  not named: the behaviour moves between versions, so the option is asked for where it exists, not reasoned about.)
+  A root in the system's bundle file (`SSL_CERT_FILE`, `update-ca-trust`) is never read once `-CAfile` is given.
+- **An OpenSSL older than 1.1.1 is refused at the start**, its version named: it lacks `x509 -ext` and `req -addext`,
+  and a check would refuse for a reason that is not the certificate's ("names no host").
+- **The arena's keystore names its algorithms**: AES-256-CBC with PBKDF2 for the key and the certificates, a SHA-256
+  MAC, OpenSSL 3's defaults. 1.1.1's own are 40-bit RC2 and a SHA-1 MAC: Java reads both, and the file is the same now
+  whichever OpenSSL makes it.
+- **A chain that does not verify is refused in openssl's own words**: its error line, or its first line when it has
+  none (on 1.1.1 the refusal had said "does not verify:" and nothing, and a hint that was not the reason).
+
+Unchanged and checked on 1.1.1 and 3.x: what `private-ca.sh` makes, every extension written in a configuration of
+its own (1.1.1's `req -addext` adds to the system's `openssl.cnf` where 3.x replaces: a root made with it had two
+`basicConstraints` there, and was no root); the copy off the site, `openssl enc -pbkdf2` (1.1.1's), each version
+reading the other's to the byte.
+
+**Why.** The owner asked for a lower OpenSSL to work, robustly and safely. The certificate checks are X.509's own
+(the chain, the names, the dates, the key), which 1.1.1 and 3.x do alike: the one failure on 1.1.1 was an option it
+lacks, and with it given only where it exists, `check-certificates.sh` passes on 1.1.1k unchanged otherwise. The
+script now also runs itself in a container image (`IMAGE=`), so each version is checked as this one is. With it the
+install guide runs as written in UBI 8.10, as in UBI 9.5 (Q-63).
+
+**Not chosen: an `openssl` of the release's own**, built from the OpenSSL 3.5.9 already compiled into nginx, so the
+machine's would not matter at all. It is one more binary to build and carry, and it buys nothing these checks need;
+and `private-ca.sh` runs on the machine that keeps the root's key, off every server, where a release need not be.
+
+**Cost.** Two OpenSSL lines (1.1.1 and 3.x) to keep passing: `check-certificates.sh` in a UBI 8 image with
+`openssl` added and in UBI 9's. A version older than 1.1.1 (RHEL 7's 1.0.2) is not served.

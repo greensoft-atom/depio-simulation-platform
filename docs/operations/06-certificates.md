@@ -30,7 +30,7 @@ which port serves it is [05](05-ports-and-firewall.md).
 | `privkey.pem` | the site certificate's key | every machine's `/etc/backend/credentials/privkey.pem`, mode 0600 | yes |
 | `fullchain.pem` | the site's certificate | every machine's `/etc/backend/tls/fullchain.pem` | no |
 
-`scripts/private-ca.sh` makes all four with the system's `openssl`, which every RHEL 9 machine has:
+`scripts/private-ca.sh` makes all four with the system's `openssl`, 1.1.1 or later, which every RHEL 8 and 9 machine has (D-103):
 EC P-256 keys, SHA-256 signatures. It runs from the repository (`backend/scripts/`) or from an
 installed release (`/opt/backend/scripts/`).
 
@@ -184,8 +184,10 @@ routine's date, not on the alert ([02 §6](02-runbook.md#6-routine)).
   §4 does, nginx stood in for, and checks each refusal this page names: the name or the address
   missing, another root, another key, the system's roots without `ca.pem`, a root made twice, the
   previous files put back when nginx refuses the new and nothing left by a first install it refuses,
-  a key inside the certificate's file kept out of it, `server_name _`, a name in the CN alone, and a
-  certificate that would outlive its root
+  a key inside the certificate's file kept out of it, `server_name _`, a name in the CN alone, a
+  certificate that would outlive its root, an OpenSSL older than 1.1.1, a root in `SSL_CERT_DIR` kept
+  out, and a refusal in openssl's own words. `IMAGE=<image>` runs it in a container image, on that
+  image's openssl: RHEL 8's 1.1.1 and RHEL 9's 3.x, both checked (D-103)
   ([scripts README](../../backend/scripts/README.md#check-certificatessh)).
 - **The end-to-end check**: `backend/scripts/check-ports-el9.sh` makes a root and a certificate with
   `private-ca.sh` and installs it with `install-certificate.sh`. It then runs the C# client

@@ -13,7 +13,7 @@
 # Each name is an IP address (the site's public one) or a host name (an arena's, a1.arena.internal). Keys are EC
 # P-256, signatures SHA-256. Nothing is overwritten: a root already in ca-dir, or a key or certificate already in
 # out-dir, refuses the run. ROOT_DAYS (3650) and DAYS (398) set how long the root and a certificate are valid.
-# Needs openssl alone: the system's, 3.0 on RHEL 9.
+# Needs openssl alone: the system's, 1.1.1 or later (RHEL 8's 1.1.1, RHEL 9's 3.x; D-103).
 set -euo pipefail
 umask 077
 

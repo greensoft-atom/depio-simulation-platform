@@ -4072,6 +4072,33 @@ newer than 239 are ignored with a warning. Not fixed: RHEL 9 alone is the host. 
 01 §2, §7, §8 and §10, 02, 03, 10, 09 §1, §4.2 and §7, 04 §10, 06 §10, development/02 and 04, api/03, deploy/README,
 the env examples, the module READMEs, CLAUDE.md.
 
+#### 122. ~~The certificate scripts on the machine's OpenSSL, any from 1.1.1, checked alike on each (the owner, 2026-11-02, D-103).~~ — **done 2026-11-02**
+
+The owner, told the certificate scripts needed OpenSSL 3: a lower one should work, more robustly and safely. **Found
+first**, `check-certificates.sh` run in UBI 8 (1.1.1k): with `-no-CAstore` taken out, every check passed, the one
+OpenSSL 3 option the only failure (O-94); 1.1.1's refusals had said "does not verify:" and nothing, with a hint not
+the reason (O-95); its keystore is 40-bit RC2 and SHA-1 by default (O-96); off-site copies decrypt across 1.1.1 and
+3.0 to the byte. **Test first**: `check-certificates.sh` given `IMAGE=` (UBI 9's 3.2.2, UBI 8 with `openssl`), an
+OpenSSL 1.0.2 and a 4.0 stood in for, a root of a name of its own in `SSL_CERT_DIR`, and a verify failing with no
+error line; `cmp` replaced, being in no UBI image: 15 failed on 1.1.1k, 2 on 3.2.2 and on this machine's 3.0.13. The
+units' check asks for the keystore's algorithms: in UBI 8.10, with O-94 fixed, 1 failed, 1.1.1's. **Then**:
+`install-certificate.sh` refuses an OpenSSL older than 1.1.1 by name, gives `-no-CAstore` where `openssl verify` has
+it, refuses in openssl's own words (the full-chain hint only for a missing issuer), and names the keystore's
+algorithms, OpenSSL 3's defaults. **Checked**: `check-certificates.sh` 0 failed on 1.1.1k, 3.2.2 and 3.0.13; the
+units' check 0 failed of 43 in UBI 8.10 (systemd 239) and in UBI 9.5; the install guide as written, 0 failed at
+install, after the restart and after the restore, in UBI 8.10 and in UBI 9.5. **Mutants**, all caught: the floor
+gone, the floor taking 3 alone (4.0 refused), `-no-CApath` gone (on every version), `-no-CAstore` given always (1.1.1k,
+13 failed), `-no-CAstore` never (3.0.13 and 3.2.2), openssl's first line not used, the hint whatever the reason; the
+keystore on 1.1.1's defaults (the units' check in UBI 8.10). **Found by the mutants** (O-97): nothing had checked
+that the system's roots stay out, the check's other root being named as the backend's; and D-103's draft reason for
+`-no-CAstore` was wrong, the default store being empty in 3.5.9's source but the certificate directory again in 3.0.13
+and 3.2.2, measured, so the option is asked for where it exists. Found too: 1.1.1's `req -addext` adds to the system's
+`openssl.cnf`, which made the check's first other root no root. The install guide's runs used the detection by a pipe
+into `grep -q` (under `pipefail`, one SIGPIPE from dropping the option), replaced after by a match, no pipe: the
+certificate check on the three versions and the units' check in UBI 8.10 again with it, 0 failed. Not chosen: an
+`openssl` of the release's own (D-103). Not verified: a real RHEL 8 or 9 host, and the owner's own OS. Docs: D-103,
+O-94 to O-97, Q-63, 01 §8, 03 §1, 06 §1 and §9, 09 §1, §4.2 and §7, development/02 and 03, scripts README, CLAUDE.md.
+
 ---
 
 ### Completed 2026-09-23
