@@ -21,8 +21,11 @@ CA=$F/ca/ca.pem
 # The URLs, with a port only when it is not the scheme's own.
 https_url=https://$PUBLIC_ADDRESS$([ "$NGINX_HTTPS_PORT" = 443 ] || echo ":$NGINX_HTTPS_PORT")
 http_url=http://$PUBLIC_ADDRESS$([ "$NGINX_HTTP_PORT" = 80 ] || echo ":$NGINX_HTTP_PORT")
-ports="$NGINX_HTTP_PORT, $NGINX_HTTPS_PORT and $NGINX_MATCH_PORT" open=("$NGINX_HTTP_PORT" "$NGINX_HTTPS_PORT" "$NGINX_MATCH_PORT") mode=TLS
-[ "$PLAIN" != 1 ] || { ports="$NGINX_HTTP_PORT and $NGINX_MATCH_PORT" open=("$NGINX_HTTP_PORT" "$NGINX_MATCH_PORT") mode=plain; }
+open=("$NGINX_HTTP_PORT" "$NGINX_HTTPS_PORT" "$NGINX_MATCH_PORT") mode=TLS
+[ "$PLAIN" != 1 ] || { open=("$NGINX_HTTP_PORT" "$NGINX_MATCH_PORT") mode=plain; }
+# The ports a way listens on, in words: this command's, or the running nginx's (way, below), which may differ.
+ports_of() { if [ "$1" = plain ]; then echo "$NGINX_HTTP_PORT and $NGINX_MATCH_PORT"; else echo "$NGINX_HTTP_PORT, $NGINX_HTTPS_PORT and $NGINX_MATCH_PORT"; fi; }
+ports=$(ports_of "$mode")
 
 # nginx's master, from this configuration: a pid left from before a reboot may be another process's.
 running() {
@@ -151,6 +154,8 @@ start)
         "or later (docs/development/03 §1)" >&2; exit 1; }
     [ "$PLAIN" = 1 ] || command -v openssl > /dev/null || { echo "no openssl: it makes the certificate (private-ca.sh)" >&2; exit 1; }
     if running; then
+        [ "$(way)" = "$mode" ] || { echo "nginx: already running $(way), pid $(cat "$F/nginx.pid"), and this command $mode: give both" \
+            "the same PLAIN, or restart it this way (sudo drops PLAIN: sudo PLAIN=$PLAIN $0 restart)" >&2; exit 1; }
         echo "nginx: already running, pid $(cat "$F/nginx.pid"), for $(cat "$F/address" 2> /dev/null), $(way); $0 restart to change it"
         exit 0
     fi
@@ -197,7 +202,7 @@ restart)
     "$B/dev-nginx.sh" stop && exec "$B/dev-nginx.sh" start ;;       # by path: bash dev-nginx.sh gave a name alone (O-86)
 status)
     running || { echo "nginx: not running"; exit 1; }
-    echo "nginx: running, pid $(cat "$F/nginx.pid"), on $ports, for $(cat "$F/address" 2> /dev/null), $(way)"
+    echo "nginx: running, pid $(cat "$F/nginx.pid"), on $(ports_of "$(way)"), for $(cat "$F/address" 2> /dev/null), $(way)"
     if [ "$(way)" = TLS ]; then
         echo "  certificate: $(openssl x509 -in "$F/tls/fullchain.pem" -noout -ext subjectAltName 2> /dev/null | tail -n +2 \
             | sed 's/^[[:space:]]*//'), until $(openssl x509 -in "$F/tls/fullchain.pem" -noout -enddate | cut -d= -f2)"

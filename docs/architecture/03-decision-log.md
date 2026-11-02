@@ -3196,7 +3196,8 @@ backend's processes as on the site, and TLS in production for the backend and th
 - **`dev-nginx.sh`** writes the release's configuration with TLS taken out: the server production has on 443 listens
   plain on `NGINX_HTTP_PORT` (80), with the same locations, the API, the lobby's WebSocket and the limits; 9001
   passes plain connections to the arena on 127.0.0.1:`ARENA_PORT`; no 443, no certificate, no root, no `openssl`.
-  It records its way in `work/nginx/mode`, which `status` prints.
+  It records its way in `work/nginx/mode`, which `status` prints with that way's ports, and its `start` refuses an
+  nginx already running the other way.
 - **`dev-backend.sh`**: the four on 127.0.0.1, as in the TLS way; the arena announces `PUBLIC_ADDRESS` and nginx's
   `NGINX_MATCH_PORT` with no TLS name, so a grant says `tls: false`. Its `test` and `bots` go through nginx, plain,
   and refuse an nginx running the other way: `sudo` drops `PLAIN` from the shell (D-98).

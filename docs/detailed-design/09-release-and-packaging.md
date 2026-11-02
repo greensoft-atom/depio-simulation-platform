@@ -128,19 +128,22 @@ held there, and PKCS#11 was absent
 ### 4.2 What the host still provides
 
 The binaries need, of the system, its C library and the C++ compiler's two: glibc 2.28 or later (every binary; the
-runtime alone 2.15), `libstdc++` with GLIBCXX 3.4.22, GCC 6's, and `libgcc_s` (MySQL's), and `ncurses-libs` 6 (the
-`mysql` client), on x86-64: read from the binaries (`objdump -T`, `readelf -d`), checked in UBI 8 and UBI 9 minimal,
-which have them. Each of the three keeps every older version's symbols in its newer releases, so a newer system runs
-the binaries and an older one does not. Everything else they link is in the release: OpenSSL, PCRE2 and zlib
-compiled into nginx, MySQL's `lib/private` (its OpenSSL, protobuf, Kerberos and LDAP, RHEL 8's `libaio` and
-`libnuma`).
+runtime alone 2.15), GCC 7's `libstdc++` or later (`mysqld`'s CXXABI 1.3.11) and `libgcc_s` (MySQL's), and
+`ncurses-libs` 6 (`libncurses.so.6` and `libtinfo.so.6`, the `mysql` client), on x86-64: read from the binaries the
+release runs and every library they load (`objdump -T`, `readelf -d`), checked in UBI 8 and UBI 9 minimal, which
+have them. glibc and `libstdc++` keep every older version's symbols in their newer releases, so a newer system runs
+the binaries and an older one does not; ncurses keeps its soname 6, which RHEL 8 and 9 both ship. Everything else
+they load is in the release: OpenSSL, PCRE2 and zlib compiled into nginx, MySQL's `lib/private` (its OpenSSL and
+protobuf, RHEL 8's `libaio` and `libnuma`; its Kerberos, LDAP and SASL only for authentication plugins the site does
+not load). The runtime's desktop libraries name X11's and ALSA's, which a server process never loads (headless).
 
 **The C library stays the system's**, by choice (the owner asking, 2026-11-02, whether the binaries could carry
 everything, whatever the host's version). A binary that carried its own glibc would carry its loader too and still
 load the system's NSS modules (users, groups, host names) and locale data, built for the system's glibc, on which a
 different one fails; MySQL and the JDK have no static build; nginx alone could be static (musl), which frees nothing
-while MySQL needs glibc. So a host other than RHEL 9 runs the release when it is x86-64 (`uname -m`), its glibc 2.28
-or later (`ldd --version`), and, for the units, its systemd 247 or later (`systemctl --version`, §1).
+while MySQL needs glibc. So a host other than RHEL 9 needs x86-64 (`uname -m`), glibc 2.28 or later
+(`ldd --version`), the two libraries above, and for the units systemd 247 or later (`systemctl --version`, §1:
+`LoadCredential=` and `%d`, the newest the units use); checked on RHEL 8 and 9's userspaces alone.
 
 The scripts and units need
 what any RHEL 9 server installation has and that minimal image does not: systemd,

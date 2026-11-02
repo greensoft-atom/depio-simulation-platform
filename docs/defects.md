@@ -1365,6 +1365,13 @@ runs. **Fixed:** the statements on standard input. By the install guide's check,
 anything, and its failure is said as the release's nginx not running on this machine, glibc 2.28 named. Test first,
 with a stub failing as the loader does: the old line, then the new; the check skipped, the old line again.
 
+**O-93 (L), found 2026-11-02, FIXED the same day** (plan item 120, reviewed again at the owner's asking).
+`dev-nginx.sh` read the command's way where it meant the running nginx's: `status` named the command's ports beside
+nginx's own way ("on 80, 443 and 9001 … plain"), and `start` with nginx running the other way said "already running"
+and ended 0, so `run-local.sh start` passed with an nginx no match could cross, a root's nginx left in the other way
+the likely case (a user cannot stop it, D-98). Now `status` names the ports of nginx's way and `start` refuses,
+naming `sudo PLAIN=… ./dev-nginx.sh restart`. Test first, both failing; each fix's mutant caught.
+
 **O-92 (L), found 2026-11-02, OPEN** (plan item 119's run). `dev-nginx.sh start` as a user after a start by root, the
 way D-98 leaves open: `work/nginx` holds root's configuration and logs, and the user's start ends at `mkdir:
 cannot create directory '…/work/nginx/conf.new': Permission denied`, the cause plain but not its way out. Start nginx
@@ -1438,6 +1445,15 @@ everything they need). Plan item 119 moved nginx's build to Rocky 8 and left fiv
 heading and first line (compiled for RHEL 9, in a Rocky 9 container), 01's paragraph on the release's nginx, the
 README's row for `vendor/`, `deploy/README`'s row for `nginx/` and `nginx.conf`'s first comment. Now each says Rocky 8
 and glibc 2.28, and 09 §4.2 what the binaries take of the system, read from them, and why the C library is not carried.
+
+**DOC-42, found 2026-11-02, FIXED the same day** (plan item 120, reviewed again at the owner's asking). Item 120's own
+text: 09 §4.2 put `mysqld`'s `libstdc++` at GCC 6's, where its CXXABI 1.3.11 is GCC 7's, said ncurses keeps old
+symbols as glibc does (it keeps a soname), and said everything the binaries link is in the release, which holds for
+what they load, not for MySQL's Kerberos and LDAP (authentication plugins only) nor the runtime's X11 and sound
+libraries (never loaded headless); the install guide said a derived system "serves when" three commands pass, never
+run on one; the build guide's plain block ran `dev-backend.sh test` before the line starting nginx by `sudo`; and
+05 §8's table of development ports lacked the plain way. Each corrected; the units' newest directives read again
+(`LoadCredential=` and `%d`, 247), confirming that floor.
 
 ## 7. Documentation
 

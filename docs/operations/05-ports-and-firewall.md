@@ -419,7 +419,7 @@ These are on a developer's machine, not on A, B or C. All of them are bound to `
 |---|---|---|
 | 3314 | the development MySQL (`backend_test`, `backend_dev`), `vendor/`'s 8.4 | `dev-mysql.sh`, and `build-offline.sh` for the tests (D-80) |
 | 6380, 8080, 8081, 9021 | the store, the platform, the gateway, the arena | `dev-jredis.sh`, `dev-backend.sh`, or `run-local.sh start` ([development/03](../development/03-build-and-run.md), D-92) |
-| 80, 443, 9001, every IPv4 address | the release's nginx in front of them: a redirect, the API and the lobby, matches | `dev-nginx.sh`, as root |
+| 80, 443, 9001, every IPv4 address | the release's nginx in front of them: a redirect, the API and the lobby, matches; with `PLAIN=1` 80 and 9001 alone, the API and the lobby on 80, without TLS (D-101) | `dev-nginx.sh`, as root |
 | 5005 to 5009 | the debugger, one per process | `DEBUG=1 ./run-local.sh start` ([development/05](../development/05-vscode.md)) |
 | 6390, 6392, 8093, 8094, 9011, 9195 to 9199, 3307, 3308 | the live drill's processes, MySQL servers and metrics | `client/headless-drill.sh` |
 | 3307, 3309 | the backup drill's MySQL servers | `backup-drill.sh` |

@@ -377,9 +377,9 @@ nginx's 9001 without TLS. No certificate and no root CA; 80 still needs root, as
 
 ```bash
 export PLAIN=1 PUBLIC_ADDRESS=192.168.1.20      # the address clients dial
-./run-local.sh start                            # MySQL, j-redis, the backend, nginx plain on 80 and 9001
+./run-local.sh start                            # MySQL, j-redis, the backend, then nginx plain on 80 and 9001 (as root)
+sudo PLAIN=1 PUBLIC_ADDRESS=192.168.1.20 ./dev-nginx.sh start    # or nginx by sudo, the rest yours: sudo drops PLAIN
 ./dev-backend.sh test                           # two bots through nginx: http://, ws://, a plain match
-sudo PLAIN=1 PUBLIC_ADDRESS=192.168.1.20 ./dev-nginx.sh start    # nginx by sudo: give it PLAIN, which sudo drops
 ```
 
 | | Plain, development | TLS, here and on the site |
@@ -393,8 +393,9 @@ sudo PLAIN=1 PUBLIC_ADDRESS=192.168.1.20 ./dev-nginx.sh start    # nginx by sudo
 **The app goes from one to the other by its settings alone**: `BackendClient`'s API endpoints and lobby URL, and its
 root certificate. Whether a match is TLS is the grant's, which the backend sets, so nothing else changes in the app
 or the backend. Without TLS there is no name to route by, so 9001 reaches one arena, the run by hand's one.
-`dev-nginx.sh status` says which way nginx runs, and `dev-backend.sh test` refuses an nginx running the other way,
-as one started by `sudo` without `PLAIN=1` would.
+`dev-nginx.sh status` says which way nginx runs, on which ports; `dev-nginx.sh start` and `dev-backend.sh test`
+refuse an nginx running the other way, as one started by `sudo` without `PLAIN=1`, or left from yesterday's other
+way, would: `sudo PLAIN=1 ./dev-nginx.sh restart`.
 
 Everything crosses the network in clear: passwords, session tokens and join tickets, readable and usable by
 anyone on it, so a network you trust alone. The package's scripts take `http://` and `ws://` as given: refusing

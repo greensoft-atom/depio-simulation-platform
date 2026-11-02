@@ -4033,11 +4033,17 @@ each caught (two of them, the bots past nginx for the API and dialling the addre
 way after: its configuration byte for byte HEAD's, its flow 0 failed. The owner's way in Rocky 9, nginx as root with
 sudo's environment (`env -i`; the `sudo` binary itself not run): started without `PLAIN`, named with the line to give;
 given it, 0 failed. **Also answered**, the binaries carrying everything whatever the host: read from them, they take
-glibc 2.28, `libstdc++` (GLIBCXX 3.4.22) and `ncurses` 6 of the system, all three backward compatible, and systemd 247
+glibc 2.28, GCC 7's `libstdc++` and `ncurses` 6 of the system, which newer systems keep, and systemd 247
 for the units; the C library stays the system's (NSS, locales; MySQL and the JDK have no static build), written in 09
 §4.2 with the three commands that check a host, and the install guide's §1. Found and fixed: DOC-40 (the app was said
 to refuse `http://`, which 08 §5 says is not built), DOC-41 (five places still saying nginx is built on Rocky 9). Docs:
 D-101, D-99 superseded, development/03 §5.0, 09 §4.2 and §5, 01, install guide §1, README, deploy/README, CLAUDE.md.
+**Reviewed again** (the owner, the same day): every claim read again from the binaries and the units, every changed
+line of the scripts and the docs. Found and fixed: O-93 (`dev-nginx.sh` read the command's way where it meant
+nginx's: `status`'s ports, and `start` passing with nginx running the other way), test first, its two mutants caught;
+DOC-42 (09 §4.2's GCC 6, which is 7, and three overclaims; the build guide's plain block out of order; 05 §8). The
+plain test after, 0 failed, with the three checks added; the TLS way's, 0 failed, its configuration unchanged; the
+owner's way in Rocky 9 again.
 
 ---
 
