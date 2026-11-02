@@ -228,9 +228,10 @@ backend/scripts/check-promote.sh                    # both promotions' refusals 
 backend/scripts/check-bind.sh 3314 8080             # a port this user cannot bind, with the policy that refuses it (D-88); the dev scripts run it first
 backend/scripts/check-selinux-el9.sh                # its SELinux branch and the three grants, in a Rocky 9 guest under QEMU, SELinux enforcing (D-90; forty minutes without KVM, ten after)
 (cd backend && scripts/check-ports-el9.sh)
-# A second machine as the first one's standby (D-96), operations/10 as written on two UBI 9 machines joined by a
-# private link, a probe of the site throughout; then A's MySQL lost, then A lost (as root; about fifteen minutes, ten with A_IMAGE)
-backend/scripts/check-two-machines-el9.sh            # SAVE_A=<image> keeps A installed, A_IMAGE=<image> starts from it
+# A second machine as the first one's standby (D-96), with arenas of its own (D-97), operations/10 as written on two UBI 9
+# machines joined by a private link, a probe of the site throughout, matches by the C# client on B's arenas through A's
+# nginx, B frozen; then A's MySQL lost, then A lost (as root, .NET; about twenty minutes, twelve with A_IMAGE)
+backend/scripts/check-two-machines-el9.sh            # SAVE_A=<image> keeps A installed, A_IMAGE=<image> starts from it; STANDBY_ONLY=1 without B's arenas
 
 # The backups' own drill: the stream, dump, copy off the site, weekly proof under writes, a restore to a
 # moment and the refusals, on private MySQL servers (3307 primary, 3309 scratch) seeded from backend_dev

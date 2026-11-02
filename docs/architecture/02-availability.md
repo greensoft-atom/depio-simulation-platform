@@ -30,7 +30,9 @@ its own, and a copy off the site once the owner names a host.
 stopped. A's MySQL or a store failing is §1's row for it, the replica on B promoted and A's processes following;
 A failing is the site down until B is started in its place and the site's address forwarded to it, minutes by
 hand ([runbook §4](../operations/02-runbook.md#on-two-machines-d-96)), the sessions kept, A's battles and seconds
-of its results lost. Arenas on B, for capacity, are plan item 115 (b).
+of its results lost. With B's own arenas ([D-97](03-decision-log.md#d-97--arenas-on-the-standby-three-of-its-own-behind-as-nginx-watched-from-a), 10 §10), A failing ends their
+battles too, since their players reach them through A's nginx, and the site is one machine's after; B failing loses its battles, its players sent to A's
+arenas within the directory's 10 s, A's site going on.
 
 ## 1. Failure table
 

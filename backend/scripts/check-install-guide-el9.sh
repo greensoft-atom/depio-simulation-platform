@@ -52,10 +52,10 @@ if [ "${1:-}" != --inside ] && [ "${1:-}" != --after-boot ] && [ "${1:-}" != --d
     exit "$rc"
 fi
 
-# The launch's one machine (D-93): its units, each arena by its name, every process watched, the stores apart.
+# The launch's one machine (D-93): its units, each arena by its name, every process watched, the stores apart. The
+# arenas are the machine's settings' (D-97): a1 to a3 here, B's own on a standby that runs arenas, after A's loss.
 LAUNCH_UNITS="backend-mysql backend-store@session backend-store@events backend-platform backend-gateway
-    backend-worker@c1 backend-worker@c2 backend-arena@a1 backend-arena@a2 backend-arena@a3 backend-nginx
-    backend-binlog-stream backend-scratch-mysql"
+    backend-worker@c1 backend-worker@c2 backend-nginx backend-binlog-stream backend-scratch-mysql"
 LAUNCH_TIMERS="backend-mysql-backup.timer backend-restore-proof.timer backend-nginx-logs.timer"
 fail() { echo "  FAIL $*"; FAILS=$((FAILS + 1)); }
 store() {   # port, command...: the store's reply, its first line, after AUTH
@@ -71,47 +71,65 @@ store() {   # port, command...: the store's reply, its first line, after AUTH
     exec 3>&-
     echo "${r%$'\r'}"
 }
+setting() { sed -n "s/^$2=//p" "$1" 2> /dev/null | tail -1; }   # setting <env file> <name>: the value it sets
 launch_checks() {
-    local u s n listening targets
-    for u in $LAUNCH_UNITS $LAUNCH_TIMERS; do
+    local u s n f a up listening targets want hosts arenas units
+    arenas=$(ls /etc/backend/arena-*.env 2> /dev/null | sed 's|.*/arena-\(.*\)\.env$|\1|')
+    [ -n "$arenas" ] || fail "no arena's settings in /etc/backend"
+    units="$LAUNCH_UNITS $(printf 'backend-arena@%s ' $arenas)"
+    for u in $units $LAUNCH_TIMERS; do
         s=$(systemctl is-active "$u")
         [ "$s" = active ] || { fail "$u is $s"; journalctl -u "$u" -n 12 --no-pager | sed 's/^/      /'; }
     done
-    for u in $LAUNCH_UNITS $LAUNCH_TIMERS; do
+    for u in $units $LAUNCH_TIMERS; do
         s=$(systemctl is-enabled "$u" 2> /dev/null); [ "$s" = enabled ] || fail "$u is $s, so not started at boot"
     done
     # A unit systemd restarted is active again, and said: how often, and the lines of its exit.
-    for u in $LAUNCH_UNITS; do
+    for u in $units; do
         n=$(systemctl show -p NRestarts --value "$u")
         [ "${n:-0}" = 0 ] || { echo "  NOTE $u restarted $n time(s); its exit:"
             journalctl -u "$u" --no-pager | grep -E -m1 -B1 -A3 'Exception|exited, code' | sed 's/^/      /'
             journalctl -u "$u" --no-pager | grep -E 'Caused by' | tail -2 | sed 's/^/      /'; }
     done
-    # Each arena by its name on 9001: the certificate verified for it, and nginx passing it to that arena's port.
+    # Each arena by its name on 9001: the certificate verified for it, and nginx passing it to that arena's address.
     : > /var/log/backend-nginx/stream.log
-    for n in 1 2 3; do
-        echo | openssl s_client -connect 127.0.0.1:9001 -servername "a$n.arena.internal" \
-            -verify_hostname "a$n.arena.internal" -verify_return_error -CAfile /etc/backend/tls/ca.pem > /dev/null 2>&1 \
-            || fail "a$n.arena.internal: no handshake on 9001 verified for its name"
+    for a in $arenas; do
+        n=$(setting "/etc/backend/arena-$a.env" BACKEND_ADVERTISE_TLS_NAME)
+        echo | openssl s_client -connect 127.0.0.1:9001 -servername "$n" -verify_hostname "$n" -verify_return_error \
+            -CAfile /etc/backend/tls/ca.pem > /dev/null 2>&1 || fail "$n: no handshake on 9001 verified for its name"
     done
     sleep 2
-    for n in 1 2 3; do
-        grep -q "\"a$n.arena.internal\" 127.0.0.1:901$n 200 " /var/log/backend-nginx/stream.log \
-            || fail "a$n.arena.internal not passed to its arena, 127.0.0.1:901$n: $(grep "a$n\." /var/log/backend-nginx/stream.log | tail -1)"
+    for a in $arenas; do
+        f=/etc/backend/arena-$a.env; n=$(setting "$f" BACKEND_ADVERTISE_TLS_NAME); up=$(setting "$f" ARENA_BIND):$(setting "$f" ARENA_PORT)
+        grep -q "\"$n\" $up 200 " /var/log/backend-nginx/stream.log \
+            || fail "$n not passed to its arena, $up: $(grep "\"$n\"" /var/log/backend-nginx/stream.log | tail -1)"
     done
-    # Every process's metrics are watched: each port listening on loopback from 9100 to 9119 a target, and no other.
-    # Java listens on IPv6 sockets, 127.0.0.1 as an IPv4-mapped address. A JVM still starting on a loaded machine
-    # has not opened its port yet: up to two minutes for all of them.
+    # Every process's metrics are watched: each one's address, from its settings, listening from 9100 to 9119 and a
+    # target, and nothing else there; no other target on this machine's addresses (another machine's are its own, a
+    # standby's arenas on the launch's, D-97). Java listens on IPv6 sockets, an IPv4 address as an IPv4-mapped one.
+    # A JVM still starting on a loaded machine has not opened its port yet: up to two minutes for all of them.
+    want=
+    for f in /etc/backend/platform.env /etc/backend/gateway.env /etc/backend/worker-c1.env /etc/backend/worker-c2.env \
+             $(printf '/etc/backend/arena-%s.env ' $arenas); do
+        a=$(setting "$f" BACKEND_METRICS_ADDR)
+        [ -n "$a" ] || fail "$f gives no metrics address: nothing watches that process"
+        want="$want$a"$'\n'
+    done
+    want=$(sed '/^$/d' <<< "$want" | sort -u | tr '\n' ' ')
     for i in $(seq 120); do
-        listening=$(awk 'FNR > 1 && $4 == "0A" { split($2, a, ":"); p = strtonum("0x" a[2])
-            if ((a[1] == "0100007F" || a[1] == "0000000000000000FFFF00000100007F") && p >= 9100 && p < 9120) print p }' \
-            /proc/net/tcp /proc/net/tcp6 | sort -un | tr '\n' ' ')
-        [ "$listening" = "9101 9102 9103 9110 9111 9112 9113 " ] && break
+        listening=$(awk 'FNR > 1 && $4 == "0A" { split($2, a, ":"); p = strtonum("0x" a[2]); h = substr(a[1], length(a[1]) - 7)
+            if (p >= 9100 && p < 9120 && (length(a[1]) == 8 || substr(a[1], 1, 24) == "0000000000000000FFFF0000"))
+                printf "%d.%d.%d.%d:%d\n", strtonum("0x" substr(h, 7, 2)), strtonum("0x" substr(h, 5, 2)),
+                    strtonum("0x" substr(h, 3, 2)), strtonum("0x" substr(h, 1, 2)), p }' /proc/net/tcp /proc/net/tcp6 \
+            | sort -u | tr '\n' ' ')
+        [ "$listening" = "$want" ] && break
         sleep 1
     done
-    targets=$(sed -n 's/^BACKEND_WATCH_TARGETS=//p' /etc/backend/platform.env | tr ',' '\n' | sed 's/.*://' | sort -un | tr '\n' ' ')
-    [ "$listening" = "9101 9102 9103 9110 9111 9112 9113 " ] || fail "metrics listening on $listening, where D-93 has 9101 9102 9103 9110 9111 9112 9113"
-    [ "$targets" = "$listening" ] || fail "the watch's targets are $targets, the metrics listening $listening"
+    hosts=$(tr ' ' '\n' <<< "$want" | sed -n 's/:.*//p' | sort -u | tr '\n' ' ')
+    targets=$(sed -n 's/^BACKEND_WATCH_TARGETS=//p' /etc/backend/platform.env | tr ',' '\n' | sed 's/^[a-z]*=//' \
+        | awk -F: -v hosts=" $hosts" 'index(hosts, " " $1 " ")' | sort -u | tr '\n' ' ')
+    [ "$listening" = "$want" ] || fail "metrics listening on $listening, where this machine's processes have $want"
+    [ "$targets" = "$want" ] || fail "the watch's targets here are $targets, the processes' metrics $want"
     # Each store's maxmemory under half its heap, as ZGC needs (O-60): the heap in its env, maxmemory in its file.
     for n in session events; do
         heap_mb=$(sed -n 's/^STORE_HEAP=\([0-9]*\)g$/\1/p' "/etc/backend/store-$n.env"); heap_mb=$(( ${heap_mb:-0} * 1024 ))
@@ -124,9 +142,10 @@ launch_checks() {
     # every arena and worker connected to the events store as a store of its own.
     [ "$(store 6380 EXISTS s:match-result)" = ":1" ] || fail "no result stream on the events store, 6380"
     [ "$(store 6379 EXISTS s:match-result)" = ":0" ] || fail "the result stream on the session store, 6379"
-    for port in 9110 9111 9113 9102 9112; do
-        curl -s "http://127.0.0.1:$port/metrics" | grep -qx 'backend_events_store_connected 1\(\.0\)\?' \
-            || fail "the process on $port has no events store of its own: its results would go to the session store"
+    for f in /etc/backend/worker-c1.env /etc/backend/worker-c2.env $(printf '/etc/backend/arena-%s.env ' $arenas); do
+        a=$(setting "$f" BACKEND_METRICS_ADDR)
+        curl -s "http://$a/metrics" | grep -qx 'backend_events_store_connected 1\(\.0\)\?' \
+            || fail "the process on $a has no events store of its own: its results would go to the session store"
     done
 }
 

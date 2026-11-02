@@ -359,7 +359,8 @@ another machine.
 
 ## 6. When to add capacity
 
-On the launch's one machine the first answer to most of these is the second machine (plan item 115): its
+On the launch's one machine the first answer to most of these is the second machine (plan item 115): made the
+standby ([10](10-two-machines.md)), then given arenas of its own ([10 §10](10-two-machines.md#10-arenas-on-b), D-97), its
 arenas carry 5 400 in battle, its two workers 18 to 27 results a second, its stores 1.6 GB of `maxmemory` each.
 Past about 4 000 in battle, or for failover, it is time.
 

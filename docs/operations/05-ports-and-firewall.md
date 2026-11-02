@@ -109,6 +109,10 @@ A and on B ([D-96](../architecture/03-decision-log.md#d-96--a-second-machine-is-
 Each machine's firewall opens those three ports to the other's address alone, and nothing else private
 ([10 §8](10-two-machines.md#8-the-firewall)). B's other ports are A's and listen only once B is started in A's place.
 
+With B's own arenas ([D-97](../architecture/03-decision-log.md#d-97--arenas-on-the-standby-three-of-its-own-behind-as-nginx-watched-from-a), [10 §10](10-two-machines.md#10-arenas-on-b)): `b1` to `b3` on B's private address, 9011 to
+9013, and their metrics there, 9110, 9111 and 9113, all opened to A alone: A's nginx passes them their matches and
+A's watch reads them. Nothing of A's opens for them: they reach A's stores on the ports B already reaches.
+
 ### What does not listen, and is sometimes looked for
 
 - **80**: nothing, on any machine (§1).

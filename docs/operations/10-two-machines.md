@@ -6,22 +6,26 @@ B holds the replicas of MySQL and both stores, made from A's running primaries, 
 installed from A's own files and stopped. Should A's database or a store fail, the replica on B is promoted
 and A's processes follow it; should A fail, B is started in its place and the site's address forwarded to it:
 minutes, where one machine alone was hours ([availability](../architecture/02-availability.md#on-one-machine-the-launch-d-93)).
-Arenas on B, for the load past about 4 000 in battle, are the second half (plan item 115 (b)).
+Arenas on B, for the load past about 4 000 in battle, are §10: B's own three, behind A's nginx (D-97).
 
 **Tested as written.** `backend/scripts/check-two-machines-el9.sh` installs A by the install guide's own
 check, in Red Hat's UBI 9.5 with systemd and no network, then a second such machine, B, joined to it by a
 private link alone; it runs every `bash` block between this page's markers in order, each on the machine its
 first line names, while a probe uses the site through A's nginx twice a second and times every refusal; then it
-checks B is the standby (below), loses A's MySQL with A running and promotes B's (the [runbook's §2](02-runbook.md#2-stateful-primary-failure)),
+checks B is the standby (below). Then §10's blocks, B's own arenas: each by its name on A's 9001, verified and passed
+to B, A's watch reading them, and matches played on them by the C# headless client through A's nginx, A's arenas
+stopped for it; then B frozen a minute, a match played on A's arenas meanwhile, A's watch seeing B's go, and B
+back. Then it loses A's MySQL with A running and promotes B's (the [runbook's §2](02-runbook.md#2-stateful-primary-failure)),
 then loses A, cut off and frozen, and runs the [runbook's steps for it](02-runbook.md#on-two-machines-d-96) on B:
-the session made on A served by B, every account made on A logging in there. The blocks marked `console` are
-not run by it: the copy to B, which it makes the same through docker, and the firewall, which
-`check-ports-el9.sh` runs. Measured by it, on a development VM under other load, so each figure moves by a few
+the session made on A served by B, every account made on A logging in there, a match on B's arenas.
+`STANDBY_ONLY=1` leaves §10 out, B failing over with A's arenas. The blocks marked `console` are not run by it:
+the copies to B, which it makes the same through docker, and the firewall, which `check-ports-el9.sh` runs. Measured by it, on a development VM under other load, so each figure moves by a few
 seconds between runs (two runs of the page as written, the same within that in nine with a rule broken): the site
 refused requests for 15 s at MySQL's restart, 5 to 10 s at the stores', 14 to 16 s at the platform's; A's MySQL
 lost, 11 to 16 s from its stop to the next write, on B; A lost, B serving 62 to 67 s after the cut, the runbook's
-steps run at once. Of about 200 requests in a run, 50 refused, all within those gaps; every registration answered
-201 was on B.
+steps run at once (74 s with B's arenas). §10 adds one gap, 10 to 18 s at A's platform's restart, and B frozen none.
+Of about 200 requests in a run without §10, 50 refused, all within those gaps; every registration answered 201
+was on B.
 
 ## 1. What it makes
 
@@ -31,6 +35,7 @@ steps run at once. Of about 200 requests in a run, 50 refused, all within those 
 | Stores | `session` and `events`, the primaries, also on the private address | a replica of each |
 | nginx, platform, gateway, workers, arenas `a1` to `a3` | as installed, given both machines' addresses | installed from A's files, the same names and settings, **stopped and not enabled** |
 | Backups and their proof | as installed | none until B is the primary ([runbook](02-runbook.md#on-two-machines-d-96)) |
+| Arenas of B's own, `b1` to `b3` (§10, when the load needs them) | its nginx passes them their matches, its watch reads them | running, on its private address; A's arenas' settings taken off it |
 
 **What the site sees while it is done** (the owner accepted these gaps, D-96): MySQL on A restarted once,
 each store once, and each Java process once, in a deployment's order (§6). While MySQL or a store restarts,
@@ -341,14 +346,123 @@ firewall-cmd --reload
 |---|---|
 | Promote a replica on B, A's MySQL or a store lost | the [runbook's §2](02-runbook.md#2-stateful-primary-failure), on B, A the old primary |
 | Run the site from B, A lost | the [runbook](02-runbook.md#on-two-machines-d-96): A powered off first, then B's steps |
-| Deploy a new version | A as before ([01 §5](01-deploy.md#5-rolling-deployment)); on B the same unpacking and symlink, and its two stores and MySQL restarted only when the release changed them, replica before primary |
-| Change a process's settings | on A, then the same file copied to B, so that what B starts is what A runs |
+| Deploy a new version | A as before ([01 §5](01-deploy.md#5-rolling-deployment)); on B the same unpacking and symlink, its arenas restarted one at a time, drained, as A's, and its two stores and MySQL restarted only when the release changed them, replica before primary |
+| Change a process's settings | on A, then the same file copied to B, so that what B starts is what A runs; but the arenas, each machine's own, and with arenas on B (§10) the watch's targets in `platform.env` |
 | Renew the site's certificate | on both machines ([06 §4](06-certificates.md#4-installing-it-on-every-machine)) |
 | Renew a MySQL certificate, in two years | §3's lines for that machine's address, with MySQL's CA, then a restart of that MySQL |
 
+## 10. Arenas on B
+
+When the load needs them, past about 4 000 in battle ([04 §6](04-scaling-and-performance.md#6-when-to-add-capacity)),
+and once B is the standby: B's own three arenas, `b1` to `b3`, the names the three machines' map gives B
+([D-97](../architecture/03-decision-log.md#d-97--arenas-on-the-standby-three-of-its-own-behind-as-nginx-watched-from-a)).
+They run on B's private address, A's nginx passes them their matches by name, and A's watch reads their metrics; with A's
+three, six arenas, 10 800 places. Nothing on A restarts but its platform, once, for its watch: requests refused for
+seconds. The order is [06 §7](06-certificates.md#7-adding-an-arena-or-changing-the-address)'s: the names in nginx's map,
+a certificate issued with them, then the arenas, since a device refuses an arena whose name the certificate lacks.
+
+The certificate needs the root: its directory, moved off A by the install guide's
+[§9](03-install-guide.md#9-nginx-and-the-certificate), back in `/root/backend-ca` on A for this step, and off again after.
+
+<!-- two-machine-arenas -->
+
+```bash
+# On A, the root's directory back in /root/backend-ca: B's arenas in nginx's map, the certificate issued again with their names
+grep -q '^    b1\.arena\.internal ' /etc/backend/nginx/backend-stream.conf || sed -i \
+    "s/^    default .*/    b1.arena.internal  $B_PRIVATE:9011;\n    b2.arena.internal  $B_PRIVATE:9012;\n    b3.arena.internal  $B_PRIVATE:9013;\n&/" \
+    /etc/backend/nginx/backend-stream.conf
+/opt/backend/scripts/private-ca.sh issue /root/backend-ca /root/backend-certificate-b "$ADDRESS" \
+    $(/opt/backend/scripts/private-ca.sh names /etc/backend/nginx/backend-stream.conf)
+/opt/backend/scripts/install-certificate.sh /root/backend-certificate-b/fullchain.pem /root/backend-certificate-b/privkey.pem
+```
+
+nginx reloads with the map and the certificate at once, dropping nothing; a device is sent to B's arenas only once
+they announce themselves. The same two files to B, which is the front once A is lost:
+
+<!-- the arenas' copy to B -->
+```console
+# On B, as root, in a shell with the values (§2)
+ssh "root@$A_PRIVATE" "cd / && tar -cf - etc/backend/nginx/backend-stream.conf root/backend-certificate-b" > /root/from-a.tar
+```
+
+On B, its firewall opened to A's nginx and A's watch first: the arenas' ports and their metrics, from A alone, in
+§8's zone.
+
+<!-- firewall two B arenas -->
+```console
+firewall-cmd --permanent --zone=backend --add-port=9011-9013/tcp --add-port=9110-9111/tcp --add-port=9113/tcp
+firewall-cmd --reload
+```
+<!-- /firewall -->
+
+Then B's arenas, each from A's first arena's settings (both machines' stores, the site's address and 9001 to
+announce) with its own name, port and metrics on B's address. A's arenas' settings are taken off B: B never runs
+them, and the runbook starts the arenas a machine has settings for. B's platform runs only after A's loss; its watch
+is given now what it will read then, B's front on loopback and B's arenas: the one setting of B's not A's.
+
+```bash
+# On B: the map and the certificate with B's arenas' names; B's three arenas on its address, started and enabled
+tar -xpf /root/from-a.tar -C / && rm /root/from-a.tar
+/opt/backend/scripts/install-certificate.sh /root/backend-certificate-b/fullchain.pem /root/backend-certificate-b/privkey.pem
+rm -rf /root/backend-certificate-b
+for b in b1:9011:9110 b2:9012:9111 b3:9013:9113; do
+    IFS=: read -r name port metrics <<< "$b"
+    sed -e "s/^ARENA_BIND=.*/ARENA_BIND=$B_PRIVATE/" -e "s/^ARENA_PORT=.*/ARENA_PORT=$port/" \
+        -e "s/^BACKEND_ADVERTISE_TLS_NAME=.*/BACKEND_ADVERTISE_TLS_NAME=$name.arena.internal/" \
+        -e "s/^BACKEND_METRICS_ADDR=.*/BACKEND_METRICS_ADDR=$B_PRIVATE:$metrics/" \
+        /etc/backend/arena-a1.env > "/etc/backend/arena-$name.env"
+done
+rm /etc/backend/arena-a1.env /etc/backend/arena-a2.env /etc/backend/arena-a3.env
+targets="platform=127.0.0.1:9101,gateway=127.0.0.1:9103,arena=$B_PRIVATE:9110,arena=$B_PRIVATE:9111,arena=$B_PRIVATE:9113"
+sed -i "/^BACKEND_WATCH_TARGETS=/c BACKEND_WATCH_TARGETS=$targets,worker=127.0.0.1:9102,worker=127.0.0.1:9112" /etc/backend/platform.env
+systemctl enable --now backend-arena@b1 backend-arena@b2 backend-arena@b3
+for m in 9110 9111 9113; do
+    for i in $(seq 120); do curl -s -o /dev/null "http://$B_PRIVATE:$m/metrics" && break; sleep 1; done
+done
+```
+
+A's watch given B's arenas, and A's platform restarted for it (requests refused until it answers again); the
+certificate's directory, which holds its key, off A.
+
+```bash
+# On A: the watch reads B's arenas too: A's platform restarted once
+rm -rf /root/backend-certificate-b
+sed -i "/^BACKEND_WATCH_TARGETS=/s/\$/,arena=$B_PRIVATE:9110,arena=$B_PRIVATE:9111,arena=$B_PRIVATE:9113/" /etc/backend/platform.env
+systemctl restart backend-platform
+for i in $(seq 300); do curl -s -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
+```
+
+Then the root's directory off A again. Check from A: each of B's arenas by its name on 9001, the certificate
+verified for it and nginx passing it to B; and the watch reading every target, none failing.
+
+```bash
+# On A: B's arenas by name on 9001, passed to B; the watch's reads, none failed
+for n in b1 b2 b3; do
+    echo | openssl s_client -connect 127.0.0.1:9001 -servername $n.arena.internal -verify_hostname $n.arena.internal \
+        -CAfile /etc/backend/tls/ca.pem 2>/dev/null | grep -E '^subject=|Verify return code'
+done
+sleep 2
+grep -E '"b[1-3]\.arena\.internal"' /var/log/backend-nginx/stream.log | tail -3
+sleep 30
+curl -s http://127.0.0.1:9101/metrics | grep '^backend_watch_scrapes_total'
+```
+
+<!-- /two-machine-arenas -->
+
+Three `subject=` lines with `Verify return code: 0 (ok)`; the log's lines naming `10.0.0.2:9011` to `9013`, B's
+address, each with `200`; and `backend_watch_scrapes_total{outcome="failed"}` absent or not growing between two
+reads half a minute apart, while `outcome="ok"` grows by ten a round. A player's battle on B is then a device
+connecting to the site's address and 9001 with B's arena's name: nothing in the app changes.
+
+**B lost, A running**: B's battles are lost, as A's are when A is; the players are sent to A's arenas once B's have
+left the directory, within its 10 s. A's watch raises `TargetDown` for B's arenas, beside its replicas' alerts. Back,
+B's arenas announce themselves again and its replicas catch up; lost for good, a new B at the same address is made
+by this page's steps on B, from §4 on, and this section's (what they did on A stands).
+
 ## What this page does not do
 
-- **Arenas on B**, and nginx on A passing matches to them: plan item 115 (b).
 - **A watch of A from B**: B runs no platform, so nothing alerts when A is lost; where alerts go is held (Q-60).
+- **B the machine watched**: its disks, memory and load are read by nothing until its platform runs, after A's
+  loss; what fails there shows on A's watch as B's arenas or replicas down (D-97).
 - **A reboot of either machine after these steps** is not run by the check: MySQL and the stores listen on the
   private address, which must be up before they start (`After=network-online.target`, as their units have).

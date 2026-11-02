@@ -2939,7 +2939,7 @@ users, so the backend runs on one machine, and the system is to run that way and
   back from MySQL (D-31).
 - **Growing**: a second machine takes the replicas first, MySQL's and both stores', made from the running primaries
   as 01 §9 and §3 describe, which gives failover back; then arenas: plan item 115. The first half since written
-  step by step and run ([D-96](#d-96--a-second-machine-is-the-first-ones-standby-the-replicas-and-a-front-ready-to-start), [operations/10](../operations/10-two-machines.md)); arenas on the second machine not yet.
+  step by step and run ([D-96](#d-96--a-second-machine-is-the-first-ones-standby-the-replicas-and-a-front-ready-to-start), [operations/10](../operations/10-two-machines.md)), and the arenas on it ([D-97](#d-97--arenas-on-the-standby-three-of-its-own-behind-as-nginx-watched-from-a)).
 
 **Why.**
 - **The owner's numbers.** 5 000 in battle are 34 rooms of 150: three arenas, about 8 cores of rooms, two workers
@@ -3074,7 +3074,7 @@ on the second machine when the load needs them; the site serving throughout, res
 - **The backups stay on A**, beside its primary, as on one machine; after a failover they move with the primary
   (runbook §2).
 - **Arenas on B** (`b1` to `b3`, behind the front's nginx, the certificate issued again for their names) are the
-  second half, plan item 115 (b).
+  second half, plan item 115 (b): D-97.
 
 **Why.** Failover was given up at launch (D-93, NFR-4): the machine failing was the site down for the hours of a new
 installation and a restore. A standby running only its replicas needs no change to nginx, to the certificate or to
@@ -3084,3 +3084,35 @@ written on two machines, in containers joined by a private link (`check-two-mach
 **Cost.** A machine paid for to stand by. On A, the gaps above, once. B's processes do not run, so nothing watches
 them: the first proof that they start is the failover, which the check runs, and every release must reach B as it
 reaches A (01 §5). Nothing on B watches A either; where alerts would go is held (Q-60).
+
+### D-97 — Arenas on the standby: three of its own, behind A's nginx, watched from A
+
+**Decided 2026-11-02** (plan item 115 (b); the owner: "go ahead", the second half of the growth D-96 began).
+
+**Decision.**
+- **B runs three arenas of its own, `b1` to `b3`**, the names the three machines' map already gives B (05 §3):
+  on B's private address, ports 9011 to 9013, metrics 9110, 9111 and 9113 there too, each announcing the site's
+  address and 9001, on A's stores by both machines' addresses. With A's three the site has six, 10 800 places. A's
+  arenas' settings are taken off B: B never runs them.
+- **A's nginx passes them their matches**: their lines in the stream's map, B's address, and the certificate issued
+  again with their names (06 §7: the map, then the certificate, then the arena). The same map and certificate on B,
+  which is the front after A's loss.
+- **A's watch reads them** over the private network: their metrics among A's platform's targets, so an arena on B
+  down, or B itself, alerts on A (`TargetDown`). B's platform, which runs only after A's loss, gets B's own targets:
+  its front on loopback and its arenas on its address; it is the one setting of B's not A's.
+- **A lost**: every battle ends, B's arenas' too, whose players reach them through A's nginx; B's arenas themselves
+  run on, and B starts its front and backups as before, and no arena of A's. The site is then one machine's, 5 400
+  places. A's arenas leave the directory by themselves within its 10 s (`ArenaDirectory.TTL_SECONDS`).
+- **B lost, A running**: B's battles are lost, as A's are when A is; their players are sent to A's arenas once B's
+  have left the directory; the failover waits until B is back as the standby.
+- **The install guide's start and check take a machine's arenas from its settings** (`/etc/backend/arena-*.env`),
+  so the runbook runs them as written on a B with arenas, and on a B without (D-96 alone), unchanged.
+
+**Why.** D-96 put the replicas on B; arenas are what a second machine adds for load, and B already runs its
+replicas' processes beside nothing but its stopped front. B's arenas need nothing of B's front: the stores and the
+watch are A's, nginx is A's. Under the names B already has in the map, the certificate and the three machines'
+layout agree.
+
+**Cost.** One restart of A's platform (requests refused for seconds) for the watch's new targets; nothing else on A
+restarts. After A's loss, half the places. B's machine itself (its disks, memory, load) is still read by nothing
+until its platform runs: what fails there shows as its arenas or its replicas down, on A's watch.

@@ -3847,7 +3847,7 @@ Docs: D-94, 06 §7 (the login's limit and the start), 04 §10, the persistence a
 record. Not measured: a real machine's start, which is the same code; the drill's `play` from a release was not run
 for this item, the install check's three phases being the start it changes.
 
-#### 115. Growing from one machine to two (D-93, D-96): (a) ~~the second machine the first's standby~~ — **done 2026-11-01**; (b) arenas on it, open.
+#### 115. ~~Growing from one machine to two (D-93, D-96, D-97): (a) the second machine the first's standby; (b) arenas on it~~ — **done 2026-11-01 and 2026-11-02**
 
 A second machine: the replicas of MySQL and both stores made from the running primaries, which gives failover back,
 then arenas on it; written step by step and run as written in containers, with the site serving throughout. In two
@@ -3889,8 +3889,42 @@ the address forwarded (the provider's); A's return as the standby, written, not 
 window (a transaction without a GTID committed across the change of mode, with the stream behind) not one the check
 can make by construction, so read in MySQL's procedure only.
 
-**(b) Arenas on B, open.** `b1` to `b3` behind the front's nginx, the certificate issued again for their names
-(D-96). When the owner needs it: past about 4 000 in battle.
+**(b) Arenas on B, done 2026-11-02** (the owner: "go ahead"). D-97 and [10 §10](operations/10-two-machines.md#10-arenas-on-b):
+B's own arenas `b1` to `b3`, the names the three machines' map gives B, on B's private address (9011 to 9013, metrics
+9110, 9111 and 9113 there), each from A's first arena's settings; A's nginx map and the certificate issued again with
+their names, in 06 §7's order, the same two files on B; A's arenas' settings taken off B; A's watch given B's arenas,
+A's platform restarted once; B's platform's watch set now to what it reads after A's loss. The install guide's §10
+and §11 and its check's launch checks take a machine's arenas and metrics addresses from its settings, so the
+runbook's steps for A lost run unchanged on a B with arenas and on one without; the runbook has B lost too. B's
+firewall opens the arenas and their metrics to A alone. Six arenas, 10 800 places; after A's loss, B's three. Found
+writing it: A's loss ends B's battles too, whose players come through A's nginx (D-97 and the availability model
+say so). **Tested**: the check extended first and run against the page with §10's blocks doing nothing: 17
+failures, each its rule's (B's units inactive, A's settings kept, no handshake verified for B's names and nginx
+answering 500, not in the directory, no arena with room once A's were stopped); those runs and the first of the
+page found four faults of the check's own, fixed (an apostrophe ending an awk program early, the copy marker's
+pattern, a store reply's last line, nginx's log counted on the host). Then the page as
+written, from the saved image: 0 failed; matches by the C# client through A's nginx, every connection to B's
+arenas, A's stopped for it; B frozen a minute: A's site refused nothing, B's arenas out of the directory within
+12 s, a match on A's arenas, A's watch seeing B's arenas' reads fail; B back: MySQL and both stores caught up, B's
+arenas announced again within a second; A lost: B serving 74 s after the cut, its watch reading its seven targets, a
+match on B. One gap added on A, 10 to 18 s at its platform's restart. `STANDBY_ONLY=1`, D-96's standby with the guide's new
+§10 and §11 run on B: 0 failed. **Nine mutants**, each caught for its own reason: the map's lines left out (no
+verified handshake, 500); the certificate not installed on A (the same); B's arenas on loopback (502); their metrics
+on loopback (the three on one port, two failing to start); A's arenas' settings kept on B (refused by name, then B's
+watch targets wrong after the failover); B's watch not set (its targets and reads after A's loss); A's watch not
+given B's arenas, which `watch_reads_all` alone would have passed, so the check now requires A's watch to see B's
+arenas fail while B is frozen; the guide's start naming `a1` to `a3` again (§10 fails on B); B's arenas started, not
+enabled. Their runs also showed the client's `play` missing its own timed checks (top speed, bullets) twice under
+two stacks at once (T-64), so the check's matches are `lobby`'s, lobby to reward through the events store, the worker and
+MySQL; and one run lost 25 minutes to the host's Docker daemon timing out, its page's checks passing. Then, with
+`lobby`: the whole check from scratch, A installed by the guide's own check, 0 failed in 18.5 minutes; the install
+guide's own check whole (the install, after a reboot, the disk lost and the restore), with its new §10, §11 and
+launch checks, 0 failed; `check-ports-el9.sh` with B's arenas' firewall block, B's zone the arenas and their metrics
+from A alone, 0 failed, and that block without 9113 caught (its ports).
+Docs: D-97, 10 §10 and its tables, the runbook's §4, the install guide's §10 and §11, 04 §6, 05, 08 §2, the
+availability model, D-93's and D-96's pointers, CLAUDE.md, the scripts README, development/03. **Not checked**: real
+machines; B's machine itself, unwatched until its platform runs (D-97's cost); a reboot of B with its arenas
+enabled; players spread over six arenas under load (`pick()`'s, T-59's).
 
 #### 116. ~~Every shell script reviewed again, line by line (the owner, 2026-11-01).~~ — **done 2026-11-01**
 

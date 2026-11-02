@@ -40,7 +40,9 @@ On B the arenas are `9110`, `9111` and `9113`, the peers `A=10.0.0.1:8080,C=10.0
 launch's one machine ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)) every process is this machine's: the arenas `9110`, `9111` and `9113`, the
 workers `9102` and `9112`, whose metrics carry the backups' state too, and no peers; the install guide's step 8
 sets them, and its check finds every metrics port listening watched (O-59). With no peer, nothing on the site
-says the machine itself is down: its watch goes down with it, and sends nothing.
+says the machine itself is down: its watch goes down with it, and sends nothing. On two machines with B's own
+arenas ([D-97](../architecture/03-decision-log.md#d-97--arenas-on-the-standby-three-of-its-own-behind-as-nginx-watched-from-a)), A's targets add B's arenas on B's address, `arena=10.0.0.2:9110`, `9111` and `9113`, so B's
+loss alerts on A; B's platform, which runs only after A's loss, has B's front on loopback and B's arenas.
 A process added to a machine, or a port moved, is a change here and a platform restart
 ([07](07-start-stop-restart.md)).
 

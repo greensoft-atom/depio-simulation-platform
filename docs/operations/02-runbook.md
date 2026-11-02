@@ -446,6 +446,10 @@ B is A's standby ([10](10-two-machines.md)): its replicas follow A's primaries, 
   processes follow; A's site goes on.
 - **A stopped, and coming back** (a reboot, a short outage): wait for it, as on one machine. A failover costs more
   than minutes of waiting: it ends A as the primary for good.
+- **B lost, A running**, with arenas on B ([10 §10](10-two-machines.md#10-arenas-on-b)): nothing to do at once. B's
+  battles are lost, and their players sent to A's arenas once B's have left the directory, within 10 s; A's watch
+  raises `TargetDown` for B's arenas beside the replicas' alerts. Without B there is no failover: bring it back, or
+  make a new B (10 §10's last paragraph).
 - **A lost**: B becomes the site, as below. **Fence A first**: powered off at the provider and kept off. Started again
   it would be a second site, its stores and MySQL taking writes and its arenas announcing themselves under the names
   B's take. The epochs keep every process that saw a promotion off A's servers (§2), not A's own processes.
@@ -464,14 +468,16 @@ B is A's standby ([10](10-two-machines.md)): its replicas follow A's primaries, 
 Then on B the install guide's [§6, its backups](03-install-guide.md#its-backups-on-this-machine),
 [§10](03-install-guide.md#10-start-everything) and [§11](03-install-guide.md#11-check-it), as written there: the
 scratch server and the backups' files, every unit started and enabled, and the check, the first dump and its proof
-on B's own copies.
+on B's own copies. The arenas started are those B has settings for: A's, when B has none of its own; with its own
+(10 §10), B's alone, already running, and none of A's.
 
 <!-- on B: the install guide's Its backups; 10.; 11. -->
 <!-- /two-machines-a-lost -->
 
 Then the site's address: have the provider forward 443 and 9001 to B, and check from outside as for the front
 above. A session made on A goes on (the session store's replica held it), so players are not asked to log in
-again; the battles A was running are lost, and its arenas' results not yet in the replica (seconds of them).
+again; the battles A was running are lost, B's arenas' too when it has them (their players came through A's nginx),
+and A's arenas' results not yet in the replica (seconds of them).
 
 **A, once repaired, never starts in its old roles.** It is installed again from nothing as the standby: the install
 guide to §5, then [10](10-two-machines.md)'s §4 and §5 with the two addresses swapped (`A_PRIVATE` B's, the primary,

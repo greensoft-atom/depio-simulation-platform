@@ -319,8 +319,9 @@ for i in $(seq 300); do curl -s -o /dev/null http://127.0.0.1:8080/health && bre
 # The backups' account records each step's outcome, in a table the first start made (01 §9).
 /opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf \
     -e "GRANT INSERT ON backend.backup_run TO 'backup'@'127.0.0.1'"
-systemctl enable --now backend-gateway backend-worker@c1 backend-worker@c2 \
-    backend-arena@a1 backend-arena@a2 backend-arena@a3 backend-nginx
+# Every arena this machine has settings for: a1 to a3 here (step 8); B's own on a standby with arenas (10 §10)
+arenas=$(ls /etc/backend/arena-*.env | sed 's|.*/arena-\(.*\)\.env$|backend-arena@\1|')
+systemctl enable --now backend-gateway backend-worker@c1 backend-worker@c2 $arenas backend-nginx
 systemctl enable --now backend-binlog-stream backend-mysql-backup.timer backend-restore-proof.timer
 systemctl enable --now backend-nginx-logs.timer     # nginx's logs rotated nightly, 14 days kept (D-85)
 ```
@@ -330,17 +331,17 @@ systemctl enable --now backend-nginx-logs.timer     # nginx's logs rotated night
 ```bash
 for i in $(seq 90); do curl -s -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
 sleep 10
+arenas=$(ls /etc/backend/arena-*.env | sed 's|.*/arena-\(.*\)\.env$|backend-arena@\1|')
 systemctl is-active backend-mysql backend-store@session backend-store@events backend-platform backend-gateway \
-    backend-worker@c1 backend-worker@c2 backend-arena@a1 backend-arena@a2 backend-arena@a3 backend-nginx \
-    backend-binlog-stream backend-scratch-mysql
+    backend-worker@c1 backend-worker@c2 $arenas backend-nginx backend-binlog-stream backend-scratch-mysql
 # A registration as a device makes it, through nginx, trusting the backend's root alone
 curl -s --cacert /etc/backend/tls/ca.pem --connect-to "$ADDRESS:443:127.0.0.1:443" -o /dev/null \
     -w "a registration through nginx: %{http_code}\n" \
     -X POST -H 'Content-Type: application/json' -d '{"username":"installcheck","password":"install-check-1"}' \
     "https://$ADDRESS/v1/accounts"
 # Match traffic's TLS on 9001, as a device sees it: each arena's name, verified against the root
-for n in a1 a2 a3; do
-    echo | openssl s_client -connect 127.0.0.1:9001 -servername $n.arena.internal -verify_hostname $n.arena.internal \
+for n in $(sed -n 's/^BACKEND_ADVERTISE_TLS_NAME=//p' /etc/backend/arena-*.env); do
+    echo | openssl s_client -connect 127.0.0.1:9001 -servername "$n" -verify_hostname "$n" \
         -CAfile /etc/backend/tls/ca.pem 2>/dev/null | grep -E '^subject=|Verify return code'
 done
 /opt/backend/scripts/install-certificate.sh --check
@@ -350,7 +351,7 @@ systemctl start backend-mysql-backup && systemctl start backend-restore-proof
     -e "SELECT kind, ok, finished_at FROM backend.backup_run"
 ```
 
-Every unit `active`, `201`, three `subject=` lines naming `backend` each with `Verify return code: 0 (ok)`,
+Every unit `active`, `201`, a `subject=` line for each arena, three here, naming `backend`, each with `Verify return code: 0 (ok)`,
 the certificate's check naming both ports, and two rows of `backup_run`, kind 1 (the dump) and 2 (the
 proof), `ok` 1 each. The subject matters: on a port that speaks no TLS,
 `openssl s_client` finds no certificate and still prints `Verify return code: 0 (ok)`. Each unit's log: `journalctl -u backend-platform`

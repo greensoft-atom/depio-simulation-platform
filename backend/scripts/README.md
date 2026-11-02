@@ -20,7 +20,7 @@ Every setting a script or unit reads is also in the
 | [`check-ports-el9.sh`](#check-ports-el9sh) | Release | no | hand, on a machine with Docker |
 | [`check-units-el9.sh`](check-units-el9.sh) | Release | no | hand, on a machine with Docker: the release's units under systemd in UBI 9 (its header) |
 | [`check-install-guide-el9.sh`](check-install-guide-el9.sh) | Release | no | hand, on a machine with Docker: the install guide's blocks as written, in UBI 9 with no network; then the launch's one machine checked (D-93), again after a restart, and the runbook's restore after the database's disk is lost (its header) |
-| [`check-two-machines-el9.sh`](check-two-machines-el9.sh) | Release | no | hand, as root on a machine with Docker: the two-machine page's steps as written (D-96) on two UBI 9 machines joined by a private link, the site probed throughout; then A's MySQL lost and B's promoted, then A lost and the runbook's steps for it on B (its header) |
+| [`check-two-machines-el9.sh`](check-two-machines-el9.sh) | Release | no | hand, as root on a machine with Docker: the two-machine page's steps as written (D-96) on two UBI 9 machines joined by a private link, the site probed throughout; B's own arenas (D-97), matches played on them through A's nginx by the C# client, then B frozen; then A's MySQL lost and B's promoted, then A lost and the runbook's steps for it on B (its header; .NET for the client) |
 | [`check-certificates.sh`](#check-certificatessh) | Certificates | no | hand, on any machine with openssl |
 | [`rotate-nginx-logs.sh`](#rotate-nginx-logssh) | Logs | yes | `backend-nginx-logs.timer`, nightly, on every machine |
 | [`check-nginx-logs.sh`](#check-nginx-logssh) | Logs | no | hand, on a machine with a release and curl |

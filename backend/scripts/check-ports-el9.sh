@@ -450,17 +450,18 @@ expect "one machine: a player to 443" open "$(probe player "$PUB" 443)"
 expect "one machine: a player to 22" "No route to host" "$(probe player "$PUB" 22)"
 expect "one machine: the internal network to 22" open "$(probe stranger 10.0.0.1 22)"
 
-echo "--- two machines (10 §8), each after the install guide's §12, on a firewall as RHEL 9 has it; A's last, as this is A:"
+echo "--- two machines (10 §8, B's arenas §10), each after the install guide's §12, on a firewall as RHEL 9 has it; A's last, as this is A:"
 for m in B A; do
     rm -f /etc/firewalld/zones/*.xml /etc/firewalld/zones/*.xml.old
     firewall-cmd -q --reload
-    { echo "A_PRIVATE=10.0.0.1 B_PRIVATE=10.0.0.2 MYSQL_PORT=3306"; block "one machine" /check/install.md; block "two $m" /check/two.md; } \
-        > "$L/firewall-two-$m.sh"
+    { echo "A_PRIVATE=10.0.0.1 B_PRIVATE=10.0.0.2 MYSQL_PORT=3306"; block "one machine" /check/install.md; block "two $m" /check/two.md
+      [ "$m" = B ] && block "two B arenas" /check/two.md; } > "$L/firewall-two-$m.sh"
     grep -q 'zone=backend' "$L/firewall-two-$m.sh" || fail "no firewall block for $m in 10 §8"
     bash "$L/firewall-two-$m.sh" 2>&1 | sort | uniq -c | sed 's/^/      /'
-    other=10.0.0.2; [ "$m" = B ] && other=10.0.0.1
+    other=10.0.0.2; want_ports="3306/tcp 6379/tcp 6380/tcp"
+    [ "$m" = B ] && other=10.0.0.1 want_ports="$want_ports 9011-9013/tcp 9110-9111/tcp 9113/tcp"
     expect "two machines, $m: the backend zone's sources" "$other" "$(firewall-cmd --zone=backend --list-sources)"
-    expect "two machines, $m: its ports" "$(words 3306/tcp 6379/tcp 6380/tcp)" "$(words $(firewall-cmd --zone=backend --list-ports))"
+    expect "two machines, $m: its ports" "$(words $want_ports)" "$(words $(firewall-cmd --zone=backend --list-ports))"
     expect "two machines, $m: its services" "ssh" "$(firewall-cmd --zone=backend --list-services)"
     expect "two machines, $m: the public zone's ports" "9001/tcp" "$(firewall-cmd --zone=public --list-ports)"
     expect "two machines, $m: the public zone's services" "$(words dhcpv6-client https)" "$(words $(firewall-cmd --zone=public --list-services))"
