@@ -39,7 +39,8 @@ site grows: a second machine, its standby, is [10](10-two-machines.md) (D-96), a
 - RHEL 9.x on x86-64 (checked with 9.5), as root. A system derived from it needs at least what the release takes of
   the system ([09 §4.2](../detailed-design/09-release-and-packaging.md#42-what-the-host-still-provides)), not checked
   elsewhere: `uname -m` saying `x86_64`, `ldd --version` a glibc of 2.28 or later, `systemctl --version` a systemd of
-  247 or later, and `libstdc++` and `ncurses-libs` installed, as on every RHEL 9.
+  245 or later (every sandbox setting of the units applied; 239 starts them, 09 §1), `openssl version` 3.0 or later
+  (O-94), and `libstdc++` and `ncurses-libs` installed, as on every RHEL 9.
 - What any RHEL 9 server installation has: systemd, bash, coreutils, util-linux,
   `tar`, `gzip`, `findutils`, `sed`, `openssl`, `curl`. Nothing else: the JDK,
   Maven, MySQL, nginx and every library are in the repository (`vendor/`,
@@ -136,7 +137,7 @@ id mysql > /dev/null 2>&1 || useradd --system --home-dir /var/lib/backend-mysql 
 install -d -m 0755 /etc/backend /etc/backend/tls /etc/backend/mysql /etc/backend/nginx
 install -d -m 0700 /etc/backend/credentials
 # The secrets, made here, never typed: the database's, the store's, MySQL's root, the backups' two
-# accounts and the scratch server's root.
+# accounts and the scratch server's root. Root's alone; §6 and §8 write each where its process reads it (D-102).
 for s in db-password store-password mysql-root backup-password binlog-password scratch-root; do
     [ -s "/etc/backend/credentials/$s" ] || (umask 077; openssl rand -hex 24 > "/etc/backend/credentials/$s")
 done
@@ -187,10 +188,12 @@ cannot read, into `/var/lib/backend`, the second disk (§1). They are started wi
 copy off the site waits for its host (Q-53).
 
 ```bash
-# The two accounts' option files, over loopback, for the backups' units alone
+# The two accounts' option files, over loopback, for the backups' units alone: the backup user's, read by its
+# scripts (D-102)
+install -d -o backend-backup -g backend-backup -m 0700 /etc/backend/backup
 for a in backup:mysql-backup binlog:mysql-binlog; do
     (umask 077; printf '[client]\nhost=127.0.0.1\nport=%s\nuser=%s\npassword=%s\n' "$MYSQL_PORT" "${a%%:*}" \
-        "$(cat "/etc/backend/credentials/${a%%:*}-password")" > "/etc/backend/credentials/${a#*:}.cnf")
+        "$(cat "/etc/backend/credentials/${a%%:*}-password")" > "/etc/backend/backup/${a#*:}.cnf")
 done
 # The scratch server the proofs restore onto: its own data, socket and port, 3309, on loopback
 sed "s/^innodb_buffer_pool_size=.*/innodb_buffer_pool_size=$SCRATCH_BUFFER_POOL/" \
@@ -202,7 +205,8 @@ systemctl enable --now backend-scratch-mysql
 ALTER USER root@localhost IDENTIFIED BY '$(cat /etc/backend/credentials/scratch-root)';
 SQL
 (umask 077; printf '[client]\nhost=127.0.0.1\nport=3309\nuser=root\npassword=%s\n' \
-    "$(cat /etc/backend/credentials/scratch-root)" > /etc/backend/credentials/mysql-scratch.cnf)
+    "$(cat /etc/backend/credentials/scratch-root)" > /etc/backend/backup/mysql-scratch.cnf)
+chown backend-backup:backend-backup /etc/backend/backup/*.cnf
 ```
 
 ## 7. The stores
@@ -255,6 +259,12 @@ for a in a1:9011:9110 a2:9012:9111 a3:9013:9113; do
         -e "s/^#BACKEND_EVENTS_STORE=10.0.0.2:6380$/BACKEND_EVENTS_STORE=127.0.0.1:6380/" \
         /opt/backend/env/arena.env.example > "/etc/backend/arena-$name.env"
 done
+# Each process's secrets in its own settings file, as plain variables (D-102): first every file root's alone, since
+# systemd reads it as root before the process starts, then the values §5 made. Never a unit's Environment=.
+chmod 0600 /etc/backend/*.env
+db=$(cat /etc/backend/credentials/db-password) store=$(cat /etc/backend/credentials/store-password)
+for f in platform worker; do echo "BACKEND_DB_PASSWORD=$db" >> "/etc/backend/$f.env"; done
+for f in platform worker gateway arena-a1 arena-a2 arena-a3; do echo "BACKEND_STORE_PASSWORD=$store" >> "/etc/backend/$f.env"; done
 # The heaps for one machine (D-93), a drop-in a unit, and the stores' with their maxmemory at 40 % of the heap;
 # under 48 GB, 1g each, the stores' maxmemory 400mb with it (O-60).
 heap() { mkdir -p "/etc/systemd/system/$1.service.d"
@@ -400,7 +410,7 @@ machine's commands, and every port is in [05](05-ports-and-firewall.md).
 | Back up the database, and prove the backups | on this machine since §6 and §10; [01 §10](01-deploy.md#10-copies-off-the-databases-machine) says what each step does, and restores from them |
 | Handle a failure | the [runbook](02-runbook.md): triage, the store's and MySQL's failover, restores |
 | Add a second machine, its standby: the replicas, and a front ready to start | [10](10-two-machines.md) (D-96) |
-| Act as an operator (kick, ban, notices, tournaments) | the admin API: `systemd/platform-admin.conf.example` as a drop-in, then [04 §10](../detailed-design/04-platform-services.md#10-admin-api) |
+| Act as an operator (kick, ban, notices, tournaments) | the admin API: `BACKEND_ADMIN_ADDR` and `BACKEND_ADMIN_TOKEN` in `platform.env`, as its example says, then [04 §10](../detailed-design/04-platform-services.md#10-admin-api) |
 | Watch it | each process's metrics (01 §7); what to watch, the [runbook §5](02-runbook.md#5-what-to-watch) |
 | Take security fixes for Java, MySQL, nginx and OpenSSL | the [runbook](02-runbook.md#6-routine)'s monthly routine; how a version moves, [vendor/README](../../vendor/README.md) |
 | Read a log | `journalctl -u <unit>`; GC logs in `/var/log/backend`, MySQL's in `/var/log/backend-mysql`, nginx's in `/var/log/backend-nginx` |

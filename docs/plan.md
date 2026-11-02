@@ -4045,6 +4045,33 @@ DOC-42 (09 §4.2's GCC 6, which is 7, and three overclaims; the build guide's pl
 plain test after, 0 failed, with the three checks added; the TLS way's, 0 failed, its configuration unchanged; the
 owner's way in Rocky 9 again.
 
+#### 121. ~~A process's secrets in its own settings file, as plain variables; the units carry none (the owner, 2026-11-02, D-102).~~ — **done 2026-11-02**
+
+The owner, asked how the units pass secrets: not through systemd's units and their machinery, each service taking its
+own from its settings as plain environment variables, simply. **Found first** (DOC-43): the units' floor was systemd
+251, `%d`'s, not 247 as three documents and DOC-42 had it; RHEL 9.0 has 250. **Test first**: the units' check given
+its secrets in the settings files, its own drop-in gone, and asked that no unit or drop-in name a credential, every
+settings file be root's 0600, `systemctl show` print no secret, `nobody` read neither the platform's environment nor
+its file, and an arena of its own TLS serve the keystore `install-certificate.sh` wrote: against the units as they
+were, in UBI 9.5, 20 failed, every Java unit `243/CREDENTIALS`. **Then**: no unit has `LoadCredential=` or `%d`, nor
+243 among its exits; the Java processes' secrets at the end of their settings files, the install guide writing them
+after making every file 0600; the backups' option files and keys in `/etc/backend/backup/`, the backup user's, each
+unit naming its path; the arena's own keystore and password in `/etc/backend/tls/`, the `backend` group's to read;
+`platform-admin.conf.example` and `arena-tls.conf.example` gone, their settings in the env files' examples; B's
+arenas' files made 0600 (operations/10). The Java code unchanged but two comments. **Checked**: the units' check in
+UBI 9.5, 0 failed of 42; the install guide's in UBI 9.5 with no drop-in of its own, 0 failed at install, after the
+restart and after the restore, the launch's checks asking the same of the machine; the two machines' check, 0 failed,
+the site served throughout. **Mutants**, each caught by the one check it breaks: in the units' check, the settings
+files left 0644, the admin token in a drop-in's `Environment=` (the platform working, `systemctl show` printing it),
+the keystore root's alone (the arena serving nothing), a backup unit still loading a credential; on the install
+guide's machine (A kept as an image), a settings file 0644, the store's password in a drop-in, a drop-in naming a
+credential; on B, the page without its `chmod`, B's launch checks failing on its three arena files at 0644. **RHEL 8** (Q-63): the units' check in UBI 8.10, systemd 239,
+39 passed, its three failures one, O-94: `install-certificate.sh` gives `openssl verify` OpenSSL 3's `-no-CAstore`,
+which RHEL 8's 1.1.1k refuses, so the install guide there still stops at its step 9; the three sandbox settings
+newer than 239 are ignored with a warning. Not fixed: RHEL 9 alone is the host. Docs: D-102, DOC-43, O-94, Q-63,
+01 §2, §7, §8 and §10, 02, 03, 10, 09 §1, §4.2 and §7, 04 §10, 06 §10, development/02 and 04, api/03, deploy/README,
+the env examples, the module READMEs, CLAUDE.md.
+
 ---
 
 ### Completed 2026-09-23

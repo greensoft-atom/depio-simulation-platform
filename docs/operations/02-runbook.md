@@ -280,7 +280,7 @@ next re-drive, within 30 s.
 On the machine running `platform`, as root, the secret read from its file
 ([04 §10](../detailed-design/04-platform-services.md#the-first-slice-designed-2026-09-29-plan-item-7)).
 It is served only when `BACKEND_ADMIN_ADDR` names a loopback address, with the
-secret from the drop-in `deploy/systemd/platform-admin.conf.example`
+secret, `BACKEND_ADMIN_TOKEN`, both in `platform.env`
 ([01 §2](01-deploy.md#secrets)); `127.0.0.1:9120` below is the example's.
 Every call needs `Authorization: Bearer <the secret>`, else 401; a body is JSON
 of at most 4 KiB; every call is audited, refused ones too.

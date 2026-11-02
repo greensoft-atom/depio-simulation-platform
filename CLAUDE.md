@@ -121,9 +121,13 @@ for the backend, its docs and its client.
   20 000), Q-59 (the app's updates), Q-60 (where alerts go) and Q-62 (the launch's machine). Recorded, not raised
   again until the owner brings them back; what they cost stays in the documents.
 - **Java 21 only, MySQL 8.4, and the release carries its own runtime, MySQL and nginx**
-  (Q-56, plan item 80). **Production is RHEL 9.x** (systemd 252, which the units need), this machine Ubuntu
+  (Q-56, plan item 80). **Production is RHEL 9.x** (systemd 252, OpenSSL 3), this machine Ubuntu
   24.04: native code is built in a Rocky Linux 8 container for glibc 2.28 (D-100), releases checked in UBI 8 and UBI 9;
-  RHEL 8 runs the binaries but not the units (systemd 239, Q-63).
+  RHEL 8 runs the binaries and, since D-102, the units (systemd 239, three sandbox settings ignored), but not
+  `install-certificate.sh`'s check (OpenSSL 1.1.1, O-94; Q-63).
+- **No secret through systemd's units** (owner, 2026-11-02; D-102): each process takes its own from its settings
+  file, `/etc/backend/<process>.env`, as plain variables, every such file `root:root 0600`; the backups' scripts read
+  their own files in `/etc/backend/backup/`. No `LoadCredential=`, no `%d`, never a secret in `Environment=`.
 - **Naming.** The word excluded by the naming rule in [docs/README.md](docs/README.md#naming)
   is never used: not in prose, identifiers, file names, paths or commit messages. That
   section is the only place it is written. The glossary has the substitutes.

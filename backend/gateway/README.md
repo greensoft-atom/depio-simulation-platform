@@ -58,7 +58,7 @@ java -cp '<release>/lib/gateway/*' com.backend.gateway.GatewayMain \
 - `deploy/env/gateway.env.example` listens on `127.0.0.1:8090`, which is the `backend_gateway`
   upstream in `deploy/nginx/backend.conf`.
 - The unit runs a 3 GB heap with generational ZGC and `LimitNOFILE=65536`. It reads the store
-  password as a credential, and does not restart after exit 2 or 243.
+  password from `gateway.env` (D-102), and does not restart after exit 2.
 - The drill (`client/headless-drill.sh`) runs it on 8094, with platform on 8093 and the store on 6390.
 
 **Stopping.** The shutdown hook closes the metrics server and logs `connections held at shutdown: n`.
@@ -73,8 +73,8 @@ It then stops the registry, the server and the store client, and flushes the log
 | Variable | Default | Meaning |
 |---|---|---|
 | `BACKEND_STORE_ADDRESSES` | unset | `host:port,host:port`: the session store's primary and replica, in any order ([D-34](../../docs/architecture/03-decision-log.md#d-34--each-store-has-a-replica-every-process-knows-both-a-promotion-is-a-script)). Set, it replaces arguments 3 and 4; the client uses the primary with the highest epoch and follows a promotion by itself. Not `host:port`: exit 2 |
-| `BACKEND_STORE_PASSWORD_FILE` | unset | A file holding the store's password, one trailing line ending removed; wins over the next. Named but unreadable or empty: exit 2. The unit sets it from `LoadCredential=store-password` |
-| `BACKEND_STORE_PASSWORD` | unset | The password itself. With neither set, a warning is logged and no password is sent; a store that answers `NOAUTH` is then exit 2 |
+| `BACKEND_STORE_PASSWORD_FILE` | unset | A file holding the store's password, one trailing line ending removed; wins over the next. Named but unreadable or empty: exit 2 |
+| `BACKEND_STORE_PASSWORD` | unset | The password itself, at the end of `gateway.env` (D-102). With neither set, a warning is logged and no password is sent; a store that answers `NOAUTH` is then exit 2 |
 | `BACKEND_METRICS_ADDR` | unset: no metrics server | `host:port` for `GET /metrics`; the example uses `127.0.0.1:9103`. Not `host:port`, or not bindable: exit 2 |
 | `BACKEND_EDGE_CERTIFICATE` | unset: no certificate gauge | nginx's certificate chain, PEM. Its earliest expiry becomes a metric, read at every scrape, so a renewal shows at once |
 

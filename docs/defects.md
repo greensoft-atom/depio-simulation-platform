@@ -1365,6 +1365,12 @@ runs. **Fixed:** the statements on standard input. By the install guide's check,
 anything, and its failure is said as the release's nginx not running on this machine, glibc 2.28 named. Test first,
 with a stub failing as the loader does: the old line, then the new; the check skipped, the old line again.
 
+**O-94 (L), found 2026-11-02, OPEN** (plan item 121's run of the install guide in UBI 8.10, for Q-63). On RHEL 8
+`install-certificate.sh` refuses every chain when it trusts the backend's root alone, as the install guide has it:
+it gives `openssl verify` `-no-CAstore`, OpenSSL 3.0's, and RHEL 8's 1.1.1k stops at "unknown option", so the
+guide stops at its step 9 ("does not verify"), before any unit starts. RHEL 9 alone is the host (Q-56), so it is
+left: a RHEL 8 host would want the option given only to an OpenSSL that has it (Q-63).
+
 **O-93 (L), found 2026-11-02, FIXED the same day** (plan item 120, reviewed again at the owner's asking).
 `dev-nginx.sh` read the command's way where it meant the running nginx's: `status` named the command's ports beside
 nginx's own way ("on 80, 443 and 9001 … plain"), and `start` with nginx running the other way said "already running"
@@ -1454,6 +1460,13 @@ libraries (never loaded headless); the install guide said a derived system "serv
 run on one; the build guide's plain block ran `dev-backend.sh test` before the line starting nginx by `sudo`; and
 05 §8's table of development ports lacked the plain way. Each corrected; the units' newest directives read again
 (`LoadCredential=` and `%d`, 247), confirming that floor.
+
+**DOC-43, found 2026-11-02, FIXED the same day** (plan item 121, the owner asking how the units pass secrets). The
+units' floor was written as systemd 247 (09 §1 and §4.2, the install guide's §1, and DOC-42's "confirming that
+floor") and as 250 (01 §2's `%d` comment): `LoadCredential=` is 247's, but `%d`, in every unit that loaded a secret,
+is 251's (systemd's own NEWS: "The new %d specifier", under "CHANGES WITH 251"), and RHEL 9.0 has 250. DOC-42 read
+the directives again and took `%d` for 247's without looking it up. Moot since D-102: no unit uses either, and each
+place now says what the units need.
 
 ## 7. Documentation
 

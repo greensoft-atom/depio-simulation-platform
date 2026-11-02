@@ -98,8 +98,9 @@ mvn -pl common test -Dtest=MetricsTest
   start. Restarting cannot fix a setting, so the units do not restart on 2, and the one log line
   that says what to fix is not buried.
 - **Secrets on the command line.** Do not pass them there: anyone on the machine can read a process's
-  arguments. `LoadCredential=` in the unit, with `NAME_FILE=%d/<name>`, is the arrangement
-  ([operations/01 §2](../../docs/operations/01-deploy.md#secrets)).
+  arguments. The variable itself, `NAME`, in the process's own settings file, root's alone, is the
+  arrangement (D-102, [operations/01 §2](../../docs/operations/01-deploy.md#secrets)); `NAME_FILE`, a
+  file holding it, wins where both are set.
 
 ## Design documents
 

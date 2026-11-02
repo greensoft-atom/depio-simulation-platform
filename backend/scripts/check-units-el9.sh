@@ -6,7 +6,9 @@
 # backend-mysql, backend-store@session, backend-platform, backend-gateway, backend-worker@c1,
 # backend-arena@a1 and backend-nginx, as one machine's front (D-82): registers an account through nginx
 # over HTTPS, opens a match connection through its 9001 to the arena, reloads nginx, and stops them
-# all. Smaller heaps than production's, by a drop-in: this is a check, not a machine.
+# all. The secrets are in the settings files (D-102), and an arena of its own TLS takes its keystore from
+# this repository's install-certificate.sh. Smaller heaps than production's, by a drop-in: this is a
+# check, not a machine.
 #
 #   scripts/check-units-el9.sh [release-dir]       default: target/release/backend-*/; needs docker,
 #                                                  and a privileged container (systemd inside it)
@@ -20,7 +22,7 @@ if [ "${1:-}" != --inside ]; then
     IMAGE=${IMAGE:-registry.access.redhat.com/ubi9/ubi-init:9.5}
     NAME="backend-check-units-$$"
     docker run -d --rm --privileged --name "$NAME" -e REL_NAME="$(basename "$REL")" \
-        -v "$REL:/opt/$(basename "$REL"):ro" -v "$HERE/../deploy:/deploy:ro" -v "$HERE/check-units-el9.sh:/check.sh:ro" \
+        -v "$REL:/opt/$(basename "$REL"):ro" -v "$HERE/../deploy:/deploy:ro" -v "$HERE:/scripts:ro" -v "$HERE/check-units-el9.sh:/check.sh:ro" \
         "$IMAGE" > /dev/null || exit 1
     # Stopped on every way out, an interrupt too: the docker client exits, and the container went on (O-78).
     trap 'docker stop "$NAME" > /dev/null 2>&1' EXIT
@@ -68,13 +70,10 @@ systemctl start backend-mysql
 active backend-mysql && ok "active (Type=notify): $($R/mysql/bin/mysql -S /run/backend-mysql/mysqld.sock -u root -N -e 'SELECT VERSION()')" \
     || { bad "backend-mysql"; journalctl -u backend-mysql --no-pager | tail -8; }
 $R/mysql/bin/mysql -S /run/backend-mysql/mysqld.sock -u root -e "CREATE DATABASE backend;
-    CREATE USER backend@'127.0.0.1' IDENTIFIED BY 'dbpw'; GRANT ALL ON backend.* TO backend@'127.0.0.1'"
-echo dbpw > /etc/backend/credentials/db-password; echo storepw > /etc/backend/credentials/store-password
-echo admintoken > /etc/backend/credentials/admin-token
-chmod 0600 /etc/backend/credentials/*
+    CREATE USER backend@'127.0.0.1' IDENTIFIED BY 'db-secret-1f3a'; GRANT ALL ON backend.* TO backend@'127.0.0.1'"
 
 echo "--- backend-store@session"
-sed -e 's#^dir .*#dir /var/lib/backend-store/session#' -e 's/^requirepass .*/requirepass storepw/' \
+sed -e 's#^dir .*#dir /var/lib/backend-store/session#' -e 's/^requirepass .*/requirepass store-secret-7c2e/' \
     $R/jredis/conf/j-redis.conf > /etc/backend/store-session.conf
 echo "STORE_HEAP=512m" > /etc/backend/store-session.env
 systemctl start backend-store@session
@@ -95,18 +94,12 @@ BACKEND_METRICS_ADDR=127.0.0.1:9101
 BACKEND_ADMIN_ADDR=127.0.0.1:9120
 BACKEND_WATCH_TARGETS=platform=127.0.0.1:9101,gateway=127.0.0.1:9103,arena=127.0.0.1:9110,worker=127.0.0.1:9102
 BACKEND_WATCH_MACHINE=one
+BACKEND_DB_PASSWORD=db-secret-1f3a
+BACKEND_STORE_PASSWORD=store-secret-7c2e
+BACKEND_ADMIN_TOKEN=admin-secret-9b4d
 EOF
-# systemd in a container cannot mount the private directory LoadCredential delivers into (it stays
-# empty and root's): the secrets come as files the user may read, by a drop-in, for this test only.
-# On a host it works for a non-root user (checked on systemd 255; RHEL 9's 252 uses the same ACLs).
-install -d -o backend -m 0500 /etc/backend/test-credentials
-install -o backend -m 0400 /etc/backend/credentials/db-password /etc/backend/credentials/store-password /etc/backend/credentials/admin-token /etc/backend/test-credentials/
-for u in backend-platform backend-gateway backend-worker@ backend-arena@; do
-    mkdir -p "/etc/systemd/system/$u.service.d"
-    printf '[Service]\nEnvironment=BACKEND_DB_PASSWORD_FILE=/etc/backend/test-credentials/db-password\nEnvironment=BACKEND_STORE_PASSWORD_FILE=/etc/backend/test-credentials/store-password\n' \
-        > "/etc/systemd/system/$u.service.d/test-credentials.conf"
-done
-printf '[Service]\nEnvironment=BACKEND_ADMIN_TOKEN_FILE=/etc/backend/test-credentials/admin-token\n' > /etc/systemd/system/backend-platform.service.d/test-admin.conf
+# The secrets are in the settings files, root's alone (D-102): systemd reads them before the process starts.
+chmod 0600 /etc/backend/*.env
 systemctl daemon-reload
 systemctl start backend-platform
 for i in $(seq 90); do curl -s -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
@@ -121,6 +114,7 @@ PLATFORM_URL=http://127.0.0.1:8080
 STORE_HOST=127.0.0.1
 STORE_PORT=6379
 BACKEND_METRICS_ADDR=127.0.0.1:9103
+BACKEND_STORE_PASSWORD=store-secret-7c2e
 EOF
 cat > /etc/backend/worker.env <<EOF
 STORE_HOST=127.0.0.1
@@ -128,6 +122,8 @@ STORE_PORT=6379
 BACKEND_DB_URL=jdbc:mysql://127.0.0.1:3306/backend?useSSL=false&allowPublicKeyRetrieval=true
 BACKEND_DB_USER=backend
 BACKEND_METRICS_ADDR=127.0.0.1:9102
+BACKEND_DB_PASSWORD=db-secret-1f3a
+BACKEND_STORE_PASSWORD=store-secret-7c2e
 EOF
 cat > /etc/backend/arena-a1.env <<EOF
 ARENA_PORT=9011
@@ -143,7 +139,9 @@ BACKEND_ADVERTISE_TLS_NAME=a1.arena.internal
 STORE_HOST=127.0.0.1
 STORE_PORT=6379
 BACKEND_METRICS_ADDR=127.0.0.1:9110
+BACKEND_STORE_PASSWORD=store-secret-7c2e
 EOF
+chmod 0600 /etc/backend/*.env
 systemctl start backend-gateway backend-worker@c1 backend-arena@a1
 sleep 20
 for u in backend-gateway backend-worker@c1 backend-arena@a1; do
@@ -151,6 +149,18 @@ for u in backend-gateway backend-worker@c1 backend-arena@a1; do
     [ "$(systemctl is-active "$u")" = active ] && ok "$u active, $errors errors in its journal" \
         || { bad "$u"; journalctl -u "$u" --no-pager | tail -8; }
 done
+
+echo "--- the secrets (D-102): in the settings files alone, root's, and nowhere systemd shows them"
+named=$(grep -lE 'LoadCredential|%d/' /etc/systemd/system/backend-*.service /etc/systemd/system/backend-*.service.d/*.conf 2> /dev/null)
+[ -z "$named" ] && ok "no unit or drop-in has LoadCredential= or %d" || bad "a credential still named in: $named"
+loose=$(for f in /etc/backend/*.env; do [ "$(stat -c '%U %G %a' "$f")" = "root root 600" ] || echo "$f $(stat -c '%U:%G %a' "$f")"; done)
+[ -z "$loose" ] && ok "every settings file root's alone, 0600: $(ls /etc/backend/*.env | wc -l)" || bad "settings files others may read: $loose"
+shown=$(for u in backend-platform backend-gateway backend-worker@c1 backend-arena@a1; do
+    systemctl show "$u" | grep -qE 'db-secret|store-secret|admin-secret' && echo "$u"; done)
+[ -z "$shown" ] && ok "systemctl show prints no secret of the four" || bad "systemctl show prints a secret of: $shown"
+pid=$(systemctl show -p MainPID --value backend-platform)
+runuser -u nobody -- cat "/proc/$pid/environ" > /dev/null 2>&1 && bad "another user reads the platform's environment" \
+    || ok "another user reads neither the platform's environment ($(stat -c '%U %a' "/proc/$pid/environ")) nor its file: $(runuser -u nobody -- cat /etc/backend/platform.env 2>&1 | head -1)"
 
 echo "--- backend-nginx"
 cp /deploy/nginx/*.conf /etc/backend/nginx/
@@ -185,6 +195,31 @@ grep -q '"a1.arena.internal" 127.0.0.1:9011 ' /var/log/backend-nginx/stream.log 
     && ok "and passed to the arena, 127.0.0.1:9011" || bad "not passed to the arena: $(tail -2 /var/log/backend-nginx/stream.log)"
 systemctl reload backend-nginx && sleep 1 && [ "$(systemctl is-active backend-nginx)" = active ] && ok "reloaded (tested first)" \
     || bad "reload"
+
+echo "--- an arena of its own TLS (01 §8, D-102): its keystore made by install-certificate.sh, read from /etc/backend/tls"
+sed -i 's/^\([[:space:]]*\)server_name .*;/\1server_name 127.0.0.1;/' /etc/backend/nginx/backend.conf
+cp /tmp/ca/ca.pem /etc/backend/tls/ca.pem
+sed -e 's/^ARENA_PORT=.*/ARENA_PORT=9012/' -e '/^BACKEND_ADVERTISE_/d' -e 's/^BACKEND_METRICS_ADDR=.*/BACKEND_METRICS_ADDR=127.0.0.1:9111/' \
+    /etc/backend/arena-a1.env > /etc/backend/arena-a2.env
+printf 'BACKEND_ARENA_TLS_KEYSTORE=/etc/backend/tls/arena-tls.p12\nBACKEND_ARENA_TLS_PASSWORD_FILE=/etc/backend/tls/arena-tls-password\n' \
+    >> /etc/backend/arena-a2.env
+chmod 0600 /etc/backend/arena-a2.env
+if /scripts/install-certificate.sh /tmp/site/fullchain.pem /tmp/site/privkey.pem > /tmp/install-certificate.log 2>&1; then
+    ok "install-certificate.sh: $(grep '^arenas:' /tmp/install-certificate.log | paste -sd ';')"
+else bad "install-certificate.sh: $(tail -3 /tmp/install-certificate.log)"; fi
+modes=$(stat -c '%U %G %a' /etc/backend/tls/arena-tls.p12 /etc/backend/tls/arena-tls-password 2>&1 | paste -sd ' ')
+[ "$modes" = "root backend 640 root backend 640" ] && ok "the keystore and its password: root's, the backend group's to read" \
+    || bad "the keystore's files: $modes"
+systemctl start backend-arena@a2
+v=""
+for i in $(seq 40); do
+    v=$(openssl s_client -connect 127.0.0.1:9012 -verify_ip 127.0.0.1 -CAfile /tmp/ca/ca.pem < /dev/null 2> /dev/null \
+        | grep -E '^subject=|Verify return code' | sed 's/^ *//' | paste -sd ' ')
+    [[ $v == subject=* ]] && break; sleep 1
+done
+[[ $v == subject=* && $v == *"Verify return code: 0 (ok)" ]] && ok "backend-arena@a2 serves its own TLS on 9012: $v" \
+    || { bad "backend-arena@a2 on 9012: ${v:-nothing}"; journalctl -u backend-arena@a2 --no-pager | tail -8; }
+systemctl stop backend-arena@a2
 
 echo "--- operations/07 as written: reloads, restarts, patterns"
 register() {   # register <name>: the registration's status through nginx, retried for 15 s
@@ -222,7 +257,7 @@ active backend-arena@a1 30 && active backend-worker@c1 30 && ok "named, they sta
 
 echo "--- the watch (04 §12, D-86): the worker stopped, TargetDown listed by the admin API within three minutes, gone once it is back"
 # An answer, or nothing: an admin API that does not answer listed no alert, and so the end of one passed (O-79).
-admin() { curl -sf -H "Authorization: Bearer admintoken" "http://127.0.0.1:9120/admin/$1" || echo "(no answer)"; }
+admin() { curl -sf -H "Authorization: Bearer admin-secret-9b4d" "http://127.0.0.1:9120/admin/$1" || echo "(no answer)"; }
 # The worker's: another target down would have passed for it.
 down() { admin alerts | grep -q '"name":"TargetDown","labels":{[^}]*127.0.0.1:9102'; }
 systemctl stop backend-worker@c1

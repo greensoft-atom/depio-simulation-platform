@@ -1,7 +1,7 @@
 # Copies the MySQL binlogs off the database's machine as they are written (06 §10), so that a
 # point-in-time restore survives losing that machine. Install it on the machine that takes the
 # dumps, never on the database's own (docs/operations/01-deploy.md §10). It needs the MySQL
-# client tools there, and /etc/backend/credentials/mysql-binlog.cnf:
+# client tools there, and /etc/backend/backup/mysql-binlog.cnf, the backup user's, 0600 (D-102):
 #   [client]  host=10.0.0.1  user=binlog  password=...
 #             ssl-mode=VERIFY_IDENTITY  ssl-ca=/etc/backend/tls/mysql-ca.pem
 [Unit]
@@ -14,8 +14,7 @@ Wants=network-online.target
 # reading them.
 User=backend-backup
 Group=backend-backup
-LoadCredential=mysql-binlog.cnf:/etc/backend/credentials/mysql-binlog.cnf
-Environment=BINLOG_CNF=%d/mysql-binlog.cnf
+Environment=BINLOG_CNF=/etc/backend/backup/mysql-binlog.cnf
 StateDirectory=backend/binlog
 StateDirectoryMode=0700
 ExecStart=/opt/backend/scripts/binlog-stream.sh %S/backend/binlog

@@ -106,8 +106,9 @@ SSLContext client = Tls.client(KeyStores.trustStore(List.of(ca.certificate())));
   - **On this development machine**, whose `~/.m2` the commands in `CLAUDE.md` read offline: a
     library new to the backend is copied into `~/.m2/repository` from `java21-offline/repository`
     first (02, the traps).
-- **Keys and secrets never in the code or the repository.** They are files the unit gives the
-  process (`LoadCredential`, operations/01 §2), read with `common`'s `Secrets` (`NAME_FILE`).
+- **Keys and secrets never in the code or the repository.** They are in the process's own
+  settings file on the machine, root's alone (D-102, operations/01 §2), read with `common`'s
+  `Secrets` (`NAME`, or `NAME_FILE` for a file holding one).
   The keys under `crypto-examples/src/test/resources/openssl/` were made for the tests, and are
   public.
 - **Test it as the examples do:**

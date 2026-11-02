@@ -89,84 +89,67 @@ These apply to every process type and are settled:
 
 ### Secrets
 
-The database password is never a command-line argument: every local user can
-read those with `ps`, and a process given one in the old argument positions
-exits 2 and says so. It comes from the environment
-(`persistence/DatabaseSettings`):
+A secret is never a command-line argument: every local user can read those with `ps`, and a process given the
+database password in the old argument positions exits 2 and says so. **Each process takes its secrets from its own
+settings file, as plain variables** ([D-102](../architecture/03-decision-log.md#d-102--a-processs-secrets-are-in-its-own-settings-file-as-plain-variables-the-units-carry-none)):
+`/etc/backend/<process>.env`, which its unit already loads with `EnvironmentFile=`, root's alone, `0600`. systemd
+reads the file as root before the process starts, so the process needs no access to it; `systemctl show` prints the
+file's name, never its values; and a value then sits in the process's environment, `/proc/<pid>/environ`, which root
+and the process's own user alone can read. Nothing of systemd's but `EnvironmentFile=`, which every version has.
+
+| Variable | In | |
+|---|---|---|
+| `BACKEND_DB_PASSWORD` | `platform.env`, `worker.env` (the leaderboard rebuild's too) | The database password |
+| `BACKEND_STORE_PASSWORD` | `platform.env`, `worker.env`, `gateway.env`, each `arena-<name>.env` | The store's password, j-redis's `requirepass` |
+| `BACKEND_EVENTS_STORE_PASSWORD` | `worker.env`, each `arena-<name>.env`, where it differs | The `events` store's; unset, the session store's |
+| `BACKEND_ADMIN_TOKEN` | `platform.env`, with `BACKEND_ADMIN_ADDR` | The admin API's bearer secret |
+
+```ini
+# /etc/backend/platform.env, root:root 0600; at its end, the values the install made in /etc/backend/credentials/
+BACKEND_DB_PASSWORD=3f9c0d…
+BACKEND_STORE_PASSWORD=8a41e7…
+```
+
+**Three rules.** A secret is never an `Environment=` line, in a unit or a drop-in: `systemctl show` prints those to
+any user. Every `/etc/backend/*.env` stays `root:root 0600`, a new one and a copy too: `chmod 0600` after making
+one with `>` (`sed -i` and `tar -p` keep the mode). A value is written as it is, unquoted; the install makes hex and
+base64 alone. The install guide's check fails a machine that breaks the first two.
+
+Each variable also has a `_FILE` form (`BACKEND_DB_PASSWORD_FILE`, …): a file holding the value, one trailing line
+ending ignored, which wins over the variable; for a drill or a container's secrets, not used by the shipped units. A
+file named but unreadable or empty stops the process (exit 2), with no fallback.
+
+The database's other settings (`persistence/DatabaseSettings`):
 
 | Variable | |
 |---|---|
 | `BACKEND_DB_URL` | JDBC URL. Default: the development database on 127.0.0.1 |
 | `BACKEND_DB_USER` | Default `backend` |
-| `BACKEND_DB_PASSWORD_FILE` | **Preferred.** A file holding the password; one trailing line ending is ignored. Named but unreadable or empty stops the process: no fallback |
-| `BACKEND_DB_PASSWORD` | Accepted. Readable by the process owner and root only, but shown to any user by `systemctl show` if set with `Environment=` |
 | `BACKEND_DB_POOL_SIZE` | The process's connection pool, 1 to 100: size it for the database host, about its cores × 2 ([06 §7](../detailed-design/06-persistence-mysql.md#7-connection-pooling)). Default 16 for `platform`, 8 for `worker`, 2 for the rebuild; anything else refuses the configuration |
-| neither | The development password, with a warning on stderr |
+| no password | The development password, with a warning on stderr |
 
-In a unit, the file comes from `LoadCredential=` (systemd 247+), which copies
-it somewhere only the service can read:
+The **store password** is for all four process types: production j-redis runs with `requirepass`, as its own
+install notes say. Until 2026-09-26 no process sent one ([S-8](../defects.md#5-security-and-input)). A process given
+none, facing a store that wants one, exits 2 at start-up with a message naming the variable. A **wrong** password
+cannot be told from a store that is not up yet, so the process runs and the client logs `authentication … failed:
+WRONGPASS` while retrying slowly; that line is the thing to look for. A store that is simply not reachable does not
+stop a process: an arena runs and spools while the store is down.
 
-```ini
-[Service]
-User=backend
-LoadCredential=db-password:/etc/backend/credentials/db-password
-# The whole URL of §9: without the trust store, VERIFY_IDENTITY cannot connect.
-Environment=BACKEND_DB_URL=jdbc:mysql://10.0.0.1:3306/backend?sslMode=VERIFY_IDENTITY&trustCertificateKeyStoreUrl=file:/etc/backend/tls/mysql-ca.p12&trustCertificateKeyStoreType=PKCS12
-Environment=BACKEND_DB_USER=backend
-# %d is the credentials directory on systemd 250+. On 249 (Ubuntu 22.04), write
-# the path out: /run/credentials/backend-platform.service/db-password
-Environment=BACKEND_DB_PASSWORD_FILE=%d/db-password
-RestartPreventExitStatus=2 243
-```
-
-**A credential reaches a service that is not root through an ACL** systemd sets on
-it. Checked 2026-10-05 on systemd 255 with `User=nobody`; RHEL 9 has 252, which
-does it the same way, but no RHEL host has run it here: in a container systemd
-cannot mount the credentials' private directory, which stays empty. The first
-start on a RHEL machine is where to look if a unit exits 2 saying it cannot read
-`…/credentials/…/db-password`.
-
-The **store password** follows the same rules, as `BACKEND_STORE_PASSWORD_FILE`
-(or `BACKEND_STORE_PASSWORD`), for all four process types: production j-redis
-runs with `requirepass`, as its own install notes say. Until 2026-09-26 no
-process sent one ([S-8](../defects.md#5-security-and-input)). A process given
-none, facing a store that wants one, exits 2 at start-up with a message naming
-the variable. A **wrong** password cannot be told from a store that is not up
-yet, so the process runs and the client logs `authentication … failed:
-WRONGPASS` while retrying slowly; that line is the thing to look for. A store
-that is simply not reachable does not stop a process: an arena runs and
-spools while the store is down.
-
-```ini
-LoadCredential=store-password:/etc/backend/credentials/store-password
-Environment=BACKEND_STORE_PASSWORD_FILE=%d/store-password
-```
-
-The **`events` store's password** is the session store's unless
-`BACKEND_EVENTS_STORE_PASSWORD_FILE` (or `BACKEND_EVENTS_STORE_PASSWORD`)
-names another; the arena and the worker read it. No shipped unit loads one.
-Where the two stores' passwords differ, a drop-in on `backend-arena@` and
-`backend-worker@` adds it the same way:
-
-```ini
-[Service]
-LoadCredential=events-store-password:/etc/backend/credentials/events-store-password
-Environment=BACKEND_EVENTS_STORE_PASSWORD_FILE=%d/events-store-password
-```
-
-The platform's other settings, in `platform.env` or a drop-in:
+The platform's other settings, in `platform.env`:
 
 | Variable | |
 |---|---|
 | `BACKEND_ADMIN_ADDR` | The admin API's `host:port` ([runbook §3a](02-runbook.md#3a-the-admin-api)), `127.0.0.1:9120` in the example. Unset: no admin API. An address that is not loopback refuses the configuration (exit 2) |
-| `BACKEND_ADMIN_TOKEN_FILE` | The admin API's bearer secret, delivered by `deploy/systemd/platform-admin.conf.example` with `LoadCredential`; `BACKEND_ADMIN_TOKEN` is accepted by the same rules as the passwords. Required once `BACKEND_ADMIN_ADDR` is set: without it the platform refuses to start (exit 2) |
+| `BACKEND_ADMIN_TOKEN` | The admin API's bearer secret, with the secrets above (or `BACKEND_ADMIN_TOKEN_FILE`). Required once `BACKEND_ADMIN_ADDR` is set: without it the platform refuses to start (exit 2) |
 | `BACKEND_PAYMENT_PROVIDER` | Unset or blank: nothing is sold, and every payment route answers 503 `payments_off`. `simulated`: the simulated provider, which grants gems to whoever asks, for development and drills only (D-68). Any other value refuses the configuration (exit 2) |
 
 Every variable a process reads, with its default and where the shipped files
 set it, is in the [deploy README's catalogue](../../backend/deploy/README.md#environment-variables).
 
-`/etc/backend/credentials/` is `root:root 0700`, the files `0600`. **The
-development URL's `useSSL=false&allowPublicKeyRetrieval=true` must not reach
+`/etc/backend/credentials/` is `root:root 0700`, the files `0600`: the values the install
+made, from which it writes the settings files and the backups' option files, and which the
+operator reads (the store's `AUTH`, the admin API's `curl`, MySQL's root). No process reads
+it. **The development URL's `useSSL=false&allowPublicKeyRetrieval=true` must not reach
 production:** without TLS, key retrieval lets anyone in the path hand the
 driver their own RSA key and read the password it encrypts with it
 ([S-6](../defects.md#5-security-and-input)).
@@ -433,14 +416,15 @@ unit **3.1 (OK)**, down from 9.0 before the sandbox.
    and the same for `nginx` on every machine, `jredis` where a store runs, and
    `mysql` (its home `/var/lib/backend-mysql`) on the database's machines (§9).
 3. **Credentials.** `/etc/backend/credentials/`, `root:root 0700`, holding
-   `db-password` and `store-password`, each `0600` (§2, Secrets). The units
-   deliver them with `LoadCredential`, so no process reads the secrets from
-   `/etc`. They do read `/etc/backend/tls/`: `platform` and `worker` the MySQL
+   `db-password` and `store-password`, each `0600` (§2, Secrets): the values,
+   which step 4 writes into the settings files; no process reads this
+   directory. The processes do read `/etc/backend/tls/`: `platform` and `worker` the MySQL
    CA (§9), the gateway nginx's certificate for its expiry metric (§11). Create
    it, `install -d -m 0755 /etc/backend/tls`, and keep `/etc/backend`
    traversable by `backend`.
 4. **Settings.** `/etc/backend/<process>.env` from `deploy/env/*.env.example`,
-   with no secrets in them. One `arena-<name>.env` per arena instance, each with
+   every one `root:root 0600`, and the process's secrets at its end (§2,
+   Secrets; D-102). One `arena-<name>.env` per arena instance, each with
    its own port, and one `worker-<id>.env` per worker instance
    (`worker-instance.env.example`), with its metrics port: read after
    `worker.env`, so it wins. A drop-in's `Environment=` would not, as a file's
@@ -574,15 +558,15 @@ was run against the release.
 **The keystore** is made from the PEM files a CA issues by
 `scripts/install-certificate.sh` (§11), with a password it generates once.
 
-**The unit.** `deploy/systemd/arena-tls.conf.example` is a drop-in that loads
-both files as credentials. Install it as
-`/etc/systemd/system/backend-arena@.service.d/tls.conf` once the files exist,
-then `systemctl daemon-reload`. Run for real with the shipped unit: the keystore
-arrived through `LoadCredential`, `openssl s_client -verify_ip` accepted the
-certificate, a client dialling another name was refused with "hostname
-mismatch" and counted. The same run found that a missing credential file
-(systemd's exit status 243) was restarted every 2 s for ever; all four units now
-treat 243 like 2 and stay stopped.
+**The settings.** The script writes both to `/etc/backend/tls/`,
+`arena-tls.p12` and `arena-tls-password`, root's and the `backend` group's to
+read (0640): the arena reads them itself, at start (D-102). The arena's
+`arena-<name>.env` names them, `BACKEND_ARENA_TLS_KEYSTORE` and
+`BACKEND_ARENA_TLS_PASSWORD_FILE`, as its example shows. Run with the shipped
+unit in the units' check (09 §7): the keystore made by the script, the arena
+started by its unit, and `openssl s_client -verify_ip` accepting the
+certificate on the arena's port. Earlier, by hand, a client dialling another
+name was refused with "hostname mismatch" and counted.
 
 **Renewal takes a restart.** The keystore is read once, at start, and an
 arena's restart ends every connected player's stay (their results are
@@ -774,8 +758,8 @@ ssl-mode = VERIFY_IDENTITY
 ssl-ca   = /etc/mysql-tls/ca.pem
 ```
 
-The application's password goes in `/etc/backend/credentials/db-password`
-(§2). Without `RELOAD` the dump is refused (`FLUSH TABLES`), and without
+The application's password goes in `/etc/backend/credentials/db-password`,
+and from there in the settings files (§2). Without `RELOAD` the dump is refused (`FLUSH TABLES`), and without
 `REPLICATION CLIENT` too (`SHOW MASTER STATUS`); `PROCESS`, which the script
 used to ask for, is not needed and would show the user every session's
 statements. The dumps and the
@@ -921,7 +905,9 @@ loopback, without TLS ([03 §6](03-install-guide.md#its-backups-on-this-machine)
    processes on the same machine have no business reading them.
 2. The CA as PEM, `/etc/backend/tls/mysql-ca.pem` (the C tools do not read the
    PKCS#12 store the processes use, §9).
-3. Two option files in `/etc/backend/credentials/`, mode 0600, `[client]` with
+3. Two option files in `/etc/backend/backup/`, the backup user's (the directory
+   `install -d -o backend-backup -g backend-backup -m 0700`, each file 0600 and
+   `backend-backup`'s), read by its scripts (D-102); `[client]` with
    `host`, `user`, `password`, `ssl-mode=VERIFY_IDENTITY`, `ssl-ca`:
    `mysql-binlog.cnf` for `binlog` and `mysql-backup.cnf` for `backup` (§9).
 4. `deploy/systemd/backend-binlog-stream.service`, `backend-mysql-backup.service`
@@ -968,8 +954,8 @@ server's unit was run under systemd on its own (below).
    `backend-scratch-mysql.service`; set root's password over its socket
    (`/opt/backend/mysql/bin/mysql -S /run/backend-scratch-mysql/mysqld.sock -u root`, then
    `ALTER USER 'root'@'localhost' IDENTIFIED BY '…'`) and put it in
-   `/etc/backend/credentials/mysql-scratch.cnf` (mode 0600, `[client]` with
-   `host=127.0.0.1`, `port=3309`, `user=root`, `password`). The unit is
+   `/etc/backend/backup/mysql-scratch.cnf` (mode 0600, the backup user's,
+   `[client]` with `host=127.0.0.1`, `port=3309`, `user=root`, `password`). The unit is
    `Type=notify`, so it counts as started only once the server takes
    connections (up to `TimeoutStartSec=10min`), and makes
    `/run/backend-scratch-mysql` (`RuntimeDirectory`, mode 0750) at every start:
@@ -988,10 +974,10 @@ server's unit was run under systemd on its own (below).
 
 1. The key, made once and **kept somewhere other than the three machines**,
    on paper or in the owner's password manager: without it the copy cannot be
-   read. `head -c 32 /dev/urandom | base64 > /etc/backend/credentials/offsite.key`,
-   mode 0600.
-2. An SSH key for the backup user, `/etc/backend/credentials/offsite-ssh`, its
-   public half on the host; the host's own key in
+   read. `head -c 32 /dev/urandom | base64 > /etc/backend/backup/offsite.key`,
+   mode 0600, the backup user's.
+2. An SSH key for the backup user, `/etc/backend/backup/offsite-ssh`, mode 0600
+   and the backup user's, its public half on the host; the host's own key in
    `/etc/backend/offsite-known-hosts`; and `/etc/backend/offsite.env` with
    `OFFSITE_TARGET=user@host:dir`.
 3. `backend-backup-offsite.timer` enabled: hourly, the primary's binary logs

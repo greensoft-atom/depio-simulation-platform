@@ -509,7 +509,8 @@ nginx refuses them, the previous files are put back, or none left where there we
 accepts, the replaced key and certificate are not kept (O-76). Before
 nginx has ever started it installs without the reload. `--check` says what 443 and 9001 serve now,
 for each name, and the days left. An arena that ends TLS itself, without the front, gets a PKCS#12
-keystore. Its header has every setting.
+keystore and its password in `TLS_DIR`, the `backend` group's to read, since the arena reads them itself
+(D-102). Its header has every setting.
 
 | | |
 |---|---|

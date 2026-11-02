@@ -16,5 +16,5 @@ innodb_buffer_pool_size=4G
 # Initialise once: /opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/scratch-my.cnf --initialize-insecure --user=mysql,
 # start backend-scratch-mysql.service, then set the root password through its socket
 #   /opt/backend/mysql/bin/mysql -S /run/backend-scratch-mysql/mysqld.sock -u root -e "ALTER USER root@localhost IDENTIFIED BY '...'"
-# and put it in /etc/backend/credentials/mysql-scratch.cnf, mode 0600:
+# and put it in /etc/backend/backup/mysql-scratch.cnf, mode 0600, the backup user's (D-102):
 #   [client]  host=127.0.0.1  port=3309  user=root  password=...

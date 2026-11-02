@@ -13,8 +13,9 @@
 #
 # nginx gets the PEM files and is reloaded, which drops nothing: it serves them on 443 (logins,
 # purchases, the lobby) and on 9001 (match traffic, whose TLS it ends, D-82). An arena that ends
-# TLS itself, without the front (no BACKEND_ADVERTISE_TLS_NAME), gets a PKCS#12 keystore, read at
-# start: each serves the new certificate from its next restart, and this says which still serve
+# TLS itself, without the front (no BACKEND_ADVERTISE_TLS_NAME), gets a PKCS#12 keystore and its
+# password in TLS_DIR, root's and the backend group's to read: the arena reads both itself, at start
+# (D-102). Each serves the new certificate from its next restart, and this says which still serve
 # the old one.
 #
 # Nothing is installed unless all of this holds, since every failure below is otherwise found
@@ -181,7 +182,7 @@ check_certificate() {   # check_certificate <fullchain> <key>
 
 # ---- installing ---------------------------------------------------------------------------
 
-# stage <source> <destination> <mode>: a copy beside the destination, to be moved over it whole, never
+# stage <source> <destination> <mode> [group]: a copy beside the destination, to be moved over it whole, never
 # half-written; its name is the last in STAGED, removed on the way out unless it was moved. Beside the
 # destination so that it carries that directory's SELinux label; one made in /tmp and moved would keep
 # a label nginx may not read.
@@ -191,6 +192,7 @@ stage() {
     STAGED+=("$tmp")
     cat "$1" > "$tmp"
     chmod "$3" "$tmp"
+    [ -z "${4:-}" ] || chgrp "$4" "$tmp"
 }
 moved() { mv -f "$1" "$2"; command -v restorecon >/dev/null && restorecon "$2" || true; }
 put() { stage "$@"; moved "${STAGED[-1]}" "$2"; }
@@ -237,16 +239,16 @@ install_edge() {
 }
 
 install_arenas() {
-    local keystore=$CREDENTIALS_DIR/arena-tls.p12 password=$CREDENTIALS_DIR/arena-tls-password
+    local keystore=$TLS_DIR/arena-tls.p12 password=$TLS_DIR/arena-tls-password
     if [ ! -s "$password" ]; then
         openssl rand -base64 32 > "$WORK/password"
-        put "$WORK/password" "$password" 0600
+        put "$WORK/password" "$password" 0640 backend
         echo "arenas: a keystore password was made, $password"
     fi
     openssl pkcs12 -export -in "$1" -inkey "$2" -name arena -passout "file:$password" -out "$WORK/arena.p12"
     openssl pkcs12 -in "$WORK/arena.p12" -passin "file:$password" -noout \
         || refuse "the arena keystore just made does not open with its password"
-    put "$WORK/arena.p12" "$keystore" 0600
+    put "$WORK/arena.p12" "$keystore" 0640 backend
     rm -f "$keystore.previous"                       # left by an earlier version; nothing reads it
     echo "arenas: $keystore replaced"
     local want; want=$(fingerprint < "$WORK/leaf.pem")

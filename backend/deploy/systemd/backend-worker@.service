@@ -16,10 +16,6 @@ EnvironmentFile=/etc/backend/worker.env
 # Environment= cannot do it, since a file's settings override Environment= wherever it is
 # written, and the second worker on a machine exited 2 on the first one's port.
 EnvironmentFile=-/etc/backend/worker-%i.env
-LoadCredential=db-password:/etc/backend/credentials/db-password
-LoadCredential=store-password:/etc/backend/credentials/store-password
-Environment=BACKEND_DB_PASSWORD_FILE=%d/db-password
-Environment=BACKEND_STORE_PASSWORD_FILE=%d/store-password
 LogsDirectory=backend
 # Two workers share 4c / 4G (architecture/01 §3).
 ExecStart=/opt/backend/runtime/bin/java -server -Xms1536m -Xmx1536m \
@@ -31,8 +27,8 @@ ExecStart=/opt/backend/runtime/bin/java -server -Xms1536m -Xmx1536m \
     ${STORE_HOST} ${STORE_PORT} worker-%i
 Restart=on-failure
 RestartSec=2
-# 2: the configuration was refused. 243: a credential file is missing. Neither is fixed by a restart.
-RestartPreventExitStatus=2 243
+# 2: the configuration was refused, which a restart does not fix.
+RestartPreventExitStatus=2
 SuccessExitStatus=143
 TimeoutStopSec=30
 

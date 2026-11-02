@@ -2587,8 +2587,8 @@ so an operator could not tell the ban had worked.
 
 **Its own listener**, `BACKEND_ADMIN_ADDR` (host:port, loopback), as the metrics
 are, and only when named: a process given none takes no port. **A shared
-secret**, `BACKEND_ADMIN_TOKEN_FILE`, delivered as the database password is
-(`LoadCredential=`), sent as `Authorization: Bearer`, compared in constant time;
+secret**, `BACKEND_ADMIN_TOKEN`, in the platform's settings file as the database
+password is (D-102), sent as `Authorization: Bearer`, compared in constant time;
 an address named without it, or one that is not loopback, refuses the whole
 process's start (exit 2), and both listeners' settings, the metrics' and this
 one's, are checked before the public API binds. **Every call is audited in MySQL**,

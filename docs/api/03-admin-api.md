@@ -9,8 +9,8 @@ repository.
 ## 1. Reaching it
 
 - **Off unless named.** `BACKEND_ADMIN_ADDR=127.0.0.1:9120` (a loopback address, or the platform
-  will not start) and the secret in a file, `BACKEND_ADMIN_TOKEN_FILE`: the drop-in
-  `backend/deploy/systemd/platform-admin.conf.example` delivers the secret
+  will not start) and the secret, `BACKEND_ADMIN_TOKEN`, both in the platform's settings file,
+  `/etc/backend/platform.env`, as its example says
   ([operations/01 §2](../operations/01-deploy.md#2-conventions),
   [runbook §3a](../operations/02-runbook.md#3a-the-admin-api)).
 - **Over SSH**: `ssh -L 9120:127.0.0.1:9120 <machine>`, then `http://127.0.0.1:9120/admin/...`

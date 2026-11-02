@@ -72,7 +72,7 @@ Start-up, in order:
    loop, which blocks until the process stops.
 
 Exit 2 is a refused configuration, which a restart cannot fix, and the unit does not
-restart on it (`RestartPreventExitStatus=2 243`, 243 a missing credential); exit 1 is
+restart on it (`RestartPreventExitStatus=2`); exit 1 is
 any other failure, and the unit restarts it.
 
 **`LeaderboardRebuild [storeHost] [storePort]`**: puts the store's leaderboards back
@@ -248,7 +248,7 @@ xp locked plus the xp gained.
 |---|---|---|---|
 | `BACKEND_DB_URL` | `jdbc:mysql://127.0.0.1:3314/backend_dev?useSSL=false&allowPublicKeyRetrieval=true`, the development MySQL (O-40) | The database; two hosts for the primary and its replica | `persistence/DatabaseSettings` |
 | `BACKEND_DB_USER` | `backend` | Its user | `DatabaseSettings` |
-| `BACKEND_DB_PASSWORD_FILE`, `BACKEND_DB_PASSWORD` | the development password, with a warning | Its password; the file preferred, and a named file that cannot be read stops the start | `DatabaseSettings`, `common/Secrets` |
+| `BACKEND_DB_PASSWORD_FILE`, `BACKEND_DB_PASSWORD` | the development password, with a warning | Its password; the file wins, and a named file that cannot be read stops the start | `DatabaseSettings`, `common/Secrets` |
 | `BACKEND_DB_POOL_SIZE` | 8 (the rebuild 2) | The pool, 1 to 100 | `DatabaseSettings` |
 | `BACKEND_STORE_ADDRESSES` | the command line's host and port | The session store, primary and replica, `host:port,host:port` | `handoff/StoreClients` |
 | `BACKEND_STORE_PASSWORD_FILE`, `BACKEND_STORE_PASSWORD` | none | The store's password | `StoreClients` |

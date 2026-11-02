@@ -22,10 +22,6 @@
 #   CMD ["/usr/sbin/init"]
 #   EOF
 #   IMAGE=backend-el9-os-packages GUIDE_VALUES="MYSQL_PORT=3307" scripts/check-install-guide-el9.sh
-#
-# One thing it adds that the guide does not do: systemd in a container cannot mount the private
-# directory LoadCredential delivers into, so the Java units are given their secrets as files their
-# user may read, by a drop-in (operations/01 §2 says what was and was not checked).
 set -u
 if [ "${1:-}" != --inside ] && [ "${1:-}" != --after-boot ] && [ "${1:-}" != --disk-lost ] && [ "${1:-}" != --launch-checks ]; then
     HERE=$(cd "$(dirname "$0")" && pwd)
@@ -147,6 +143,15 @@ launch_checks() {
         curl -s "http://$a/metrics" | grep -qx 'backend_events_store_connected 1\(\.0\)\?' \
             || fail "the process on $a has no events store of its own: its results would go to the session store"
     done
+    # The secrets in the settings files alone (D-102): every one root's, no unit or drop-in naming a credential, and
+    # nothing systemctl show prints, which any user may run, holding the database's or the store's password.
+    f=$(for f in /etc/backend/*.env; do [ "$(stat -c '%U %G %a' "$f")" = "root root 600" ] || echo "$f $(stat -c '%U:%G %a' "$f")"; done)
+    [ -z "$f" ] || fail "settings files others may read: $f"
+    f=$(grep -lE 'LoadCredential|%d/' /etc/systemd/system/backend-*.service /etc/systemd/system/backend-*.service.d/*.conf 2> /dev/null)
+    [ -z "$f" ] || fail "a credential still named in: $f"
+    f=$(for u in $units; do systemctl show "$u" | grep -qF -e "$(cat /etc/backend/credentials/db-password)" \
+        -e "$(cat /etc/backend/credentials/store-password)" && echo "$u"; done)
+    [ -z "$f" ] || fail "systemctl show prints a password: $f"
 }
 
 # The launch's checks alone, on a machine the guide installed: check-two-machines-el9.sh's, on each of its two.
@@ -223,50 +228,20 @@ tar -xzf /check/repository.tar.gz -C /srv/depio-simulation-platform
 GUIDE=/srv/depio-simulation-platform/docs/operations/03-install-guide.md
 
 # The guide's steps as one script: its bash blocks in order. After the first (the values), this
-# check's own: loopback for the address, a small buffer pool. After the one that installs the units, the container's
-# credentials.
+# check's own: loopback for the address, a small buffer pool. Nothing else: the secrets go where the guide puts them.
 awk '
     BEGIN { print "set -euo pipefail" }
     /<!-- guide-steps -->/ { on = 1 }
     /<!-- \/guide-steps -->/ { on = 0 }
-    on && /^```bash/ { inb = 1; n++; useradd = 0; backupcnf = 0; print "echo \"=== step " n "\""; next }
+    on && /^```bash/ { inb = 1; n++; print "echo \"=== step " n "\""; next }
     on && inb && /^```/ {
         inb = 0
         if (n == 1) print "export ADDRESS=127.0.0.1 MYSQL_BUFFER_POOL=256M SCRATCH_BUFFER_POOL=256M " ENVIRON["GUIDE_VALUES"]
-        if (useradd) print "container_credentials"
-        if (backupcnf) print "container_backup_credentials"
         next
     }
-    inb { print; if ($0 ~ /useradd/) useradd = 1; if ($0 ~ /mysql-scratch\.cnf/) backupcnf = 1 }
+    inb { print }
 ' "$GUIDE" > /tmp/guide-steps.sh
 echo "--- the guide's steps: $(grep -c '^echo "=== step' /tmp/guide-steps.sh) blocks"
-
-container_credentials() {
-    install -d -o backend -m 0500 /etc/backend/container-credentials
-    install -o backend -m 0400 /etc/backend/credentials/db-password /etc/backend/credentials/store-password \
-        /etc/backend/container-credentials/
-    for u in backend-platform backend-gateway backend-worker@ backend-arena@; do
-        mkdir -p "/etc/systemd/system/$u.service.d"
-        printf '[Service]\nEnvironment=BACKEND_DB_PASSWORD_FILE=/etc/backend/container-credentials/db-password\nEnvironment=BACKEND_STORE_PASSWORD_FILE=/etc/backend/container-credentials/store-password\n' \
-            > "/etc/systemd/system/$u.service.d/container-credentials.conf"
-    done
-    systemctl daemon-reload
-}
-export -f container_credentials
-container_backup_credentials() {
-    install -d -o backend-backup -m 0500 /etc/backend/container-credentials-backup
-    for c in mysql-binlog mysql-backup mysql-scratch; do
-        install -o backend-backup -m 0400 "/etc/backend/credentials/$c.cnf" /etc/backend/container-credentials-backup/
-    done
-    local d=/etc/backend/container-credentials-backup
-    for u in backend-binlog-stream:BINLOG_CNF=$d/mysql-binlog.cnf backend-mysql-backup:MYSQL_CNF=$d/mysql-backup.cnf \
-             "backend-restore-proof:SOURCE_CNF=$d/mysql-backup.cnf SCRATCH_CNF=$d/mysql-scratch.cnf"; do
-        mkdir -p "/etc/systemd/system/${u%%:*}.service.d"
-        printf '[Service]\nEnvironment=%s\n' "${u#*:}" > "/etc/systemd/system/${u%%:*}.service.d/container-credentials.conf"
-    done
-    systemctl daemon-reload
-}
-export -f container_backup_credentials
 
 # awk, not head: head ends at its sixtieth line, and the pipe's close then ended tee and the steps with it (O-79).
 bash /tmp/guide-steps.sh 2>&1 | tee /tmp/guide.log | grep -E "^=== step|^active|^inactive|^failed|^activating|registration|ERROR|error|refus" | awk 'NR <= 60'

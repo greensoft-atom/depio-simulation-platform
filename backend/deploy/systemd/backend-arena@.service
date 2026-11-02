@@ -12,8 +12,6 @@ Wants=network-online.target
 User=backend
 Group=backend
 EnvironmentFile=/etc/backend/arena-%i.env
-LoadCredential=store-password:/etc/backend/credentials/store-password
-Environment=BACKEND_STORE_PASSWORD_FILE=%d/store-password
 # The result spool: results live here until the store has them, so it must survive restarts.
 StateDirectory=backend/arena-%i
 LogsDirectory=backend
@@ -30,8 +28,8 @@ ExecStart=/opt/backend/runtime/bin/java -server -Xms6g -Xmx6g \
     ${ARENA_BIND} ${ADVERTISE_HOST}
 Restart=on-failure
 RestartSec=2
-# 2: the configuration was refused. 243: a credential file is missing. Neither is fixed by a restart.
-RestartPreventExitStatus=2 243
+# 2: the configuration was refused, which a restart does not fix.
+RestartPreventExitStatus=2
 SuccessExitStatus=143
 LimitNOFILE=65536
 # Stopping drains (01 §8.6): public rooms' players back to the lobby, made matches played to

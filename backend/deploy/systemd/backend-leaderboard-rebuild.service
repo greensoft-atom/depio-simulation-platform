@@ -1,4 +1,4 @@
-# Puts the leaderboards back from MySQL (05 §8), with the worker's settings and credentials:
+# Puts the leaderboards back from MySQL (05 §8), with the worker's settings and their secrets:
 #   systemctl start backend-leaderboard-rebuild
 # after the store's disk is lost, or after an outage in which results were applied but not
 # ranked (backend_worker_unranked_total rose). Safe on a healthy store: every write only
@@ -13,10 +13,6 @@ Type=oneshot
 User=backend
 Group=backend
 EnvironmentFile=/etc/backend/worker.env
-LoadCredential=db-password:/etc/backend/credentials/db-password
-LoadCredential=store-password:/etc/backend/credentials/store-password
-Environment=BACKEND_DB_PASSWORD_FILE=%d/db-password
-Environment=BACKEND_STORE_PASSWORD_FILE=%d/store-password
 ExecStart=/opt/backend/runtime/bin/java -Xmx512m --add-opens java.base/java.nio=ALL-UNNAMED \
     -cp /opt/backend/lib/worker/* com.backend.worker.LeaderboardRebuild ${STORE_HOST} ${STORE_PORT}
 

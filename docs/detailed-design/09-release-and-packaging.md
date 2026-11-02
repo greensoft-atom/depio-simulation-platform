@@ -23,8 +23,10 @@ both and on RHEL 8: the JDK and MySQL are vendors' builds for older glibc (Temur
 for 2.28); nginx is compiled in a Rocky Linux 8 container, never on the development machine, whose glibc 2.38
 symbols RHEL lacks; the two libraries MySQL takes from the system come from RHEL 8's own packages, RHEL 9's
 `libnuma` needing 2.33. Checked in Red Hat's UBI 8 and UBI 9 images, RHEL's userspace with nothing installed
-(§7). **The units need systemd 247** (`LoadCredential=`): RHEL 9's 252; RHEL 8's 239 runs the binaries, not the
-install (Q-63).
+(§7). **The units start on systemd 239**, RHEL 8's, since they carry no secret (D-102; checked in UBI 8.10): three of
+their sandbox settings are newer, `ProtectHostname=` (242), `ProtectKernelLogs=` (244) and `ProtectClock=` (245), and
+239 ignores them with a warning; RHEL 9's 252 applies them all. RHEL 8 still does not run the install as written:
+`install-certificate.sh` needs OpenSSL 3 (O-94, Q-63).
 
 ## 2. What is in the repository: `vendor/`
 
@@ -142,8 +144,9 @@ everything, whatever the host's version). A binary that carried its own glibc wo
 load the system's NSS modules (users, groups, host names) and locale data, built for the system's glibc, on which a
 different one fails; MySQL and the JDK have no static build; nginx alone could be static (musl), which frees nothing
 while MySQL needs glibc. So a host other than RHEL 9 needs x86-64 (`uname -m`), glibc 2.28 or later
-(`ldd --version`), the two libraries above, and for the units systemd 247 or later (`systemctl --version`, §1:
-`LoadCredential=` and `%d`, the newest the units use); checked on RHEL 8 and 9's userspaces alone.
+(`ldd --version`), the two libraries above, for the units systemd 245 or later, every sandbox setting applied
+(`systemctl --version`, §1; 239 starts them), and OpenSSL 3 for `install-certificate.sh` (`openssl version`, O-94);
+checked on RHEL 8 and 9's userspaces alone.
 
 The scripts and units need
 what any RHEL 9 server installation has and that minimal image does not: systemd,
@@ -208,9 +211,13 @@ longer needed. On RHEL 9, SELinux runs a service started from `/opt` unconfined.
    verified as `a1.arena.internal` and seen passed to the arena, and nothing on 80. Then
    operations/07's commands: a broken nginx configuration refused by the reload, MySQL and the
    store each restarted under a running platform, units stopped by pattern and started by name.
-   Mutation-checked: a store unit naming a jar that is not there fails it. One thing
-   a container cannot show: `LoadCredential` for a service that is not root
-   (operations/01 §2); the check gives the platform its secrets by a drop-in.
+   Mutation-checked: a store unit naming a jar that is not there fails it. Since
+   D-102 the secrets are where a machine has them, in the settings files, and
+   checked: no unit naming a credential, every settings file root's 0600, no secret
+   in `systemctl show`, neither the platform's environment nor its file readable by
+   another user; and an arena of its own TLS serving, verified, the keystore
+   `install-certificate.sh` wrote (until D-102 the check gave the processes their
+   secrets by a drop-in of its own: systemd in a container cannot deliver a credential).
 4. **The drills** run every process on the release's runtime, and their own MySQL
    servers on the release's MySQL 8.4: every scenario, the MySQL failover and the
    backup drill, which had only ever run on 8.0.

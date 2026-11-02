@@ -1,7 +1,7 @@
 # The platform API (docs/operations/01-deploy.md). One per machine, behind the front's nginx (D-82).
 #
 # Install: see docs/operations/01-deploy.md §7. Settings in /etc/backend/platform.env
-# (deploy/env/platform.env.example); credentials in /etc/backend/credentials/.
+# (deploy/env/platform.env.example), its secrets with them, root's alone (D-102).
 # Java is the release's own runtime, /opt/backend/runtime (docs/detailed-design/09 §4.1).
 [Unit]
 Description=backend platform API
@@ -14,10 +14,6 @@ Wants=network-online.target
 User=backend
 Group=backend
 EnvironmentFile=/etc/backend/platform.env
-LoadCredential=db-password:/etc/backend/credentials/db-password
-LoadCredential=store-password:/etc/backend/credentials/store-password
-Environment=BACKEND_DB_PASSWORD_FILE=%d/db-password
-Environment=BACKEND_STORE_PASSWORD_FILE=%d/store-password
 LogsDirectory=backend
 # 2c / 4G in the capacity model (architecture/01 §3). Argon2's 8 x 19 MiB is inside the heap
 # (Bouncy Castle's blocks are Java arrays); what is left outside is for thread stacks, the
@@ -36,8 +32,7 @@ ExecStart=/opt/backend/runtime/bin/java -server -Xms3g -Xmx3g \
 Restart=on-failure
 RestartSec=2
 # 2: the configuration was refused; restarting cannot fix it (01 §2). 143: SIGTERM, clean.
-# 243: systemd could not load a credential - a missing file, which restarting cannot fix either.
-RestartPreventExitStatus=2 243
+RestartPreventExitStatus=2
 SuccessExitStatus=143
 LimitNOFILE=65536
 TimeoutStopSec=30

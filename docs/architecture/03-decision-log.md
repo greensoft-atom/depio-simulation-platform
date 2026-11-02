@@ -3219,3 +3219,42 @@ passwords, session tokens and join tickets readable, and usable first, by anyone
 The package's scripts take `http://` and `ws://` as given, refusing them being the layer above's (08 §5, DOC-40): the
 players' build must be given `https://` and `wss://` alone, and a development build may have to allow cleartext on
 Android (not checked: no Unity here). D-99's way without nginx is gone, not kept beside it: one plain way.
+
+### D-102 — A process's secrets are in its own settings file, as plain variables; the units carry none
+
+**Decided 2026-11-02** (plan item 121; the owner: no secrets passed through systemd's units, each service taking
+its own from its settings as plain environment variables, nothing complex or dependent).
+
+**Decision.**
+- **The Java processes** take their secrets as plain variables in the settings file their unit already loads with
+  `EnvironmentFile=`: `BACKEND_DB_PASSWORD` and `BACKEND_STORE_PASSWORD` in `platform.env` and `worker.env` (the
+  leaderboard rebuild's too), `BACKEND_STORE_PASSWORD` in `gateway.env` and each `arena-<name>.env`;
+  `BACKEND_ADMIN_TOKEN` in `platform.env` with the admin API; `BACKEND_EVENTS_STORE_PASSWORD` where the events
+  store's password differs. **Every `/etc/backend/*.env` is root's, 0600**: systemd reads it as root before the
+  process starts, so the process needs no access to the file. The Java code is unchanged: `Secrets` has always
+  taken `NAME`, and still takes `NAME_FILE`.
+- **The backups' scripts** read their own files: MySQL's option files, and the key and SSH key of the copy off the
+  site, in `/etc/backend/backup/`, the backup user's (0700, each file 0600). A unit names the path, never a value.
+- **An arena that ends TLS itself** (not the site's layout, D-82) reads its keystore and the keystore's password
+  from `/etc/backend/tls/`, readable by the `backend` group (0640), where `install-certificate.sh` writes them; its
+  settings file names both.
+- **No unit has `LoadCredential=` or `%d`**, and exit status 243 (a credential missing) leaves
+  `RestartPreventExitStatus=`. The two drop-ins that delivered secrets, `platform-admin.conf.example` and
+  `arena-tls.conf.example`, are gone; their settings are in the env files' examples. A secret is never an
+  `Environment=` line: `systemctl show` prints those to any user, and an env file's values not at all.
+- **Unchanged:** `/etc/backend/credentials/`, root's, holding the values the install made, which the install writes
+  into the env files and the operator reads (the store's `AUTH`, the admin API's `curl`, MySQL's root); j-redis's
+  `requirepass` in its own configuration; nginx's key, read by its master as root; MySQL's accounts.
+
+**Why.** The owner's: the plainest arrangement, resting on nothing of systemd's but `EnvironmentFile=`, which every
+version has. It drops the units' floor, which was systemd 251 for `%d` and not 247 as written (DOC-43; RHEL 9.0 has
+250). And the checks now run what production runs: systemd in a container cannot deliver a credential, so the units'
+and the install guide's checks had each put a drop-in of their own in its place, and production's delivery had never
+run in either. On RHEL 8 the units now start too, on its systemd 239 (checked in UBI 8.10), though RHEL 9 stays the
+host (Q-56, Q-63).
+
+**Cost.** A secret sits in its process's environment for the process's life: root and the same OS user can read it
+in `/proc/<pid>/environ` (0400, the process's user's). The same user could read a file `LoadCredential` delivered,
+so the exposure is the same. A settings file is now a secret: each new one, and each copy, must be 0600 (the guides
+say so where they make one, and the install's check fails one that is not). A password is in several files, the
+platform's, the worker's, the gateway's and each arena's: a change of it edits each, and the store's configuration.

@@ -9,8 +9,6 @@ Wants=network-online.target
 User=backend
 Group=backend
 EnvironmentFile=/etc/backend/gateway.env
-LoadCredential=store-password:/etc/backend/credentials/store-password
-Environment=BACKEND_STORE_PASSWORD_FILE=%d/store-password
 LogsDirectory=backend
 # 2c / 4G (architecture/01 §3): ~17 000 connections at 8 KB each is ~140 MB of heap.
 ExecStart=/opt/backend/runtime/bin/java -server -Xms3g -Xmx3g \
@@ -22,8 +20,8 @@ ExecStart=/opt/backend/runtime/bin/java -server -Xms3g -Xmx3g \
     ${GATEWAY_BIND} ${GATEWAY_PORT} ${PLATFORM_URL} ${STORE_HOST} ${STORE_PORT} %H
 Restart=on-failure
 RestartSec=2
-# 2: the configuration was refused. 243: a credential file is missing. Neither is fixed by a restart.
-RestartPreventExitStatus=2 243
+# 2: the configuration was refused, which a restart does not fix.
+RestartPreventExitStatus=2
 SuccessExitStatus=143
 LimitNOFILE=65536
 TimeoutStopSec=30

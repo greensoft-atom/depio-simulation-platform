@@ -1,8 +1,8 @@
 # The copy off the site (06 §10, D-71): the dumps and every closed binlog copy, encrypted, pushed
 # by rsync over SSH to OFFSITE_TARGET. Enabled once the owner names the host (Q-53).
-# Needs /etc/backend/offsite.env (OFFSITE_TARGET=user@host:dir); the key in
-# /etc/backend/credentials/offsite.key, kept off the machines too, as without it the copy cannot be
-# read; an SSH key for the host in /etc/backend/credentials/offsite-ssh; and the host's own key in
+# Needs /etc/backend/offsite.env (OFFSITE_TARGET=user@host:dir); in /etc/backend/backup/, the backup user's
+# (D-102), mysql-backup.cnf, the key offsite.key, kept off the machines too, as without it the copy
+# cannot be read, and offsite-ssh, an SSH key for the host; and the host's own key in
 # /etc/backend/offsite-known-hosts.
 [Unit]
 Description=backend: the backups copied off the site
@@ -13,12 +13,9 @@ Wants=network-online.target
 Type=oneshot
 User=backend-backup
 Group=backend-backup
-LoadCredential=mysql-backup.cnf:/etc/backend/credentials/mysql-backup.cnf
-LoadCredential=offsite.key:/etc/backend/credentials/offsite.key
-LoadCredential=offsite-ssh:/etc/backend/credentials/offsite-ssh
-Environment=MYSQL_CNF=%d/mysql-backup.cnf
-Environment=OFFSITE_KEY=%d/offsite.key
-Environment="OFFSITE_SSH=ssh -i %d/offsite-ssh -o UserKnownHostsFile=/etc/backend/offsite-known-hosts -o BatchMode=yes"
+Environment=MYSQL_CNF=/etc/backend/backup/mysql-backup.cnf
+Environment=OFFSITE_KEY=/etc/backend/backup/offsite.key
+Environment="OFFSITE_SSH=ssh -i /etc/backend/backup/offsite-ssh -o UserKnownHostsFile=/etc/backend/offsite-known-hosts -o BatchMode=yes"
 EnvironmentFile=/etc/backend/offsite.env
 StateDirectory=backend/mysql-dumps backend/binlog backend/offsite-mirror
 StateDirectoryMode=0700

@@ -1,7 +1,7 @@
 # The nightly MySQL dump (06 §10), taken over TLS from this machine rather than the database's:
 # a dump on the disk it protects is lost with it. Afterwards it prunes dumps older than
 # KEEP_DAYS and the binlog copies no remaining dump needs (docs/operations/01-deploy.md §10).
-# Needs /etc/backend/credentials/mysql-backup.cnf:
+# Needs /etc/backend/backup/mysql-backup.cnf, the backup user's, 0600 (D-102):
 #   [client]  host=10.0.0.1  user=backup  password=...
 #             ssl-mode=VERIFY_IDENTITY  ssl-ca=/etc/backend/tls/mysql-ca.pem
 [Unit]
@@ -13,8 +13,7 @@ Wants=network-online.target
 Type=oneshot
 User=backend-backup
 Group=backend-backup
-LoadCredential=mysql-backup.cnf:/etc/backend/credentials/mysql-backup.cnf
-Environment=MYSQL_CNF=%d/mysql-backup.cnf
+Environment=MYSQL_CNF=/etc/backend/backup/mysql-backup.cnf
 Environment=BINLOG_DIR=%S/backend/binlog
 Environment=KEEP_DAYS=8
 StateDirectory=backend/mysql-dumps backend/binlog

@@ -2,7 +2,7 @@
 # restored onto this machine's scratch server while the primary keeps writing, checked, and the
 # outcome recorded in backup_run, which every worker reports. The copy off the site has its own,
 # monthly: backend-restore-proof-offsite.service.
-# Needs, in /etc/backend/credentials/: mysql-backup.cnf (the primary, the backup account) and
+# Needs, in /etc/backend/backup/, the backup user's (D-102): mysql-backup.cnf (the primary, the backup account) and
 # mysql-scratch.cnf (the scratch server: [client] host=127.0.0.1 port=3309 user=root ...).
 [Unit]
 Description=backend: the weekly proof that the backups restore
@@ -14,10 +14,8 @@ Requires=backend-scratch-mysql.service
 Type=oneshot
 User=backend-backup
 Group=backend-backup
-LoadCredential=mysql-backup.cnf:/etc/backend/credentials/mysql-backup.cnf
-LoadCredential=mysql-scratch.cnf:/etc/backend/credentials/mysql-scratch.cnf
-Environment=SOURCE_CNF=%d/mysql-backup.cnf
-Environment=SCRATCH_CNF=%d/mysql-scratch.cnf
+Environment=SOURCE_CNF=/etc/backend/backup/mysql-backup.cnf
+Environment=SCRATCH_CNF=/etc/backend/backup/mysql-scratch.cnf
 StateDirectory=backend/mysql-dumps backend/binlog backend/proof
 StateDirectoryMode=0700
 # One proof at a time (O-18): the weekly and the monthly share the scratch server, and either one's

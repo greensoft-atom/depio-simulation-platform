@@ -12,14 +12,13 @@ import com.backend.common.Secrets;
  *
  * A process's arguments are readable by every local user — {@code /proc/<pid>/cmdline} is
  * what {@code ps} prints — so a password passed there is published to the whole machine.
- * An environment variable is readable only by the process's owner and root, but a systemd
- * unit's {@code Environment=} lines are shown to any user by {@code systemctl show}. A file
- * is the one place that can be kept to the service alone: systemd's {@code LoadCredential=}
- * puts it under {@code $CREDENTIALS_DIRECTORY}, readable by nothing else, and container
- * secrets arrive the same way.
+ * An environment variable is readable only by the process's owner and root. A systemd unit's
+ * {@code Environment=} lines are shown to any user by {@code systemctl show}, but the values of
+ * a file the unit loads with {@code EnvironmentFile=} are not: so the deployed password is
+ * {@code BACKEND_DB_PASSWORD} in the process's settings file, root's alone (D-102).
  *
- * So the password comes from {@code BACKEND_DB_PASSWORD_FILE}; failing that from
- * {@code BACKEND_DB_PASSWORD}; failing that it is the development password, and the caller
+ * {@code BACKEND_DB_PASSWORD_FILE}, a file holding it, as container secrets provide, wins over
+ * {@code BACKEND_DB_PASSWORD}; failing both it is the development password, and the caller
  * says so loudly. The rules are {@link Secrets}', shared with the store's password: a file
  * that is named and cannot be read refuses the configuration rather than falling back.
  */

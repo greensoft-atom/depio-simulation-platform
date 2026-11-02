@@ -412,6 +412,7 @@ for b in b1:9011:9110 b2:9012:9111 b3:9013:9113; do
         -e "s/^BACKEND_METRICS_ADDR=.*/BACKEND_METRICS_ADDR=$B_PRIVATE:$metrics/" \
         /etc/backend/arena-a1.env > "/etc/backend/arena-$name.env"
 done
+chmod 0600 /etc/backend/arena-b*.env               # the store's password is in them (D-102)
 rm /etc/backend/arena-a1.env /etc/backend/arena-a2.env /etc/backend/arena-a3.env
 targets="platform=127.0.0.1:9101,gateway=127.0.0.1:9103,arena=$B_PRIVATE:9110,arena=$B_PRIVATE:9111,arena=$B_PRIVATE:9113"
 sed -i "/^BACKEND_WATCH_TARGETS=/c BACKEND_WATCH_TARGETS=$targets,worker=127.0.0.1:9102,worker=127.0.0.1:9112" /etc/backend/platform.env

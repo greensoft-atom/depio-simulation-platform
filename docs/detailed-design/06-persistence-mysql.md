@@ -1430,7 +1430,7 @@ hand once a month. Four things are added.
   the primary's binary logs first, so only closed binlogs leave, then the newest dump and every
   closed binlog copy since the oldest dump kept, each encrypted
   (`openssl enc -aes-256-cbc -pbkdf2`, a key in
-  `/etc/backend/credentials/offsite.key` that is also kept away from the
+  `/etc/backend/backup/offsite.key` that is also kept away from the
   machines) into a local mirror. The mirror is pushed by `rsync --delete` over
   SSH to `OFFSITE_TARGET`, so the host off the site holds what the backup
   machine does: 8 days of dumps, and every binlog since the oldest. Unset, the

@@ -7,9 +7,9 @@ import java.nio.file.Path;
 import java.util.Map;
 
 /**
- * A secret from the environment, never the command line (S-3): {@code NAME_FILE} names a file
- * holding it — what systemd's {@code LoadCredential=} and container secrets provide, readable
- * by the service alone — and wins over {@code NAME}, the value itself.
+ * A secret from the environment, never the command line (S-3): {@code NAME}, the value itself, as
+ * the process's own settings file gives it (D-102); or {@code NAME_FILE}, which names a file holding
+ * it, as container secrets provide, and wins over {@code NAME}.
  *
  * A file that is named and cannot be read, or is empty, refuses the configuration rather than
  * falling back: falling back would start a production process on whatever the fallback is,

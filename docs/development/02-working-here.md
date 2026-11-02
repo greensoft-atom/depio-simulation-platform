@@ -70,6 +70,7 @@ under `background/`.
 | The production machines run RHEL 9.x (the owner thinks 9.5) | 2026-09-22 | requirements C-1; §3 below |
 | Everything a development machine builds, tests, runs and debugs stays inside the checkout (`work/`); a Java and a MySQL already installed there (the owner's: Java 8, MySQL 5) are neither used nor changed | 2026-10-17 | D-80, [03](03-build-and-run.md) |
 | A run by hand is a script a service: nginx, MySQL, j-redis and the backend, each with start, status, stop, restart and test, and build for j-redis and the backend; the owner runs it as root, and clients on other machines (a phone's app, a laptop's Postman) reach it through nginx on 80, 443 and 9001 | 2026-11-01 | D-92, [03 §5](03-build-and-run.md#5-running-it-by-hand) |
+| No secret passes through systemd's units: each process takes its own from its settings file, `/etc/backend/<process>.env`, as plain variables, the file root's alone (0600); the backups' scripts read their own files; nothing of systemd's but `EnvironmentFile=` | 2026-11-02 | D-102, [operations/01 §2](../operations/01-deploy.md#secrets) |
 
 ## 3. The development machine
 
@@ -112,8 +113,9 @@ The namespace has no network: the clone builds (the bundle), but the client's Nu
 2.34; this machine has glibc 2.39. Anything compiled here may need newer glibc
 symbols (2.38's, for one) and not start there: native code for the release is
 built in a Rocky Linux 8 container, for glibc 2.28 (D-100), and the release is checked in Red Hat's UBI 8 and UBI 9
-images, RHEL's own userspace (plan items 80 and 119). RHEL 8 runs the binaries, not the units: its systemd 239
-lacks `LoadCredential=` (Q-63).
+images, RHEL's own userspace (plan items 80 and 119). RHEL 8 runs the binaries and, since D-102, the units (its
+systemd 239 ignores three sandbox settings), but not `install-certificate.sh`'s check, which needs OpenSSL 3 (O-94,
+Q-63).
 
 ## 4. Traps, each met at least once
 

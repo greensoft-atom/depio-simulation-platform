@@ -25,9 +25,9 @@ On the launch's one machine ([D-93](../../docs/architecture/03-decision-log.md#d
 
 ### env/
 
-Copied to `/etc/backend/` without `.example` and filled in; read by systemd's `EnvironmentFile=`.
-No secrets go in them: the passwords arrive through `LoadCredential=`
-([01 §2](../../docs/operations/01-deploy.md#secrets)).
+Copied to `/etc/backend/` without `.example` and filled in; read by systemd's `EnvironmentFile=`, as root,
+before the process starts. Each process's secrets are in its file too, as plain variables at its end, so every
+one is `root:root 0600` ([01 §2](../../docs/operations/01-deploy.md#secrets), D-102).
 
 | File | Installed as | Read by | Notable values |
 |---|---|---|---|
@@ -48,7 +48,7 @@ Copied to `/etc/systemd/system/`, then `systemctl daemon-reload`. Every process 
 own Java 21 runtime ([09 §4.1](../../docs/detailed-design/09-release-and-packaging.md#41-the-runtime)), and
 `--add-opens java.base/java.nio=ALL-UNNAMED`. The four long-running ones also use ZGC, write heap
 dumps and a GC log in `/var/log/backend/` (`LogsDirectory=backend`), restart on failure but not on
-exit 2 (a refused configuration) or 243 (a credential file missing), and count 143 (SIGTERM) as
+exit 2 (a refused configuration), and count 143 (SIGTERM) as
 clean. All of them run sandboxed (`ProtectSystem=strict`,
 `PrivateTmp`, `NoNewPrivileges`, an empty capability set and the rest; not
 `MemoryDenyWriteExecute`, which the JIT cannot run under).
@@ -57,11 +57,11 @@ clean. All of them run sandboxed (`ProtectSystem=strict`,
 
 | Unit | Runs | Settings and credentials | Notable values |
 |---|---|---|---|
-| `backend-arena@.service` | `com.backend.arena.ArenaMain`, instance `%i` = the arena's name, unique across the fleet ([01 §2](../../docs/operations/01-deploy.md#2-conventions)) | `arena-%i.env`; credential `store-password` | `-Xms6g -Xmx6g`; spool in `/var/lib/backend/arena-%i/spool` (`StateDirectory`); `LimitNOFILE=65536`; `TimeoutStopSec=12min`, for an eleven-minute drain; a `CPUAffinity=` drop-in per instance |
-| `backend-gateway.service` | `com.backend.gateway.GatewayMain`; its id is the host name (`%H`) | `gateway.env`; `store-password` | `-Xms3g -Xmx3g`; `LimitNOFILE=65536`; `TimeoutStopSec=30` |
-| `backend-platform.service` | `com.backend.platform.PlatformMain` | `platform.env`; `db-password`, `store-password` | `-Xms3g -Xmx3g`; `-Dsun.net.httpserver.maxIdleConnections=1000` (above nginx's keepalive pool); `After=backend-mysql.service`; `TimeoutStopSec=30` |
-| `backend-worker@.service` | `com.backend.worker.WorkerMain`, consumer `worker-%i`, unique across the fleet | `worker.env` then `-worker-%i.env`; `db-password`, `store-password` | `-Xms1536m -Xmx1536m` (two share 4 cores and 4 GB on C); `After=backend-mysql.service`; `TimeoutStopSec=30` |
-| `backend-leaderboard-rebuild.service` | `com.backend.worker.LeaderboardRebuild`, once (`Type=oneshot`); not enabled | `worker.env`; `db-password`, `store-password` | `-Xmx512m`; started by hand after a store loses its disk ([runbook §3](../../docs/operations/02-runbook.md#3-per-component-procedures)) |
+| `backend-arena@.service` | `com.backend.arena.ArenaMain`, instance `%i` = the arena's name, unique across the fleet ([01 §2](../../docs/operations/01-deploy.md#2-conventions)) | `arena-%i.env`, its secret in it (D-102) | `-Xms6g -Xmx6g`; spool in `/var/lib/backend/arena-%i/spool` (`StateDirectory`); `LimitNOFILE=65536`; `TimeoutStopSec=12min`, for an eleven-minute drain; a `CPUAffinity=` drop-in per instance |
+| `backend-gateway.service` | `com.backend.gateway.GatewayMain`; its id is the host name (`%H`) | `gateway.env`, its secret in it | `-Xms3g -Xmx3g`; `LimitNOFILE=65536`; `TimeoutStopSec=30` |
+| `backend-platform.service` | `com.backend.platform.PlatformMain` | `platform.env`, its secrets in it | `-Xms3g -Xmx3g`; `-Dsun.net.httpserver.maxIdleConnections=1000` (above nginx's keepalive pool); `After=backend-mysql.service`; `TimeoutStopSec=30` |
+| `backend-worker@.service` | `com.backend.worker.WorkerMain`, consumer `worker-%i`, unique across the fleet | `worker.env`, its secrets in it, then `-worker-%i.env` | `-Xms1536m -Xmx1536m` (two share 4 cores and 4 GB on C); `After=backend-mysql.service`; `TimeoutStopSec=30` |
+| `backend-leaderboard-rebuild.service` | `com.backend.worker.LeaderboardRebuild`, once (`Type=oneshot`); not enabled | `worker.env`, its secrets in it | `-Xmx512m`; started by hand after a store loses its disk ([runbook §3](../../docs/operations/02-runbook.md#3-per-component-procedures)) |
 
 **The servers the release carries**, in place of the distribution's packages (D-77,
 [09](../../docs/detailed-design/09-release-and-packaging.md)). Each runs as a system user of its own,
@@ -79,17 +79,11 @@ made at install ([01 §7](../../docs/operations/01-deploy.md#7-installing-a-mach
 the directories their units make; `backend-store@` is sandboxed as the process units are;
 `backend-scratch-mysql` sets none.
 
-**Drop-ins**, examples installed under a unit's `.d/` directory
-
-| File | Installed as | Configures |
-|---|---|---|
-| `arena-tls.conf.example` | `/etc/systemd/system/backend-arena@.service.d/tls.conf` | TLS for match traffic: credentials `arena-tls.p12` and `arena-tls-password` from `/etc/backend/credentials/`, `BACKEND_ARENA_TLS_KEYSTORE` and `BACKEND_ARENA_TLS_PASSWORD_FILE`. Only for an arena that ends TLS itself, reached directly (a drill, a machine alone): not the site's layout (D-82), where an arena with `BACKEND_ADVERTISE_TLS_NAME` refuses a keystore and stops (exit 2) |
-| `platform-admin.conf.example` | `/etc/systemd/system/backend-platform.service.d/admin.conf` | The admin API's secret: credential `admin-token`, `BACKEND_ADMIN_TOKEN_FILE`. With `BACKEND_ADMIN_ADDR` in `platform.env` ([runbook §3a](../../docs/operations/02-runbook.md#3a-the-admin-api)) |
-
 **The backup machine**, C ([01 §10](../../docs/operations/01-deploy.md#10-copies-off-the-databases-machine)).
 The scripts run as `backend-backup`, a user of its own, from `/opt/backend/scripts/`, sandboxed as
 the processes are and with `MemoryDenyWriteExecute` too; their state is in `/var/lib/backend/`
-(`StateDirectory`, mode 0700).
+(`StateDirectory`, mode 0700). Their option files and keys are in `/etc/backend/backup/`, the backup
+user's, which the scripts read themselves (D-102); a unit names the path.
 
 | Unit | Runs | Settings and credentials | Notable values |
 |---|---|---|---|
@@ -174,16 +168,16 @@ means the process refuses to start and systemd does not restart it.
 |---|---|---|---|---|
 | `BACKEND_DB_URL` | platform, worker, leaderboard rebuild | `jdbc:mysql://127.0.0.1:3314/backend_dev?useSSL=false&allowPublicKeyRetrieval=true`, the development MySQL's database (O-40) | The JDBC URL; both hosts, primary and replica, after a replica is made ([01 §9](../../docs/operations/01-deploy.md#9-mysql)) | `platform.env.example`, `worker.env.example` |
 | `BACKEND_DB_USER` | same | `backend` | The database user | same |
-| `BACKEND_DB_PASSWORD_FILE` | same | none: then `BACKEND_DB_PASSWORD`, then the development password with a warning | The database password's file | `backend-platform`, `backend-worker@`, `backend-leaderboard-rebuild`: `%d/db-password` |
-| `BACKEND_DB_PASSWORD` | same | none | The password itself | not set |
+| `BACKEND_DB_PASSWORD` | same | none: the development password, with a warning | The database password | `platform.env` and `worker.env`, at the end (commented in the examples), by the install guide |
+| `BACKEND_DB_PASSWORD_FILE` | same | none | A file holding it, which wins over `BACKEND_DB_PASSWORD`; named but unreadable or empty, exit 2 | not set: for a drill or a container's secrets |
 | `BACKEND_DB_POOL_SIZE` | same | 16 platform, 8 worker, 2 rebuild | The connection pool, 1 to 100; anything else exit 2 | commented in `platform.env.example` and `worker.env.example` |
 | `BACKEND_STORE_ADDRESSES` | arena, gateway, platform, worker, leaderboard rebuild | none: the store host and port the unit passes | The `session` store with its replica, `host:port,host:port`; used instead of the passed host and port | commented in every `env/` example |
-| `BACKEND_STORE_PASSWORD_FILE` | same; also `backup-store.sh`, `store-restore-drill.sh` | none: then `BACKEND_STORE_PASSWORD`, then no password, with a warning; a store that demands one means exit 2 | The store's password's file | every process unit: `%d/store-password` |
-| `BACKEND_STORE_PASSWORD` | the processes | none | The password itself | not set |
+| `BACKEND_STORE_PASSWORD` | same | none: no password, with a warning; a store that demands one means exit 2 | The store's password | `platform.env`, `worker.env`, `gateway.env`, each `arena-<name>.env`, at the end, by the install guide |
+| `BACKEND_STORE_PASSWORD_FILE` | same; also `backup-store.sh`, `store-restore-drill.sh` | none | A file holding it, which wins over `BACKEND_STORE_PASSWORD`; named but unreadable or empty, exit 2 | not set |
 | `BACKEND_EVENTS_STORE` | arena, worker | none: results share the `session` store | The `events` store, `host:port` or with its replica `host:port,host:port` | commented in `arena.env.example`, `worker.env.example` |
 | `BACKEND_RESULT_RETENTION_HOURS` | arena, worker | 24 | How long the result stream keeps an entry, read or not: whole hours, 1 to 168, else the start is refused (exit 2). The same on every arena and worker, since each add trims and the shortest wins; it sizes the `events` store and is the longest outage of the workers or MySQL without loss ([D-83](../../docs/architecture/03-decision-log.md#d-83--the-result-streams-retention-is-a-setting-and-the-events-store-is-sized-by-a-table), [operations/04 §3.4](../../docs/operations/04-scaling-and-performance.md#34-j-redis)) | commented in `arena.env.example`, `worker.env.example` |
-| `BACKEND_EVENTS_STORE_PASSWORD_FILE` | arena, worker | none: then `BACKEND_EVENTS_STORE_PASSWORD`, then the session store's password | The `events` store's password, where it differs | not set; a drop-in if needed ([01 §2](../../docs/operations/01-deploy.md#secrets)) |
-| `BACKEND_EVENTS_STORE_PASSWORD` | arena, worker | none | The password itself | not set |
+| `BACKEND_EVENTS_STORE_PASSWORD` | arena, worker | none: the session store's password | The `events` store's password, where it differs | commented in `arena.env.example`, `worker.env.example` ([01 §2](../../docs/operations/01-deploy.md#secrets)) |
+| `BACKEND_EVENTS_STORE_PASSWORD_FILE` | arena, worker | none | A file holding it, which wins | not set |
 | `BACKEND_TRUSTED_PROXIES` | platform, gateway | none: loopback alone | The peers whose `X-Forwarded-For` is believed besides loopback, comma-separated IP literals: the front's nginx (D-82). Anything else means exit 2 | `10.0.0.1,10.0.0.2,10.0.0.3` |
 | `BACKEND_ADVERTISE_PORT` | arena | none: the port it listens on | The port the arena announces, the one players dial: the site's 9001 behind the front. Not 1 to 65535 means exit 2 | `arena.env.example`: `9001` |
 | `BACKEND_ADVERTISE_TLS_NAME` | arena | none: its host | The name a client's TLS handshake gives and checks, which the front's nginx routes by; announces TLS, though the arena speaks plaintext. Not a host name, or with a keystore, means exit 2 | `arena.env.example`: `a1.arena.internal` |
@@ -195,12 +189,12 @@ means the process refuses to start and systemd does not restart it.
 | `BACKEND_WATCH_MACHINE` | platform | the hostname | This machine's name on the alerts its watch raises | `platform.env.example`: `A` |
 | `BACKEND_ALERT_WEBHOOK_URL` / `_FILE` | platform | none: alerts listed and logged, sent nowhere | Where alerts are `POST`ed as JSON when they fire or resolve (08 §4); not an http(s) URL is exit 2. The owner's to name (Q-60) | commented |
 | `BACKEND_ALERT_REPEAT_HOURS` | platform | 4 | How often a firing alert is sent again, whole hours 1 to 24; else exit 2 | commented |
-| `BACKEND_ADMIN_TOKEN_FILE` | platform | none; required once `BACKEND_ADMIN_ADDR` is set, else exit 2 | The admin API's bearer secret's file | `platform-admin.conf.example`: `%d/admin-token` |
-| `BACKEND_ADMIN_TOKEN` | platform | none | The secret itself | not set |
+| `BACKEND_ADMIN_TOKEN` | platform | none; it or its file required once `BACKEND_ADMIN_ADDR` is set, else exit 2 | The admin API's bearer secret | commented in `platform.env.example`, at the end |
+| `BACKEND_ADMIN_TOKEN_FILE` | platform | none | A file holding it, which wins | not set |
 | `BACKEND_PAYMENT_PROVIDER` | platform | none: payments off, every payment route 503 `payments_off` | `simulated` only, which grants gems to whoever asks (development and drills); any other value exit 2 | commented in `platform.env.example` |
 | `BACKEND_EDGE_CERTIFICATE` | gateway | none: no gauge | The certificate file nginx serves, reported as `backend_gateway_edge_certificate_expiry_timestamp_seconds` | `gateway.env.example` |
-| `BACKEND_ARENA_TLS_KEYSTORE` | arena | none: plaintext, with a warning | The PKCS#12 keystore for match traffic | `arena-tls.conf.example`: `%d/arena-tls.p12` |
-| `BACKEND_ARENA_TLS_PASSWORD_FILE` | arena | none; required with a keystore, else exit 2 | The keystore's password's file | `arena-tls.conf.example`: `%d/arena-tls-password` |
+| `BACKEND_ARENA_TLS_KEYSTORE` | arena | none: plaintext, with a warning | The PKCS#12 keystore for match traffic, for an arena that ends TLS itself (not the site's layout, D-82; with `BACKEND_ADVERTISE_TLS_NAME`, exit 2) | commented in `arena.env.example`: `/etc/backend/tls/arena-tls.p12`, which `install-certificate.sh` writes, the `backend` group's to read |
+| `BACKEND_ARENA_TLS_PASSWORD_FILE` | arena | none; it or the password required with a keystore, else exit 2 | The keystore's password's file | commented in `arena.env.example`: `/etc/backend/tls/arena-tls-password`, the same |
 | `BACKEND_ARENA_TLS_PASSWORD` | arena | none | The password itself | not set |
 
 ### Passed as arguments by the units
@@ -247,18 +241,18 @@ Each script's own settings are in [scripts/README](../scripts/README.md). Those 
 
 | Variable | Read by | Default | Set by |
 |---|---|---|---|
-| `BINLOG_CNF` | `binlog-stream.sh` | required | `backend-binlog-stream`: `%d/mysql-binlog.cnf` |
+| `BINLOG_CNF` | `binlog-stream.sh` | required | `backend-binlog-stream`: `/etc/backend/backup/mysql-binlog.cnf`, the backup user's (D-102) |
 | `BINLOG_SERVER_ID` | `binlog-stream.sh` | 900 | not set |
-| `MYSQL_CNF` | `backup-mysql.sh`, `backup-offsite.sh`, `record-backup.sh` | the client's defaults | `backend-mysql-backup`, `backend-backup-offsite`: `%d/mysql-backup.cnf` |
+| `MYSQL_CNF` | `backup-mysql.sh`, `backup-offsite.sh`, `record-backup.sh` | the client's defaults | `backend-mysql-backup`, `backend-backup-offsite`: `/etc/backend/backup/mysql-backup.cnf` |
 | `BINLOG_DIR` | `backup-mysql.sh` | none: no binlog copy pruned | `backend-mysql-backup`: `/var/lib/backend/binlog` |
 | `KEEP_DAYS` | `backup-mysql.sh` | 8 | `backend-mysql-backup`: 8 |
 | `RECORD` | `backup-mysql.sh`, `backup-offsite.sh` | 1 | not set |
 | `RECORD_DB` | `record-backup.sh` | `backend` | `restore-proof.sh`: the source database |
 | `OFFSITE_TARGET` | `backup-offsite.sh`, `fetch-offsite.sh` | none: nothing copied off the site | `/etc/backend/offsite.env`, made by the operator |
-| `OFFSITE_KEY` | same | required with a target | the off-site units: `%d/offsite.key` |
-| `OFFSITE_SSH` | same | `ssh -o BatchMode=yes` | the off-site units: `ssh -i %d/offsite-ssh -o UserKnownHostsFile=/etc/backend/offsite-known-hosts -o BatchMode=yes` |
-| `SOURCE_CNF` | `restore-proof.sh` (required), `restore-drill.sh` | the local server | the proof units: `%d/mysql-backup.cnf` |
-| `SCRATCH_CNF` | same | the local server | the proof units: `%d/mysql-scratch.cnf` |
+| `OFFSITE_KEY` | same | required with a target | the off-site units: `/etc/backend/backup/offsite.key` |
+| `OFFSITE_SSH` | same | `ssh -o BatchMode=yes` | the off-site units: `ssh -i /etc/backend/backup/offsite-ssh -o UserKnownHostsFile=/etc/backend/offsite-known-hosts -o BatchMode=yes` |
+| `SOURCE_CNF` | `restore-proof.sh` (required), `restore-drill.sh` | the local server | the proof units: `/etc/backend/backup/mysql-backup.cnf` |
+| `SCRATCH_CNF` | same | the local server | the proof units: `/etc/backend/backup/mysql-scratch.cnf` |
 | `FROM_OFFSITE` | `restore-proof.sh` | 0 | `backend-restore-proof-offsite`: 1 |
 | `PROOF`, `TO_COPIES_END` | `restore-drill.sh` | 0 | `restore-proof.sh` |
 | `STOP_AT`, `NO_SOURCE` | `restore-drill.sh` | none, 0 | by hand ([runbook](../../docs/operations/02-runbook.md#recovering-to-a-moment)) |
