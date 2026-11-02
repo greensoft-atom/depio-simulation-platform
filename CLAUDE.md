@@ -202,6 +202,7 @@ for the backend, its docs and its client.
 ./dev-jredis.sh build|start|stop|restart|status|test          # j-redis from its own build, 127.0.0.1:6380
 ./dev-backend.sh build|start|stop|restart|status|test|bots    # restart platform: one alone; the arena on 9021 announcing nginx's 9001
 ./dev-nginx.sh  start|stop|restart|status|test      # the release's nginx on 80 (a redirect), 443, 9001, every IPv4 address; root; work/nginx/ca/ca.pem
+                                                    # PLAIN=1, to every command: 80 (the API, the lobby) and 9001 without TLS (D-101)
 
 # Client core tests (look for "Total tests:")
 cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test --logger "console;verbosity=normal"

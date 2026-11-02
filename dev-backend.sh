@@ -16,9 +16,8 @@
 # address, in dev-env.sh: PLATFORM_PORT 8080, GATEWAY_PORT 8081, ARENA_PORT 9021. The bots dial nginx on 127.0.0.1
 # and check every certificate against its root, work/nginx/ca/ca.pem, for the name a grant gives. DEBUG=1: each
 # listens for a debugger, waiting for no one, the platform on 5005, the worker 5006, the gateway 5007, the arena 5008;
-# it then runs on vendor/'s JDK, as the release's runtime has no debugger agent. PLAIN=1 (D-99): no TLS and no nginx,
-# the platform, the gateway and the arena on every address, the arena announcing PUBLIC_ADDRESS and its own port; test
-# and bots straight to them.
+# it then runs on vendor/'s JDK, as the release's runtime has no debugger agent. PLAIN=1 (D-101): the arena announces
+# nginx's port without TLS, and test and bots go through nginx plain, as an app built for it does.
 set -euo pipefail
 . "$(dirname "$0")/dev-env.sh"
 L=$WORK/run
@@ -27,7 +26,6 @@ export BACKEND_DB_USER=${BACKEND_DB_USER:-backend} BACKEND_DB_PASSWORD=${BACKEND
 ALL="platform worker gateway arena"
 declare -A DEBUG_PORT=([platform]=5005 [worker]=5006 [gateway]=5007 [arena]=5008)
 declare -A PORT=([platform]=$PLATFORM_PORT [gateway]=$GATEWAY_PORT [arena]=$ARENA_PORT)
-BIND_ADDR=127.0.0.1; [ "$PLAIN" != 1 ] || BIND_ADDR=0.0.0.0
 
 R=$(ls -d "$B"/backend/target/release/backend-*/ 2> /dev/null | head -1 || true); R=${R%/}
 # Running, and ours: a pid left from before a reboot may be another process's by now, another of the four's
@@ -52,7 +50,7 @@ check_start() {
             || { echo "the development MySQL is not running: ./dev-mysql.sh start first" >&2; exit 1; } ;;
     esac
     for p in "${todo[@]}"; do [ -z "${PORT[$p]:-}" ] || ports+=("${PORT[$p]}"); done
-    [ ${#ports[@]} = 0 ] || BIND=$BIND_ADDR "$B/backend/scripts/check-bind.sh" "${ports[@]}" || {
+    [ ${#ports[@]} = 0 ] || "$B/backend/scripts/check-bind.sh" "${ports[@]}" || {
         echo "another port for it: PLATFORM_PORT, GATEWAY_PORT or ARENA_PORT, the same for every later command" >&2; exit 1; }
 }
 
@@ -61,22 +59,23 @@ start_one() {
     if running "$p"; then echo "$p: already running"; return; fi
     case $p in
         platform) port=$PLATFORM_PORT
-                  args=(-cp "$R/lib/platform/*" com.backend.platform.PlatformMain "$BIND_ADDR" "$PLATFORM_PORT"
+                  args=(-cp "$R/lib/platform/*" com.backend.platform.PlatformMain 127.0.0.1 "$PLATFORM_PORT"
                         127.0.0.1 "$STORE_PORT") ;;
         worker)   port=
                   args=(-cp "$R/lib/worker/*" com.backend.worker.WorkerMain 127.0.0.1 "$STORE_PORT" worker-1) ;;
         gateway)  port=$GATEWAY_PORT
-                  args=(-cp "$R/lib/gateway/*" com.backend.gateway.GatewayMain "$BIND_ADDR" "$GATEWAY_PORT"
+                  args=(-cp "$R/lib/gateway/*" com.backend.gateway.GatewayMain 127.0.0.1 "$GATEWAY_PORT"
                         "http://127.0.0.1:$PLATFORM_PORT" 127.0.0.1 "$STORE_PORT" gateway-1) ;;
         arena)    port=$ARENA_PORT
                   # port, map size, max players, shapes, rooms, store, name, match seconds (0: continuous),
                   # spool, bind host, advertised host (backend/README, Running it); nginx's port and name for it
                   args=(-XX:+UseZGC -XX:+ZGenerational -cp "$R/lib/arena/*" com.backend.arena.ArenaMain
-                        "$ARENA_PORT" 5700 150 1500 4 127.0.0.1 "$STORE_PORT" arena-1 0 "$L/spool" "$BIND_ADDR" "$PUBLIC_ADDRESS")
+                        "$ARENA_PORT" 5700 150 1500 4 127.0.0.1 "$STORE_PORT" arena-1 0 "$L/spool" 127.0.0.1 "$PUBLIC_ADDRESS")
+                  envs=("BACKEND_ADVERTISE_PORT=$NGINX_MATCH_PORT")
                   if [ "$PLAIN" = 1 ]; then
-                      said=", announcing $PUBLIC_ADDRESS:$ARENA_PORT, plain"      # its own port, no TLS (D-99)
+                      said=", announcing $PUBLIC_ADDRESS:$NGINX_MATCH_PORT, plain, through nginx"   # no TLS name (D-101)
                   else
-                      envs=("BACKEND_ADVERTISE_PORT=$NGINX_MATCH_PORT" "BACKEND_ADVERTISE_TLS_NAME=$ARENA_TLS_NAME")
+                      envs+=("BACKEND_ADVERTISE_TLS_NAME=$ARENA_TLS_NAME")
                       said=", announcing $PUBLIC_ADDRESS:$NGINX_MATCH_PORT, TLS as $ARENA_TLS_NAME, through nginx"
                   fi ;;
         *)        echo "no process $p: $ALL" >&2; exit 2 ;;
@@ -96,7 +95,7 @@ start_one() {
     running "$p" && { [ -z "$port" ] || taken "$port"; } \
         || { echo "$p did not come up in 90 s: $L/$p.log" >&2; exit 1; }
     local dbg=; [ "${DEBUG:-0}" = 1 ] && dbg=", its debugger on 127.0.0.1:${DEBUG_PORT[$p]}"
-    echo "$p: up${port:+ on $BIND_ADDR:$port}$said$dbg (log $L/$p.log)"
+    echo "$p: up${port:+ on 127.0.0.1:$port}$said$dbg (log $L/$p.log)"
 }
 
 # Stopped, or a failure: the arena drains its made matches first, up to its unit's twelve minutes (01 §8.6), and
@@ -132,8 +131,8 @@ bots() {
     local jar ts=$L/truststore.p12 said
     jar=$(ls "$B"/backend/tools/target/tools-*-all.jar 2> /dev/null | head -1 || true)
     [ -n "$jar" ] || { echo "no backend/tools/target/tools-*-all.jar: $0 build first" >&2; return 1; }
-    # Plain (D-99): straight to the arena a grant names, nothing to trust.
-    [ "$PLAIN" != 1 ] || { "$JAVA_HOME/bin/java" -cp "$jar" com.backend.tools.BotClient "$@"; return; }
+    # Plain (D-101): nothing to trust.
+    [ "$PLAIN" != 1 ] || { BACKEND_BOT_VIA=127.0.0.1:$NGINX_MATCH_PORT "$JAVA_HOME/bin/java" -cp "$jar" com.backend.tools.BotClient "$@"; return; }
     rm -f "$ts"
     said=$("$JAVA_HOME/bin/keytool" -importcert -noprompt -alias backend-dev -file "$WORK/nginx/ca/ca.pem" -keystore "$ts" \
         -storetype PKCS12 -storepass backend-dev 2>&1) || { echo "$said" >&2; return 1; }
@@ -142,6 +141,13 @@ bots() {
         -Djavax.net.ssl.trustStorePassword=backend-dev -cp "$jar" com.backend.tools.BotClient "$@"
 }
 nginx_up() { "$B/dev-nginx.sh" status > /dev/null 2>&1; }
+# nginx started this command's way, plain or TLS: sudo drops PLAIN from the shell (D-98), and nginx the other way
+# passes no match on (D-101).
+nginx_way() {
+    local want=TLS has; [ "$PLAIN" != 1 ] || want=plain
+    has=$(cat "$WORK/nginx/mode" 2> /dev/null || echo TLS)
+    [ "$has" = "$want" ] || { echo "nginx runs $has, and this command $want: give both the same PLAIN (sudo drops it: sudo PLAIN=$PLAIN ./dev-nginx.sh restart)"; return 1; }
+}
 
 case "${1:-}" in
 build)
@@ -169,13 +175,7 @@ start)
     mkdir -p "$L"
     procs=$(named "$ALL" "$@")
     check_start $procs
-    for p in $procs; do start_one "$p"; done
-    if [ "$PLAIN" = 1 ]; then
-        echo "plain (D-99), for clients on a network you trust: everything crosses it in clear"
-        echo "  the player API   http://$PUBLIC_ADDRESS:$PLATFORM_PORT/v1/"
-        echo "  the lobby        ws://$PUBLIC_ADDRESS:$GATEWAY_PORT/lobby"
-        echo "  matches          $PUBLIC_ADDRESS:$ARENA_PORT"
-    fi ;;
+    for p in $procs; do start_one "$p"; done ;;
 stop)
     shift; known "$@"
     rc=0
@@ -200,14 +200,17 @@ test)
     for p in $ALL; do running "$p" || { echo "FAILED  $p is not running: $0 start"; down=1; }; done
     [ $down = 0 ] || exit 1
     echo "ok      platform, worker, gateway and arena running"
+    nginx_up || { echo "FAILED  nginx is not running: ./dev-nginx.sh start"; exit 1; }
+    said=$(nginx_way) || { echo "FAILED  $said"; exit 1; }
+    echo "ok      nginx running"
+    match=$PUBLIC_ADDRESS:$NGINX_MATCH_PORT
     if [ "$PLAIN" = 1 ]; then
-        api=http://127.0.0.1:$PLATFORM_PORT lobby=ws://127.0.0.1:$GATEWAY_PORT/lobby match=$PUBLIC_ADDRESS:$ARENA_PORT
-        how="plain, $api/ and $lobby: registered, logged in, the lobby, a ticket for $match, plain"
+        api=http://127.0.0.1$([ "$NGINX_HTTP_PORT" = 80 ] || echo ":$NGINX_HTTP_PORT")
+        lobby=ws://${api#http://}/lobby
+        how="plain through nginx, $api/: registered, logged in, the lobby, a ticket for $match, plain"
     else
-        nginx_up || { echo "FAILED  nginx is not running: ./dev-nginx.sh start"; exit 1; }
-        echo "ok      nginx running"
         api=https://127.0.0.1$([ "$NGINX_HTTPS_PORT" = 443 ] || echo ":$NGINX_HTTPS_PORT")
-        lobby=wss://${api#https://}/lobby match=$PUBLIC_ADDRESS:$NGINX_MATCH_PORT
+        lobby=wss://${api#https://}/lobby
         how="through nginx, $api/: registered, logged in, the lobby, a ticket for $match, TLS as $ARENA_TLS_NAME"
     fi
     out=$(bots 2 5 "$api" "$lobby" 2>&1) || true
@@ -218,7 +221,8 @@ test)
         echo "FAILED  2 bots ${how%%:*}; they said:"; sed 's/^/        /' <<< "$out"; exit 1
     fi ;;
 bots)
-    [ "$PLAIN" = 1 ] || nginx_up || { echo "nginx is not running, and matches go through it: ./dev-nginx.sh start first" >&2; exit 1; }
+    nginx_up || { echo "nginx is not running, and matches go through it: ./dev-nginx.sh start first" >&2; exit 1; }
+    said=$(nginx_way) || { echo "$said" >&2; exit 1; }
     bots "${2:-20}" "${3:-15}" "http://127.0.0.1:$PLATFORM_PORT" "ws://127.0.0.1:$GATEWAY_PORT/lobby" ;;
 *)
     echo "usage: $0 build | start [process ...] | stop [process ...] | restart [process ...] | status | test | bots [count] [seconds]" >&2

@@ -148,7 +148,7 @@ machines run but the operating system's base
 | `lib/arena/`, `lib/platform/`, `lib/worker/`, `lib/gateway/` | each process's own jar and its runtime dependencies; one directory per process, so the MySQL driver stays off the arena and the gateway |
 | `jredis/` | j-redis 2.2.1: `bin/` (the server's, the client's and the tools' launchers, which run on `$JAVA_HOME`), `lib/` (`j-redis-server.jar`, `j-redis-cli.jar`, `j-redis-tools.jar`), `conf/j-redis.conf` (the template of `/etc/backend/store-<name>.conf`) |
 | `mysql/` | MySQL 8.4.11 LTS, `vendor/mysql-8.4/` as committed: `mysqld`, the client and the tools |
-| `nginx/` | nginx 1.30.5 built for RHEL 9, `vendor/nginx-1.30/` as committed: `sbin/nginx`, `conf/mime.types` |
+| `nginx/` | nginx 1.30.5 built on Rocky 8 for glibc 2.28 (D-100), `vendor/nginx-1.30/` as committed: `sbin/nginx`, `conf/mime.types` |
 | `systemd/` | every unit, timer and drop-in example above |
 | `env/` | as above |
 | `mysql-conf/`, `nginx-conf/` | this folder's `mysql/` and `nginx/`, under names apart from the binaries |

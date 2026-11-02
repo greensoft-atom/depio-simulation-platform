@@ -36,7 +36,9 @@ site grows: a second machine, its standby, is [10](10-two-machines.md) (D-96), a
 
 ## 1. What the server needs
 
-- RHEL 9.x on x86-64 (checked with 9.5), as root.
+- RHEL 9.x on x86-64 (checked with 9.5), as root. A system derived from it, or later, serves when `uname -m` says
+  `x86_64`, `ldd --version` a glibc of 2.28 or later and `systemctl --version` a systemd of 247 or later: what the
+  release takes of the system ([09 §4.2](../detailed-design/09-release-and-packaging.md#42-what-the-host-still-provides)).
 - What any RHEL 9 server installation has: systemd, bash, coreutils, util-linux,
   `tar`, `gzip`, `findutils`, `sed`, `openssl`, `curl`. Nothing else: the JDK,
   Maven, MySQL, nginx and every library are in the repository (`vendor/`,

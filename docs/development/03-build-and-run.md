@@ -370,27 +370,37 @@ the build for these phones carries this `ca.pem` (`BackendClient`'s root certifi
 is reached by its host alone: give it bridged networking, or have the host forward the
 three ports.
 
-**Plain, without TLS and without nginx** ([D-99](../architecture/03-decision-log.md#d-99--a-plain-run-by-hand-no-tls-and-no-nginx-on-every-address-for-development-alone)), for development alone: `PLAIN=1` given to every
-command. The platform, the gateway and the arena listen on every address, and the arena announces this machine's
-address and its own port without TLS; no certificate, no root, no nginx.
+**Plain, through nginx without TLS** ([D-101](../architecture/03-decision-log.md#d-101--a-plain-run-by-hand-goes-through-nginx-as-the-site-does-80-and-9001-without-tls)), for development alone: `PLAIN=1` given to every
+command. The path is the site's, nginx in front and everything else on 127.0.0.1, with TLS the one difference: nginx
+serves the API and the lobby on 80 and passes matches on 9001 to the arena, plain, and the arena announces
+nginx's 9001 without TLS. No certificate and no root CA; 80 still needs root, as above.
 
 ```bash
 export PLAIN=1 PUBLIC_ADDRESS=192.168.1.20      # the address clients dial
-./run-local.sh start                            # MySQL, j-redis and the backend; no nginx
-./dev-backend.sh test                           # two bots: http://, ws://, a plain match
+./run-local.sh start                            # MySQL, j-redis, the backend, nginx plain on 80 and 9001
+./dev-backend.sh test                           # two bots through nginx: http://, ws://, a plain match
+sudo PLAIN=1 PUBLIC_ADDRESS=192.168.1.20 ./dev-nginx.sh start    # nginx by sudo: give it PLAIN, which sudo drops
 ```
 
-| | Plain | Through nginx (§5.0) |
+| | Plain, development | TLS, here and on the site |
 |---|---|---|
-| The player API | `http://<address>:8080/v1/...` | `https://<address>/v1/...` |
-| The lobby | `ws://<address>:8081/lobby` | `wss://<address>/lobby` |
-| Matches | `<address>:9021`, plain | `<address>:9001`, TLS by the arena's name |
-| The firewall | 8080, 8081 and 9021 | 80, 443 and 9001 |
+| The player API | `http://<address>/v1/...` (80) | `https://<address>/v1/...` (443) |
+| The lobby | `ws://<address>/lobby` (80) | `wss://<address>/lobby` (443) |
+| Matches | `<address>:9001`, plain, to the one arena | `<address>:9001`, TLS, routed by the arena's name |
+| The firewall | 80 and 9001 | 443 and 9001 (80 too here, a redirect; on the site closed) |
+| What the app is given | those two URLs, no root certificate | those two URLs and `ca.pem` |
+
+**The app goes from one to the other by its settings alone**: `BackendClient`'s API endpoints and lobby URL, and its
+root certificate. Whether a match is TLS is the grant's, which the backend sets, so nothing else changes in the app
+or the backend. Without TLS there is no name to route by, so 9001 reaches one arena, the run by hand's one.
+`dev-nginx.sh status` says which way nginx runs, and `dev-backend.sh test` refuses an nginx running the other way,
+as one started by `sudo` without `PLAIN=1` would.
 
 Everything crosses the network in clear: passwords, session tokens and join tickets, readable and usable by
-anyone on it, so a network you trust alone. The app's build for it must accept `http://` and `ws://`, which the
-app for players refuses (08 §8): on Android, a development build that allows cleartext. Nothing of the front is
-checked this way; the site's is §5.0's.
+anyone on it, so a network you trust alone. The package's scripts take `http://` and `ws://` as given: refusing
+them in the players' build is the layer above's, not built ([08 §5](../detailed-design/08-client.md#5-the-lobby-and-the-api), DOC-40), so that build is given
+`https://` and `wss://` alone. Android may refuse plain HTTP to an app not built to allow it, which is not checked
+here (no Unity): a development build that allows cleartext, if it does.
 
 ### 5.1 Trying each interface
 

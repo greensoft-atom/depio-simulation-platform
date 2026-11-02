@@ -4015,6 +4015,30 @@ image lacks) starts no process that has a secret: the units' `LoadCredential=` i
 So RHEL 8 runs the binaries, not the install; production stays RHEL 9 (Q-56). Docs: D-100, D-77's pointer, Q-63,
 DOC-39, O-90, O-92, design 09, vendor's README and VERSIONS, development/02 and 03, docs/README, CLAUDE.md.
 
+#### 120. ~~A plain run by hand goes through nginx: 80 and 9001 without TLS (the owner, 2026-11-02, D-101).~~ — **done 2026-11-02**
+
+The owner, correcting item 118: plain in development, but through nginx to the processes as on the site, and TLS in
+production for the backend and the app. `PLAIN=1` now: `dev-nginx.sh` writes the release's configuration with TLS
+taken out (443's server plain on 80, 9001 passed to the one arena, no 443, no certificate) and records its way;
+`dev-backend.sh` keeps the four on 127.0.0.1, the arena announcing nginx's 9001 without a TLS name, its `test` and
+`bots` through nginx, refusing an nginx started the other way (`sudo` drops `PLAIN`); `run-local.sh` runs nginx in both
+ways. D-99's way without nginx is gone. Nothing in Java or the client changed: the app goes from plain to TLS by its
+settings, a match's TLS being the grant's. **Tested**: test first, as `devtest` in its namespace (its threshold
+lowered to 80 for the run), a phone in another on a veth: 10 failures against item 118's scripts; after, 0: nginx on
+every address on 80 and 9001 alone, the processes on loopback alone, no certificate, `dev-nginx.sh test` 200 through
+80, `dev-backend.sh test`'s bots through nginx (nginx's logs: 2 logins, 2 lobby sockets, 2 matches to 127.0.0.1:9021)
+and again with the address not the machine's own to dial, from the phone `http://10.0.9.1/v1/` 200, 8080 unreachable,
+its bots through `ws://10.0.9.1/lobby` to a plain match on 10.0.9.1:9001; the other way's nginx named. Fifteen mutants,
+each caught (two of them, the bots past nginx for the API and dialling the address, by checks added for them). The TLS
+way after: its configuration byte for byte HEAD's, its flow 0 failed. The owner's way in Rocky 9, nginx as root with
+sudo's environment (`env -i`; the `sudo` binary itself not run): started without `PLAIN`, named with the line to give;
+given it, 0 failed. **Also answered**, the binaries carrying everything whatever the host: read from them, they take
+glibc 2.28, `libstdc++` (GLIBCXX 3.4.22) and `ncurses` 6 of the system, all three backward compatible, and systemd 247
+for the units; the C library stays the system's (NSS, locales; MySQL and the JDK have no static build), written in 09
+§4.2 with the three commands that check a host, and the install guide's §1. Found and fixed: DOC-40 (the app was said
+to refuse `http://`, which 08 §5 says is not built), DOC-41 (five places still saying nginx is built on Rocky 9). Docs:
+D-101, D-99 superseded, development/03 §5.0, 09 §4.2 and §5, 01, install guide §1, README, deploy/README, CLAUDE.md.
+
 ---
 
 ### Completed 2026-09-23

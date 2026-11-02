@@ -1427,6 +1427,18 @@ so, and which systems that leaves; read from the binaries, not run on the older 
 (plan item 119): MySQL's figure was its own binaries'; the `libnuma` beside them, RHEL 9's, needed 2.33, which the
 release's check in UBI 8 found. Since D-100 every binary is 2.28's, nginx built on Rocky 8 and both libraries RHEL 8's.
 
+**DOC-40, found 2026-11-02, FIXED the same day** (plan item 120, writing D-101). D-99 and the build guide's §5.0 said
+the app for players refuses `http://` and `ws://` (08 §8). 08 §5 says the opposite: refusing them is the layer
+above's, not in the package's scripts, which take whatever address they are given. Now the guide and D-101 say so:
+the players' build must be given `https://` and `wss://` alone, and whether Android lets plain HTTP through for an app
+not built to allow it is not checked here (no Unity). D-99, superseded, is left as written.
+
+**DOC-41, found 2026-11-02, FIXED the same day** (plan item 120, the owner asking whether the binaries could carry
+everything they need). Plan item 119 moved nginx's build to Rocky 8 and left five places saying otherwise: 09 §5's
+heading and first line (compiled for RHEL 9, in a Rocky 9 container), 01's paragraph on the release's nginx, the
+README's row for `vendor/`, `deploy/README`'s row for `nginx/` and `nginx.conf`'s first comment. Now each says Rocky 8
+and glibc 2.28, and 09 §4.2 what the binaries take of the system, read from them, and why the C library is not carried.
+
 ## 7. Documentation
 
 The audit found the documents have drifted from the code in ~60 places. The six

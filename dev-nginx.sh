@@ -6,9 +6,12 @@
 # 127.0.0.1:ARENA_PORT (dev-backend.sh). The certificate names PUBLIC_ADDRESS, 127.0.0.1 and the arena's name, from a
 # root of the backend's own CA (private-ca.sh) made once in work/nginx/ca and kept: clients trust
 # work/nginx/ca/ca.pem, and nothing else. 80 and 443 need root, or a lowered threshold; the workers run as nobody.
+# PLAIN=1 (D-101), for development alone: the same without TLS, the API and the lobby on NGINX_HTTP_PORT, matches on
+# NGINX_MATCH_PORT passed to the arena; no 443, no certificate.
 #
 #   ./dev-nginx.sh start | stop | restart | status
-#   ./dev-nginx.sh test      its configuration, 80's redirect, 443's and 9001's certificate, the platform behind it
+#   ./dev-nginx.sh test      its configuration, 80's redirect, 443's and 9001's certificate, the platform behind it;
+#                            plain: its configuration and the platform behind 80
 set -euo pipefail
 . "$(dirname "$0")/dev-env.sh"
 F=$WORK/nginx
@@ -18,7 +21,8 @@ CA=$F/ca/ca.pem
 # The URLs, with a port only when it is not the scheme's own.
 https_url=https://$PUBLIC_ADDRESS$([ "$NGINX_HTTPS_PORT" = 443 ] || echo ":$NGINX_HTTPS_PORT")
 http_url=http://$PUBLIC_ADDRESS$([ "$NGINX_HTTP_PORT" = 80 ] || echo ":$NGINX_HTTP_PORT")
-ports="$NGINX_HTTP_PORT, $NGINX_HTTPS_PORT and $NGINX_MATCH_PORT"
+ports="$NGINX_HTTP_PORT, $NGINX_HTTPS_PORT and $NGINX_MATCH_PORT" open=("$NGINX_HTTP_PORT" "$NGINX_HTTPS_PORT" "$NGINX_MATCH_PORT") mode=TLS
+[ "$PLAIN" != 1 ] || { ports="$NGINX_HTTP_PORT and $NGINX_MATCH_PORT" open=("$NGINX_HTTP_PORT" "$NGINX_MATCH_PORT") mode=plain; }
 
 # nginx's master, from this configuration: a pid left from before a reboot may be another process's.
 running() {
@@ -27,6 +31,9 @@ running() {
         && [[ $cmd == *"$F/conf/nginx.conf"* ]]
 }
 taken() { (exec 3<> "/dev/tcp/127.0.0.1/$1") 2> /dev/null; }
+all_taken() { local p; for p in "${open[@]}"; do taken "$p" || return 1; done; }
+# The way the running nginx was started, plain or TLS (D-101): sudo drops PLAIN from the shell (D-98).
+way() { cat "$F/mode" 2> /dev/null || echo TLS; }
 
 # A root made once and kept, so a client given ca.pem keeps trusting it; a certificate for the address, 127.0.0.1
 # and the arena's name, issued again when it does not name them, is not the root's, or ends within a day.
@@ -53,28 +60,36 @@ certificate() {
 # The release's configuration for this machine (D-92): its paths to work/nginx and the release, its upstreams to
 # this run's ports (each group's first server kept, the others dropped), its stream map to the arena's name alone,
 # to the local arena, its listen ports, server_name, what needs root or IPv6; and the server on 80, a redirect.
+# Plain (D-101): 443's server on 80 and 9001 without TLS, passed to the one arena (no name to route by), no redirect.
 rewrite() {
-    local out=$F/conf.new f user_line= to=https://\$host
+    local out=$F/conf.new f user_line= to=https://\$host redirect what plain=()
+    local https_listen="$NGINX_HTTPS_PORT ssl" match_listen="$NGINX_MATCH_PORT ssl"
     [ "$(id -u)" = 0 ] && user_line="user nobody $(id -gn nobody);"   # a user's nginx ignores the directive
     [ "$NGINX_HTTPS_PORT" = 443 ] || to=$to:$NGINX_HTTPS_PORT
+    redirect="\n    # Plain HTTP only sends a client to HTTPS, the method and the body kept (D-92).\n    server {\n        listen $NGINX_HTTP_PORT;\n        return 308 $to\$request_uri;\n    }\n"
+    what="the server on $NGINX_HTTP_PORT added"
+    if [ "$PLAIN" = 1 ]; then
+        https_listen=$NGINX_HTTP_PORT match_listen=$NGINX_MATCH_PORT redirect= what="TLS taken out (D-101)"
+        plain=(-e '/^[[:space:]]*ssl_/d' -e "s|^\([[:space:]]*\)proxy_pass \$backend_arena;|\1proxy_pass 127.0.0.1:$ARENA_PORT;|")
+    fi
     rm -rf "$out"; mkdir -p "$out" "$F/logs" "$F/temp"
     for f in "$R"/nginx-conf/*.conf; do
         { echo "# Written by dev-nginx.sh from the release's nginx-conf/${f##*/}, for this machine (D-92): paths,"
-          echo "# addresses and ports rewritten, and the server on $NGINX_HTTP_PORT added; the rest, the comments too, is production's."
+          echo "# addresses and ports rewritten, and $what; the rest, the comments too, is production's."
           sed -e "s|/etc/backend/nginx/|$F/conf/|g" \
               -e "s|/etc/backend/tls/fullchain\.pem|$F/tls/fullchain.pem|g" \
               -e "s|/etc/backend/credentials/privkey\.pem|$F/tls/privkey.pem|g" \
               -e "s|/var/log/backend-nginx/|$F/logs/|g" \
               -e "s|/run/backend-nginx/nginx\.pid|$F/nginx.pid|g" \
               -e "s|/opt/backend/nginx/conf/mime\.types|$R/nginx/conf/mime.types|g" \
-              -e "s|^\([[:space:]]*\)listen 443 ssl;|\1listen $NGINX_HTTPS_PORT ssl;|" \
-              -e "s|^\([[:space:]]*\)listen 9001 ssl;|\1listen $NGINX_MATCH_PORT ssl;|" \
+              -e "s|^\([[:space:]]*\)listen 443 ssl;|\1listen $https_listen;|" \
+              -e "s|^\([[:space:]]*\)listen 9001 ssl;|\1listen $match_listen;|" "${plain[@]}" \
               -e '/^[[:space:]]*listen \[::\]:/d' \
               -e "s|^\([[:space:]]*\)server_name 203\.0\.113\.10;|\1server_name $PUBLIC_ADDRESS;|" \
               -e '/^[[:space:]]*worker_rlimit_nofile /d' \
               -e "s|^\([[:space:]]*\)worker_connections [0-9]*;|\1worker_connections 1024;|" \
               -e "s|^user nginx;|$user_line|" \
-              -e "s|^http {|http {\n    client_body_temp_path $F/temp/client_body;\n    proxy_temp_path $F/temp/proxy;\n    # The workers, nobody, may not reach a checkout under /root: no response is buffered to a file.\n    proxy_max_temp_file_size 0;\n\n    # Plain HTTP only sends a client to HTTPS, the method and the body kept (D-92).\n    server {\n        listen $NGINX_HTTP_PORT;\n        return 308 $to\$request_uri;\n    }\n|" "$f" \
+              -e "s|^http {|http {\n    client_body_temp_path $F/temp/client_body;\n    proxy_temp_path $F/temp/proxy;\n    # The workers, nobody, may not reach a checkout under /root: no response is buffered to a file.\n    proxy_max_temp_file_size 0;\n$redirect|" "$f" \
           | awk -v gw="$GATEWAY_PORT" -v pf="$PLATFORM_PORT" -v arena="$ARENA_PORT" -v tls="$ARENA_TLS_NAME" -v file="${f##*/}" '
               BEGIN { port["backend_gateway"] = gw; port["backend_platform"] = pf }
               /^[ \t]*upstream[ \t]+[A-Za-z0-9_]+[ \t]*\{/ { up = $2; first = 1; print; next }
@@ -115,10 +130,12 @@ rewrite() {
 }
 
 firewall_line() {
+    local p fw= uf=
+    for p in "${open[@]}"; do fw+=" --add-port=$p/tcp"; uf+="${uf:+ && }sudo ufw allow $p/tcp"; done
     if command -v firewall-cmd > /dev/null; then
-        echo "sudo firewall-cmd --add-port=$NGINX_HTTP_PORT/tcp --add-port=$NGINX_HTTPS_PORT/tcp --add-port=$NGINX_MATCH_PORT/tcp   (again with --permanent to keep it)"
+        echo "sudo firewall-cmd$fw   (again with --permanent to keep it)"
     elif command -v ufw > /dev/null; then
-        echo "sudo ufw allow $NGINX_HTTP_PORT/tcp && sudo ufw allow $NGINX_HTTPS_PORT/tcp && sudo ufw allow $NGINX_MATCH_PORT/tcp"
+        echo "$uf"
     else
         echo "open $ports to the clients, if this machine has a firewall"
     fi
@@ -126,38 +143,44 @@ firewall_line() {
 
 case "${1:-}" in
 start)
-    [ "$PLAIN" != 1 ] || { echo "PLAIN=1 runs without nginx: the clients dial the processes themselves (D-99)" >&2; exit 1; }
     [[ $PUBLIC_ADDRESS =~ ^[A-Za-z0-9.-]+$ ]] \
         || { echo "PUBLIC_ADDRESS=$PUBLIC_ADDRESS: an IPv4 address or a host name, the one clients dial" >&2; exit 2; }
     [ -n "$R" ] && [ -x "$NGINX" ] || { echo "no release with nginx in backend/target/release: ./dev-backend.sh build first" >&2; exit 1; }
     # A machine whose C library is older than nginx's is told so, not that nginx refused its configuration (O-90).
     out=$("$NGINX" -v 2>&1) || { echo "$out" >&2; echo "the release's nginx does not run on this machine: it needs glibc 2.28" \
         "or later (docs/development/03 §1)" >&2; exit 1; }
-    command -v openssl > /dev/null || { echo "no openssl: it makes the certificate (private-ca.sh)" >&2; exit 1; }
+    [ "$PLAIN" = 1 ] || command -v openssl > /dev/null || { echo "no openssl: it makes the certificate (private-ca.sh)" >&2; exit 1; }
     if running; then
-        echo "nginx: already running, pid $(cat "$F/nginx.pid"), for $(cat "$F/address" 2> /dev/null); $0 restart to change it"
+        echo "nginx: already running, pid $(cat "$F/nginx.pid"), for $(cat "$F/address" 2> /dev/null), $(way); $0 restart to change it"
         exit 0
     fi
     # In use, or refused by a policy of the machine: named before anything starts (D-88)
-    BIND=0.0.0.0 "$B/backend/scripts/check-bind.sh" "$NGINX_HTTP_PORT" "$NGINX_HTTPS_PORT" "$NGINX_MATCH_PORT" || {
+    BIND=0.0.0.0 "$B/backend/scripts/check-bind.sh" "${open[@]}" || {
         echo "another port for it: NGINX_HTTP_PORT, NGINX_HTTPS_PORT or NGINX_MATCH_PORT, the same for every later command" >&2
         exit 1; }
     mkdir -p "$F"
-    certificate
+    [ "$PLAIN" = 1 ] || certificate
     rewrite
     "$NGINX" -t -q -p "$F/temp/" -c "$F/conf/nginx.conf" -e "$F/logs/error.log" \
         || { echo "nginx refused its configuration, work/nginx/conf: the lines above" >&2; exit 1; }
     "$NGINX" -p "$F/temp/" -c "$F/conf/nginx.conf" -e "$F/logs/error.log"
     for _ in $(seq 20); do
-        running && taken "$NGINX_HTTP_PORT" && taken "$NGINX_HTTPS_PORT" && taken "$NGINX_MATCH_PORT" && break; sleep 0.5
+        running && all_taken && break; sleep 0.5
     done
     running || { echo "nginx did not come up; its log, $F/logs/error.log, ends:" >&2; tail -5 "$F/logs/error.log" >&2; exit 1; }
-    echo "$PUBLIC_ADDRESS" > "$F/address"
-    echo "nginx: up on $ports, as $(id -un), pid $(cat "$F/nginx.pid"), for $PUBLIC_ADDRESS; its configuration in $F/conf"
-    echo "  the player API   $https_url/v1/   ($http_url/ redirects there)"
-    echo "  the lobby        wss://${https_url#https://}/lobby"
-    echo "  matches          $PUBLIC_ADDRESS:$NGINX_MATCH_PORT, TLS as $ARENA_TLS_NAME, to the arena on 127.0.0.1:$ARENA_PORT"
-    echo "  clients trust    $CA, and nothing else: copy it to them"
+    echo "$PUBLIC_ADDRESS" > "$F/address"; echo "$mode" > "$F/mode"
+    echo "nginx: up on $ports, as $(id -un), pid $(cat "$F/nginx.pid"), for $PUBLIC_ADDRESS, $mode; its configuration in $F/conf"
+    if [ "$PLAIN" = 1 ]; then
+        echo "  the player API   $http_url/v1/"
+        echo "  the lobby        ws://${http_url#http://}/lobby"
+        echo "  matches          $PUBLIC_ADDRESS:$NGINX_MATCH_PORT, plain, to the arena on 127.0.0.1:$ARENA_PORT"
+        echo "  in clear         for a network you trust alone: passwords, tokens and tickets cross it readable (D-101)"
+    else
+        echo "  the player API   $https_url/v1/   ($http_url/ redirects there)"
+        echo "  the lobby        wss://${https_url#https://}/lobby"
+        echo "  matches          $PUBLIC_ADDRESS:$NGINX_MATCH_PORT, TLS as $ARENA_TLS_NAME, to the arena on 127.0.0.1:$ARENA_PORT"
+        echo "  clients trust    $CA, and nothing else: copy it to them"
+    fi
     echo "  the firewall     $(firewall_line)" ;;
 stop)
     if running; then
@@ -174,12 +197,15 @@ restart)
     "$B/dev-nginx.sh" stop && exec "$B/dev-nginx.sh" start ;;       # by path: bash dev-nginx.sh gave a name alone (O-86)
 status)
     running || { echo "nginx: not running"; exit 1; }
-    echo "nginx: running, pid $(cat "$F/nginx.pid"), on $ports, for $(cat "$F/address" 2> /dev/null)"
-    echo "  certificate: $(openssl x509 -in "$F/tls/fullchain.pem" -noout -ext subjectAltName 2> /dev/null | tail -n +2 \
-        | sed 's/^[[:space:]]*//'), until $(openssl x509 -in "$F/tls/fullchain.pem" -noout -enddate | cut -d= -f2)"
-    echo "  clients trust $CA" ;;
+    echo "nginx: running, pid $(cat "$F/nginx.pid"), on $ports, for $(cat "$F/address" 2> /dev/null), $(way)"
+    if [ "$(way)" = TLS ]; then
+        echo "  certificate: $(openssl x509 -in "$F/tls/fullchain.pem" -noout -ext subjectAltName 2> /dev/null | tail -n +2 \
+            | sed 's/^[[:space:]]*//'), until $(openssl x509 -in "$F/tls/fullchain.pem" -noout -enddate | cut -d= -f2)"
+        echo "  clients trust $CA"
+    fi ;;
 test)
     running || { echo "FAILED  nginx is not running: $0 start"; exit 1; }
+    [ "$(way)" = "$mode" ] || { echo "FAILED  nginx runs $(way), and this command $mode: give both the same PLAIN (sudo drops it: sudo PLAIN=$PLAIN $0 restart)"; exit 1; }
     # nginx -t reads what nginx's own user may (its key, its pid file): as that user alone (D-98, O-91).
     owner=$(stat -c %U "/proc/$(cat "$F/nginx.pid")")
     if [ "$owner" = "$(id -un)" ]; then
@@ -191,6 +217,16 @@ test)
     fi
     # Each as a client dialling the address would see it, the connection made to 127.0.0.1.
     to127() { echo "--connect-to $PUBLIC_ADDRESS:$1:127.0.0.1:$1"; }
+    if [ "$PLAIN" = 1 ]; then
+        got=$(curl -sS --max-time 10 $(to127 "$NGINX_HTTP_PORT") -o /dev/null -w '%{http_code}' "$http_url/v1/content/classes" 2>&1 || true)
+        case $got in
+            200) echo "ok      $NGINX_HTTP_PORT: plain, and the platform answers through it (200)" ;;
+            502|504) echo "FAILED  $NGINX_HTTP_PORT: plain, but the platform behind it does not answer ($got): ./dev-backend.sh start"; exit 1 ;;
+            *) echo "FAILED  $NGINX_HTTP_PORT: $got"; exit 1 ;;
+        esac
+        echo "--      $NGINX_MATCH_PORT: plain, nothing to check without a match: ./dev-backend.sh test plays one through it"
+        exit 0
+    fi
     got=$(curl -sS --max-time 10 $(to127 "$NGINX_HTTP_PORT") -o /dev/null -w '%{http_code} %{redirect_url}' \
         "$http_url/v1/content/classes" 2>&1 || true)
     [ "$got" = "308 $https_url/v1/content/classes" ] || { echo "FAILED  $NGINX_HTTP_PORT: $got, not a 308 to $https_url/v1/content/classes"; exit 1; }

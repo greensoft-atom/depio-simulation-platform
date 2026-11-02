@@ -3142,6 +3142,9 @@ from `private-ca.sh`'s `umask 077`, which keeps its keys.
 
 ### D-99 — A plain run by hand: no TLS and no nginx, on every address, for development alone
 
+**Superseded by [D-101](#d-101--a-plain-run-by-hand-goes-through-nginx-as-the-site-does-80-and-9001-without-tls)** (2026-11-02): the owner meant plain through nginx, as the
+site is reached; this way, without it, is gone.
+
 **Decided 2026-11-02** (plan item 118; the owner: for development's simplicity, plain HTTP and socket requests).
 
 **Decision.** `PLAIN=1`, a setting of `dev-env.sh` as the ports are, given to every command:
@@ -3182,3 +3185,36 @@ glibc as new as the one it was built against, never older: built on 2.28, it run
 (musl) frees nginx alone, the release's floor still MySQL's; RHEL 9 alone leaves the owner's doubt standing.
 
 **Cost.** Rocky 8's compiler is GCC 8; RHEL 8's security support ends in 2029, its images remain for building.
+
+### D-101 — A plain run by hand goes through nginx, as the site does: 80 and 9001 without TLS
+
+**Decided 2026-11-02** (plan item 120; the owner, correcting D-99: plain in development, but through nginx to the
+backend's processes as on the site, and TLS in production for the backend and the app alike). **Supersedes
+[D-99](#d-99--a-plain-run-by-hand-no-tls-and-no-nginx-on-every-address-for-development-alone).**
+
+**Decision.** `PLAIN=1`, given to every command as before:
+- **`dev-nginx.sh`** writes the release's configuration with TLS taken out: the server production has on 443 listens
+  plain on `NGINX_HTTP_PORT` (80), with the same locations, the API, the lobby's WebSocket and the limits; 9001
+  passes plain connections to the arena on 127.0.0.1:`ARENA_PORT`; no 443, no certificate, no root, no `openssl`.
+  It records its way in `work/nginx/mode`, which `status` prints.
+- **`dev-backend.sh`**: the four on 127.0.0.1, as in the TLS way; the arena announces `PUBLIC_ADDRESS` and nginx's
+  `NGINX_MATCH_PORT` with no TLS name, so a grant says `tls: false`. Its `test` and `bots` go through nginx, plain,
+  and refuse an nginx running the other way: `sudo` drops `PLAIN` from the shell (D-98).
+- **`run-local.sh`** starts, stops and lists nginx in both ways.
+- The clients' endpoints: `http://<address>/v1/`, `ws://<address>/lobby`, matches `<address>:9001`; the firewall
+  80 and 9001. On the site, and in the TLS way here: `https://<address>/v1/`, `wss://<address>/lobby`, matches
+  `<address>:9001` over TLS; on the site 80 is closed (D-82).
+- **The app** goes from one to the other by its settings alone: `BackendClient`'s endpoints and lobby
+  (`http://` and `ws://`, or `https://` and `wss://`) and its root certificate (none for plain); a match's TLS is
+  the grant's, which the backend sets. Nothing in the client's core or the backend changes.
+
+**Why.** The owner wants development's path to be production's, nginx in front and the processes on loopback, with
+TLS the one difference: what the app dials differs by a scheme and a port, not by a shape (D-99's three ports of
+three processes).
+
+**Cost.** nginx needs root again for 80 (D-92: by `sudo`, or the threshold lowered), as in the TLS way. Without TLS
+there is no name to route by, so 9001 reaches one arena, the run by hand's one. Plaintext on the network, as D-99's:
+passwords, session tokens and join tickets readable, and usable first, by anyone on it, for a network one trusts.
+The package's scripts take `http://` and `ws://` as given, refusing them being the layer above's (08 §5, DOC-40): the
+players' build must be given `https://` and `wss://` alone, and a development build may have to allow cleartext on
+Android (not checked: no Unity here). D-99's way without nginx is gone, not kept beside it: one plain way.

@@ -56,7 +56,8 @@ export JDBC_URL=${JDBC_URL:-$DEV_JDBC_URL}
 STORE_PORT=${STORE_PORT:-6380} PLATFORM_PORT=${PLATFORM_PORT:-8080} GATEWAY_PORT=${GATEWAY_PORT:-8081}
 ARENA_PORT=${ARENA_PORT:-9021} ARENA_TLS_NAME=${ARENA_TLS_NAME:-a1.arena.internal}
 NGINX_HTTP_PORT=${NGINX_HTTP_PORT:-80} NGINX_HTTPS_PORT=${NGINX_HTTPS_PORT:-443} NGINX_MATCH_PORT=${NGINX_MATCH_PORT:-9001}
-# PLAIN=1: no TLS and no nginx, the platform, the gateway and the arena on every address, for development alone (D-99).
+# PLAIN=1: nginx and the arena without TLS, the API and the lobby on NGINX_HTTP_PORT, matches on NGINX_MATCH_PORT, for
+# development alone (D-101).
 PLAIN=${PLAIN:-0}
 # The address clients dial: the machine's first IPv4 address, unless given (hostname -I keeps no order, and
 # may give an IPv6 one first); 127.0.0.1 with none. Bash alone: the build needs no awk.

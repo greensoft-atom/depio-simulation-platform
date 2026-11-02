@@ -276,8 +276,8 @@ address and every arena's name. Before D-82 every machine's nginx served its own
 arenas were dialled directly
 ([D-5](../architecture/03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)).
 
-**The release's own nginx** (D-77, [09 §5](../detailed-design/09-release-and-packaging.md#5-nginx-compiled-for-rhel-9)):
-1.30.5, compiled for RHEL 9 with OpenSSL 3.5.9 built in, run by
+**The release's own nginx** (D-77, [09 §5](../detailed-design/09-release-and-packaging.md#5-nginx-compiled-for-glibc-228)):
+1.30.5, compiled on Rocky 8 for glibc 2.28 (D-100) with OpenSSL 3.5.9 built in, run by
 `backend-nginx.service` from `/opt/backend/nginx`, not the distribution's
 package. Checked 2026-10-05 in UBI 9.5 with nothing installed: proxying to the
 platform over HTTP and HTTPS (TLS 1.3), and `nginx -t` on the shipped
