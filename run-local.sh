@@ -17,7 +17,9 @@ case "${1:-}" in
 start)
     "$B/dev-mysql.sh" start; "$B/dev-jredis.sh" start; "$B/dev-backend.sh" start; "$B/dev-nginx.sh" start ;;
 stop)
-    "$B/dev-nginx.sh" stop; "$B/dev-backend.sh" stop; "$B/dev-jredis.sh" stop ;;
+    rc=0
+    for s in nginx backend jredis; do "$B/dev-$s.sh" stop || rc=1; done
+    exit $rc ;;                                       # each stopped that can be: nginx may be root's (D-98, O-91)
 restart)
     "$B/run-local.sh" stop && exec "$B/run-local.sh" start ;;       # by path: bash run-local.sh gave a name alone (O-86)
 status)

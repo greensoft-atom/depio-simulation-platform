@@ -3957,6 +3957,31 @@ judged harmless (variables read through `check`'s `eval`, `ls | grep` on names t
 O-65's, gone. Docs: D-95, 06 §7 and §10, the runbook's promotions and backups after a failover, 06-certificates,
 09 §1's COMMIT, the scripts README, the client READMEs, development/02 and 03, CLAUDE.md.
 
+#### 117. ~~The development scripts reviewed again, for the owner's machine (the owner, 2026-11-02).~~ — **done 2026-11-02**
+
+The owner: can `dev-*.sh` be used on their development machine as they are, without errors or changes; they look
+too complex; review them again. Their machine is RHEL 9. **What a machine needs**, read from the binaries: glibc
+2.34 for the release's nginx (built on Rocky 9), 2.28 for MySQL, whose client takes the machine's `libncurses.so.6`
+and `libtinfo.so.6`; the build guide said only "Linux on x86-64" (DOC-39, fixed). **Run as written**, from a fresh
+clone, offline, as a user who is not root: on this Ubuntu 24.04 in `devtest`'s namespace, and in Rocky 9.8 with the
+checkout under another path; each built (5 minutes), `run-local.sh start` stopping at 80 and 443 with their cause
+and its three ways round, nginx on moved ports, every script's `test` passing (the bots through nginx, TLS, a
+match), `restart`, `stop`, `status`; every nginx path followed the checkout. **Then the owner's own way**, nginx by
+`sudo` and the rest as the user, a home of 0700: nginx itself worked (a 6 KB body refused by its 4 KB limit before
+any file, so its workers, `nobody`, write nothing in the home), but the user could not read the dev root
+`ca.pem`, so the bots failed, `dev-nginx.sh test` failed at `nginx -t`, `status` printed a permission error, and
+`run-local.sh stop` stopped at nginx and left the backend and j-redis running (O-91, M). Test first, that case in
+Rocky 9: 7 failures; fixed (D-98: the CA's and certificate's directories 0755, the keys 0600; `test`'s `nginx -t`
+as nginx's own user alone; `stop` naming `sudo`; `run-local.sh stop` stopping each service it can): 0 failed. Six
+mutants, each caught: either directory left closed, `nginx -t` as anyone, `stop` giving up at nginx, `stop` saying
+nothing of `sudo`, the keys opened too. The user's own way again after: unchanged. Found, open: O-90 (L), a
+misleading line from `dev-nginx.sh` on a glibc older than 2.34, a three-line fix put to the owner. **Their
+complexity**, put to the owner: a quarter of the lines are comments and a sixth messages; most of the rest guards a
+defect found (O-46, O-83, O-85, O-86); the one complex part is `dev-nginx.sh`'s rewrite of production's nginx
+configuration (sed and two awk programs, about 60 lines), which a dev template of about 40 lines could replace at
+the cost of the dev front no longer being production's. Docs: D-98, O-90, O-91, DOC-39, development/02 and 03,
+CLAUDE.md.
+
 ---
 
 ### Completed 2026-09-23

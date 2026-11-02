@@ -1358,6 +1358,21 @@ the runbook says how to see and raise it (a step's failure there would be needed
 put every MySQL account's password on `mysql -e`'s command line, which any local user can read in `/proc` while it
 runs. **Fixed:** the statements on standard input. By the install guide's check, its restore among them.
 
+**O-90 (L), found 2026-11-02, OPEN** (plan item 117). On a machine whose glibc is older than nginx's 2.34 (DOC-39),
+`dev-nginx.sh start` ends with "nginx refused its configuration": the loader's own line above it names the cause,
+`GLIBC_2.34' not found`, and the script's says another. Not met on the machines the scripts are for (RHEL 9, Ubuntu
+22.04 and later). The fix, three lines: `nginx -v` tried before the configuration, its failure said as the release's
+nginx not running here, with §1's systems; put to the owner with item 117.
+
+**O-91 (M), found 2026-11-02, FIXED the same day** (plan item 117, run as the owner's machine is: Rocky 9, a home of
+0700, nginx by `sudo` on 80 and 443 and the rest as the user, D-92). Beside root's nginx the user could not read
+`work/nginx/ca/ca.pem`, which every client is given (the directory 0700, from `private-ca.sh`'s `umask 077`), so
+`dev-backend.sh test`'s bots failed (`keytool`: Permission denied); `dev-nginx.sh test` failed at its `nginx -t`,
+which cannot read root's files; `run-local.sh status` printed a permission error; and `run-local.sh stop` stopped at
+nginx, which the user may not signal, leaving the backend and j-redis running. Never seen here, where everything
+runs as root. **Fixed** (D-98): the two directories 0755, the keys still 0600; `test` checks the configuration only
+as nginx's own user and says `sudo` does it; `stop` names `sudo`; `run-local.sh stop` stops each service it can.
+
 **DOC-34, found 2026-11-01 by the same review, FIXED the same day** (plan item 111). Eight reviews of every
 document against the code, the units, the scripts and the release's configuration, each finding checked against
 its source before it was changed: the failure model without the front (a lost front is a lost site since D-82;
@@ -1395,6 +1410,13 @@ Seen first at a restart that set the mode (the two-machine page's first draft); 
 construction, the stream stopped while the step ran, after a mutant without the wait had passed. Now 01 §9 and the
 page flush the binary log once no transaction without a GTID is left and wait for the stream to hold the new file
 before `ON`; the page's step stops there if it does not, the server left in `ON_PERMISSIVE`.
+
+**DOC-39, found 2026-11-02, FIXED the same day** (plan item 117, the owner asking whether the development scripts run
+on their machine unchanged). The build guide's §1 asked for Linux on x86-64 and named no version. The release's nginx,
+built on Rocky 9, needs glibc 2.34 (its symbols, by `objdump -T`), so `dev-nginx.sh` and `run-local.sh` cannot run on
+Ubuntu 20.04, Debian 11 or RHEL 8, which are 2.31 and 2.28; MySQL needs 2.28 and the machine's `libstdc++`, and its
+client, which `dev-mysql.sh` runs at every start, the machine's `libncurses.so.6` and `libtinfo.so.6`. Now §1 says
+so, and which systems that leaves; read from the binaries, not run on the older systems.
 
 ## 7. Documentation
 

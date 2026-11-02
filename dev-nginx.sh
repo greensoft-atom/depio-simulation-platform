@@ -35,15 +35,19 @@ certificate() {
     [ "$PUBLIC_ADDRESS" = 127.0.0.1 ] || names+=(127.0.0.1)
     names+=("$ARENA_TLS_NAME")
     [ -f "$CA" ] || "$B/backend/scripts/private-ca.sh" root "$F/ca" > /dev/null
+    # Its directories open to every user, the keys kept 0600: a user's run beside root's nginx reads the root that
+    # clients trust, and the certificate (D-98, O-91). Only by their owner: another's are left as they are.
+    [ ! -O "$F/ca" ] || chmod 755 "$F/ca"
     if [ -f "$F/tls/fullchain.pem" ] && openssl verify -CAfile "$CA" "$F/tls/fullchain.pem" > /dev/null 2>&1 \
         && openssl x509 -in "$F/tls/fullchain.pem" -noout -checkend 86400 > /dev/null; then
         alt=$(openssl x509 -in "$F/tls/fullchain.pem" -noout -ext subjectAltName 2> /dev/null | tail -n +2 \
             | tr ',' '\n' | sed 's/^[[:space:]]*//')
         for n in "${names[@]}"; do grep -q -x -F -e "IP Address:$n" -e "DNS:$n" <<< "$alt" || break; done
-        grep -q -x -F -e "IP Address:$n" -e "DNS:$n" <<< "$alt" && return
+        grep -q -x -F -e "IP Address:$n" -e "DNS:$n" <<< "$alt" && { [ ! -O "$F/tls" ] || chmod 755 "$F/tls"; return; }
     fi
     rm -rf "$F/tls"
     "$B/backend/scripts/private-ca.sh" issue "$F/ca" "$F/tls" "${names[@]}" > /dev/null
+    chmod 755 "$F/tls"
 }
 
 # The release's configuration for this machine (D-92): its paths to work/nginx and the release, its upstreams to
@@ -153,7 +157,9 @@ start)
     echo "  the firewall     $(firewall_line)" ;;
 stop)
     if running; then
-        pid=$(cat "$F/nginx.pid"); kill "$pid"
+        pid=$(cat "$F/nginx.pid")
+        kill "$pid" 2> /dev/null \
+            || { echo "nginx: runs as $(stat -c %U "/proc/$pid"), pid $pid, which $(id -un) may not stop: sudo $0 stop" >&2; exit 1; }
         for _ in $(seq 20); do running || break; sleep 0.5; done
         if running; then echo "nginx: still running after 10 s, pid $pid" >&2; exit 1; fi
         echo "nginx: stopped"
@@ -170,9 +176,15 @@ status)
     echo "  clients trust $CA" ;;
 test)
     running || { echo "FAILED  nginx is not running: $0 start"; exit 1; }
-    "$NGINX" -t -q -p "$F/temp/" -c "$F/conf/nginx.conf" -e "$F/logs/error.log" \
-        || { echo "FAILED  the configuration: nginx -t, the lines above"; exit 1; }
-    echo "ok      the configuration: nginx -t"
+    # nginx -t reads what nginx's own user may (its key, its pid file): as that user alone (D-98, O-91).
+    owner=$(stat -c %U "/proc/$(cat "$F/nginx.pid")")
+    if [ "$owner" = "$(id -un)" ]; then
+        "$NGINX" -t -q -p "$F/temp/" -c "$F/conf/nginx.conf" -e "$F/logs/error.log" \
+            || { echo "FAILED  the configuration: nginx -t, the lines above"; exit 1; }
+        echo "ok      the configuration: nginx -t"
+    else
+        echo "--      the configuration: nginx runs as $owner, whose nginx -t it is: sudo $0 test"
+    fi
     # Each as a client dialling the address would see it, the connection made to 127.0.0.1.
     to127() { echo "--connect-to $PUBLIC_ADDRESS:$1:127.0.0.1:$1"; }
     got=$(curl -sS --max-time 10 $(to127 "$NGINX_HTTP_PORT") -o /dev/null -w '%{http_code} %{redirect_url}' \

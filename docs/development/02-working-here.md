@@ -130,7 +130,9 @@ image, which is RHEL 9's own userspace (plan item 80).
   run on this VM could have met (O-46, 2026-10-26). A port above 1023 is any user's on Linux, so such a
   refusal is the machine's policy (the threshold `net.ipv4.ip_unprivileged_port_start`, a login SELinux
   confines, WSL's reserved ranges), which `check-bind.sh` names before anything starts (D-88). What must
-  work for a user who is not root is run as `devtest`, in its namespace (§3).
+  work for a user who is not root is run as `devtest`, in its namespace (§3). **So is the owner's way on RHEL 9**,
+  nginx by `sudo` and the rest as the user, in a Rocky 9 container with a home of 0700: run only as root here, root's
+  nginx shut the user out of the dev root CA and its own `stop` (O-91, 2026-11-02, D-98).
 - **A failing test reads like a plugin that could not be fetched.** Maven's last line
   after test failures is `Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:…`.
   On a clone, `build-offline.sh`'s database tests once went to 127.0.0.1:3306 and failed

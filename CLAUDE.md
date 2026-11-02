@@ -172,7 +172,8 @@ for the backend, its docs and its client.
 - **Nothing on a development machine needs root but `dev-nginx.sh` on 80 and 443** (D-92: the owner runs it as
   root, its workers as `nobody`; moved ports for anyone else), and everything here runs as root, so a policy that
   refuses a port to a user never shows (O-46): what must work for a user who is not root is run as
-  `devtest`, in its network namespace (working-here §3), where the port threshold can be raised alone. SELinux is
+  `devtest`, in its network namespace (working-here §3), where the port threshold can be raised alone; and the
+  owner's RHEL 9 way, nginx by `sudo` beside the user's rest, in a Rocky 9 container with a home of 0700 (O-91, D-98). SELinux is
   seen in a Rocky 9 guest alone (`check-selinux-el9.sh`, D-90): a confined login refuses every port above 1023 while
   `selinuxuser_tcp_server` is off, and the grant is the login's, the boolean, a module or the mapping, never the binary's.
 - **A race the owner's machine shows and this VM's cores hide is not waited for**: a test that fails in the

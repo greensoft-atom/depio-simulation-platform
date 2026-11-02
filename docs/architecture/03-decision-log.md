@@ -3116,3 +3116,25 @@ layout agree.
 **Cost.** One restart of A's platform (requests refused for seconds) for the watch's new targets; nothing else on A
 restarts. After A's loss, half the places. B's machine itself (its disks, memory, load) is still read by nothing
 until its platform runs: what fails there shows as its arenas or its replicas down, on A's watch.
+
+### D-98 — nginx run by root beside a user's run by hand: what that user needs of it is theirs to read
+
+**Decided 2026-11-02** (plan item 117; O-91: the owner's machine is RHEL 9, where 80 and 443 are root's and a home
+is 0700).
+
+**Decision.** D-92's way stays: `sudo ./dev-nginx.sh start` for the site's ports, everything else as the user. What
+that user then needs of root's nginx works as that user:
+- **The root CA's and the certificate's directories are 0755** (`work/nginx/ca`, `work/nginx/tls`): `ca.pem`, which
+  every client is given, and `fullchain.pem`, which `status` reads, readable by the user; the keys stay 0600, root's.
+- **`test`** checks nginx's configuration only as the user nginx runs as, and says `sudo ./dev-nginx.sh test` checks
+  it; the rest of `test`, which any client could do, runs as anyone.
+- **`stop`** of another user's nginx says it needs `sudo`, and `run-local.sh stop` stops every service it can,
+  ending 1 if one was not stopped, where it gave up at the first.
+- **`sudo` resets the environment**: the guide gives the settings on `sudo`'s command line.
+
+**Why.** Lowering the port threshold (`ip_unprivileged_port_start`) once needs no root after and is the simplest for one
+person's machine, and `check-bind.sh` already offers it; but it changes the machine for every user, which D-92 left
+to the owner, and the owner runs nginx as root. A CA's certificate is public by nature: the directory was 0700 only
+from `private-ca.sh`'s `umask 077`, which keeps its keys.
+
+**Cost.** Any user of the development machine can read the dev root's certificate, as every phone it is given can.

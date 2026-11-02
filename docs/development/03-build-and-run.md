@@ -32,7 +32,7 @@ day. Commands run from the repository's root.
 
 | For | Needs |
 |---|---|
-| Building, testing, running and debugging the backend | Linux on x86-64 with bash, coreutils, findutils, `sed`, `tar` and `gzip`; for nginx in front of a run by hand (§5.0), `openssl`, `curl` for its `test`, and `hostname` for the default address. No Java, Maven, MySQL or network. |
+| Building, testing, running and debugging the backend | Linux on x86-64 with bash, coreutils, findutils, `sed`, `tar` and `gzip`; for nginx in front of a run by hand (§5.0), `openssl`, `curl` for its `test`, and `hostname` for the default address. No Java, Maven, MySQL or network. **glibc 2.34 or later** for the release's nginx, built on Rocky 9: RHEL 9 and its rebuilds, Ubuntu 22.04, Debian 12 and later; MySQL needs 2.28, `libstdc++`, and for its client the machine's `libncurses.so.6` and `libtinfo.so.6` (`ncurses-libs` on RHEL 9, `libncurses6` on Ubuntu), which every install but the smallest has ([DOC-39](../defects.md#7-documentation)). Run as written as a user who is not root on Ubuntu 24.04 and Rocky 9.8, from a fresh clone, with no network. |
 | The checks on RHEL 9, and compiling nginx again | Docker |
 | The client, the Unity package and the drills | the .NET 8 SDK, which the repository does not carry (§7) |
 
@@ -343,6 +343,15 @@ site's ports and every IPv4 address.
 **80 and 443 need root**, or a lowered threshold; its workers run as `nobody`. As another
 user, move them (9001 too, by choice), for `dev-nginx.sh` and `dev-backend.sh` alike, whose arena announces
 nginx's: `export NGINX_HTTP_PORT=8088 NGINX_HTTPS_PORT=8443 NGINX_MATCH_PORT=9443`.
+
+**nginx as root, the rest as yourself** (D-92, [D-98](../architecture/03-decision-log.md#d-98--nginx-run-by-root-beside-a-users-run-by-hand-what-that-user-needs-of-it-is-theirs-to-read)), as on RHEL 9 with a home of 0700: `./run-local.sh start`
+starts the rest and stops at nginx, naming the ports; then `sudo ./dev-nginx.sh start`, and `sudo ./dev-nginx.sh stop`
+at the end. Everything else stays yours: you read `work/nginx/ca/ca.pem` and the certificate, `./dev-nginx.sh test`
+checks all but the configuration, which `sudo ./dev-nginx.sh test` checks too, and `./run-local.sh stop` stops the
+rest and names `sudo` for nginx. **`sudo` drops your shell's settings**: give them on its line,
+`sudo PUBLIC_ADDRESS=192.168.1.20 ./dev-nginx.sh start` (and `NGINX_MATCH_PORT`, `ARENA_PORT` or `ARENA_TLS_NAME` if
+you changed them). Or lower the threshold once, `sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80` and that
+line in `/etc/sysctl.d/`, and run nginx as yourself too: it changes the line for every user of the machine.
 
 **The address** is `PUBLIC_ADDRESS`, this machine's first IPv4 address (`hostname -I`) unless
 given: the certificate names it and the arena announces it. `hostname -I` keeps no order, so read
