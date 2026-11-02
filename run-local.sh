@@ -9,13 +9,14 @@
 #   ./run-local.sh status     each
 #
 # One service alone, or one process of the backend, is its own script's: ./dev-backend.sh restart platform. The
-# settings are the same for each (dev-env.sh); give every command the same.
+# settings are the same for each (dev-env.sh); give every command the same. PLAIN=1: no nginx (D-99).
 set -euo pipefail
 B=$(cd "$(dirname "$0")" && pwd)
+nginx=nginx; [ "${PLAIN:-0}" != 1 ] || nginx=      # plain: none to start or list; stop still stops one left from before
 
 case "${1:-}" in
 start)
-    "$B/dev-mysql.sh" start; "$B/dev-jredis.sh" start; "$B/dev-backend.sh" start; "$B/dev-nginx.sh" start ;;
+    for s in mysql jredis backend $nginx; do "$B/dev-$s.sh" start; done ;;
 stop)
     rc=0
     for s in nginx backend jredis; do "$B/dev-$s.sh" stop || rc=1; done
@@ -24,7 +25,7 @@ restart)
     "$B/run-local.sh" stop && exec "$B/run-local.sh" start ;;       # by path: bash run-local.sh gave a name alone (O-86)
 status)
     rc=0
-    for s in nginx backend jredis mysql; do "$B/dev-$s.sh" status || rc=1; done
+    for s in $nginx backend jredis mysql; do "$B/dev-$s.sh" status || rc=1; done
     exit $rc ;;                                       # each one's own: a service down is not 0 (O-86)
 *)
     echo "usage: $0 start | stop | restart | status" >&2; exit 2 ;;

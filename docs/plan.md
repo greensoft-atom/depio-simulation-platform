@@ -3982,6 +3982,29 @@ configuration (sed and two awk programs, about 60 lines), which a dev template o
 the cost of the dev front no longer being production's. Docs: D-98, O-90, O-91, DOC-39, development/02 and 03,
 CLAUDE.md.
 
+#### 118. ~~A plain run by hand: HTTP, WebSocket and matches without TLS, no nginx (the owner, 2026-11-02, D-99).~~ — **done 2026-11-02**
+
+The owner: for development's simplicity, plain HTTP and socket requests possible. `PLAIN=1`, a setting of
+`dev-env.sh`: `dev-backend.sh` binds the platform, the gateway and the arena on every address, the arena announcing
+`PUBLIC_ADDRESS` and its own port without a TLS name (so a grant says `tls: false`, which the arena, the bots and the
+C# client already honoured), prints the clients' endpoints, and plays its `test` and `bots` straight; `run-local.sh`
+starts and lists no nginx; `dev-nginx.sh start` refuses. Nothing in Java changed, nor the release's units.
+**Tested**: test first, as a user who is not root in `devtest`'s namespace, a second namespace on a veth as a phone
+on the network: 9 failures against the scripts before (nginx refused on 80 and 443, the arena announcing nginx's
+port, nothing on every address, the bots wanting nginx, the phone unreachable); after, 0: started with no root and
+no nginx, the three on every address, `dev-backend.sh test`'s bots plain, from the phone `http://10.0.9.1:8080` 200
+and its bots through `ws://` to a plain match on `10.0.9.1:9021`, `status` and `stop`. Seven mutants, each caught:
+the bind left on loopback, the arena still announcing nginx's, nginx started, `dev-nginx.sh` not refusing, the bots
+asking for nginx's root, `test` asking for nginx, `status` listing it. The nginx way after, as the user and by
+`sudo` in Rocky 9: unchanged, 0 failed. Docs: D-99, development/03 §5.0, README. Not checked: an Android build
+allowing cleartext (no Unity here; D-99's cost).
+
+#### 119. The release's nginx built on Rocky 8: glibc 2.28, the release's floor MySQL's (the owner, 2026-11-02, D-100).
+
+The owner, unsure the hosting machine has glibc 2.34, chose nginx built on Rocky 8 over a static build or RHEL 9
+alone. The release then runs on RHEL 8 and 9 and what has glibc 2.28; checked in UBI 8 and UBI 9. O-90's message
+with it.
+
 ---
 
 ### Completed 2026-09-23

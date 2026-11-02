@@ -3138,3 +3138,42 @@ to the owner, and the owner runs nginx as root. A CA's certificate is public by 
 from `private-ca.sh`'s `umask 077`, which keeps its keys.
 
 **Cost.** Any user of the development machine can read the dev root's certificate, as every phone it is given can.
+
+### D-99 — A plain run by hand: no TLS and no nginx, on every address, for development alone
+
+**Decided 2026-11-02** (plan item 118; the owner: for development's simplicity, plain HTTP and socket requests).
+
+**Decision.** `PLAIN=1`, a setting of `dev-env.sh` as the ports are, given to every command:
+- **`dev-backend.sh`** binds the platform (8080), the gateway (8081) and the arena (9021) on every address, and the
+  arena announces `PUBLIC_ADDRESS` and its own port with no TLS name: a grant then says `tls: false`, and a client
+  dials it plain, as the arena allows without a keystore (01 §8). Its `test` and `bots` play straight: the API on
+  `http://`, the lobby on `ws://`, the match on the arena's port.
+- **`run-local.sh`** starts, stops and lists no nginx; **`dev-nginx.sh start`** refuses, as nothing would pass
+  through it.
+- The clients' endpoints, printed at the start: `http://<address>:8080/v1/`, `ws://<address>:8081/lobby`, matches
+  `<address>:9021`.
+
+**Why.** One person's machine with no certificate to make and trust, no root for 80 and 443, one process fewer. The
+backend already speaks plaintext on each of these ports; only the run by hand put nginx in front, as the site does
+(D-82, D-92), and that stays the default.
+
+**Cost.** Plaintext on the network: passwords, session tokens and join tickets readable, and usable first, by
+anyone on it; for a network one trusts. An app built for it must accept `http://` and `ws://`, which the app for
+players refuses (08 §8): on Android, a development build allowing cleartext. What the run by hand checks of the
+front (nginx's configuration, its TLS, its routing by name) is not checked in this mode.
+
+### D-100 — The release's nginx is built on Rocky 8: glibc 2.28, the floor MySQL already sets
+
+**Decided 2026-11-02** (plan item 119; the owner, not sure the hosting machine has glibc 2.34, chose this over a
+static nginx and over RHEL 9 alone).
+
+**Decision.** `vendor/build-nginx.sh` compiles nginx in a Rocky Linux 8 container, OpenSSL, PCRE2 and zlib compiled
+in as before. Every native binary of the release then needs glibc 2.28 at most: MySQL's own build is 2.28, the
+runtime 2.2.5. The release runs on RHEL 8 and 9 and their rebuilds, Ubuntu 20.04 and later, Debian 10 and later;
+it is checked in UBI 8 and UBI 9. Production's target stays RHEL 9 (Q-56).
+
+**Why.** nginx links nothing of the machine's but the C library, and glibc's symbol versions run a binary on every
+glibc as new as the one it was built against, never older: built on 2.28, it runs where MySQL does. A static build
+(musl) frees nginx alone, the release's floor still MySQL's; RHEL 9 alone leaves the owner's doubt standing.
+
+**Cost.** Rocky 8's compiler is GCC 8; RHEL 8's security support ends in 2029, its images remain for building.

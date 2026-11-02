@@ -126,6 +126,7 @@ firewall_line() {
 
 case "${1:-}" in
 start)
+    [ "$PLAIN" != 1 ] || { echo "PLAIN=1 runs without nginx: the clients dial the processes themselves (D-99)" >&2; exit 1; }
     [[ $PUBLIC_ADDRESS =~ ^[A-Za-z0-9.-]+$ ]] \
         || { echo "PUBLIC_ADDRESS=$PUBLIC_ADDRESS: an IPv4 address or a host name, the one clients dial" >&2; exit 2; }
     [ -n "$R" ] && [ -x "$NGINX" ] || { echo "no release with nginx in backend/target/release: ./dev-backend.sh build first" >&2; exit 1; }

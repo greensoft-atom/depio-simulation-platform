@@ -370,6 +370,28 @@ the build for these phones carries this `ca.pem` (`BackendClient`'s root certifi
 is reached by its host alone: give it bridged networking, or have the host forward the
 three ports.
 
+**Plain, without TLS and without nginx** ([D-99](../architecture/03-decision-log.md#d-99--a-plain-run-by-hand-no-tls-and-no-nginx-on-every-address-for-development-alone)), for development alone: `PLAIN=1` given to every
+command. The platform, the gateway and the arena listen on every address, and the arena announces this machine's
+address and its own port without TLS; no certificate, no root, no nginx.
+
+```bash
+export PLAIN=1 PUBLIC_ADDRESS=192.168.1.20      # the address clients dial
+./run-local.sh start                            # MySQL, j-redis and the backend; no nginx
+./dev-backend.sh test                           # two bots: http://, ws://, a plain match
+```
+
+| | Plain | Through nginx (§5.0) |
+|---|---|---|
+| The player API | `http://<address>:8080/v1/...` | `https://<address>/v1/...` |
+| The lobby | `ws://<address>:8081/lobby` | `wss://<address>/lobby` |
+| Matches | `<address>:9021`, plain | `<address>:9001`, TLS by the arena's name |
+| The firewall | 8080, 8081 and 9021 | 80, 443 and 9001 |
+
+Everything crosses the network in clear: passwords, session tokens and join tickets, readable and usable by
+anyone on it, so a network you trust alone. The app's build for it must accept `http://` and `ws://`, which the
+app for players refuses (08 §8): on Android, a development build that allows cleartext. Nothing of the front is
+checked this way; the site's is §5.0's.
+
 ### 5.1 Trying each interface
 
 | Interface | Where, on a run by hand | Try it with |
