@@ -6,14 +6,14 @@ operating system but its base (D-77,
 [09](../docs/detailed-design/09-release-and-packaging.md)). What each piece is,
 its version and where it came from: [VERSIONS.md](VERSIONS.md).
 
-| Directory | Used by | For |
-|---|---|---|
-| `jdk-21/` | `build-offline.sh`, `make-release.sh`, you | compiling and testing; `jlink` makes each release's runtime from its `jmods/` |
-| `maven-3.9/` | `build-offline.sh`, you | the build |
-| `mysql-8.4/` | `make-release.sh` (the release's `mysql/`), the tests, the drills | the database, its server and its tools |
-| `nginx-1.30/` | `make-release.sh` (the release's `nginx/`) | the TLS edge |
-| `src/` | `build-nginx.sh` | compiling nginx again |
-| `update.sh`, `build-nginx.sh` | whoever moves a version | refreshing the above |
+| Directory                     | Used by                                                           | For                                                                           |
+| ----------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `jdk-21/`                     | `build-offline.sh`, `make-release.sh`, you                        | compiling and testing; `jlink` makes each release's runtime from its `jmods/` |
+| `maven-3.9/`                  | `build-offline.sh`, you                                           | the build                                                                     |
+| `mysql-8.4/`                  | `make-release.sh` (the release's `mysql/`), the tests, the drills | the database, its server and its tools                                        |
+| `nginx-1.30/`                 | `make-release.sh` (the release's `nginx/`)                        | the TLS edge                                                                  |
+| `src/`                        | `build-nginx.sh`                                                  | compiling nginx again                                                         |
+| `update.sh`, `build-nginx.sh` | whoever moves a version                                           | refreshing the above                                                          |
 
 Every binary here runs on glibc 2.28, RHEL 8's, and so on RHEL 9 and Ubuntu 24.04 (D-100), and every
 file is under GitHub's 100 MB limit.
@@ -69,11 +69,15 @@ not change with a fix.
 The operating system's updates do not reach anything here: watching for fixes is
 ours, monthly ([runbook §6](../docs/operations/02-runbook.md#6-routine)).
 
-| What | Where its advisories are |
-|---|---|
-| Temurin 21 | https://adoptium.net/temurin/release-notes (quarterly updates) |
-| MySQL 8.4 | Oracle's Critical Patch Updates, https://www.oracle.com/security-alerts/ (quarterly) |
-| nginx | https://nginx.org/en/security_advisories.html |
-| OpenSSL 3.5 | https://openssl-library.org/news/vulnerabilities/ |
-| PCRE2, zlib | their release notes, on GitHub and zlib.net |
-| libaio, numactl (RHEL 8's) | Red Hat's errata for those packages |
+| What                       | Where its advisories are                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------ |
+| Temurin 21                 | https://adoptium.net/temurin/release-notes (quarterly updates)                       |
+| MySQL 8.4                  | Oracle's Critical Patch Updates, https://www.oracle.com/security-alerts/ (quarterly) |
+| nginx                      | https://nginx.org/en/security_advisories.html                                        |
+| OpenSSL 3.5                | https://openssl-library.org/news/vulnerabilities/                                    |
+| PCRE2, zlib                | their release notes, on GitHub and zlib.net                                          |
+| libaio, numactl (RHEL 8's) | Red Hat's errata for those packages                                                  |
+
+## On your custom OS, add one more check to the three I gave you earlier:
+
+`ls /usr/lib64/libstdc++.so.6 /usr/lib64/libncurses.so.6 /usr/lib64/libtinfo.so.6 # all three should exist`
