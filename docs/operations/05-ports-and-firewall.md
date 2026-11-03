@@ -198,7 +198,52 @@ firewall allows both, because each machine opens its ports to both of the others
 
 ### From the internet
 
-Players connect to the front's 443 and 9001, nothing else.
+Players connect to the front's 443 and 9001, nothing else. The app opens three connections, each to the site's one
+public address and each through nginx, which ends their TLS: the API, the lobby and a match. On the launch's one
+machine:
+
+```
+ the app                                 the front (one public address, 203.0.113.10)
+ ① API    https://203.0.113.10/v1/...  ─▶ :443  nginx, TLS ended ──▶ platform  127.0.0.1:8080
+ ② lobby  wss://203.0.113.10/lobby     ─▶ :443  nginx, TLS ended ──▶ gateway   127.0.0.1:8090 ──▶ platform
+ ③ match  TLS to 203.0.113.10:9001     ─▶ :9001 nginx, TLS ended ──▶ arena a1  127.0.0.1:9011
+          (name given: a1.arena.internal)       the arena by that name        a2 :9012, a3 :9013
+```
+
+| Route | The app dials | Its TLS checks | nginx | Then | Limits and waits |
+|---|---|---|---|---|---|
+| ① the API | `https://203.0.113.10/v1/…` | the address, in the certificate | `backend.conf`: `/v1/` to the platforms, anything else 404 | the platform (`backend_platform`) | 4 KiB a body, nginx's and the platform's; `POST` to `/v1/sessions`, `/v1/accounts`, `/v1/guests`, `/v1/accounts/upgrade` 2 a second an address, 30 at once, then 429; the app waits 10 s, nginx 15 s |
+| ② the lobby | `wss://203.0.113.10/lobby` | the address | `location = /lobby`, the WebSocket's upgrade passed on | the gateway with the fewest (`backend_gateway`), which calls its machine's platform | the session token within 5 s; a ping every 30 s; the gateway closes a lobby silent for 120 s, nginx at 150 s |
+| ③ a match | TCP to `203.0.113.10:9001`, TLS giving the grant's `tlsName` | `tlsName` (`a1.arena.internal`), in the certificate | `backend-stream.conf`: the arena the name maps to; a name not mapped, or none, closed | the arena, plaintext, with the grant's single-use ticket | 5 s to dial; the arena drops a connection after 30 s without a frame, nginx at 60 s |
+
+**The order of a session.** A guest made on the first launch (`POST /v1/guests`), then a login (`POST /v1/sessions`),
+gives the token; every other call takes it. The lobby opens with it. A match found arrives on the lobby (`evt.match.found`), or answers
+`GET /v1/queue` or `POST /v1/match-requests`: `arenaHost` the site's address, `arenaPort` 9001, `tls` true, the
+arena's `tlsName` and a `ticketId`. The app dials that, gives the name, and joins with the ticket.
+
+**What is trusted.** One certificate, from the backend's own CA, names the address and every arena ([06](06-certificates.md));
+nginx serves it on both ports, TLS 1.2 and 1.3 with forward secrecy and authenticated ciphers alone, no session
+tickets. The app trusts the root it ships alone (`TrustRoot`), and checks the name. Behind nginx the traffic is
+plaintext on loopback, or on the private network with three machines. A players' build connects encrypted alone,
+refusing `http://`, `ws://` and a grant without TLS ([D-104](../architecture/03-decision-log.md#d-104--the-players-build-connects-encrypted-alone-https-wss-and-a-match-over-tls)).
+
+**What fails closed.** Port 80 has nothing listening, the firewall closing it; any other path on 443 is 404; 9001
+without a mapped name, or without TLS, is closed; a certificate from another root is refused by the app.
+
+**The app's address behind nginx.** The platform and the gateway read it from `X-Forwarded-For`, from nginx alone
+(loopback, or `BACKEND_TRUSTED_PROXIES`): the platform's limits on logins go by it. An arena sees nginx's address:
+9001 passes the stream without the app's, which nginx's `stream.log` has, with the name and the arena it went to.
+Nothing an arena decides goes by an address.
+
+**More machines.** The routes stay; nginx's targets change. On two machines, B's arenas have names of their own,
+which A's nginx sends to B's private address ([10](10-two-machines.md)). On three, the API and the lobby are spread
+over the three platforms and gateways, and each arena's name points at its machine (`backend-upstreams.conf`,
+`backend-stream.conf`).
+
+**A run by hand** keeps the shape ([development/03 §5](../development/03-build-and-run.md#5-running-it-by-hand)): by default the same three routes over
+TLS, with a root of its own (`work/nginx/ca/ca.pem`), 80 a redirect to 443, the platform on 8080, the gateway on 8081
+and the arena on 9021; with `PLAIN=1` the API and the lobby on 80 as `http://` and `ws://`, and 9001 without TLS to
+its one arena (D-101), which a development build of the app alone dials (D-104).
 
 ### Out to the internet
 

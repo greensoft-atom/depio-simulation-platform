@@ -4117,6 +4117,21 @@ no endpoint taken, the scheme read from the text (capitals refused). The two cal
 no Unity. No drill: nothing that crosses processes changed. Docs: D-104, S-27, 08 §5 and §8, development/03 §5, the
 glossary, the package's README, UnityCheck's README, Core.Tests' README.
 
+#### 124. ~~The app's routes to the backend, end to end, in the ports guide (the owner, 2026-11-03).~~ — **done 2026-11-03**
+
+The owner asked for every route from the phone reviewed, TLS and plain. **Reviewed**, from the files that set them:
+nginx's four configuration files and the install guide's rewrite of them for one machine, `dev-nginx.sh`'s two ways,
+the arena's announcement and the platform's grant, the gateway's and the platform's trusted proxies, and the
+client's three connections (`ApiClient`, `LobbyClient`, `MatchConnection`, `TrustRoot`, `BackendClient`). The routes,
+the code and the documents agree; the waits are ordered so the backend decides when a connection is dead; nginx's
+4 KiB body is the platform's own; on the launch's machine every process but nginx is bound to loopback. **Found**:
+S-27, fixed by item 123; an arena never sees the app's address (9001 passes the stream without it), its logs alone
+affected, left; the plain way on an Android phone not checked (no Unity). **Written**: 05 §4 "From the internet",
+which was one line, now the three routes, what each checks, nginx's part, the limits and waits, a session's order,
+what is trusted, what fails closed, the app's address behind nginx, more machines, and a run by hand's two ways.
+Nothing run for it: the routes were exercised the same days by the install guide's check (a registration through
+nginx, every arena's name on 9001) and the units' check (in UBI 8.10 and 9.5). Docs: 05 §4, docs/README.
+
 ---
 
 ### Completed 2026-09-23
