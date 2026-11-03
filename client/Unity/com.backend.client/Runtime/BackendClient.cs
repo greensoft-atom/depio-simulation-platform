@@ -46,14 +46,16 @@ namespace Backend.Client.Unity
         {
             DontDestroyOnLoad(this);            // its object and everything under it, as it is a root's (08 §8)
             _trust = trustedRoot == null ? null : TrustRoot.FromPem(trustedRoot.text);
-            Api = new ApiClient(apiEndpoints, _trust?.HttpHandler());
+            // A players' build connects encrypted alone (D-104): a plain address is said, and nothing is dialled.
+            if (!Debug.isDebugBuild) Problem = EncryptedOnly.Refusal(apiEndpoints, lobbyUrl);
+            if (Problem == null) Api = new ApiClient(apiEndpoints, _trust?.HttpHandler());
             _store = SecureStores.ForThisDevice();
         }
 
         /// <summary>Signs in: the guest this device keeps, or a new one on its first launch (AccountKeeper).</summary>
         public void SignIn()
         {
-            if (_signingIn == null) _signingIn = new AccountKeeper(Api, _store).SignIn();
+            if (_signingIn == null && Api != null) _signingIn = new AccountKeeper(Api, _store).SignIn();
         }
 
         /// <summary>
@@ -130,13 +132,22 @@ namespace Backend.Client.Unity
             {
                 MatchGrant grant = Lobby.TakeGrant();
                 LastEnd = null;
-                // The address dialled, and the name the handshake gives behind the front (D-82).
-                Match = new MatchConnection(new MatchSettings
+                // Not dialled in clear by a players' build (D-104): said, and the player stays in the lobby.
+                string refused = Debug.isDebugBuild ? null : EncryptedOnly.Refusal(grant);
+                if (refused != null)
                 {
-                    Host = grant.ArenaHost, Port = grant.ArenaPort, Tls = grant.Tls, TlsName = grant.TlsName,
-                    CertificateCheck = _trust?.Check,
-                }, _clock);
-                Match.Join(grant.TicketId);
+                    Problem = refused;
+                }
+                else
+                {
+                    // The address dialled, and the name the handshake gives behind the front (D-82).
+                    Match = new MatchConnection(new MatchSettings
+                    {
+                        Host = grant.ArenaHost, Port = grant.ArenaPort, Tls = grant.Tls, TlsName = grant.TlsName,
+                        CertificateCheck = _trust?.Check,
+                    }, _clock);
+                    Match.Join(grant.TicketId);
+                }
             }
             if (Match == null) return;
 

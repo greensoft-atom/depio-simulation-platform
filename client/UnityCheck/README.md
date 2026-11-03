@@ -29,7 +29,7 @@ error here: an inspector-assigned `[SerializeField]` is one.
 
 | File | Stands for |
 |---|---|
-| `Stubs/UnityEngine.cs` | The parts of `UnityEngine` the scripts use, to Unity's own signatures: `Object`, `Component`, `Behaviour`, `MonoBehaviour`, `ScriptableObject`, `Transform`, `Renderer`, `SpriteRenderer`, `Sprite`, `Camera`, `Vector2`, `Vector3`, `Quaternion`, `Color`, `Rect`, `Matrix4x4`, `Mathf`, `Touch`, `TouchPhase`, `KeyCode`, `Input`, `Screen`, `PlayerPrefs`, `GUI`, `GUILayout`, `SerializeField`, `Tooltip`, `CreateAssetMenu`, `RequireComponent`, `AndroidJavaObject`, `AndroidJavaClass`. Every body throws: nothing is meant to run. A type the naming rule excludes is left out, and the scripts do without it |
+| `Stubs/UnityEngine.cs` | The parts of `UnityEngine` the scripts use, to Unity's own signatures: `Object`, `Component`, `Behaviour`, `MonoBehaviour`, `ScriptableObject`, `Transform`, `Renderer`, `SpriteRenderer`, `Sprite`, `Camera`, `Vector2`, `Vector3`, `Quaternion`, `Color`, `Rect`, `Matrix4x4`, `Mathf`, `Touch`, `TouchPhase`, `KeyCode`, `Input`, `Debug` (`isDebugBuild` alone), `Screen`, `PlayerPrefs`, `GUI`, `GUILayout`, `SerializeField`, `Tooltip`, `CreateAssetMenu`, `RequireComponent`, `AndroidJavaObject`, `AndroidJavaClass`. Every body throws: nothing is meant to run. A type the naming rule excludes is left out, and the scripts do without it |
 | `AndroidStubs/android/…` | `Context`, `SharedPreferences`, `KeyGenParameterSpec`, `KeyProperties`, `Base64`: what `SecureStore.java` calls |
 
 A script that needs more of Unity's API needs its stub here first, written to

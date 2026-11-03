@@ -398,9 +398,9 @@ refuse an nginx running the other way, as one started by `sudo` without `PLAIN=1
 way, would: `sudo PLAIN=1 ./dev-nginx.sh restart`.
 
 Everything crosses the network in clear: passwords, session tokens and join tickets, readable and usable by
-anyone on it, so a network you trust alone. The package's scripts take `http://` and `ws://` as given: refusing
-them in the players' build is the layer above's, not built ([08 §5](../detailed-design/08-client.md#5-the-lobby-and-the-api), DOC-40), so that build is given
-`https://` and `wss://` alone. Android may refuse plain HTTP to an app not built to allow it, which is not checked
+anyone on it, so a network you trust alone. A phone on the plain way needs a **development build** (Unity's
+"Development Build"): a players' build refuses `http://`, `ws://` and a match without TLS, and says so
+([D-104](../architecture/03-decision-log.md#d-104--the-players-build-connects-encrypted-alone-https-wss-and-a-match-over-tls), [08 §5](../detailed-design/08-client.md#5-the-lobby-and-the-api)). Android may refuse plain HTTP to an app not built to allow it, which is not checked
 here (no Unity): a development build that allows cleartext, if it does.
 
 ### 5.1 Trying each interface

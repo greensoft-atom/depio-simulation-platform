@@ -260,9 +260,14 @@ client adds:
   `LobbyClient`'s configure. `ApiClient` takes the list: an endpoint that
   cannot be reached, or whose certificate is refused, moves the call to the
   next, never to plain text, and the one that answered is tried first next
-  time. `LobbyClient` takes one address. Trying the lobby's endpoints in turn,
-  and refusing an `http://` or `ws://` address (the drills use both), are the
-  layer above's, and **not in the package's scripts yet** (§8).
+  time. `LobbyClient` takes one address. Trying the lobby's endpoints in turn is
+  the layer above's, and **not in the package's scripts yet** (§8). **A players'
+  build connects encrypted alone** ([D-104](../architecture/03-decision-log.md#d-104--the-players-build-connects-encrypted-alone-https-wss-and-a-match-over-tls)): `EncryptedOnly` refuses an API endpoint
+  that is not `https://`, a lobby that is not `wss://` and a match grant without
+  TLS, and the package's `BackendClient` asks it when the build is not a
+  development build (Unity's `Debug.isDebugBuild`). The core's classes take any
+  address, so the drills, the headless driver and a development build can go
+  plain (D-101).
 - **The account's key lives in the device's secure store** (Keychain, Android
   Keystore): `AccountKeeper` keeps a guest's key and logs in by it on every
   launch (§8). Keeping the session token there too, so that a restarted app
@@ -576,7 +581,7 @@ package's scripts do not do. Each is the layer above's, on calls the core has:
 | A cold resume: the secret written on the way to the background, a resume on launch | §3, D-51 | `MatchConnection.Resume(secret)`, `Welcome.ResumeSecret` |
 | What follows `Kick(2)`, `Kick(4)` and `Kick(5)`: another ticket after 2 s, a log, the jittered backoff | §3 | `MatchConnection.End` |
 | The session token kept, so a restart skips the login | §5 | `Session.Token`, `ISecureStore` |
-| The lobby's endpoints tried in turn; `http://` and `ws://` refused | §5, D-13 | `LobbyClient` takes one address |
+| The lobby's endpoints tried in turn | §5, D-13 | `LobbyClient` takes one address |
 | `Retry-After` honoured | §5 | `ApiResult.RetryAfterSeconds` |
 | The queue, the party and a tournament match fetched again after a lobby reconnect or `evt.resync` | §5 | `ApiClient.Queue`, `Party`, `TournamentMatch`; `LobbyClient.OnPush` |
 | A purchase key kept on disk until its answer | §5 | `ApiClient.NewPurchaseKey()` |

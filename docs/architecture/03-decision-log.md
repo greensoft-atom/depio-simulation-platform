@@ -3299,3 +3299,30 @@ and `private-ca.sh` runs on the machine that keeps the root's key, off every ser
 
 **Cost.** Two OpenSSL lines (1.1.1 and 3.x) to keep passing: `check-certificates.sh` in a UBI 8 image with
 `openssl` added and in UBI 9's. A version older than 1.1.1 (RHEL 7's 1.0.2) is not served.
+
+### D-104 — The players' build connects encrypted alone: `https://`, `wss://` and a match over TLS
+
+**Decided 2026-11-03** (plan item 123; the owner, after the review of every route from the phone, 05 §4).
+
+**Decision.** A build that is not a development build, the one players install, refuses to connect in clear:
+- **An API endpoint that is not `https://`, or a lobby that is not `wss://`**, as the app's settings give them: the
+  app says so (`BackendClient.Problem`) and makes no client, so nothing is dialled and signing in does nothing.
+- **A match grant without TLS** (`tls` false): the grant is taken, as any is, and not dialled; the app says so and
+  stays in the lobby.
+
+The rule is the core's, `EncryptedOnly` (tested); the Unity layer asks it when `Debug.isDebugBuild` is false, which
+is Unity's "Development Build" left unticked. A development build and the editor take whatever they are given, the
+plain way of a run by hand included (D-101); so do the drills and the headless driver, which use the core alone.
+
+**Why.** Nothing stopped a players' build set up with a plain address from sending passwords, session tokens and join
+tickets in clear: the package took any address (08 §5, DOC-40). On the site itself the plain way finds nothing (80
+closed, 9001 TLS alone), but a build pointed at a development server's plain nginx, or at a site set up wrongly,
+would work, in clear. Now such a build stops before its first byte and says why.
+
+**Not chosen:** the rule for every client, in the core's `ApiClient`, `LobbyClient` and `MatchConnection` (the
+drills and a development build use the plain way); a define of the app's own per build (one more setting to forget,
+where Unity's own development flag already marks the builds that may go plain).
+
+**Cost.** A phone on the plain way needs a development build, which Android may need anyway to allow cleartext
+(not checked: no Unity here). The wiring in `BackendClient` is compiled against stubs, not run: the core's rule is
+tested, the two calls to it are not.

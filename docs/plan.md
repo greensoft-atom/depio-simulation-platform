@@ -4099,6 +4099,24 @@ certificate check on the three versions and the units' check in UBI 8.10 again w
 `openssl` of the release's own (D-103). Not verified: a real RHEL 8 or 9 host, and the owner's own OS. Docs: D-103,
 O-94 to O-97, Q-63, 01 §8, 03 §1, 06 §1 and §9, 09 §1, §4.2 and §7, development/02 and 03, scripts README, CLAUDE.md.
 
+#### 123. ~~The players' build connects encrypted alone (the owner, 2026-11-03, D-104).~~ — **done 2026-11-03**
+
+The owner, after the review of every route from the phone (05 §4): the guard it found missing. **Found** (S-27): the
+package's `BackendClient` dialled whatever its settings and a grant named, so a players' build given `http://`,
+`ws://` or a grant without TLS would send passwords, tokens and tickets in clear; known, and left to the layer above
+(08 §5, DOC-40). **Test first**: `EncryptedOnlyTests`, against an `EncryptedOnly` that refused nothing, 8 of 9 failing
+(the ninth, encrypted addresses accepted, passing before and after). **Then**: the core's `EncryptedOnly` refuses an
+API endpoint not `https://`, a lobby not `wss://` and a grant without TLS, by name; `BackendClient` asks it when
+`Debug.isDebugBuild` is false, at its start (no `ApiClient` made, so signing in does nothing) and before dialling a
+grant (taken, not dialled, the player left in the lobby), saying why in `Problem`; the core's other classes unchanged,
+so the drills, the headless driver and a development build go plain as before. **Checked**: the client's tests, 187 of
+187 (`ReadmeTestListTests` with the new row); the package built and its scripts compiled against stubs for no
+platform, the editor, iOS and Android, `Debug.isDebugBuild` added to them; not run, no Unity here. **Mutants**, each
+caught: any scheme taken for the API, the first endpoint alone checked, `ws://` taken for the lobby, any grant taken,
+no endpoint taken, the scheme read from the text (capitals refused). The two calls in `BackendClient` are not tested:
+no Unity. No drill: nothing that crosses processes changed. Docs: D-104, S-27, 08 §5 and §8, development/03 §5, the
+glossary, the package's README, UnityCheck's README, Core.Tests' README.
+
 ---
 
 ### Completed 2026-09-23

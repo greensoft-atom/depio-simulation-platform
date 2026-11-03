@@ -65,7 +65,7 @@ put it on one.
 
 | Script | Does |
 |---|---|
-| `BackendClient` | Owns the core's objects. `SignIn()` signs in by `AccountKeeper`; `Update` completes the sign-in, or reports its failure in `Problem` so that Play is offered again; a session that ends (`InvalidSession`: expired, or revoked by an operator) is reported and signed out the same way; it pumps the lobby, takes a grant from it (`TakeGrant`, which gives the lobby's queue back to "none") and joins it, pumps the match, feeds a `RenderClock` (a new one for each world) and builds the `Scene`; a match that has ended leaves how in `LastEnd`. `OnApplicationPause` is the match's lifecycle |
+| `BackendClient` | Owns the core's objects. In a players' build, one not a development build, it refuses an API endpoint that is not `https://`, a lobby that is not `wss://` and a match grant without TLS, saying why in `Problem` and dialling nothing (`EncryptedOnly`, D-104); a development build takes any. `SignIn()` signs in by `AccountKeeper`; `Update` completes the sign-in, or reports its failure in `Problem` so that Play is offered again; a session that ends (`InvalidSession`: expired, or revoked by an operator) is reported and signed out the same way; it pumps the lobby, takes a grant from it (`TakeGrant`, which gives the lobby's queue back to "none") and joins it, pumps the match, feeds a `RenderClock` (a new one for each world) and builds the `Scene`; a match that has ended leaves how in `LastEnd`. `OnApplicationPause` is the match's lifecycle |
 | `WorldView` | Draws the `Scene` in `LateUpdate`: a pooled `SpriteRenderer` a handle, placed, turned and sized; the world's y grows down and Unity's up, turned over here only |
 | `TouchControls` | The left half of the screen moves, the right aims and fires (`TouchSticks`), each stick where its thumb lands, its reach 0.12 of the screen's height; keys and the mouse in the editor; `SetInput` every frame |
 | `FollowCamera` | Orthographic, on the own tank, 1 600 world units high |
@@ -82,7 +82,7 @@ screens are its designers', on the same calls.
 What 08 says a client does and these scripts leave to the app: a cold resume
 (the secret written on the way to the background, a resume on launch); what
 follows `Kick(2)`, `Kick(4)` and `Kick(5)`; the session token kept so a restart
-skips the login; the lobby's endpoints tried in turn, and `ws://` refused;
+skips the login; the lobby's endpoints tried in turn;
 `Retry-After` honoured; the queue, the party and a tournament match fetched
 again after the lobby reconnects or on `evt.resync`; a purchase key kept on
 disk; the `saver` traffic profile as a setting. The core has the calls for

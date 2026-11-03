@@ -127,6 +127,11 @@ namespace UnityEngine
         public static bool GetMouseButton(int button) => throw Object.Stub();
     }
 
+    public static class Debug
+    {
+        public static bool isDebugBuild => throw Object.Stub();
+    }
+
     public static class Screen
     {
         public static int width => throw Object.Stub();
