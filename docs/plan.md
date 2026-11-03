@@ -4155,6 +4155,18 @@ plain way keeping the line, its bots failing. Not measured: one read of under 10
 nothing per frame, tick or snapshot, and the phone's bandwidth untouched (the line goes between nginx and the arena).
 Docs: D-105, 02 §1 and §13, 01's metrics and §8, 05 §4, deploy/README, the arena's README, the glossary.
 
+#### 126. ~~The phone's routes as a page of the docs, nginx in full (the owner, 2026-11-03).~~ — **done 2026-11-03**
+
+The owner asked for the shared page as a document of the repository, nginx's part in full. **Written**:
+[operations/11](operations/11-phone-to-backend-routes.md): the three routes and a session drawn (Mermaid, as
+`diagrams/`), the limits and timeouts, nginx file by file with every setting, its value and why, how the files
+include each other, the numbers that must agree, what the install guide changes on one machine, the logs, running
+and reloading it, `dev-nginx.sh`'s rewrite both ways and the app's settings for the three ways, what protects each
+route, the phone's address in each process (D-105), more machines, and checking it by hand and by script. Read
+against the five files, the unit, the install guide's §9 and the scripts it names; the links checked
+(`DocsLinksTest`, which found two anchors guessed and wrong, fixed). The diagrams are not rendered here: Mermaid's
+syntax was read, not run. Docs: operations/11, docs/README, diagrams/07 (the PROXY line on its arena, a pointer here).
+
 ---
 
 ### Completed 2026-09-23

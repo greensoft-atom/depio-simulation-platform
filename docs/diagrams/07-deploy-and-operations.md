@@ -119,7 +119,8 @@ flowchart LR
 nginx on the front, the same on every machine: 443 for the API and the lobby, 9001 for match
 traffic, TLS ended on both with the one certificate from the backend's own CA
 ([operations/06](../operations/06-certificates.md)). From `deploy/nginx/backend.conf`, its snippet
-`backend-platform.conf`, `backend-upstreams.conf` and `backend-stream.conf`. Nothing listens on 80.
+`backend-platform.conf`, `backend-upstreams.conf` and `backend-stream.conf`. Nothing listens on 80. Every route
+from the phone, file by file: [operations/11](../operations/11-phone-to-backend-routes.md).
 
 ```mermaid
 flowchart LR
@@ -133,7 +134,7 @@ flowchart LR
     gw["the three gateways, :8090<br/>least_conn, WebSocket, 150 s timeouts"]
     pf["the three platforms, :8080<br/>keepalive 32, 15 s read timeout"]
     map["the map: the handshake's name<br/>to its machine and port"]
-    arena["that arena, plaintext<br/>a name not in the map: closed"]
+    arena["that arena, plaintext, after a PROXY line<br/>naming the phone's address (D-105)<br/>a name not in the map: closed"]
     dev --> p443
     dev --> p9001
     p443 --> lobby

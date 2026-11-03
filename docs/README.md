@@ -97,6 +97,7 @@ Then the detailed design of whatever you are working on.
 | [08 — Monitoring](operations/08-monitoring.md) | The watch in every platform: what it reads and alerts on, where alerts go, reading and silencing them; the backend's own, no third-party service |
 | [09 — The rehearsal](operations/09-rehearsal.md) | The readiness rehearsal on the owner's three machines as a checklist: each step, its expected outcome, what to record; what it cannot prove |
 | [10 — Two machines](operations/10-two-machines.md) | A second machine as the launch machine's standby (D-96): MySQL's and the stores' replicas made from the running primaries, the rest of A installed on it and stopped; the steps on each machine, the firewall, operating two | run as written by `check-two-machines-el9.sh` |
+| [11 — Phone-to-backend routes](operations/11-phone-to-backend-routes.md) | Every connection from the app to the backend, the site's over TLS and development's TLS and plain: the three routes drawn, a session in order, the limits and timeouts; nginx file by file, each setting and why, the numbers that must agree, the one machine's changes, its logs, running it; the phone's address behind nginx; checking it | its routes run by `check-ports-el9.sh`, `check-units-el9.sh` and `dev-backend.sh test` |
 
 ### Project
 
