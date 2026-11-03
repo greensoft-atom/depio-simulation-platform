@@ -129,7 +129,7 @@ arrivals, operators' channel) and the events store (the result stream).
 | `backend_arena_tls_certificate_expiry_timestamp_seconds` | gauge | with TLS only: the earliest expiry in the chain served |
 | `backend_arena_connection_bytes_per_second{profile}` | histogram | each connection's own snapshot bytes a second, observed as it ends, if it lasted a minute; by the profile it asked for |
 | `backend_arena_joins_total{outcome}` | counter | `joined`, `bad_ticket`, `no_room`, `claim_failed`, `removed` |
-| `backend_arena_connections_dropped_total{reason}` | counter | `join_deadline`, `idle`, `stalled`, `tls_handshake` |
+| `backend_arena_connections_dropped_total{reason}` | counter | `join_deadline`, `idle`, `stalled`, `tls_handshake`, and behind the front `proxy_line` (D-105) |
 | `backend_arena_snapshot_bytes_total{profile}` | counter | snapshot payload bytes, by the profile sent at |
 | `backend_arena_profile_steps_total{direction}` | counter | `down`, `up` |
 | `backend_arena_snapshots_sent_total`, `…_skipped_total`, `…_held_total` | counter | sent; skipped as unwritable; held as the link already had a second queued |
@@ -295,17 +295,18 @@ tick or the payload is measured with `tools/TickBenchmark`
 
 ## Tests
 
-18 classes, 216 tests.
+19 classes, 223 tests.
 
 | Test class | Tests | What it covers |
 |---|---|---|
-| `ArenaServerTest` | 100 | End to end over a plain socket, the clients pinging on their own clock where they wait (T-62): joins and tickets, leave and resume, every lifecycle and mode, deaths and respawns, the rebate, phrases, the kill feed, profiles, failures, the watchdog, drain and shutdown, operators, the sandbox, the motion events |
+| `ArenaServerTest` | 101 | End to end over a plain socket, the clients pinging on their own clock where they wait (T-62): joins and tickets, leave and resume, every lifecycle and mode, deaths and respawns, the rebate, phrases, the kill feed, profiles, failures, the watchdog, drain and shutdown, operators, the sandbox, the motion events; behind the front, a join and a drop naming the phone's address from nginx's line, and a connection without it closed (D-105) |
 | `SnapshotEncoderTest` | 24 | The entity budget and priority, handle 1 for the own tank, handles not reused before their removal is acknowledged, predicted entities never updated, creates re-sent only to a client that stopped acknowledging, levels, classes, a team changed in place (P-60), radii, traps as units, the protection and hidden flags, zoom, skins, a mobile frame inside the byte budget |
 | `MatchTallyTest` | 18 | One entry across a leave and a return, kills, assists, score, placements by score, by kills, by team and by dominators held, shared placements, open sessions and checkpoints, a match nobody played |
 | `MatchResultPublisherTest` | 12 | The spool with the store down and back, a refusing disk, closing with and without the store, a result after close, the stream trimmed to a day, the replica wait, replay order |
 | `TrafficControlTest` | 12 | Stepping down and up through a simulated link: far but roomy links left alone, slow ones stepped down and kept fresh, probes backing off, the ceiling held |
 | `SnapshotRoundTripTest` | 10 | The real encoder's bytes decoded by `protocol`'s reader: every position agrees, at 15 frames in 25 ticks, across gaps, respawns and input wrap-around, in a busy room, with names and the own handle |
 | `MatchFrameHandlerTest` | 9 | The claim finished on the connection's thread, store failures, the rate limit's backlog and flood, the join deadline, the unwritable spell; a kick closing a connection it cannot be written to; a client of protocol 1 told to update; a player noted for the announcement once a place is sought (D-79) |
+| `ProxyLineTest` | 6 | nginx's PROXY line (D-105): read, its address kept, the phone's bytes passed on after it and the reader gone; a line in pieces waited for; IPv4, IPv6 and `UNKNOWN`; anything else first refused, closed and counted (a frame, HTTP, a field short or over, a port or an address that is none, IPv6 as IPv4, no CR, lower case); a line past 107 bytes; what a log names |
 | `ArenaTlsTest` | 8 | Keystores loaded and refused, certificate names covered, names given as bytes skipped |
 | `WavesTest` | 6 | Co-op's waves, the Guardian, enraging, the tenth wave |
 | `RoomRegistryTest` | 5 | Room placement, a match's room made by its first ticket, the announced capacity, room names; places reserved counted with those taken (D-79) |

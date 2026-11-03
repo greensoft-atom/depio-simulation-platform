@@ -4132,6 +4132,29 @@ what is trusted, what fails closed, the app's address behind nginx, more machine
 Nothing run for it: the routes were exercised the same days by the install guide's check (a registration through
 nginx, every arena's name on 9001) and the units' check (in UBI 8.10 and 9.5). Docs: 05 §4, docs/README.
 
+#### 125. ~~An arena behind the front knows the phone's address, from nginx's PROXY line (the owner, 2026-11-03, D-105).~~ — **done 2026-11-03**
+
+The owner: the arena should know the phone's address, clearly, simply and usably, if it costs no performance or
+complexity. **Design**: D-105, `proxy_protocol on` on 9001, version 1's line, read once by an arena with a TLS name.
+**Test first**: `ProxyLineTest` and `ArenaServerTest`'s `theArenaKnowsThePhonesAddress`, against a reader that read
+nothing: 20 of 20 runs failing, and the server test timing out, the line taken for frames and no Welcome. **Then**:
+`ProxyLine`, the pipeline's first handler behind the front, keeps the address and takes itself out; anything else
+first closed and counted, `proxy_line`; a new line for every join, `player N joined from <address>`, and every line
+that named a connection names the phone's; `ArenaServer.behindFront()`, which `ArenaMain` calls for a TLS name;
+`dev-nginx.sh`'s plain way without the line. **Checked**: the arena's 247 test runs and the tools' 16; the ports'
+check in Rocky 9.5, the C# client's 16 scenarios from the player's 198.51.100.7 through nginx to two machines'
+arenas, which named it on every join (10 on a1, 7 on b1) and never nginx's; the units' check in UBI 9.5, 0 failed;
+the install guide's in UBI 9.5, 0 failed at install, after the restart and after the restore; the two machines', 0 failed, the
+C# client's matches on B's arenas through A's nginx, with B frozen and with A lost; a run by hand both ways, two bots joined through nginx,
+the TLS way's arena naming the address from the line (`127.0.0.1:58618`), the plain way's the socket's
+(`/127.0.0.1:36022`). **Mutants**, all caught: fourteen in the tests (the early refusal, the length, the CR, the
+address, the port, the fields, `UNKNOWN`, the reader left in the pipeline, the address not kept, not counted,
+`peer` ignoring it, the reader not added, the join's and the drop's lines naming the socket); `ArenaMain`'s call
+taken out, the release's jar swapped, the ports' check failing (no player joined, the address check with them); the
+plain way keeping the line, its bots failing. Not measured: one read of under 107 bytes when a connection opens,
+nothing per frame, tick or snapshot, and the phone's bandwidth untouched (the line goes between nginx and the arena).
+Docs: D-105, 02 §1 and §13, 01's metrics and §8, 05 §4, deploy/README, the arena's README, the glossary.
+
 ---
 
 ### Completed 2026-09-23

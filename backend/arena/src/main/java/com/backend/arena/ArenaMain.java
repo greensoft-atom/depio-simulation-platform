@@ -139,6 +139,10 @@ public final class ArenaMain {
                 metricsFor(server, publisher, store, events), System.getenv());
         Integer advertisedPort = advertisedPort(System.getenv());
         String tlsName = advertisedTlsName(System.getenv());
+        // Behind the front, where a TLS name puts it, nginx begins every connection with the phone's address (D-105).
+        if (tlsName != null) {
+            server.behindFront();
+        }
         int bound = server.start(bindHost, port);
         if (!bindHost.equals("127.0.0.1") && isLoopback(advertiseHost)) {
             // Listening everywhere but telling clients to connect to themselves: the arena

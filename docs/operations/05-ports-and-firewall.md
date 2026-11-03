@@ -231,9 +231,9 @@ refusing `http://`, `ws://` and a grant without TLS ([D-104](../architecture/03-
 without a mapped name, or without TLS, is closed; a certificate from another root is refused by the app.
 
 **The app's address behind nginx.** The platform and the gateway read it from `X-Forwarded-For`, from nginx alone
-(loopback, or `BACKEND_TRUSTED_PROXIES`): the platform's limits on logins go by it. An arena sees nginx's address:
-9001 passes the stream without the app's, which nginx's `stream.log` has, with the name and the arena it went to.
-Nothing an arena decides goes by an address.
+(loopback, or `BACKEND_TRUSTED_PROXIES`): the platform's limits on logins go by it. An arena reads it from the line
+nginx begins each match connection with, the PROXY protocol's (`proxy_protocol on`, [D-105](../architecture/03-decision-log.md#d-105--an-arena-behind-the-front-knows-the-phones-address-nginxs-proxy-line-read-once)), and names it where
+it logs a player: `player 123 joined from 198.51.100.7:51234`. Nothing an arena decides goes by an address.
 
 **More machines.** The routes stay; nginx's targets change. On two machines, B's arenas have names of their own,
 which A's nginx sends to B's private address ([10](10-two-machines.md)). On three, the API and the lobby are spread

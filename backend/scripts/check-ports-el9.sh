@@ -392,6 +392,12 @@ for pair in "a1.arena.internal 10.0.0.1:9011" "b1.arena.internal 10.0.0.2:9011";
 done
 grep -q '"nope.arena.internal" ' "$STREAM" && ! grep '"nope.arena.internal" ' "$STREAM" | grep -q ' 10\.0\.0\.' \
     && ok "a name not in the map: no arena" || fail "a name not in the map reached one"
+# The arenas know the player's address, from nginx's PROXY line (D-105): the player's namespace's, never nginx's.
+a=$(grep -c 'joined from 198\.51\.100\.7:' "$L/arena-a1.log"); b=$(grep -c 'joined from 198\.51\.100\.7:' "$L/b-arena.log")
+other=$(cat "$L/arena-a1.log" "$L/b-arena.log" | grep 'joined from ' | grep -v 'joined from 198\.51\.100\.7:' | head -1)
+[ $((a + b)) -gt 0 ] && [ -z "$other" ] \
+    && ok "the arenas know the player's address: $a joins on a1, $b on b1, each from 198.51.100.7 (D-105)" \
+    || fail "the player's address in the arenas: $a joins on a1, $b on b1 from it; ${other:-none} otherwise"
 ACCESS=/var/log/backend-nginx/access.log
 for up in 10.0.0.1:8080 10.0.0.2:8080 10.0.0.1:8090 10.0.0.2:8090; do
     grep -q " $up\( \|,\)" "$ACCESS" && ok "nginx sent requests to $up" || fail "no request went to $up"

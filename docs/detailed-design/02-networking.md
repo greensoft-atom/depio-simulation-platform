@@ -10,8 +10,10 @@ never through the gateway
 ([D-5](../architecture/03-decision-log.md#d-5--match-traffic-never-passes-through-nginx-or-the-gateway)).
 On the site it passes through the front's nginx, which ends its TLS and hands
 the bytes on, unread, to the arena the grant's `tlsName` names
-([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)): nothing
-below changes for it.
+([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)),
+after one line of its own naming the phone's address
+([D-105](../architecture/03-decision-log.md#d-105--an-arena-behind-the-front-knows-the-phones-address-nginxs-proxy-line-read-once)):
+nothing else below changes for it.
 The lobby protocol between client and `platform` is ordinary JSON over HTTPS
 and is specified with the gateway.
 
@@ -32,6 +34,7 @@ RoomThreads          (N threads) simulation; encode and write snapshots
 Pipeline per connection, as built:
 
 ```
+ProxyLine                           nginx's PROXY line, the phone's address; behind the front alone, then removed (D-105)
 SslHandler                          TLS 1.3 or 1.2, the JDK's provider; only with a keystore
   → VarintFrameDecoder(max 8 KiB)
   → IdleStateHandler(reader 30 s)   after the decoder: only whole frames are activity
@@ -42,7 +45,14 @@ SslHandler                          TLS 1.3 or 1.2, the JDK's provider; only wit
 client dials the site's public address and 9001 (`arenaHost`, `arenaPort`), its handshake gives
 the grant's `tlsName`, which nginx routes by, and it checks the certificate against that name and
 the backend's own root ([operations/06](../operations/06-certificates.md)). The arena behind
-speaks plaintext. What follows is the arena's own TLS, for an arena reached directly.
+speaks plaintext. **nginx begins each connection with one line**, version 1 of the PROXY protocol,
+`PROXY TCP4 198.51.100.7 10.0.0.1 51234 9011\r\n`: an arena with a TLS name reads it first
+(`ProxyLine`), keeps the phone's address on the connection for its logs (`player 123 joined from
+198.51.100.7:51234`, and every line that names a connection), and takes itself out of the pipeline,
+so no frame after it is touched. A connection that begins otherwise, or with a line past the
+protocol's 107 bytes, is closed and counted as `proxy_line`: only nginx reaches an arena behind the
+front. An arena with no TLS name reads no line. What follows is the arena's own TLS, for an arena
+reached directly.
 
 **TLS in the arena is built** (2026-09-26, [S-6](../defects.md#5-security-and-input)). An arena
 given a keystore serves TLS on every connection from the first byte, and says so
@@ -78,7 +88,8 @@ AES-GCM (RFC 5288), both inside the per-packet overhead the bandwidth budget in
 
 Each is counted in `backend_arena_connections_dropped_total{reason}`, as
 `join_deadline`, `idle`, `stalled` or `tls_handshake` (a connection still
-handshaking at the deadline counts as the last). A backgrounded client is
+handshaking at the deadline counts as the last), and behind the front `proxy_line`, a connection
+that did not begin with nginx's line (D-105). A backgrounded client is
 silent, so it is dropped after 30 s: see [§10](#10-session-reconnect-and-app-lifecycle).
 
 Socket options: `TCP_NODELAY=true` (Nagle would add up to 40 ms to a 15 Hz
@@ -993,4 +1004,4 @@ in Phase 2:
 | Encode time per client per tick | Feeds NFR-1b |
 | Corrections sent per second | Whether client-side extrapolation is diverging |
 | RTT and inferred loss, by platform | The evidence that decides whether UDP is ever needed |
-| Connections dropped, by reason (**built**) | A rise in `idle` or `stalled` is the network; in `tls_handshake`, above the steady trickle from scanners, clients refusing the certificate. Neither shows anywhere else on the server |
+| Connections dropped, by reason (**built**) | A rise in `idle` or `stalled` is the network; in `tls_handshake`, above the steady trickle from scanners, clients refusing the certificate; any `proxy_line`, something other than nginx reaching an arena behind the front, or nginx without `proxy_protocol on` (D-105). None shows anywhere else on the server |

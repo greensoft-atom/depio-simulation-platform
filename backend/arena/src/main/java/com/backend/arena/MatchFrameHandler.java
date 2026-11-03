@@ -158,7 +158,7 @@ public final class MatchFrameHandler extends SimpleChannelInboundHandler<ByteBuf
             // up here and nowhere else on the server. Not when this handler closed a connection
             // mid-handshake itself: that also ends here, and was counted when it was dropped.
             dropped.increment("tls_handshake");
-            log.debug("TLS handshake with {} failed: {}", ctx.channel().remoteAddress(),
+            log.debug("TLS handshake with {} failed: {}", ProxyLine.peer(ctx.channel()),
                     handshake.cause().toString());
         }
         ctx.fireUserEventTriggered(event);
@@ -170,9 +170,9 @@ public final class MatchFrameHandler extends SimpleChannelInboundHandler<ByteBuf
         dropped.increment(reason);
         Ticket who = connection == null ? null : connection.identity();
         if (who != null) {
-            log.info("closing player {} ({}): {}", who.playerId(), ctx.channel().remoteAddress(), reason);
+            log.info("closing player {} ({}): {}", who.playerId(), ProxyLine.peer(ctx.channel()), reason);
         } else {
-            log.debug("closing {}: {}", ctx.channel().remoteAddress(), reason);
+            log.debug("closing {}: {}", ProxyLine.peer(ctx.channel()), reason);
         }
         ctx.close();
     }
@@ -315,7 +315,7 @@ public final class MatchFrameHandler extends SimpleChannelInboundHandler<ByteBuf
         String secret = readTicketId(frame);
         RoomThread target = secret == null ? null : registry.roomFor(secret);
         if (target == null) {
-            log.info("refusing resume from {}: no such stay", ctx.channel().remoteAddress());
+            log.info("refusing resume from {}: no such stay", ProxyLine.peer(ctx.channel()));
             Frames.kick(ctx.channel(), Wire.KICK_BAD_TICKET);
             return;
         }
@@ -344,7 +344,7 @@ public final class MatchFrameHandler extends SimpleChannelInboundHandler<ByteBuf
             return;
         }
         if (ticket == null) {
-            log.info("refusing join from {}: no such ticket", ctx.channel().remoteAddress());
+            log.info("refusing join from {}: no such ticket", ProxyLine.peer(ctx.channel()));
             joins.increment("bad_ticket");
             Frames.kick(ctx.channel(), Wire.KICK_BAD_TICKET);
             return;
@@ -384,6 +384,7 @@ public final class MatchFrameHandler extends SimpleChannelInboundHandler<ByteBuf
             Frames.kick(ctx.channel(), Wire.KICK_ROOM_FULL);
             return;
         }
+        log.info("player {} joined from {}", ticket.playerId(), ProxyLine.peer(ctx.channel()));
         joins.increment("joined");
     }
 
@@ -462,7 +463,7 @@ public final class MatchFrameHandler extends SimpleChannelInboundHandler<ByteBuf
         tokens = Math.min(MAX_BURST, tokens + (now - refilledAtNanos) * (MAX_MESSAGES_PER_SECOND / 1e9));
         refilledAtNanos = now;
         if (--tokens < 0) {
-            log.info("rate limit exceeded, closing {}", ctx.channel().remoteAddress());
+            log.info("rate limit exceeded, closing {}", ProxyLine.peer(ctx.channel()));
             connection.endStay();
             Frames.kick(ctx.channel(), Wire.KICK_RATE_LIMIT);
             return false;
@@ -487,7 +488,7 @@ public final class MatchFrameHandler extends SimpleChannelInboundHandler<ByteBuf
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        log.debug("closing {} after {}", ctx.channel().remoteAddress(), cause.toString());
+        log.debug("closing {} after {}", ProxyLine.peer(ctx.channel()), cause.toString());
         ctx.close();
     }
 }

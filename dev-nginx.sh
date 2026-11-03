@@ -63,7 +63,8 @@ certificate() {
 # The release's configuration for this machine (D-92): its paths to work/nginx and the release, its upstreams to
 # this run's ports (each group's first server kept, the others dropped), its stream map to the arena's name alone,
 # to the local arena, its listen ports, server_name, what needs root or IPv6; and the server on 80, a redirect.
-# Plain (D-101): 443's server on 80 and 9001 without TLS, passed to the one arena (no name to route by), no redirect.
+# Plain (D-101): 443's server on 80 and 9001 without TLS, passed to the one arena (no name to route by) without the
+# PROXY line (D-105), no redirect.
 rewrite() {
     local out=$F/conf.new f user_line= to=https://\$host redirect what plain=()
     local https_listen="$NGINX_HTTPS_PORT ssl" match_listen="$NGINX_MATCH_PORT ssl"
@@ -73,7 +74,9 @@ rewrite() {
     what="the server on $NGINX_HTTP_PORT added"
     if [ "$PLAIN" = 1 ]; then
         https_listen=$NGINX_HTTP_PORT match_listen=$NGINX_MATCH_PORT redirect= what="TLS taken out (D-101)"
-        plain=(-e '/^[[:space:]]*ssl_/d' -e "s|^\([[:space:]]*\)proxy_pass \$backend_arena;|\1proxy_pass 127.0.0.1:$ARENA_PORT;|")
+        # No PROXY line either: the plain way's arena has no TLS name, and reads none (D-105).
+        plain=(-e '/^[[:space:]]*ssl_/d' -e '/^[[:space:]]*proxy_protocol on;/d' \
+            -e "s|^\([[:space:]]*\)proxy_pass \$backend_arena;|\1proxy_pass 127.0.0.1:$ARENA_PORT;|")
     fi
     rm -rf "$out"; mkdir -p "$out" "$F/logs" "$F/temp"
     for f in "$R"/nginx-conf/*.conf; do

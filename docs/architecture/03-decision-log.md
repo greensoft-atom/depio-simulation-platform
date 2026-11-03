@@ -3326,3 +3326,39 @@ where Unity's own development flag already marks the builds that may go plain).
 **Cost.** A phone on the plain way needs a development build, which Android may need anyway to allow cleartext
 (not checked: no Unity here). The wiring in `BackendClient` is compiled against stubs, not run: the core's rule is
 tested, the two calls to it are not.
+
+### D-105 — An arena behind the front knows the phone's address: nginx's PROXY line, read once
+
+**Decided 2026-11-03** (plan item 125; the owner: the arena should know the phone's address, clearly and simply,
+and usably, if it costs no performance or complexity worth the name).
+
+**Decision.**
+- **nginx tells it.** `backend-stream.conf` has `proxy_protocol on;`: for each match connection nginx passes on, it
+  first sends one line of the PROXY protocol's version 1, the standard every proxy speaks, with the phone's address
+  and port, then the phone's bytes as they come: `PROXY TCP4 198.51.100.7 10.0.0.1 51234 9011\r\n`.
+- **The arena reads it once.** An arena behind the front, one with `BACKEND_ADVERTISE_TLS_NAME`, reads that line
+  first on every connection (`ProxyLine`, the pipeline's first handler), keeps the address on the connection, and
+  takes itself out of the pipeline: every frame after it goes as before. A connection whose first bytes are no such
+  line, or a line longer than the protocol's 107 bytes, is closed and counted (`dropped{reason="proxy_line"}`): only
+  nginx reaches an arena behind the front, and it always sends one. `PROXY UNKNOWN` (nginx's word when it has no IP
+  address to give) is taken, the address then `unknown`.
+- **An arena not behind the front reads none**: the drills', a machine reached directly, one with TLS of its own (a
+  TLS name and a keystore together are refused, D-82). A run by hand's plain way (D-101) has no TLS name, so
+  `dev-nginx.sh` takes the line out of its configuration with TLS.
+- **Where it shows.** A new line for every join, `player 123 joined from 198.51.100.7:51234`, and every line that
+  named the connection's peer (a player closed, a join or a resume refused, a rate limit) names the phone's address
+  where it is known, nginx's otherwise.
+
+**Why.** Behind nginx every match connection came from nginx's address, so the arena's logs could not say where a
+player played from; only nginx's `stream.log` could, by the time, without the player. The line costs one read of
+under 107 bytes when a connection opens and nothing after: no frame, no tick and no snapshot changes.
+
+**Not chosen:** version 2 of the protocol, binary (nginx's stream module sends version 1, and a line is what an
+operator reads in a capture); Netty's own decoder (`netty-codec-haproxy`, a jar the offline bundle does not hold,
+for some thirty lines); the line believed only from a trusted address, as `X-Forwarded-For` is (an arena behind the
+front is bound to loopback or the private network, closed to the internet, so every peer is nginx, and the address
+is for the logs; a list of nginx's addresses in every arena's settings would be one more thing to keep in step).
+
+**Cost.** nginx and the arena must agree: an arena behind the front refuses every connection without the line, and
+one not behind it takes the line for frames it does not know, and no player joins. Both fail at once and loudly, and the checks
+that go through nginx (the units', the ports', the two machines', the install guide's) prove they agree.

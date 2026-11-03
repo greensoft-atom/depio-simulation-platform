@@ -54,6 +54,7 @@ public final class ArenaServer implements AutoCloseable {
 
     /** Null for plaintext: development, and tests that are not about TLS. */
     private ArenaTls tls;
+    private boolean behindFront;
 
     private MatchFrameHandler.Limits limits = MatchFrameHandler.Limits.DEFAULT;
 
@@ -72,6 +73,14 @@ public final class ArenaServer implements AutoCloseable {
     }
 
     /** Whether clients must connect with TLS: what the directory tells platform, and platform the client. */
+    /**
+     * Behind the front's nginx (D-105): every connection begins with nginx's PROXY line, the phone's address, which
+     * {@link ProxyLine} reads first. Before {@link #start}.
+     */
+    public void behindFront() {
+        this.behindFront = true;
+    }
+
     public boolean tls() {
         return tls != null;
     }
@@ -146,6 +155,9 @@ public final class ArenaServer implements AutoCloseable {
                 .childHandler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     protected void initChannel(SocketChannel ch) {
+                        if (behindFront) {
+                            ch.pipeline().addLast(new ProxyLine(dropped));
+                        }
                         if (tls != null) {
                             ch.pipeline().addLast(tls.context().newHandler(ch.alloc()));
                         }

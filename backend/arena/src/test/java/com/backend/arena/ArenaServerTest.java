@@ -5006,6 +5006,51 @@ class ArenaServerTest {
         }
     }
 
+    @Test
+    @Timeout(60)
+    @DisplayName("behind the front a join names the phone's address from nginx's line, and one without the line is closed; "
+            + "elsewhere the peer's (D-105)")
+    void theArenaKnowsThePhonesAddress() throws Exception {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(MatchFrameHandler.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> told =
+                new ch.qos.logback.core.read.ListAppender<>();
+        told.start();
+        logger.addAppender(told);
+        try {
+            try (ArenaServer server = newServer(2_000f, 2_048, 20, 30, 1)) {
+                server.behindFront();
+                // Silent for a second, a player is dropped, and the drop names them: a line the arena writes itself.
+                server.limits(new MatchFrameHandler.Limits(10_000, 1_000, 5_000));
+                int port = server.start(0);
+                try (TestClient client = new TestClient(port)) {
+                    client.out.write("PROXY TCP4 198.51.100.7 10.0.0.1 51234 9011\r\n".getBytes(StandardCharsets.US_ASCII));
+                    client.join(issueTicket(0));
+                    assertThat(client.readFrame()[0] & 0xFF).as("joined").isEqualTo(Wire.MSG_WELCOME);
+                    waitUntil(() -> told.list.stream().anyMatch(e -> e.getFormattedMessage().startsWith("closing player")));
+                }
+                try (TestClient direct = new TestClient(port)) {
+                    direct.join(issueTicket(0));
+                    assertThat(direct.in.read()).as("closed, having come without the line").isEqualTo(-1);
+                }
+                waitUntil(() -> server.dropped().get("proxy_line") == 1);
+            }
+            try (ArenaServer server = newServer(2_000f, 2_048, 20, 30, 1)) {
+                int port = server.start(0);
+                try (TestClient client = new TestClient(port)) {
+                    client.join(issueTicket(0));
+                    assertThat(client.readFrame()[0] & 0xFF).as("joined, no line asked for").isEqualTo(Wire.MSG_WELCOME);
+                }
+            }
+        } finally {
+            logger.detachAppender(told);
+        }
+        List<String> lines = told.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList();
+        assertThat(lines).anyMatch(m -> m.matches("player \\d+ joined from 198\\.51\\.100\\.7:51234"));
+        assertThat(lines).anyMatch(m -> m.matches("closing player \\d+ \\(198\\.51\\.100\\.7:51234\\): .*"));
+        assertThat(lines).anyMatch(m -> m.matches("player \\d+ joined from /127\\.0\\.0\\.1:\\d+"));
+    }
+
     /**
      * Waits for a condition, and fails if it never comes. This used to give up silently after
      * five seconds, so a test waiting longer carried on as if the condition held: one of them
