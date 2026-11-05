@@ -35,7 +35,7 @@ RHEL 8's, as well as RHEL 9's 3.x (D-103, O-94 fixed), and the install guide run
 |---|---|---|---|
 | `vendor/jdk-21/` | Temurin 21.0.12.1+1 | Adoptium's tarball, its SHA-256 checked | The image re-linked with `jlink --compress zip-6`, every module and tool kept: its `lib/modules` is 59 MB, not 136, under GitHub's 100 MB limit for a file. `jmods/` kept, so `jlink` can make runtimes. `src.zip` left out. |
 | `vendor/maven-3.9/` | Apache Maven 3.9.16 | Apache's tarball, its SHA-512 checked | none |
-| `vendor/mysql-8.4/` | MySQL Community 8.4.11 LTS | Oracle's "minimal" generic Linux tarball for glibc 2.28, SHA-256 pinned at download | Left out: the Japanese full-text dictionaries (`lib/mecab`, 130 MB), the static client libraries and headers. Added to `lib/private/`, which `mysqld` searches first: `libaio.so.1` and `libnuma.so.1` from RHEL 9's packages. |
+| `vendor/mysql-8.4/` | MySQL Community 8.4.11 LTS | Oracle's "minimal" generic Linux tarball for glibc 2.28, SHA-256 pinned at download | Left out: the Japanese full-text dictionaries (`lib/mecab`, 130 MB), the static client libraries and headers. Added to `lib/private/`, which `mysqld` searches first: `libaio.so.1` and `libnuma.so.1` from RHEL 8's packages (D-100). |
 | `vendor/nginx-1.30/` | nginx 1.30.5 | built from source (§5) | OpenSSL 3.5.9 LTS, PCRE2 10.49 and zlib 1.3.2 compiled in |
 | `vendor/src/` | | the sources nginx is built from, as published, SHA-256 pinned | |
 | `java21-offline/` | | every Java library the build uses | (existing, unchanged) |
@@ -139,6 +139,11 @@ the binaries and an older one does not; ncurses keeps its soname 6, which RHEL 8
 they load is in the release: OpenSSL, PCRE2 and zlib compiled into nginx, MySQL's `lib/private` (its OpenSSL and
 protobuf, RHEL 8's `libaio` and `libnuma`; its Kerberos, LDAP and SASL only for authentication plugins the site does
 not load). The runtime's desktop libraries name X11's and ALSA's, which a server process never loads (headless).
+
+**No symbolic link**, in `vendor/` or a release ([D-106](../architecture/03-decision-log.md#d-106--nothing-in-the-repository-or-a-release-is-a-symbolic-link)): each link upstream's archives carry (MySQL's `lib/`, the JDK's `legal/`) is a copy of the file it named, made by
+`vendor/update.sh`, and `make-release.sh` does the same to the runtime's `legal/`, which `jlink` makes of links. A copy
+that does not keep links, Git for Windows by default, leaves a text file in each one's place, and `mysqld` stops on
+`libaio.so.1`: "file too short". `NoLinksTest` checks the checkout and `check-release-el9.sh` the release.
 
 **The C library stays the system's**, by choice (the owner asking, 2026-11-02, whether the binaries could carry
 everything, whatever the host's version). A binary that carried its own glibc would carry its loader too and still

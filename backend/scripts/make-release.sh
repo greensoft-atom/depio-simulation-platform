@@ -85,6 +85,9 @@ cp scripts/backup-mysql.sh scripts/backup-store.sh scripts/binlog-stream.sh \
     scripts/promote-store.sh scripts/promote-mysql.sh scripts/record-backup.sh scripts/restore-proof.sh \
     scripts/backup-offsite.sh scripts/fetch-offsite.sh scripts/private-ca.sh scripts/rotate-nginx-logs.sh \
     scripts/check-bind.sh "$OUT/scripts/"
+# No link in the release (D-106): a copy that does not keep links leaves a text file in each one's place. jlink
+# makes the runtime's legal/ of them; each becomes the file it names.
+find "$OUT" -type l | while read -r l; do cp -p --remove-destination "$(readlink -f "$l")" "$l"; done
 # The commit, and -dirty when the tree it was made from differs from it: the files shipped are the tree's (O-84).
 c=$(git describe --always --dirty --abbrev=40 2>/dev/null) && echo "$c" > "$OUT/COMMIT"
 {

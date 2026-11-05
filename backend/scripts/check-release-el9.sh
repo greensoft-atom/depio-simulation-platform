@@ -1,6 +1,7 @@
 #!/bin/bash
 # Checks a release on RHEL 9's own userspace with nothing installed (docs/detailed-design/09 §7): this
-# script runs itself in Red Hat's UBI 9 minimal image, the release mounted read-only, and starts what
+# script runs itself in Red Hat's UBI 9 minimal image, the release mounted read-only, finds no symbolic link
+# in it (D-106: a copy that does not keep links leaves text in their place), and starts what
 # the release carries: MySQL 8.4 (initialised), j-redis, the platform (which migrates the database and
 # serves a registration and a login), the gateway, a worker, an arena, and nginx in front of the
 # platform over HTTP and HTTPS; then the shipped nginx configuration's own test. It prints what the
@@ -26,6 +27,11 @@ ok() { echo "  ok   $*"; }
 bad() { echo "  FAIL $*"; FAILS=$((FAILS + 1)); }
 FAILS=0
 echo "--- $(cat /etc/redhat-release), glibc $(ldd --version 2>/dev/null | head -1 | awk '{print $NF}')"
+
+echo "--- links: none, since a copy that does not keep them leaves text in their place (O-98, D-106)"
+# bash's own walk: the minimal image has no find.
+links=$(cd "/opt/$REL_NAME" && shopt -s globstar dotglob && for f in **; do [ ! -L "$f" ] || echo "$f"; done)
+[ -z "$links" ] && ok "no link" || bad "$(wc -l <<< "$links") links, among them $(head -3 <<< "$links" | tr '\n' ' ')"
 
 echo "--- libraries the release's binaries need that this image lacks"
 for b in runtime/bin/java mysql/bin/mysqld mysql/bin/mysql mysql/bin/mysqldump mysql/bin/mysqlbinlog mysql/bin/mysqladmin nginx/sbin/nginx; do

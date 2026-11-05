@@ -1366,6 +1366,18 @@ runs. **Fixed:** the statements on standard input. By the install guide's check,
 anything, and its failure is said as the release's nginx not running on this machine, glibc 2.28 named. Test first,
 with a stub failing as the loader does: the old line, then the new; the check skipped, the old line again.
 
+**O-98 (H), found 2026-11-05, FIXED the same day** (plan item 127; the owner: the release's MySQL would not start on
+their machine until they copied `libaio.so.1` and `libnuma.so.1` in from an older build). `vendor/` committed 242
+symbolic links, as upstream's archives carry them: 37 in MySQL's `lib/`, among them the two libraries `mysqld`
+loads, and 205 in the JDK's `legal/`; and every release carried 127 (MySQL's, and 90 `jlink` makes in the runtime's
+`legal/`). A copy that does not keep links, Git for Windows by default (`core.symlinks=false`), an archive unpacked
+on Windows, some transfer tools, leaves a text file in each one's place holding the name it pointed to: `mysqld`
+stops with `error while loading shared libraries: …/lib/private/libaio.so.1: file too short`. Reproduced here from a
+checkout made with `core.symlinks=false`, the same line. **Fixed** (D-106): every link a copy of its file, in
+`vendor/` (and `update.sh` makes them so) and in the release (`make-release.sh`). Test first: `NoLinksTest` failed
+on the 242 and `check-release-el9.sh` on the 127; each mutant caught (the walk skipping `vendor/`, or every `bin/`,
+the link put back, the release's conversion taken out: 90 links). The same checkout without links then runs `mysqld`.
+
 **O-97 (L), found 2026-11-02, FIXED the same day** (plan item 122's mutation check). Nothing checked that the trust
 keeps the system's roots out when `ca.pem` is there: `install-certificate.sh` without `-no-CApath`, or without
 `-no-CAstore`, passed every check. The check's "another root" was made by `private-ca.sh`, whose roots are all named
@@ -1490,6 +1502,10 @@ floor") and as 250 (01 §2's `%d` comment): `LoadCredential=` is 247's, but `%d`
 is 251's (systemd's own NEWS: "The new %d specifier", under "CHANGES WITH 251"), and RHEL 9.0 has 250. DOC-42 read
 the directives again and took `%d` for 247's without looking it up. Moot since D-102: no unit uses either, and each
 place now says what the units need.
+
+**DOC-44, found 2026-11-05, FIXED the same day** (plan item 127, O-98). 09 §2's table said `libaio.so.1` and
+`libnuma.so.1` came from RHEL 9's packages: item 119 took them from RHEL 8's (RHEL 9's `libnuma` needs glibc 2.33,
+D-100) and changed `VERSIONS.md` and 09's text below the table, not the table's row. Fixed.
 
 ## 7. Documentation
 

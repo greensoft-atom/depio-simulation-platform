@@ -3362,3 +3362,29 @@ is for the logs; a list of nginx's addresses in every arena's settings would be 
 **Cost.** nginx and the arena must agree: an arena behind the front refuses every connection without the line, and
 one not behind it takes the line for frames it does not know, and no player joins. Both fail at once and loudly, and the checks
 that go through nginx (the units', the ports', the two machines', the install guide's) prove they agree.
+
+### D-106 — Nothing in the repository or a release is a symbolic link
+
+**Decided 2026-11-05** (plan item 127; the owner: the release's MySQL did not start on their machine, `libaio.so.1`
+and `libnuma.so.1` "file too short", until they copied those libraries in from an older build).
+
+**Decision.**
+- **Every link a file.** The links upstream's archives carry are committed as copies of the files they name: MySQL's
+  `lib/` (`libaio.so.1 -> libaio.so.1.0.1` and 36 more) and the JDK's `legal/` (205 license texts that name
+  `java.base`'s). `vendor/update.sh` makes them so after unpacking, and `make-release.sh` turns the 90 that `jlink`
+  makes again in the runtime's `legal/` into files before the release is packed.
+- **Checked twice**: `NoLinksTest` (`tools`) walks the checkout, and `check-release-el9.sh` finds none in a release.
+
+**Why.** A copy that does not keep links leaves in each one's place a text file holding the name it pointed to: Git
+for Windows by default (`core.symlinks=false`), an archive unpacked on Windows, some transfer tools. mysqld then
+reads `libaio.so.1`, 15 bytes, and stops: `error while loading shared libraries: …/lib/private/libaio.so.1: file too
+short`, the owner's error, reproduced here from a checkout made with `core.symlinks=false`. Those two are the only
+links mysqld itself loads; the others are names MySQL's plugins and libraries load (Kerberos, LDAP, SASL, FIDO) or
+that only a compiler reads, and the same copy breaks them without a word until one is used.
+
+**Not chosen:** keeping only the names something loads and dropping the rest (a judgement for each name, and SASL
+finds its plugins by listing `*.so` files, so a name dropped can be a plugin lost); a note to clone with links, or a
+`.gitattributes` (a rule every copy must keep, where a file needs none).
+
+**Cost.** 43 MB more on disk in a checkout and in a release (378 MB to 421), and nothing in Git's history: a copy is
+the same object as the file it copies.

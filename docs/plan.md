@@ -4167,6 +4167,36 @@ against the five files, the unit, the install guide's §9 and the scripts it nam
 (`DocsLinksTest`, which found two anchors guessed and wrong, fixed). The diagrams are not rendered here: Mermaid's
 syntax was read, not run. Docs: operations/11, docs/README, diagrams/07 (the PROXY line on its arena, a pointer here).
 
+#### 127. ~~No symbolic link in the repository or a release (the owner, 2026-11-05, D-106).~~ — **done 2026-11-05**
+
+The owner's MySQL stopped on `libaio.so.1` and `libnuma.so.1`, "file too short", until they copied the two in from
+an older build. **Found** (O-98): `vendor/` carried 242 links as upstream's archives have them, and a release 127; a
+copy that does not keep links (Git for Windows by default) leaves a text file of the target's name in each one's
+place. Reproduced from a checkout with `core.symlinks=false`, the owner's line exactly. **Done**: every link a copy of
+its file, in `vendor/` (and `update.sh`) and in the release (`make-release.sh`, the runtime's `legal/`); 43 MB on
+disk, nothing in Git's history. Test first: `NoLinksTest` (tools) and `check-release-el9.sh`, each failing on the
+links, then passing; four mutants caught. The release in UBI 9.5: 0 failed. Docs: D-106, O-98, DOC-44 (09's table
+still said RHEL 9's libraries), 09 §2, `vendor/README`, `VERSIONS.md`, the tools README.
+
+#### 128. Every route from the app through nginx to its process, one by one, both ways (the owner, 2026-11-05)
+
+The owner's `http://<address>/v1/health` was a 404 from the platform, "No context found for request": the health
+check is `/health`, outside `/v1/`, which nginx does not pass, while the Postman collection, pointed at nginx as its
+README says, starts with it. And a run by hand's 80 answers a redirect to 443, which the owner does not want: 80
+should take the API and the lobby itself in development; production stays 443 alone. To do: `/v1/health`; 80 plain
+in development; every HTTP route (the collection's 135 requests, bodies and answers tested), the lobby and a match
+run through nginx, plain on 80 and over TLS on 443, and each route written down: method, path, body, nginx's location
+and limits, the process.
+
+#### 129. The client in Unity 2019.4 and Visual Studio 2019, .NET Framework (the owner, 2026-11-05)
+
+The owner's UI team works in Unity 2019.4 (2019.4.28f1 taken: every 2019.4 compiles C# 7.3) and Visual Studio 2019
+on .NET Framework; the core was written for Unity 2022.3 and 6 (C# 9, .NET Standard 2.1). To do: the core and the
+Unity scripts in C# 7.3 on .NET Standard 2.0 and .NET Framework 4.7.1; what those lack replaced (the lobby's
+certificate check among them); compiled by Unity 2019.4.28f1's own compiler against its own `UnityEngine.dll`; the
+core's tests and the drills run on its Mono; and what can be seen only in the editor or on a phone left for the
+team, said so.
+
 ---
 
 ### Completed 2026-09-23

@@ -49,7 +49,9 @@ Docker for nginx.
    release page, Apache's `.sha512`, OpenSSL's `.sha256`; for MySQL and nginx, the
    download page and the PGP signature), then pin it in `update.sh`.
 3. **Run it again**: it derives `jdk-21/`, `maven-3.9/`, `mysql-8.4/` and `src/` (the
-   old ones are replaced). Downloads are kept in `CACHE` (default under `TMPDIR`).
+   old ones are replaced), and makes every symbolic link the archives carried a copy
+   of its file: nothing here is a link (D-106), since a copy that does not keep links
+   leaves text in their place. Downloads are kept in `CACHE` (default under `TMPDIR`).
 4. **For nginx, OpenSSL, PCRE2 or zlib**, then `vendor/build-nginx.sh`: it compiles
    in a Rocky Linux 8 container and refuses a binary that needs a newer glibc than
    RHEL 8's, 2.28 (D-100).

@@ -101,6 +101,10 @@ for n in nginx openssl pcre2 zlib; do sources+=("$(fetch "$n")"); done
 rm -f "$HERE"/src/*.tar.gz
 cp "${sources[@]}" "$HERE/src/"
 
+# No link in vendor/ (D-106): a copy that does not keep links leaves a text file in each one's place, and mysqld
+# stops on libaio.so.1, "file too short". Each becomes the file it names: MySQL's libraries, the JDK's legal/.
+find "$HERE" -type l | while read -r l; do cp -p --remove-destination "$(readlink -f "$l")" "$l"; done
+
 echo "--- done; for new nginx sources, build-nginx.sh next; then VERSIONS.md"
 du -sh "$HERE"/jdk-21 "$HERE"/maven-3.9 "$HERE"/mysql-8.4 "$HERE"/src
 find "$HERE" -type f -size +95M -printf "TOO BIG FOR GITHUB: %p\n"
