@@ -60,6 +60,7 @@ under `background/`.
 | No third-party Redis server, client library or tool, tests included: the store is j-redis | 2026-09 | this page (it was in `CLAUDE.md` only); D-6, D-7 |
 | No third-party service or daemon of any kind beyond MySQL and nginx, installed or bundled: monitoring and alerting are the backend's own code (Prometheus, Alertmanager and node_exporter refused even bundled); libraries as jars stay allowed | 2026-10-24 | C-6, Q-60, plan item 100 |
 | The client: the engine-free C# core, the headless driver, and the Unity layer as thin scripts; nothing is run in Unity here | 2026-10-04 | Q-51, D-73 |
+| The client is for Unity 2019.4 and Visual Studio 2019 first, the team's: the core C# 7.3 on .NET Standard 2.0 (Unity 2022.3 and 6 take it too); `client/Backend.Client.sln` is VS 2019's, and no solution for any other version (the tests and the headless driver, .NET 8, are outside it, run by their paths); the backend's CA signs with RSA, which Unity 2019's runtime can check. Checked by `client/unity2019-check.sh` (Unity 2019.4.28f1's compiler, assemblies and Mono, its editor files in `work/unity`) and `client/vs2019-check.sh` (VS 2019's MSBuild and Roslyn, in docker) | 2026-11-05 | D-108 |
 | The migrations squashed to V1 (schema) and V2 (seed) once, before launch; forward-only from V3 | 2026-10-04 | D-75 |
 | A result under five seconds counts for nothing but its row and a rated match's rating; a walkover is no win | 2026-10-05 | D-76 |
 | The Unity editor's check and an admin panel are put off: not proposed until the owner brings them back | 2026-10-05 | Q-54, Q-55 |
@@ -255,6 +256,14 @@ install guide runs as written in UBI 8.10 (Q-63). Each certificate script's chec
   file they must open inside a checkout under `/root` fails `Permission denied`, as a temporary file
   for a large response did (O-47). On loopback the sockets' buffers take a few MB, so a check that
   nginx writes no such file needs a response larger than that: 300 KB never reached one.
+- **Unity 2019.4's runtime, outside its editor** (2026-11-05, D-108): its Mono 5.11 never sees a child process's
+  output end, so `Process.Start` with redirected output hangs, even for `echo`: make what a check needs before it
+  runs. It reads no PKCS#12 that OpenSSL 3 writes by default (AES, PBKDF2): a test's keys exported with
+  `-keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1`. Its own TLS is Mono's, TLS 1.0, which nginx refuses:
+  a test server of Mono's own, never the editor's or a phone's TLS. Its .NET Core compiler (`Tools/Roslyn/csc`)
+  wants an ICU this machine lacks; `Tools/RoslynNet46/csc.exe` under its Mono is the same Roslyn, 2.9.1.
+- **Two solution files in `client/` and `dotnet test` names neither**: MSBuild refuses ("more than one project or
+  solution file"). One solution, and the tests by their path: `dotnet test Core.Tests`.
 - **`true || a && b` is `(true || a) && b`** in the shell: a mutant that puts `true ||` before a
   chain of `&&` removes the first check alone, and survives on the others. Replace the whole
   condition (`if true; then`), as item 110's did once it had survived.

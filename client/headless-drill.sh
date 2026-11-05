@@ -138,14 +138,15 @@ nfr2_quantiles() {
 OPENS="--add-opens java.base/java.nio=ALL-UNNAMED"
 cli() { printf '%s\n' "$@" | $J -jar "$JREDIS_CLI" --raw -p 6390 | sed -E 's/^([^ ]+:[0-9]+> ?)+//' | sed '/^$/d'; }
 
-# TLS=1: the arena serves a test certificate naming 127.0.0.1, and the client trusts only it.
+# TLS=1: the arena serves a test certificate naming 127.0.0.1, and the client trusts only it. RSA, the one key the
+# client takes, as the app on Unity 2019 can check no other (D-108).
 TLSENV=(); TRUST=()
 if [ "${TLS:-0}" = 1 ]; then
   K="$(dirname "$J")/keytool"; T="$D/tls"; mkdir -p "$T"; chmod 700 "$T"
-  $K -genkeypair -alias arena -keyalg EC -groupname secp256r1 -dname CN=arena-drill -ext san=ip:127.0.0.1 \
+  $K -genkeypair -alias arena -keyalg RSA -keysize 2048 -sigalg SHA256withRSA -dname CN=arena-drill -ext san=ip:127.0.0.1 \
      -validity 2 -storetype PKCS12 -keystore "$T/arena.p12" -storepass drill-pass -keypass drill-pass 2>/dev/null
   $K -exportcert -alias arena -keystore "$T/arena.p12" -storepass drill-pass -file "$T/arena.crt" 2>/dev/null
-  $K -genkeypair -alias other -keyalg EC -groupname secp256r1 -dname CN=someone-else -ext san=ip:127.0.0.1 \
+  $K -genkeypair -alias other -keyalg RSA -keysize 2048 -sigalg SHA256withRSA -dname CN=someone-else -ext san=ip:127.0.0.1 \
      -validity 2 -storetype PKCS12 -keystore "$T/other.p12" -storepass other-pass 2>/dev/null
   $K -exportcert -alias other -keystore "$T/other.p12" -storepass other-pass -file "$T/other.crt" 2>/dev/null
   printf 'drill-pass\n' > "$T/arena-pass"

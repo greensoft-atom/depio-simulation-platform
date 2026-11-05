@@ -90,7 +90,7 @@ namespace Backend.Client.Unity
                     Session = signedIn.Value;
                     Problem = null;
                     Lobby?.Dispose();
-                    Lobby = new LobbyClient(new Uri(lobbyUrl), _clock, _trust == null ? null : _trust.Configure);
+                    Lobby = new LobbyClient(new Uri(lobbyUrl), _clock, _trust);
                     Lobby.Connect(Session.Token);
                 }
                 else
@@ -144,7 +144,7 @@ namespace Backend.Client.Unity
                     Match = new MatchConnection(new MatchSettings
                     {
                         Host = grant.ArenaHost, Port = grant.ArenaPort, Tls = grant.Tls, TlsName = grant.TlsName,
-                        CertificateCheck = _trust?.Check,
+                        Trust = _trust,
                     }, _clock);
                     Match.Join(grant.TicketId);
                 }

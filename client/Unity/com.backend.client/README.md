@@ -7,7 +7,8 @@ account is in the core and tested there; these scripts wire it to Unity. How
 they are wired is drawn in
 [docs/diagrams/06-client.md](../../../docs/diagrams/06-client.md).
 
-A UPM package, `com.backend.client` 0.1.0, for Unity 2022.3 LTS or 6 LTS, with
+A UPM package, `com.backend.client` 0.1.0, for Unity 2019.4 LTS and later (D-108: its scripts and the core compiled
+by Unity 2019.4.28f1's own compiler against its assemblies, `../../unity2019-check.sh`), with
 no package dependencies. Its assembly definition, `Backend.Client.Unity`,
 references the core as the precompiled `Backend.Client.Core.dll` in
 `Runtime/Plugins/`, which `client/unity-package.sh` builds and copies in and
@@ -42,7 +43,7 @@ frame time.
 1. `client/unity-package.sh` builds the core and copies
    `Backend.Client.Core.dll` into `Runtime/Plugins/`, where the assembly
    definition names it. Again whenever the core changes.
-2. Unity 2022.3 LTS or 6 LTS: Package Manager, Add package from disk, this
+2. Unity 2019.4 LTS or later: Package Manager, Add package from disk, this
    folder's `package.json`.
 3. A scene with:
    - an object with **BackendClient**: the API's endpoints, tried in turn, and

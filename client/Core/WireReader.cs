@@ -15,27 +15,32 @@ namespace Backend.Client.Core
 
     /// <summary>
     /// Little-endian fields and LEB128 varints over one frame: com.backend.protocol.WireReader.
-    /// A struct over the caller's bytes, so reading allocates nothing but the strings it returns.
+    /// A struct over the caller's bytes, so reading allocates nothing but the strings it returns. The bytes are an
+    /// array's segment, not a span: .NET Standard 2.0 and Unity 2019 have no spans (D-108).
     /// </summary>
     public ref struct WireReader
     {
-        private readonly ReadOnlySpan<byte> _bytes;
+        private readonly byte[] _bytes;
+        private readonly int _start, _end;
         private int _at;
 
-        public WireReader(ReadOnlySpan<byte> bytes)
+        public WireReader(ArraySegment<byte> bytes)
         {
-            _bytes = bytes;
-            _at = 0;
+            _bytes = bytes.Array ?? Array.Empty<byte>();
+            _start = bytes.Array == null ? 0 : bytes.Offset;
+            _end = _start + bytes.Count;
+            _at = _start;
         }
 
-        public int Position => _at;
-        public int Remaining => _bytes.Length - _at;
-        public bool Done => _at == _bytes.Length;
+        private int Length => _end - _start;
+        public int Position => _at - _start;
+        public int Remaining => _end - _at;
+        public bool Done => _at == _end;
 
         private void Need(int n)
         {
-            if (n < 0 || n > _bytes.Length - _at)
-                throw new ProtocolException($"frame ends at byte {_bytes.Length}; {n} more needed at {_at}");
+            if (n < 0 || n > _end - _at)
+                throw new ProtocolException($"frame ends at byte {Length}; {n} more needed at {Position}");
         }
 
         public int U8()
@@ -93,16 +98,16 @@ namespace Backend.Client.Core
         public string Utf8(int n)
         {
             Need(n);
-            string s = n == 0 ? "" : Encoding.UTF8.GetString(_bytes.Slice(_at, n));
+            string s = n == 0 ? "" : Encoding.UTF8.GetString(_bytes, _at, n);
             _at += n;
             return s;
         }
 
         /// <summary>The next <paramref name="n"/> bytes, read or not, and steps past them.</summary>
-        public ReadOnlySpan<byte> Take(int n)
+        public ArraySegment<byte> Take(int n)
         {
             Need(n);
-            ReadOnlySpan<byte> s = _bytes.Slice(_at, n);
+            var s = new ArraySegment<byte>(_bytes, _at, n);
             _at += n;
             return s;
         }
@@ -110,7 +115,7 @@ namespace Backend.Client.Core
         /// <summary>A length off the wire, refused if it could not be one.</summary>
         public int LengthOf(long v)
         {
-            if (v < 0 || v > _bytes.Length) throw new ProtocolException($"length {v} in a frame of {_bytes.Length} bytes");
+            if (v < 0 || v > Length) throw new ProtocolException($"length {v} in a frame of {Length} bytes");
             return (int)v;
         }
     }

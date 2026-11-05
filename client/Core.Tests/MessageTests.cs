@@ -94,7 +94,7 @@ namespace Backend.Client.Core.Tests
                 var reader = new FrameReader();
                 var frames = new List<byte[]>();
                 for (int at = 0; at < all.Length; at += chunk)
-                    reader.Feed(all.AsSpan(at, Math.Min(chunk, all.Length - at)), frames.Add);
+                    reader.Feed(new ArraySegment<byte>(all, at, Math.Min(chunk, all.Length - at)), frames.Add);
                 Assert.That(frames.Select(f => f.Length), Is.EqualTo(new[] { 5, 300, 1 }), $"chunks of {chunk}");
                 Assert.That(frames[1], Is.EqualTo(big));
             }

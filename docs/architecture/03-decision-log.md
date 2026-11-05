@@ -3433,3 +3433,61 @@ to keep in step, where a second `listen` gives the same ones).
 
 **Cost.** What D-92 avoided: on 80, a development account's password and token cross the network readable. A
 development machine's accounts are the team's, on the owner's network; production has nothing on 80.
+
+### D-108 — The client for Unity 2019.4 and .NET Framework: C# 7.3, a certificate check of its own, an RSA root
+
+**Decided 2026-11-05** (plan item 129; the owner: the UI team works in Unity 2019.4, around 2019.4.28, and Visual
+Studio 2019 on .NET Framework; 2019.4.28f1 taken, and every 2019.4 compiles the same C# 7.3).
+
+**Found** on Unity 2019.4.28f1's own runtime, its Mono 5.11 and its class libraries (`unityjit`), by a probe its own
+compiler built (Roslyn 2.9.1, C# 7.3):
+- **An EC key cannot be used**: the backend's root and certificates had P-256 keys (D-82); reading one throws
+  ("Unable to decode public key"), `X509Chain.Build` throws, and `ECDsa` is not implemented. The client's check of a
+  certificate threw on every connection: nothing would have connected over TLS.
+- **`HttpClientHandler.ServerCertificateCustomValidationCallback` throws `NotImplementedException`**, so the API's
+  check could not be set; and `ClientWebSocketOptions` has no certificate callback in .NET Standard 2.0 or .NET
+  Framework, so neither could the lobby's.
+- **RSA works**: its keys read, `X509Chain` builds, `RSA.VerifyData` verifies; and the callbacks of `HttpWebRequest`
+  (one per request) and of `SslStream` (one per stream) are called.
+- **The core at C# 7.3 on .NET Standard 2.0**: `ReadOnlySpan<T>`, which neither has, and one conditional of C# 9.
+
+**Decision.**
+- **C# 7.3 on .NET Standard 2.0** for the core: it then compiles in Unity 2019.4 at either API level (.NET Standard
+  2.0, .NET 4.x), in Visual Studio 2019 for .NET Framework 4.7.1, and in Unity 2022.3 and 6 as before. A span becomes
+  an array with an offset and a count.
+- **The backend's CA signs with RSA**: a root of 3072 bits, certificates of 2048 (`private-ca.sh`), the one key
+  Unity 2019's runtime can check. TLS's own exchange stays ECDHE, the ciphers as they were. A root made before is EC:
+  `dev-nginx.sh` makes an RSA one in its place and says so; a site's is made again (operations/06) and the app ships
+  the new `ca.pem`.
+- **The client checks a certificate itself**, the same on every runtime: issued by the shipped root (its signature, RSA
+  PKCS#1 with SHA-256, verifies with the root's key, which only a certificate the root signed can), valid now, and
+  naming the host dialled (an IP address or a DNS name in its subjectAltName, read by the client). Comparing the
+  issuer's name and the algorithm's identifier too was written and taken out: their mutants were equivalent, each
+  case they refused the signature refuses. No `X509Chain`, and the runtime's own verdict
+  is not asked: it calls every private root a chain error, and Unity's TLS may not read an IP address as a name.
+- **Every connection carries its own check**, nothing global: the API through `HttpWebRequest` (a handler of the
+  core's, `HttpClient` above it as before), the lobby through a WebSocket of the core's over `SslStream` (RFC 6455's
+  client side: the handshake, masked frames, ping and pong, close), and matches through `SslStream` as before.
+  `ServicePointManager`'s callback would be the whole app's, the UI team's other requests too.
+- **Checked here**: compiled by Unity 2019.4.28f1's compiler, at C# 7.3, against its .NET Standard 2.0, its .NET
+  Framework 4.7.1 references and its own `UnityEngine` assemblies, and the core run on its Mono (`unity2019-check.sh`);
+  built by Visual Studio 2019's own MSBuild and Roslyn, 16.11 and 16.7, from Microsoft's SDK images: the core's
+  project, its sources in a .NET Framework 4.7.1 library, a 4.7.1 app using it, Unity's project as VS 2019 compiles
+  it, and `Backend.Client.sln` (`vs2019-check.sh`). **`Backend.Client.sln` is VS 2019's** (the owner: VS 2019 and
+  Unity 2019 first, no solution for other versions): the core and UnityCheck; the tests and the headless driver, .NET
+  8, which VS 2019 cannot build, are outside it, run by their paths. VS 2019 builds the core's project with a .NET SDK of 5.0
+  or older (16.11 installs 5.0; a 6 or later asks for MSBuild 17), and a .NET Framework 4.7.1 app or later takes
+  .NET Standard 2.0 with no package. And live, the new client through nginx over TLS: every scenario of the drill and
+  the Postman collection, all passing.
+
+**Why.** The owner's team builds in Unity 2019.4 and Visual Studio 2019, and the client the project wrote compiled in
+neither, and on that runtime could not have checked one certificate.
+
+**Not chosen:** keeping EC with ECDSA written in C# (cryptography of the project's own, where the runtime's RSA is
+there and tested); `ServicePointManager`'s callback for the API and the lobby (one for the whole process, which the
+team's code or a plugin may set too); the runtime's chain (`X509Chain` throws on EC, and inside Unity it is its TLS's,
+not the code here); `UnityWebRequest` (the Unity layer's, not the engine-free core's, and on the main thread).
+
+**Cost.** An RSA signature per full handshake on the front, about a millisecond of a core, where ECDSA's was a tenth;
+the core's own WebSocket (some 200 lines) and DER reading (some 100), tested here. Not seen here: the editor itself
+(it needs a licence), Unity's TLS (in the editor and the player only), and an Android phone.

@@ -45,6 +45,12 @@ certificate() {
     local alt n names=("$PUBLIC_ADDRESS")
     [ "$PUBLIC_ADDRESS" = 127.0.0.1 ] || names+=(127.0.0.1)
     names+=("$ARENA_TLS_NAME")
+    # A root made before D-108 is EC, which the app on Unity 2019 cannot check: an RSA one in its place, said.
+    if [ -f "$CA" ] && ! openssl x509 -in "$CA" -noout -text | grep -q 'Public Key Algorithm: rsaEncryption'; then
+        echo "nginx: the root in $F/ca was EC, which the app on Unity 2019 cannot check (D-108): a new one, RSA;" \
+             "give clients the new $CA" >&2
+        rm -rf "$F/ca" "$F/tls"
+    fi
     [ -f "$CA" ] || "$B/backend/scripts/private-ca.sh" root "$F/ca" > /dev/null
     # Its directories open to every user, the keys kept 0600: a user's run beside root's nginx reads the root that
     # clients trust, and the certificate (D-98, O-91). Only by their owner: another's are left as they are.
@@ -221,6 +227,12 @@ test)
         echo "ok      the configuration: nginx -t"
     else
         echo "--      the configuration: nginx runs as $owner, whose nginx -t it is: sudo $0 test"
+    fi
+    if [ "$PLAIN" != 1 ]; then
+        # RSA, the one key the app on Unity 2019 can check (D-108).
+        openssl x509 -in "$CA" -noout -text | grep -q 'Public Key Algorithm: rsaEncryption' \
+            || { echo "FAILED  the root, $CA, is not RSA, which the app on Unity 2019 cannot check: $0 restart makes one (D-108)"; exit 1; }
+        echo "ok      the root: RSA"
     fi
     # Each as a client dialling the address would see it, the connection made to 127.0.0.1.
     to127() { echo "--connect-to $PUBLIC_ADDRESS:$1:127.0.0.1:$1"; }

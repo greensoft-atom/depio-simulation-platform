@@ -45,6 +45,11 @@ expect_ok "root" "$CA" root "$T/ca"
 expect_refused "root again" "already holds a root" "$CA" root "$T/ca"
 [ "$(stat -c %a "$T/ca/ca.key")" = 600 ] && pass "ca.key 0600" || fail "ca.key $(stat -c %a "$T/ca/ca.key")"
 expect_ok "issue for the address and the names" "$CA" issue "$T/ca" "$T/site" 203.0.113.10 $NAMES
+# RSA, the one key Unity 2019's runtime can check (D-108): the root's 3072 bits, a certificate's 2048, SHA-256.
+key_of() { openssl x509 -in "$1" -noout -text | grep -E 'Public Key Algorithm|Public-Key:|Signature Algorithm' | sort -u | tr -s ' ' | tr '\n' ' '; }
+rsa() { local k; k=$(key_of "$1"); [[ $k == *rsaEncryption* && $k == *"($2 bit)"* && $k == *sha256WithRSAEncryption* ]]; }
+rsa "$T/ca/ca.pem" 3072 && pass "the root's key: RSA 3072, SHA-256" || fail "the root's key: $(key_of "$T/ca/ca.pem")"
+rsa "$T/site/fullchain.pem" 2048 && pass "a certificate's key: RSA 2048, SHA-256" || fail "a certificate's key: $(key_of "$T/site/fullchain.pem")"
 expect_refused "issue into a directory that holds one" "already holds" "$CA" issue "$T/ca" "$T/site" 203.0.113.10
 expect_refused "issue a name in upper case" "neither an IP" "$CA" issue "$T/ca" "$T/bad" A1.Arena.Internal
 expect_refused "issue with no root" "no root" "$CA" issue "$T/none" "$T/x" 203.0.113.10

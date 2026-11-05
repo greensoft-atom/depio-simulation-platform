@@ -105,5 +105,5 @@ The schema is Flyway's migrations, `backend/persistence/src/main/resources/db/mi
   a new protocol version, and a client release. The arena tells an older app to update.
 - **The lobby's and the API's JSON**: add fields rather than change them, as in §3, and the C#
   core's tests and [docs/api](../api/README.md) follow.
-- **The client**: `cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test`, then
+- **The client**: `cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test Core.Tests`, then
   `client/unity-package.sh && client/unity-check.sh` ([03 §9](03-build-and-run.md#9-the-client)).

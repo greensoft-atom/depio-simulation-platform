@@ -77,6 +77,80 @@ namespace Backend.Client.Core.Tests
             return false;
         }
 
+        /// <summary>A lobby by hand, on a raw socket: its answer to the opening as the test writes it, then frames.</summary>
+        private static (TcpListener, Task<NetworkStream>) RawLobby(Func<string, string> accept)
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            Task<NetworkStream> opened = Task.Run(() =>
+            {
+                NetworkStream s = listener.AcceptTcpClient().GetStream();
+                s.ReadTimeout = 5_000;                          // a frame that never comes fails the test, not hangs it
+                var head = new StringBuilder();
+                while (!head.ToString().EndsWith("\r\n\r\n")) head.Append((char)s.ReadByte());
+                string key = null;
+                foreach (string line in head.ToString().Split("\r\n"))
+                    if (line.StartsWith("Sec-WebSocket-Key:", StringComparison.OrdinalIgnoreCase)) key = line.Substring(18).Trim();
+                byte[] answer = Encoding.ASCII.GetBytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
+                    + "Connection: Upgrade\r\nSec-WebSocket-Accept: " + accept(key) + "\r\n\r\n");
+                s.Write(answer, 0, answer.Length);
+                return s;
+            });
+            return (listener, opened);
+        }
+
+        private static string Accept(string key) => Convert.ToBase64String(
+            System.Security.Cryptography.SHA1.HashData(Encoding.ASCII.GetBytes(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
+
+        /// <summary>One frame from the client, unmasked: its opcode and payload. A client's frames are masked (RFC 6455).</summary>
+        private static (int, byte[]) ClientFrame(NetworkStream s)
+        {
+            int b0 = s.ReadByte(), b1 = s.ReadByte();
+            Assert.That(b1 & 0x80, Is.EqualTo(0x80), "a client's frame is masked");
+            int length = b1 & 0x7F;
+            Assert.That(length, Is.LessThan(126), "small frames alone in this test");
+            var mask = new byte[4];
+            s.ReadExactly(mask, 0, 4);
+            var payload = new byte[length];
+            s.ReadExactly(payload, 0, length);
+            for (int i = 0; i < length; i++) payload[i] ^= mask[i & 3];
+            return (b0 & 0x0F, payload);
+        }
+
+        [Test]
+        public void AnAnswerThatIsNoWebSocketsIsRefused()
+        {
+            var (listener, opened) = RawLobby(key => Accept(key + "x"));
+            try
+            {
+                using var lobby = new LobbyClient(new Uri($"ws://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/lobby"),
+                    new ManualClock());
+                lobby.Connect("token");
+                Assert.That(PollUntil(lobby, () => lobby.State == LobbyState.Reconnecting), Is.True);
+                Assert.That(lobby.LastError, Does.Contain("Sec-WebSocket-Accept"));
+            }
+            finally { listener.Stop(); }
+        }
+
+        [Test]
+        public void APingIsAnsweredWithItsPayload()
+        {
+            var (listener, opened) = RawLobby(Accept);
+            try
+            {
+                using var lobby = new LobbyClient(new Uri($"ws://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/lobby"),
+                    new ManualClock());
+                lobby.Connect("token");
+                NetworkStream s = opened.Result;
+                Assert.That(ClientFrame(s).Item1, Is.EqualTo(1), "the token first, as text");
+                byte[] ping = { 0x89, 4, (byte)'p', (byte)'i', (byte)'n', (byte)'g' };
+                s.Write(ping, 0, ping.Length);
+                var (op, payload) = ClientFrame(s);
+                Assert.That((op, Encoding.ASCII.GetString(payload)), Is.EqualTo((0xA, "ping")), "a pong, with the ping's payload");
+            }
+            finally { listener.Stop(); }
+        }
+
         private static (ScriptedLobby, LobbyClient, WebSocket, ManualClock) Ready()
         {
             var server = new ScriptedLobby();

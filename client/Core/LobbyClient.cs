@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Concurrent;
-using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,7 +38,7 @@ namespace Backend.Client.Core
 
         private readonly Uri _uri;
         private readonly IClock _clock;
-        private readonly Action<ClientWebSocketOptions> _configure;
+        private readonly TrustRoot _trust;
         private string _token;
         private Link _link;
         private int _nextId = 1, _authId;
@@ -49,12 +48,13 @@ namespace Backend.Client.Core
         private int _backoffMs = 1_000;
 
         /// <param name="lobby">wss://a.example.com/lobby</param>
-        /// <param name="configure">A test's hook, to trust a test CA; players' devices use their own store.</param>
-        public LobbyClient(Uri lobby, IClock clock, Action<ClientWebSocketOptions> configure = null)
+        /// <param name="trust">the backend's root, which a wss:// lobby's certificate must chain to (D-82, D-108); null,
+        /// the runtime's own check</param>
+        public LobbyClient(Uri lobby, IClock clock, TrustRoot trust = null)
         {
             _uri = lobby;
             _clock = clock;
-            _configure = configure;
+            _trust = trust;
         }
 
         public LobbyState State { get; private set; } = LobbyState.Closed;
@@ -348,7 +348,7 @@ namespace Backend.Client.Core
         {
             _link?.Close();
             State = LobbyState.Connecting;
-            _link = new Link(_uri, _configure);
+            _link = new Link(_uri, _trust);
             // Queued before the socket is open: the writer sends it first, inside the five seconds.
             _authId = Send("auth", JsonValue.NewObject().Set("token", _token));
         }
@@ -375,41 +375,34 @@ namespace Backend.Client.Core
         {
             public readonly ConcurrentQueue<string> Inbox = new ConcurrentQueue<string>();
             public readonly BlockingCollection<string> Outbox = new BlockingCollection<string>();
-            private readonly ClientWebSocket _socket = new ClientWebSocket();
             private readonly CancellationTokenSource _stop = new CancellationTokenSource();
+            private volatile WebSocketLink _socket;
             private volatile bool _closed;
             public volatile string Failure;
 
-            public Link(Uri uri, Action<ClientWebSocketOptions> configure)
+            public Link(Uri uri, TrustRoot trust)
             {
-                configure?.Invoke(_socket.Options);
-                Task.Run(() => Run(uri));
+                Task.Run(() => Run(uri, trust));
             }
 
             public bool Closed => _closed;
 
-            private async Task Run(Uri uri)
+            private async Task Run(Uri uri, TrustRoot trust)
             {
                 try
                 {
-                    await _socket.ConnectAsync(uri, _stop.Token).ConfigureAwait(false);
+                    _socket = await WebSocketLink.ConnectAsync(uri, trust, _stop.Token).ConfigureAwait(false);
+                    if (_closed) { _socket.Abort(); return; }
                     Task writer = Task.Run(Write);
-                    var buffer = new byte[8 * 1024];
-                    // Bytes, decoded once whole: a fragment can end inside a character, and decoded alone each half
-                    // is a replacement character.
-                    var message = new System.IO.MemoryStream();
-                    while (_socket.State == WebSocketState.Open)
+                    while (!_closed)
                     {
-                        WebSocketReceiveResult r = await _socket.ReceiveAsync(new ArraySegment<byte>(buffer), _stop.Token).ConfigureAwait(false);
-                        if (r.MessageType == WebSocketMessageType.Close)
+                        string message = await _socket.ReceiveAsync(_stop.Token).ConfigureAwait(false);
+                        if (message == null)
                         {
-                            Failure = "closed by the lobby: " + r.CloseStatusDescription;
+                            Failure = "closed by the lobby: " + _socket.CloseReason;
                             break;
                         }
-                        message.Write(buffer, 0, r.Count);
-                        if (!r.EndOfMessage) continue;           // a message in fragments, joined
-                        Inbox.Enqueue(Encoding.UTF8.GetString(message.GetBuffer(), 0, (int)message.Length));
-                        message.SetLength(0);
+                        Inbox.Enqueue(message);
                     }
                 }
                 catch (Exception e)
@@ -424,11 +417,7 @@ namespace Backend.Client.Core
                 try
                 {
                     foreach (string text in Outbox.GetConsumingEnumerable(_stop.Token))
-                    {
-                        byte[] bytes = Encoding.UTF8.GetBytes(text);
-                        _socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _stop.Token)
-                            .GetAwaiter().GetResult();
-                    }
+                        _socket.SendAsync(text, _stop.Token).GetAwaiter().GetResult();
                 }
                 catch (Exception e)
                 {
@@ -442,7 +431,7 @@ namespace Backend.Client.Core
                 if (_closed) return;
                 _closed = true;
                 try { _stop.Cancel(); } catch (ObjectDisposedException) { }
-                try { _socket.Abort(); } catch (Exception) { /* closing, whatever state it was in */ }
+                _socket?.Abort();
             }
         }
     }

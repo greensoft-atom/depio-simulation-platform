@@ -99,7 +99,7 @@ namespace Backend.Client.Core.Tests
                 Lines.Add($"update h={u.Handle} mask={u.Mask} dx={u.Dx} dy={u.Dy} angle={u.Angle} hp={u.Hp}");
             }
 
-            public void Event(int type, ReadOnlySpan<byte> payload)
+            public void Event(int type, ArraySegment<byte> payload)
             {
                 FlushRemoves();
                 var r = new WireReader(payload);

@@ -72,7 +72,7 @@ namespace Backend.Client.Core.Tests
             {
                 int n;
                 while ((n = s.Receive(buffer)) > 0)
-                    frames.Feed(new ReadOnlySpan<byte>(buffer, 0, n), f => Received.Add((index, f)));
+                    frames.Feed(new ArraySegment<byte>(buffer, 0, n), f => Received.Add((index, f)));
             }
             catch (Exception) { }       // as above
         }
@@ -387,7 +387,7 @@ namespace Backend.Client.Core.Tests
             {
                 int n;
                 while (!found && (n = arena.Receive(buffer)) > 0)
-                    frames.Feed(new ReadOnlySpan<byte>(buffer, 0, n), f => found |= wanted(f));
+                    frames.Feed(new ArraySegment<byte>(buffer, 0, n), f => found |= wanted(f));
             }
             catch (SocketException) { }
             return found;

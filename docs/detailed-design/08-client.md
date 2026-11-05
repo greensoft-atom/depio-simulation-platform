@@ -7,7 +7,8 @@ The Unity app a player installs on Android, from the owner's own copy, not a sto
 ([plan](../plan.md), item 3). **Built: steps 1 to 4 of §7**, the wire, the
 world, the match connection, the API, the lobby and the own tank's prediction,
 and **§8 (a)**, what the Unity layer draws, how it steers and the account kept.
-**§8 (b), the Unity package, is written**: compiled against stubs, run nowhere.
+**§8 (b), the Unity package, is written**: compiled against stubs, and since 2026-11-05 by Unity 2019.4.28f1's own
+compiler against its own `UnityEngine` assemblies (D-108); not run in the editor or on a phone.
 The Unity layer was deferred by the owner (2026-09-27), the backend finished
 first; **the owner brought it back on 2026-10-04** (Q-51), as scripts: §8, plan
 item 77. The own tank's prediction, deferred with it, the owner brought back on
@@ -21,10 +22,10 @@ Unity.
 ## 1. Two layers
 
 ```
-┌─ Unity layer  (Backend.Client.Unity)  ─ Unity 2022.3 LTS or 6 LTS ───────┐
+┌─ Unity layer  (Backend.Client.Unity)  ─ Unity 2019.4 LTS and later ──────┐
 │  scenes, rendering, touch input, app lifecycle, secure key storage,       │
 │  the main-thread pump                                                     │
-├─ Core  (Backend.Client.Core)  ─ .NET Standard 2.1, C# 9, no dependencies ─┤
+├─ Core  (Backend.Client.Core)  ─ .NET Standard 2.0, C# 7.3, no dependencies ┤
 │  wire · world · match connection · lobby · API · prediction               │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
@@ -45,9 +46,10 @@ account's key in the device's secure store — is kept small enough to review by
 reading, and is to be verified in the Unity editor: none of it has run yet
 (§8).
 
-**.NET Standard 2.1 and C# 9** because that is what Unity's scripting runtime
-compiles, in 2022.3 LTS and in 6 LTS alike. No `record` types in the core: C# 9
-records need a runtime type Unity does not ship. The main thread's work on a
+**.NET Standard 2.0 and C# 7.3** because that is what the owner's team builds in, Unity 2019.4 (at either of its API
+levels, .NET Standard 2.0 and .NET 4.x) and Visual Studio 2019 on .NET Framework 4.7.1, and what Unity 2022.3 and 6
+take as well ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root); it was .NET Standard 2.1 and C# 9, for 2022.3 and 6 alone). No spans, which neither
+has: a frame is an array's segment. `client/unity2019-check.sh` compiles it with Unity 2019.4.28f1's own compiler. The main thread's work on a
 frame — decoding, applying, predicting, building the scene — allocates nothing
 but the names a frame carries (a new tank's, a kill's, a phrase's speaker's),
 for the same reason the server's tick allocates nothing: garbage on a phone
@@ -89,7 +91,8 @@ the name the grant gives (`tlsName`, else the host) and with nothing pinned
 grant's host is the site's address, its `tlsName` the arena's name, which the handshake sends and
 the front's nginx routes by; and the certificate is checked against the backend's own root, which
 the app ships (`TrustRoot`, [operations/06 §5](../operations/06-certificates.md#5-in-the-app)), in place of
-the device's store. What this document adds:
+the device's store: by the client itself, for the name the handshake sends, the runtime's own verdict not asked
+([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root): issued by the root, RSA and SHA-256, valid now, the name in its subjectAltName). What this document adds:
 
 **A connection that falls silent is lost.** The arena sends fifteen frames a
 second: none for 3 s while the app is in the foreground, the match is joined
@@ -256,8 +259,10 @@ client adds:
 
 - **The endpoints, tried in turn** ([D-13](../architecture/03-decision-log.md#d-13--the-client-holds-an-endpoint-list-no-vip)),
   `https://` and `wss://` only: since D-82 one, the site's address, `https://203.0.113.10`. The
-  backend's root (`TrustRoot`) is trusted for both, through `ApiClient`'s handler and
-  `LobbyClient`'s configure. `ApiClient` takes the list: an endpoint that
+  backend's root (`TrustRoot`) is trusted for both, each connection checking its own host: the API through
+  `HttpWebRequest` (`TrustRoot.HttpHandler`, one callback a request), the lobby through the core's own WebSocket
+  over `SslStream` ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root): Unity 2019's `HttpClientHandler` callback is not implemented, and .NET Standard
+  2.0's `ClientWebSocket` has none). `ApiClient` takes the list: an endpoint that
   cannot be reached, or whose certificate is refused, moves the call to the
   next, never to plain text, and the one that answered is tried first next
   time. `LobbyClient` takes one address. Trying the lobby's endpoints in turn is
@@ -421,6 +426,8 @@ client adds:
 | The lobby client | against a scripted lobby on a loopback WebSocket: the queue "none" again after a match, a declined match forgotten, a message split inside a character read whole, a silent lobby found lost, reconnects spread; and live, the drills | core tests; the headless client |
 | The tests' own list | `Core.Tests/README.md`'s rows compared with the assembly by reflection, as the server's READMEs are by its build (DOC-29, DOC-31) | `ReadmeTestListTests`, every client test run |
 | The Unity package's scripts | compiled against stubs of the Unity API, for no platform, the editor, iOS and Android; the Android plugin against stubs of Android's | `client/unity-check.sh`, nothing run |
+| The core in Visual Studio 2019 (D-108) | built, warnings as errors, by VS 2019's own MSBuild and Roslyn (16.11, and 16.7), from Microsoft's .NET 5 and .NET Core 3.1 SDK images: the core's project (.NET Standard 2.0); its sources in a .NET Framework 4.7.1 library at C# 7.3 against Microsoft's 4.7.1 reference assemblies; a 4.7.1 app referencing it; Unity 2019.4's project as VS 2019 compiles it (4.7.1, `UnityEngine`, each platform branch); `Backend.Client.sln`, the client's one solution, VS 2019's (the core and UnityCheck; Core.Tests and Headless, .NET 8, outside it). A C# 8 operator and an API .NET Framework lacks each failed every build | `client/vs2019-check.sh`; not inside Visual Studio, nothing run on .NET Framework itself |
+| The core and the scripts in Unity 2019.4 (D-108) | compiled by Unity 2019.4.28f1's compiler (Roslyn 2.9.1, C# 7.3, warnings as errors): the core at .NET Standard 2.0 and at .NET 4.x (.NET Framework 4.7.1's references, as Visual Studio 2019 builds), the scripts against its own `UnityEngine` assemblies at both, each platform branch; then the core run on its Mono 5.11: certificates of `private-ca.sh` checked, an EC root refused saying why, JSON under a decimal comma, and the API, the lobby's `wss://` and a match each through TLS to a server there, accepted with the root's certificate and refused with another's | `client/unity2019-check.sh`; not the editor (a licence), not Unity's TLS (the editor's and the player's; Mono's own here, TLS 1.0), not a phone |
 | Rendering, touch, lifecycle, secure storage, device TLS, frame time on a phone | the Unity editor and devices | **not on this machine** |
 
 The tests use NUnit, which Unity's test runner also runs, so the core's tests can
@@ -548,7 +555,7 @@ Three things a Unity layer would otherwise work out for itself (**built
 **(b) The Unity package** (**written 2026-10-04**, compiled against stubs as
 below, run nowhere), `client/Unity/com.backend.client`, a UPM package of
 thin scripts over the core, which reaches it as the library `dotnet build`
-makes (.NET Standard 2.1), copied in by `client/unity-package.sh`:
+makes (.NET Standard 2.0, D-108), copied in by `client/unity-package.sh`:
 
 | Script | Does |
 |---|---|

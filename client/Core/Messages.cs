@@ -30,13 +30,13 @@ namespace Backend.Client.Core
     public static class ServerMessages
     {
         /// <summary>The message type: the frame's first byte.</summary>
-        public static int TypeOf(ReadOnlySpan<byte> frame)
+        public static int TypeOf(ArraySegment<byte> frame)
         {
-            if (frame.Length == 0) throw new ProtocolException("an empty frame");
-            return frame[0];
+            if (frame.Count == 0) throw new ProtocolException("an empty frame");
+            return frame.Array[frame.Offset];
         }
 
-        public static Welcome ReadWelcome(ReadOnlySpan<byte> frame)
+        public static Welcome ReadWelcome(ArraySegment<byte> frame)
         {
             var r = new WireReader(frame);
             Expect(ref r, Wire.MsgWelcome);
@@ -57,14 +57,14 @@ namespace Backend.Client.Core
             return w;
         }
 
-        public static Pong ReadPong(ReadOnlySpan<byte> frame)
+        public static Pong ReadPong(ArraySegment<byte> frame)
         {
             var r = new WireReader(frame);
             Expect(ref r, Wire.MsgPong);
             return new Pong { ClientTimeMs = r.U32BigEndian(), ServerTick = r.Varint() };
         }
 
-        public static int ReadKick(ReadOnlySpan<byte> frame)
+        public static int ReadKick(ArraySegment<byte> frame)
         {
             var r = new WireReader(frame);
             Expect(ref r, Wire.MsgKick);
@@ -238,14 +238,16 @@ namespace Backend.Client.Core
         private int _count;
 
         /// <summary>Adds bytes read from the socket and calls <paramref name="onFrame"/> for each whole frame.</summary>
-        public void Feed(ReadOnlySpan<byte> bytes, Action<byte[]> onFrame)
+        public void Feed(ArraySegment<byte> bytes, Action<byte[]> onFrame)
         {
-            while (bytes.Length > 0)
+            int at = bytes.Offset, left = bytes.Count;
+            while (left > 0)
             {
-                int n = Math.Min(bytes.Length, _pending.Length - _count);
-                bytes.Slice(0, n).CopyTo(new Span<byte>(_pending, _count, n));
+                int n = Math.Min(left, _pending.Length - _count);
+                Buffer.BlockCopy(bytes.Array, at, _pending, _count, n);
                 _count += n;
-                bytes = bytes.Slice(n);
+                at += n;
+                left -= n;
                 Drain(onFrame);
             }
         }

@@ -1246,7 +1246,7 @@ namespace Backend.Client.Headless
             using var m = new MatchConnection(new MatchSettings
             {
                 Host = grant.Host, Port = grant.Port, Tls = true, TlsName = grant.TlsName,
-                CertificateCheck = new TrustRoot(_wrongTrust).Check,
+                Trust = new TrustRoot(_wrongTrust),
             }, new SystemClock());
             m.Join(grant.TicketId);
             Check(RunUntil(m, 10_000, () => m.State == MatchState.Ended), "the attempt ended");
@@ -2592,12 +2592,12 @@ namespace Backend.Client.Headless
             new MatchConnection(new MatchSettings
             {
                 Host = g.Host, Port = g.Port, Tls = g.Tls, TlsName = g.TlsName,
-                CertificateCheck = _trust == null ? null : new TrustRoot(_trust).Check,
+                Trust = _trust == null ? null : new TrustRoot(_trust),
             }, new SystemClock());
 
         /// <summary>A lobby connection, trusting --trust's root when given, as the app's does (D-82).</summary>
         private static LobbyClient NewLobby() =>
-            new LobbyClient(_lobby, new SystemClock(), _trust == null ? null : new TrustRoot(_trust).Configure);
+            new LobbyClient(_lobby, new SystemClock(), _trust == null ? null : new TrustRoot(_trust));
 
         /// <summary>Polls as a frame loop would, at 60 Hz, until the condition holds or time runs out.</summary>
         private static bool RunUntil(MatchConnection m, int ms, Func<bool> done, bool quiet = false)

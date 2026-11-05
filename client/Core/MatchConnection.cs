@@ -61,10 +61,10 @@ namespace Backend.Client.Core
         /// </summary>
         public string TlsName;
         /// <summary>
-        /// Null: the device's trust store and the grant's host name, which is what players get.
-        /// A test sets its own, to trust a test CA; nothing is pinned either way (03 §2).
+        /// The backend's root, which the arena's certificate must chain to for the name the handshake sends (D-82,
+        /// D-108); null, the runtime's own check. Nothing is pinned either way (03 §2).
         /// </summary>
-        public RemoteCertificateValidationCallback CertificateCheck;
+        public TrustRoot Trust;
         /// <summary>The most this client wants sent (02 §8), or -1 for the server's default.</summary>
         public int Profile = -1;
     }
@@ -328,8 +328,9 @@ namespace Backend.Client.Core
         }
 
         /// <returns>false if the frame ended this connection's reading</returns>
-        private bool Handle(byte[] frame, long now)
+        private bool Handle(byte[] whole, long now)
         {
+            var frame = new ArraySegment<byte>(whole);
             try
             {
                 switch (ServerMessages.TypeOf(frame))
@@ -498,10 +499,11 @@ namespace Backend.Client.Core
                     Stream stream = _tcp.GetStream();
                     if (_settings.Tls)
                     {
-                        var tls = new SslStream(stream, false, _settings.CertificateCheck);
                         // Checked against the name the grant gives, whatever address was dialled: behind the front
                         // (D-82) its tlsName, which is also what the handshake sends and nginx routes by.
-                        tls.AuthenticateAsClient(_settings.TlsName ?? _settings.Host);
+                        string name = _settings.TlsName ?? _settings.Host;
+                        var tls = new SslStream(stream, false, _settings.Trust?.CheckFor(name));
+                        tls.AuthenticateAsClient(name);
                         stream = tls;
                     }
                     Stream = stream;
@@ -511,7 +513,7 @@ namespace Backend.Client.Core
                     {
                         int n = stream.Read(buffer, 0, buffer.Length);
                         if (n <= 0) break;
-                        _frames.Feed(new ReadOnlySpan<byte>(buffer, 0, n), Inbox.Enqueue);
+                        _frames.Feed(new ArraySegment<byte>(buffer, 0, n), Inbox.Enqueue);
                     }
                 }
                 catch (Exception e)

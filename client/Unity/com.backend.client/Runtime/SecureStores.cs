@@ -58,7 +58,12 @@ namespace Backend.Client.Unity
             if (value == IntPtr.Zero) return null;
             try
             {
-                return Marshal.PtrToStringUTF8(value);
+                // UTF-8 to its NUL by hand: Marshal.PtrToStringUTF8 is not in .NET Standard 2.0 (Unity 2019, D-108).
+                int n = 0;
+                while (Marshal.ReadByte(value, n) != 0) n++;
+                var bytes = new byte[n];
+                Marshal.Copy(value, bytes, 0, n);
+                return System.Text.Encoding.UTF8.GetString(bytes);
             }
             finally
             {

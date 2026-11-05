@@ -28,7 +28,7 @@ namespace Backend.Client.Core
         void CreateUnit(int handle, int x, int y, int angle, int hp, int subtype, int team, int ownerHandle, int radius);
         void Update(in SnapshotUpdate update);
         /// <summary>The payload is only valid during the call.</summary>
-        void Event(int type, ReadOnlySpan<byte> payload);
+        void Event(int type, ArraySegment<byte> payload);
     }
 
     /// <summary>
@@ -41,7 +41,7 @@ namespace Backend.Client.Core
     /// </summary>
     public static class SnapshotDecoder
     {
-        public static void Decode(ReadOnlySpan<byte> frame, ISnapshotSink sink)
+        public static void Decode(ArraySegment<byte> frame, ISnapshotSink sink)
         {
             var r = new WireReader(frame);
             int type = r.U8();
@@ -94,7 +94,7 @@ namespace Backend.Client.Core
 
             // Trailing bytes mean the two sides disagree about some field's width, and the next
             // frame would be read from the wrong place.
-            if (!r.Done) throw new ProtocolException($"trailing bytes: read {r.Position} of {frame.Length}");
+            if (!r.Done) throw new ProtocolException($"trailing bytes: read {r.Position} of {frame.Count}");
         }
 
         private static void ReadCreate(ref WireReader r, ISnapshotSink sink)

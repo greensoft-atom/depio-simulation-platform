@@ -19,7 +19,7 @@ cd client
 | The Java | `javac --release 11 -Werror` of `AndroidStubs/**/*.java` with `../Unity/com.backend.client/Plugins/Android/SecureStore.java`: `ok   Java, the Android plugin` |
 | The verdict | `UNITY CHECK PASSED (compiled against stubs; not run, not in Unity)` |
 
-The project (`UnityCheck.csproj`): .NET Standard 2.1, C# 9, warnings as errors,
+The project (`UnityCheck.csproj`): .NET Standard 2.0, C# 7.3 as Unity 2019.4 compiles (D-108), warnings as errors,
 default compile items off; it compiles `Stubs/**/*.cs` and the package's
 `Runtime/**/*.cs`, adds `$(UnityDefines)` to the defined constants, and
 references the core's project. `CS0649`, a field never assigned, is not an

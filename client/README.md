@@ -11,13 +11,18 @@ The diagrams are in [docs/diagrams/06-client.md](../docs/diagrams/06-client.md).
 
 | Project | What it is | Target | Depends on | Its README |
 |---|---|---|---|---|
-| `Core/` | `Backend.Client.Core`: everything that speaks to the server, and what a frame draws, with no engine in it: the wire, the world, the match connection, the own tank's prediction, the API, the lobby, the scene and its clock, the sticks, the account kept, JSON | .NET Standard 2.1, C# 9 | nothing | [Core/README.md](Core/README.md) |
-| `Core.Tests/` | NUnit tests of the core, which Unity's test runner also runs: the server's golden vectors, a scripted arena on a local socket, scripted HTTP answers | .NET 8, C# 9 | Core; NUnit 3.14.0, NUnit3TestAdapter 4.6.0, Microsoft.NET.Test.Sdk 17.11.1 | [Core.Tests/README.md](Core.Tests/README.md) |
+| `Core/` | `Backend.Client.Core`: everything that speaks to the server, and what a frame draws, with no engine in it: the wire, the world, the match connection, the own tank's prediction, the API, the lobby, the scene and its clock, the sticks, the account kept, JSON | .NET Standard 2.0, C# 7.3 (Unity 2019.4 and later, .NET Framework 4.7.1; D-108) | nothing | [Core/README.md](Core/README.md) |
+| `Core.Tests/` | NUnit tests of the core, which Unity 2022.3's test runner and later also run (not Unity 2019's: C# 9; `unity2019-check.sh` runs the core on its Mono instead): the server's golden vectors, a scripted arena on a local socket, scripted HTTP answers | .NET 8, C# 9 | Core; NUnit 3.14.0, NUnit3TestAdapter 4.6.0, Microsoft.NET.Test.Sdk 17.11.1 | [Core.Tests/README.md](Core.Tests/README.md) |
 | `Headless/` | The core driven without Unity against a running stack, a player's path scenario by scenario; what the live drills run | .NET 8, C# 9 | Core | [Headless/README.md](Headless/README.md) |
-| `Unity/com.backend.client/` | The Unity layer: a UPM package of thin scripts over the core, and its iOS and Android plugins for the secure store | Unity 2022.3 LTS or 6 LTS | the core, as the library `unity-package.sh` copies in | [Unity/com.backend.client/README.md](Unity/com.backend.client/README.md) |
-| `UnityCheck/` | Compiles the package's scripts against stubs of the Unity API, in each platform branch, and its Android plugin against stubs of Android's; nothing is run | .NET Standard 2.1, C# 9 | Core | [UnityCheck/README.md](UnityCheck/README.md) |
+| `Unity/com.backend.client/` | The Unity layer: a UPM package of thin scripts over the core, and its iOS and Android plugins for the secure store | Unity 2019.4 LTS and later | the core, as the library `unity-package.sh` copies in | [Unity/com.backend.client/README.md](Unity/com.backend.client/README.md) |
+| `UnityCheck/` | Compiles the package's scripts against stubs of the Unity API, in each platform branch, and its Android plugin against stubs of Android's; nothing is run | .NET Standard 2.0, C# 7.3 | Core | [UnityCheck/README.md](UnityCheck/README.md) |
+| `UnityRuntimeCheck/` | The core on Unity 2019.4's own Mono: certificates of `private-ca.sh` checked, JSON under a decimal comma, the API, the lobby and a match each through TLS; built and run by `unity2019-check.sh` alone | .NET 4.x, C# 7.3, Unity 2019.4.28f1's compiler | Core | this table, and [08 §6](../docs/detailed-design/08-client.md#6-testing) |
 
-`Backend.Client.sln` holds Core, Core.Tests, Headless and UnityCheck. Every
+`Backend.Client.sln` is the client's one solution, **Visual Studio 2019's** (D-108): Core and UnityCheck, both .NET
+Standard 2.0 and C# 7.3. VS 2019 builds it with a .NET SDK of 5.0 or older (VS 2019 16.11 installs 5.0; a 6 or later
+asks for MSBuild 17); a .NET Framework 4.7.1 project or later references the core, or takes its sources, as it is
+(`vs2019-check.sh`). Core.Tests and Headless are this repository's checks, .NET 8, outside the solution: built and
+run by their paths with the .NET 8 SDK (`dotnet test Core.Tests`, `dotnet build Headless`). Every
 project builds with warnings as errors and nullable reference types off.
 
 ```
@@ -34,6 +39,9 @@ client/
 │   ├── OwnTank.cs              the own tank, predicted: steps, replay, corrections (08 §4, D-62)
 │   ├── ApiClient.cs            the platform API, its endpoints tried in turn, and what it answers
 │   ├── LobbyClient.cs          the lobby WebSocket: auth, ping, requests, pushes
+│   ├── WebSocketLink.cs        the lobby's WebSocket itself, RFC 6455's client over TCP or TLS (D-108)
+│   ├── TrustRoot.cs            the backend's root, a certificate checked by the client itself (D-82, D-108)
+│   ├── WebRequestTransport.cs  the API's requests through HttpWebRequest, each checked for its host (D-108)
 │   ├── PartyState.cs           the party as told, the newest kept (04 §4, D-74)
 │   ├── Scene.cs                what a frame draws where, at a render tick, and the render clock: 08 §8
 │   ├── TouchSticks.cs          two sticks, or keys and a mouse, to an input: 08 §8
@@ -45,6 +53,9 @@ client/
 ├── UnityCheck/                 the scripts compiled against stubs: nothing run
 ├── unity-package.sh            builds the core into the Unity package
 ├── unity-check.sh              the check, in every platform branch
+├── unity2019-check.sh          the core and the scripts by Unity 2019.4.28f1's compiler, and the core on its Mono
+├── UnityRuntimeCheck/          what that runs on Unity's Mono
+├── vs2019-check.sh             the core built by Visual Studio 2019's MSBuild and Roslyn, for .NET Framework 4.7.1 too
 └── headless-drill.sh           starts the stack from a release and runs the headless client
 ```
 
@@ -57,10 +68,12 @@ core itself has no dependencies.
 ```bash
 cd client
 export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
-/opt/dotnet/dotnet build                                          # the four projects, Debug
-/opt/dotnet/dotnet test --logger "console;verbosity=normal"       # the core's tests: read "Total tests:"
+/opt/dotnet/dotnet build Headless                                 # the driver and the core, Debug (Backend.Client.sln: Core, UnityCheck)
+/opt/dotnet/dotnet test Core.Tests --logger "console;verbosity=normal"   # the core's tests: read "Total tests:"
 ./unity-package.sh                                                # the core, Release, into the Unity package
 ./unity-check.sh                                                  # the package compiled against stubs
+./unity2019-check.sh                                              # Unity 2019.4.28f1's compiler and Mono (D-108)
+./vs2019-check.sh                                                 # Visual Studio 2019's MSBuild and Roslyn, in docker (D-108)
 ```
 
 **Check the total, not only the verdict.** `dotnet test` says "Passed!" even when
@@ -78,7 +91,7 @@ the check `JAVAC`, from the environment.
 ## Against the real server
 
 ```bash
-/opt/dotnet/dotnet build
+/opt/dotnet/dotnet build Headless
 TMPDIR=<scratchpad> ./headless-drill.sh [scenario ...]           # plaintext
 TLS=1 TMPDIR=<scratchpad> ./headless-drill.sh play untrusted      # the arena over TLS
 ```
@@ -86,7 +99,7 @@ TLS=1 TMPDIR=<scratchpad> ./headless-drill.sh play untrusted      # the arena ov
 It needs the backend's release (`backend/scripts/make-release.sh`), the j-redis
 server and command-line jars, a JDK 21, python3 and the development MySQL; the
 script says which, and where it looks. It runs the headless client from
-`Headless/bin/Debug/net8.0`, built by `dotnet build`, with
+`Headless/bin/Debug/net8.0`, built by `dotnet build Headless`, with
 `http://127.0.0.1:8093 --lobby ws://127.0.0.1:8094/lobby`, the operator's API
 and a way to write the drill's fixtures (see [Headless/README.md](Headless/README.md)).
 With no scenario named it runs `play resume badticket lifecycle`.

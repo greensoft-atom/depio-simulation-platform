@@ -119,7 +119,7 @@ java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.RankBenchma
 ```
 
 The client's own tests, with the .NET 8 SDK (not in the repository; `/opt/dotnet` on the development
-VM): `cd client && DOTNET_NOLOGO=1 dotnet test`. Running each
+VM): `cd client && DOTNET_NOLOGO=1 dotnet test Core.Tests`. Running each
 process by hand is [below](#running-it).
 
 ## Login, and what it costs

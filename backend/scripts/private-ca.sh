@@ -10,8 +10,9 @@
 #   private-ca.sh names <backend-stream.conf>           the arenas' names in nginx's map, for issue
 #   private-ca.sh show  <certificate.pem>               what a certificate names, by whom, until when
 #
-# Each name is an IP address (the site's public one) or a host name (an arena's, a1.arena.internal). Keys are EC
-# P-256, signatures SHA-256. Nothing is overwritten: a root already in ca-dir, or a key or certificate already in
+# Each name is an IP address (the site's public one) or a host name (an arena's, a1.arena.internal). Keys are RSA,
+# the root's 3072 bits and a certificate's 2048, signatures SHA-256: the one key Unity 2019's runtime can check
+# (D-108; it was EC P-256). Nothing is overwritten: a root already in ca-dir, or a key or certificate already in
 # out-dir, refuses the run. ROOT_DAYS (3650) and DAYS (398) set how long the root and a certificate are valid.
 # Needs openssl alone: the system's, 1.1.1 or later (RHEL 8's 1.1.1, RHEL 9's 3.x; D-103).
 set -euo pipefail
@@ -46,7 +47,7 @@ basicConstraints = critical, CA:TRUE, pathlen:0
 keyUsage = critical, keyCertSign, cRLSign
 subjectKeyIdentifier = hash
 EOF
-    openssl req -x509 -new -config "$WORK/root.cnf" -extensions root -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+    openssl req -x509 -new -config "$WORK/root.cnf" -extensions root -newkey rsa:3072 \
         -nodes -sha256 -days "$ROOT_DAYS" -keyout "$dir/ca.key" -out "$dir/ca.pem" 2> "$WORK/err" \
         || { cat "$WORK/err" >&2; refuse "openssl could not make the root"; }
     chmod 0600 "$dir/ca.key"
@@ -88,7 +89,7 @@ subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid
 subjectAltName = $alt
 EOF
-    openssl req -new -config "$WORK/leaf.cnf" -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+    openssl req -new -config "$WORK/leaf.cnf" -newkey rsa:2048 -nodes \
         -keyout "$WORK/privkey.pem" -out "$WORK/leaf.csr" 2> "$WORK/err" \
         || { cat "$WORK/err" >&2; refuse "openssl could not make the key"; }
     openssl x509 -req -in "$WORK/leaf.csr" -CA "$dir/ca.pem" -CAkey "$dir/ca.key" \

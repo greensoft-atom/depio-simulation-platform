@@ -4198,14 +4198,30 @@ HTML before), `dev-nginx.sh test` (80's 308 before), each failing, then passing;
 prefix and method, the second listen line). Docs: D-107 (D-92 in part superseded), P-61, P-62, T-65 to T-67,
 DOC-45, operations/11 §5, §9, §10, 05, api/01 and its README, development/02 and 03, deploy/README, CLAUDE.md.
 
-#### 129. The client in Unity 2019.4 and Visual Studio 2019, .NET Framework (the owner, 2026-11-05)
+#### 129. ~~The client in Unity 2019.4 and Visual Studio 2019, .NET Framework (the owner, 2026-11-05).~~ — **done 2026-11-05**
 
-The owner's UI team works in Unity 2019.4 (2019.4.28f1 taken: every 2019.4 compiles C# 7.3) and Visual Studio 2019
-on .NET Framework; the core was written for Unity 2022.3 and 6 (C# 9, .NET Standard 2.1). To do: the core and the
-Unity scripts in C# 7.3 on .NET Standard 2.0 and .NET Framework 4.7.1; what those lack replaced (the lobby's
-certificate check among them); compiled by Unity 2019.4.28f1's own compiler against its own `UnityEngine.dll`; the
-core's tests and the drills run on its Mono; and what can be seen only in the editor or on a phone left for the
-team, said so.
+The owner's team builds in Unity 2019.4 (2019.4.28f1 taken: every 2019.4 compiles C# 7.3) and Visual Studio 2019,
+first; the client was written for Unity 2022.3 and 6 (C# 9, .NET Standard 2.1). **Found** (D-108), by Unity
+2019.4.28f1's own compiler and Mono, from its Linux editor (no licence needed for either): the core did not compile
+there (P-64: spans, a C# 9 conditional, three APIs), and on that runtime it could have connected over TLS to nothing
+(P-63: no EC key read, `X509Chain` throws on one, no ECDSA; `HttpClientHandler`'s certificate callback not
+implemented; no callback for the lobby's WebSocket). **Done**: the core C# 7.3 on .NET Standard 2.0; the backend's
+CA RSA (3072 the root, 2048 a certificate), `dev-nginx.sh` replacing an EC root it kept and saying so; the client's
+own check of a certificate (its RSA signature by the root's key, its dates, its subjectAltName for the host), the
+API through `HttpWebRequest` and the lobby through a WebSocket of the core's own over `SslStream`, each connection
+its own check. `client/Backend.Client.sln` is VS 2019's, the core and UnityCheck, no solution for another version
+(the owner); the tests and the headless driver, .NET 8, by their paths. **Checked**: `unity2019-check.sh` (Unity's
+compiler, warnings as errors: the core at .NET Standard 2.0 and .NET 4.x, the package's scripts against its own
+`UnityEngine` at both in each platform branch; then the core on its Mono: `private-ca.sh`'s certificates accepted
+and refused, an EC root refused saying why, JSON under de-DE, the API, the lobby's `wss://` and a match each through
+TLS to a server of Mono's own); `vs2019-check.sh` (VS 2019's MSBuild and Roslyn, 16.11 and 16.7: the core, its
+sources in a .NET Framework 4.7.1 library, a 4.7.1 app using it, Unity's project as VS 2019 compiles it, the
+solution; a C# 8 operator and a missing API each failing every build); the core's tests on .NET 8, 193, twelve
+mutants caught; `check-certificates.sh` on OpenSSL 1.1.1k, 3.0.13 and 3.2.2; the live drill with the new client,
+through nginx over TLS (`FRONT=https NEWMAN=1`) every scenario, `untrusted` among them, and the collection's 137
+requests, all passing, seven of the lobby's in the plain way, and `TLS=1 play untrusted` with the arena's own RSA key. Not here: the Unity editor (a licence), Unity's own TLS (the editor's and the player's) and an
+Android phone: the team's. Docs: D-108, P-63, P-64, 08 §1 and §6, operations/06, the client's READMEs, working-here
+(the standing decision, Mono's traps), CLAUDE.md.
 
 ---
 

@@ -31,8 +31,10 @@ which port serves it is [05](05-ports-and-firewall.md).
 | `fullchain.pem` | the site's certificate | every machine's `/etc/backend/tls/fullchain.pem` | no |
 
 `scripts/private-ca.sh` makes all four with the system's `openssl`, 1.1.1 or later, which every RHEL 8 and 9 machine has (D-103):
-EC P-256 keys, SHA-256 signatures. It runs from the repository (`backend/scripts/`) or from an
-installed release (`/opt/backend/scripts/`).
+RSA keys, the root's 3072 bits and a certificate's 2048, SHA-256 signatures ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root)): the one key Unity 2019's
+runtime can check, where it can read no EC key at all. TLS's exchange stays ECDHE, the ciphers as they were. A root
+made before 2026-11-05 is EC: make the root again (§2) and every certificate from it (§3), and ship the new `ca.pem`
+in the app (§5). It runs from the repository (`backend/scripts/`) or from an installed release (`/opt/backend/scripts/`).
 
 ## 2. Making the root, once
 
@@ -131,15 +133,20 @@ For whoever builds the client:
   the site's address.
 - **Matches need nothing more**: the grant carries the address to dial and the name to give
   (`tlsName`), and the core checks the certificate against that name.
+- **The check is the core's own**, the same on every runtime ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root)): the certificate issued by the root (its
+  RSA signature, SHA-256, verified with the root's key, which nothing else can sign for), valid now, and naming the host or the
+  `tlsName` in its subjectAltName; the runtime's own verdict is not asked. A root that is not RSA is refused when the
+  app starts, saying so.
 - **Nothing to pin, and no plaintext fallback**: a certificate that does not check is a connection
   refused, and the client says so.
 
 The headless driver does the same with `--trust ca.pem` ([client/Headless/README](../../client/Headless/README.md)).
 
 **Not proved here**: the app in Unity on a phone. The core's trust is tested in `Core.Tests`
-(`TrustRootTests`), and the Unity scripts compile against stubs (`client/unity-check.sh`). Whether
-Unity's own runtime honours the core's certificate checks, on Android (C-10), is to be seen on
-devices: nothing here runs Unity.
+(`TrustRootTests`) on .NET 8, and on Unity 2019.4.28f1's own Mono by `client/unity2019-check.sh`: certificates of
+`private-ca.sh` accepted and refused, and the API, the lobby and a match each through TLS. That TLS is Mono's own
+outside the editor, not Unity's (the editor's and the player's), so whether Unity's TLS on Android (C-10) completes
+the handshake is to be seen in the editor and on devices; the check it then calls is the same code.
 
 ## 6. Renewing, every year
 

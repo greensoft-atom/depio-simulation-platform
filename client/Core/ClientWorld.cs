@@ -173,7 +173,7 @@ namespace Backend.Client.Core
         /// acknowledge. A <see cref="ProtocolException"/> leaves the world part-applied: drop it
         /// with the connection and resume (08 §3).
         /// </summary>
-        public long Apply(ReadOnlySpan<byte> frame)
+        public long Apply(ArraySegment<byte> frame)
         {
             _eventCount = 0;
             _removals.Clear();
@@ -319,7 +319,7 @@ namespace Backend.Client.Core
             if (u.Has(Wire.FFlags)) e.Flags = u.Flags;
         }
 
-        void ISnapshotSink.Event(int type, ReadOnlySpan<byte> payload)
+        void ISnapshotSink.Event(int type, ArraySegment<byte> payload)
         {
             // The own tank's motion: state for its prediction, kept here and handed to nobody (D-62).
             if (type == Wire.EvtMotion)
@@ -334,8 +334,10 @@ namespace Backend.Client.Core
             if (type == Wire.EvtMotionRule)
             {
                 var m = new WireReader(payload);
-                Motion.Accel = BitConverter.Int32BitsToSingle(unchecked((int)m.U32BigEndian()));
-                Motion.Radius = BitConverter.Int32BitsToSingle(unchecked((int)m.U32BigEndian()));
+                // The float's bits as they came: .NET Standard 2.0 has no Int32BitsToSingle (D-108), and once a stay
+                // the array costs nothing.
+                Motion.Accel = BitConverter.ToSingle(BitConverter.GetBytes(m.U32BigEndian()), 0);
+                Motion.Radius = BitConverter.ToSingle(BitConverter.GetBytes(m.U32BigEndian()), 0);
                 Motion.HasRule = true;
                 return;
             }

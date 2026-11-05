@@ -160,7 +160,12 @@ for the backend, its docs and its client.
   for 180 days is erased by retention (Q-61, D-87).
 - **Client scope:** the engine-free C# core, the headless driver, and since 2026-10-04 (Q-51,
   plan item 77) the Unity layer as scripts: logic in the core where it can be tested, the
-  Unity scripts thin. There is no Unity here: say what was and was not compiled.
+  Unity scripts thin. There is no Unity editor here (a licence): Unity 2019.4.28f1's compiler, assemblies and Mono
+  are, in `work/unity` (`unity2019-check.sh`): say what was compiled, what ran on its Mono, and what only the editor
+  or a phone can show.
+- **The client is for Unity 2019.4 and Visual Studio 2019 first** (owner, 2026-11-05; D-108): the core C# 7.3 on
+  .NET Standard 2.0, `client/Backend.Client.sln` VS 2019's and no solution for another version (Core.Tests and
+  Headless, .NET 8, outside it, by their paths); the backend's CA RSA, which Unity 2019's runtime can check.
 - **Ports 6381 and 8082 belong to other processes.** Drills use 6390 (j-redis), 6392 (its
   replica, `FAILOVER=1`), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 (platform's
   metrics), 9196 (platform's admin API), 9197, 9198 and 9199 (the arena's, the gateway's and
@@ -210,7 +215,7 @@ for the backend, its docs and its client.
                                                     # PLAIN=1, to every command: 80 (the API, the lobby) and 9001 without TLS (D-101)
 
 # Client core tests (look for "Total tests:")
-cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test --logger "console;verbosity=normal"
+cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test Core.Tests --logger "console;verbosity=normal"
 
 # Crypto examples (from backend/, in that shell), then their probe on a release's runtime (docs/development/04 §5)
 mvn -q -pl crypto-examples test
@@ -218,6 +223,10 @@ target/release/backend-*/runtime/bin/java -cp crypto-examples/target/classes com
 
 # The Unity package: the core built into it, then its scripts compiled against stubs (nothing run)
 client/unity-package.sh && client/unity-check.sh
+# Unity 2019.4.28f1's compiler on the core and the scripts against its UnityEngine, the core run on its Mono (D-108)
+TMPDIR=<scratchpad> client/unity2019-check.sh
+# Visual Studio 2019's MSBuild and Roslyn (16.11, 16.7) on the core, .NET Framework 4.7.1, Unity's project, the solution
+client/vs2019-check.sh
 
 # Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice erase
 TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]

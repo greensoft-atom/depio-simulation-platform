@@ -2,11 +2,12 @@
 
 Everything the client says to the server, and what a frame draws, with no
 engine in it ([08 §1](../../docs/detailed-design/08-client.md#1-two-layers)).
-.NET Standard 2.1 and C# 9, which is what Unity's scripting runtime compiles;
-no package references, so it drops into a Unity project as one library
-(`../unity-package.sh`) and runs with the .NET SDK here, where its tests and the
-headless drills drive it against the real server. No `record` types: C# 9
-records need a runtime type Unity does not ship.
+.NET Standard 2.0 and C# 7.3, which Unity 2019.4 compiles at either API level, Visual Studio 2019 for .NET
+Framework 4.7.1, and Unity 2022.3 and 6 too (D-108; `../unity2019-check.sh` compiles it with Unity 2019.4.28f1's own
+compiler and runs it on its Mono); no package references, so it drops into a Unity project as one library
+(`../unity-package.sh`) and runs with the .NET SDK here, where its tests and the headless drills drive it against
+the real server. No spans, which .NET Standard 2.0 lacks: a frame is an `ArraySegment<byte>`. The TLS check is its
+own (`TrustRoot`, D-108): the API through `HttpWebRequest`, the lobby through a WebSocket of its own over `SslStream`.
 
 Its structure, and the lifecycles below, are drawn in
 [docs/diagrams/06-client.md](../../docs/diagrams/06-client.md).
@@ -60,7 +61,7 @@ queues and a connection's own flags (connected, closed, the failure). Events (`M
 | Type | What it is for |
 |---|---|
 | `MatchConnection` | One player's connection to one arena: `Join(ticket)` or `Resume(secret)`, `Poll()` once a frame, `SetInput`, `SetBackgrounded`, `Respawn`, `UpgradeStat`, `ChooseClass`, `Say`, `SetLevel`, `SummonGuardian`, `Leave`; `State`, `End`, `World`, `OwnTank`, `Welcome`, `Alive` (false from a Death to the respawn), `RoundTripMs`, `LastProblem`, `OnEvent`, `OnFrame` (after each frame, while the world holds its removals) |
-| `MatchSettings` | Where and how to dial, from the grant: `Host`, `Port`, `Tls`, `CertificateCheck` (null: the device's trust store), `Profile` (−1: left out, read as mobile) |
+| `MatchSettings` | Where and how to dial, from the grant: `Host`, `Port`, `Tls`, `TlsName`, `Trust` (the backend's root, checked for the name the handshake sends; null: the runtime's own check), `Profile` (−1: left out, read as mobile) |
 | `MatchState` | `Connecting`, `Joining`, `InMatch`, `Lost`, `Ended` |
 | `MatchEnd` | Why it ended, each with its own next step ([08 §3](../../docs/detailed-design/08-client.md#3-the-match-connection)): `Left`, `BadTicket`, `RoomFull`, `ProtocolVersion`, `RateLimit`, `ServerFault`, `Unreachable`, `ResumeExpired`, `MatchOver`, `Removed` |
 | `IClock`, `SystemClock` | Milliseconds that never go backwards; a test's can be moved by hand |

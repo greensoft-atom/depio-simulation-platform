@@ -8,5 +8,5 @@ cd "$(dirname "$0")"
 DOTNET=${DOTNET:-$( { [ -x /opt/dotnet/dotnet ] && echo /opt/dotnet/dotnet; } || command -v dotnet || echo /opt/dotnet/dotnet)}
 DOTNET_NOLOGO=1 "$DOTNET" build Core -c Release -v q
 mkdir -p Unity/com.backend.client/Runtime/Plugins
-cp Core/bin/Release/netstandard2.1/Backend.Client.Core.dll Unity/com.backend.client/Runtime/Plugins/
+cp Core/bin/Release/netstandard2.0/Backend.Client.Core.dll Unity/com.backend.client/Runtime/Plugins/
 echo "Unity/com.backend.client/Runtime/Plugins/Backend.Client.Core.dll: $(stat -c %s Unity/com.backend.client/Runtime/Plugins/Backend.Client.Core.dll) bytes"
