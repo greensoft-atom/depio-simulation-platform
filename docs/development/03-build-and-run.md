@@ -591,7 +591,7 @@ And `vendor/build-nginx.sh` compiles nginx again ([vendor/README](../../vendor/R
 ## 9. The client
 
 The engine-free core, its tests and the headless driver, with the .NET 8 SDK:
-`cd client && dotnet test Core.Tests` (read `Total tests:`); the Unity package:
+`cd client && dotnet test Core.Tests -f net8.0` (read `Total tests:`); the Unity package:
 `client/unity-package.sh && client/unity-check.sh` (compiled against stubs; nothing
 here runs Unity). [client/README](../../client/README.md).
 

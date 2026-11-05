@@ -30,6 +30,11 @@ namespace Backend.Client.Core
     public static class ServerMessages
     {
         /// <summary>The message type: the frame's first byte.</summary>
+        public static int TypeOf(byte[] frame) => TypeOf(new ArraySegment<byte>(frame));
+        public static Welcome ReadWelcome(byte[] frame) => ReadWelcome(new ArraySegment<byte>(frame));
+        public static Pong ReadPong(byte[] frame) => ReadPong(new ArraySegment<byte>(frame));
+        public static int ReadKick(byte[] frame) => ReadKick(new ArraySegment<byte>(frame));
+
         public static int TypeOf(ArraySegment<byte> frame)
         {
             if (frame.Count == 0) throw new ProtocolException("an empty frame");
@@ -238,6 +243,8 @@ namespace Backend.Client.Core
         private int _count;
 
         /// <summary>Adds bytes read from the socket and calls <paramref name="onFrame"/> for each whole frame.</summary>
+        public void Feed(byte[] bytes, Action<byte[]> onFrame) => Feed(new ArraySegment<byte>(bytes), onFrame);
+
         public void Feed(ArraySegment<byte> bytes, Action<byte[]> onFrame)
         {
             int at = bytes.Offset, left = bytes.Count;

@@ -145,10 +145,10 @@ namespace Backend.Client.Core.Tests
             string sent = null, auth = null;
             var hosts = new Hosts
             {
-                Answer = r =>
+                Answer = q =>
                 {
-                    sent = r.Content.ReadAsStringAsync().Result;
-                    auth = r.Headers.Authorization?.ToString();
+                    sent = q.Content.ReadAsStringAsync().Result;
+                    auth = q.Headers.Authorization?.ToString();
                     return Json(HttpStatusCode.OK, "{\"result\":\"already_bought\",\"itemId\":\"cosmetic_hat\",\"coins\":50,\"held\":2}");
                 },
             };

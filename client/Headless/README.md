@@ -5,7 +5,9 @@ would, scenario by scenario: each check printed `ok` or `FAIL`, and the exit
 status 0 only if every check passed
 ([08 §6](../../docs/detailed-design/08-client.md#6-testing)). A tool for the
 development machine, not part of the app, so it may use what .NET has and
-Unity does not. .NET 8, C# 9; a project reference to `Core`.
+Unity does not. C# 7.3 on .NET Framework 4.7.1, which Visual Studio 2019 builds and a Windows machine runs, and on
+.NET 8 where MSBuild is 17 or later, which the drills here run (`bin/Debug/net8.0`; on Linux only .NET speaks TLS 1.2;
+D-109); a project reference to `Core`.
 
 `../headless-drill.sh` starts the stack from a release and runs it; see
 [../README.md](../README.md#against-the-real-server) for the drill's modes and

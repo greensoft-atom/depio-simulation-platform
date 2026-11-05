@@ -3,7 +3,8 @@
 # its references and its own UnityEngine assemblies, from its Linux editor in work/unity (downloaded once, 1.8 GB,
 # its SHA-256 checked). The core at both of Unity's API levels, .NET Standard 2.0 and .NET 4.x (.NET Framework
 # 4.7.1's references, what Visual Studio 2019 builds against too); the package's scripts against UnityEngine at both,
-# in each platform branch; then the core run on Unity's own Mono 5.11 (unity-runtime-check). Warnings are errors.
+# in each platform branch; then the core run on Unity's own Mono 5.11 (UnityRuntimeCheck), and the core's tests,
+# compiled by Unity's compiler, run on it by NUnitLite (D-109). Warnings are errors.
 # Not the editor itself (it needs a licence), not Unity's TLS (the editor's and the player's), not a phone.
 #
 #   client/unity2019-check.sh            UNITY_DATA=<an editor's Editor/Data> for another copy
@@ -73,5 +74,32 @@ P=$OUT/pki CA=$B/backend/scripts/private-ca.sh OLD_P12="-keypbe PBE-SHA1-3DES -c
   > "$OUT/pki.log" 2>&1 || { cat "$OUT/pki.log"; echo "UNITY 2019 CHECK FAILED: the certificates"; exit 1; }
 MONO_PATH=$U/MonoBleedingEdge/lib/mono/unityjit timeout 300 "$MONO" "$OUT/net4.x/check.exe" "$P" \
     || { echo "UNITY 2019 CHECK FAILED: the core on Unity's Mono"; exit 1; }
-echo "UNITY 2019 CHECK PASSED (compiled by Unity $VERSION's compiler against its assemblies, the core run on its Mono;"
+echo "--- the core's tests on Unity's Mono, compiled by its compiler (D-109)"
+# NUnit and NUnitLite for .NET Framework, from nuget.org once, their SHA-256 checked.
+N=$W/nuget; mkdir -p "$N"
+for p in "nunit 0ae3ffab91e8bcf59f016dc2b72fd0c518bb5698f2909dd30cbab94c4348e8a6" \
+         "nunitlite 75c5f1ded2ca9d510cad569d2f60d9243ebffab502c35840406333bedc4a9696"; do
+    set -- $p
+    [ -f "$N/$1/lib/net45/$1.dll" ] || [ -f "$N/$1/lib/net45/$1.framework.dll" ] && continue
+    curl -fsSL -o "$N/$1.nupkg" "https://api.nuget.org/v3-flatcontainer/$1/3.14.0/$1.3.14.0.nupkg"
+    echo "$2  $N/$1.nupkg" | sha256sum -c --quiet || { echo "UNITY 2019 CHECK FAILED: $1's SHA-256"; exit 1; }
+    mkdir -p "$N/$1" && (cd "$N/$1" && unzip -q -o ../$1.nupkg 'lib/net45/*')
+done
+T=$OUT/tests; mkdir -p "$T/Pki"
+cp "$OUT/net4.x/Backend.Client.Core.dll" "$N/nunit/lib/net45/nunit.framework.dll" "$N/nunitlite/lib/net45/nunitlite.dll" "$T/"
+# shellcheck disable=SC2046
+compile "the core's tests and their runner, C# 7.3, net4.x" "$T/tests.exe" -target:exe $(level_refs net4.x) \
+    -r:"$T/Backend.Client.Core.dll" -r:"$T/nunit.framework.dll" -r:"$T/nunitlite.dll" "$C"/Core.Tests/*.cs "$C/UnityRuntimeCheck/RunTests.cs"
+cp "$C"/Core.Tests/Pki/*.pem "$C"/Core.Tests/Pki/*.p12 "$T/Pki/"
+cp "$B/protocol-spike/vectors/vectors.txt" "$B/backend/sim/src/test/resources/maze-2026.txt" \
+   "$B/backend/arena/src/test/resources/motion-2026.txt" "$C/Core.Tests/README.md" "$T/"
+# float32, as Unity's own Mono has it (its fork's "[jit] Enable float32 by default"): the standalone mono here computes
+# a float in double without it, and the own tank's step then differs from the server's in its last bits (P-65).
+(cd "$T" && MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=$U/MonoBleedingEdge/lib/mono/unityjit timeout 900 "$MONO" tests.exe \
+    --noresult --noheader > "$T/run.txt" 2>&1)
+sed -n '/^Errors, Failures/,/^Test Run Summary/p' "$T/run.txt" | grep -E '^[0-9]+\) |^  [A-Z]' | head -20 || true
+summary=$(grep -m1 'Test Count' "$T/run.txt" | sed 's/^ *//')
+echo "  $summary"
+[[ $summary == *"Failed: 0,"* ]] || { echo "UNITY 2019 CHECK FAILED: the core's tests on Unity's Mono"; exit 1; }
+echo "UNITY 2019 CHECK PASSED (compiled by Unity $VERSION's compiler against its assemblies, the core and its tests run on its Mono;"
 echo "  not in the editor, not through Unity's TLS, not on a phone)"

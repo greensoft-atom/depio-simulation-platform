@@ -32,7 +32,7 @@ namespace Backend.Client.Core.Tests
             // seq 5, ack 300 (a two-byte varint), move right, aim 0x1234, autofire
             Assert.That(Bytes(m.Input(5, 300, Wire.MoveRight, 0x1234, Wire.FlagAutofire)),
                 Is.EqualTo(new byte[] { 8, Wire.MsgInput, 5, 0xAC, 0x02, 8, 0x34, 0x12, 2 }));
-            Assert.That(Bytes(m.Input(0x1FFFFFF, 0, 0, 0, 0))[2..6], Is.EqualTo(new byte[] { 0xFF, 0xFF, 0xFF, 0x07 }),
+            Assert.That(Bytes(m.Input(0x1FFFFFF, 0, 0, 0, 0)).Skip(2).Take(4).ToArray(), Is.EqualTo(new byte[] { 0xFF, 0xFF, 0xFF, 0x07 }),
                 "the seq is taken modulo 2^24");
         }
 

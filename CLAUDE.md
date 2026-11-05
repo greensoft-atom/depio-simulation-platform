@@ -164,8 +164,9 @@ for the backend, its docs and its client.
   are, in `work/unity` (`unity2019-check.sh`): say what was compiled, what ran on its Mono, and what only the editor
   or a phone can show.
 - **The client is for Unity 2019.4 and Visual Studio 2019 first** (owner, 2026-11-05; D-108): the core C# 7.3 on
-  .NET Standard 2.0, `client/Backend.Client.sln` VS 2019's and no solution for another version (Core.Tests and
-  Headless, .NET 8, outside it, by their paths); the backend's CA RSA, which Unity 2019's runtime can check.
+  .NET Standard 2.0, `client/Backend.Client.sln` VS 2019's and no solution for another version: all four projects in
+  it, C# 7.3, Core.Tests and Headless on .NET Framework 4.7.1 (and .NET 8 where MSBuild is 17 or later, which this
+  machine runs: `-f net8.0`; D-109); the backend's CA RSA, which Unity 2019's runtime can check.
 - **Ports 6381 and 8082 belong to other processes.** Drills use 6390 (j-redis), 6392 (its
   replica, `FAILOVER=1`), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 (platform's
   metrics), 9196 (platform's admin API), 9197, 9198 and 9199 (the arena's, the gateway's and
@@ -215,7 +216,7 @@ for the backend, its docs and its client.
                                                     # PLAIN=1, to every command: 80 (the API, the lobby) and 9001 without TLS (D-101)
 
 # Client core tests (look for "Total tests:")
-cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test Core.Tests --logger "console;verbosity=normal"
+cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test Core.Tests -f net8.0 --logger "console;verbosity=normal"
 
 # Crypto examples (from backend/, in that shell), then their probe on a release's runtime (docs/development/04 §5)
 mvn -q -pl crypto-examples test

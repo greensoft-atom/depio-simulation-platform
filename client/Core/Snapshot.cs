@@ -41,6 +41,8 @@ namespace Backend.Client.Core
     /// </summary>
     public static class SnapshotDecoder
     {
+        public static void Decode(byte[] frame, ISnapshotSink sink) => Decode(new ArraySegment<byte>(frame), sink);
+
         public static void Decode(ArraySegment<byte> frame, ISnapshotSink sink)
         {
             var r = new WireReader(frame);

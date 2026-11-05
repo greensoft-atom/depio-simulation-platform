@@ -4223,6 +4223,25 @@ requests, all passing, seven of the lobby's in the plain way, and `TLS=1 play un
 Android phone: the team's. Docs: D-108, P-63, P-64, 08 §1 and §6, operations/06, the client's READMEs, working-here
 (the standing decision, Mono's traps), CLAUDE.md.
 
+
+#### 130. ~~Every client project in Visual Studio 2019, the tests and the driver too (the owner, 2026-11-05, D-109).~~ — **done 2026-11-05**
+
+The owner: the tests inside VS 2019 too, and all the C# and Unity client's work so. **Done** (D-109): Core.Tests and
+Headless C# 7.3 on .NET Framework 4.7.1, and on .NET 8 where MSBuild is 17 or later (`TargetFrameworks` by
+`MSBuildAssemblyVersion`: VS 2019 sees 4.7.1 alone); 111 `using` declarations made blocks, a range, three C# 9
+patterns, `HttpClient.Send`, `Math.Clamp`, `ArgumentList`; the core given `byte[]` overloads where it takes a frame
+(.NET Framework turns no array into a segment); the tests' certificates files (`Core.Tests/Pki/make.sh`), their TLS
+and WebSocket servers their own, the one check .NET Framework cannot make (the SNI a client sends) .NET 8's alone; the
+solution all four projects. **Checked**: VS 2019's MSBuild and Roslyn (16.11, 16.7) build the solution, 0 failed
+(`vs2019-check.sh`); the core's tests compiled by Unity 2019's compiler and run on its Mono, 193 of 193 with `float32`
+(`unity2019-check.sh`; 194 with T-67's), where before 10 failed (T-68, P-65, open: the editor's and a player's float
+mode the team's to see); on .NET 8 194 of 194, the twelve mutants caught again, one on Mono too; the drill through nginx over TLS with the new
+driver, every scenario and the collection, all passing, and `TLS=1`; `check-ports-el9.sh`, its driver published for
+.NET 8 by name, which found T-67 again: the client's, a queue push between a join and its refusal losing the refusal,
+**fixed** (the join's id kept for its refusal), its window put in a test by construction, two mutants caught, and
+`decline` through nginx three times since. Docs: D-109 (D-108 in part
+superseded), P-65, T-68, 08 §6, the client's READMEs, working-here (the standing decision, two traps), CLAUDE.md.
+
 ---
 
 ### Completed 2026-09-23

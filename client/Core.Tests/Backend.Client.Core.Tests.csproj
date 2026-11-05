@@ -1,13 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- C# 9, as the core: Unity's test runner runs NUnit, so these can run there unchanged. -->
+  <!-- C# 7.3 on .NET Framework 4.7.1, what Visual Studio 2019 builds and runs and Unity 2019's .NET 4.x is (D-109);
+       and .NET 8 where MSBuild is 17 or later (the .NET 8 SDK, VS 2022), which this machine's commands run. -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <LangVersion>9.0</LangVersion>
+    <TargetFrameworks>net471</TargetFrameworks>
+    <TargetFrameworks Condition="'$(MSBuildAssemblyVersion)' &gt;= '17.0'">net471;net8.0</TargetFrameworks>
+    <LangVersion>7.3</LangVersion>
     <Nullable>disable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <!-- .NET Framework 4.7.1's reference assemblies, for a machine with no targeting pack (Linux, or VS without it). -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="NUnit" Version="3.14.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
@@ -24,6 +28,8 @@
     <None Include="../../backend/arena/src/test/resources/motion-2026.txt" Link="motion-2026.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The tests' certificates and test servers' keys, made by Pki/make.sh (D-109). -->
+    <None Update="Pki/*.pem;Pki/*.p12" CopyToOutputDirectory="PreserveNewest" />
     <!-- The tests' own list, held to the code by ReadmeTestListTests (DOC-31). -->
     <None Include="README.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

@@ -164,23 +164,27 @@ namespace Backend.Client.Core.Tests
         [Test]
         public void AnArenaGoneSilentIsLostAndResumedNotWaitedOnForMinutes()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            clock.NowMs += MatchConnection.SilenceMs - 1;
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.InMatch), "within its time");
-            arena.Send(0, new FrameBuilder(6).Build());
-            PollUntil(m, () => m.SnapshotsApplied == 2, "a frame");
-            clock.NowMs += MatchConnection.SilenceMs - 1;
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.InMatch), "a frame heard restarts the wait");
-            clock.NowMs += 2;
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.Lost), "silent though its socket is open: a machine gone, a path cut");
-            Assert.That(m.LastProblem, Does.Contain("no frame"));
-            clock.NowMs += 1_000;
-            PollUntil(m, () => arena.Connections == 2, "dialled again, to resume");
+            using (var arena = new FakeArena())
+            {
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    clock.NowMs += MatchConnection.SilenceMs - 1;
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.InMatch), "within its time");
+                    arena.Send(0, new FrameBuilder(6).Build());
+                    PollUntil(m, () => m.SnapshotsApplied == 2, "a frame");
+                    clock.NowMs += MatchConnection.SilenceMs - 1;
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.InMatch), "a frame heard restarts the wait");
+                    clock.NowMs += 2;
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.Lost), "silent though its socket is open: a machine gone, a path cut");
+                    Assert.That(m.LastProblem, Does.Contain("no frame"));
+                    clock.NowMs += 1_000;
+                    PollUntil(m, () => arena.Connections == 2, "dialled again, to resume");
+                }
+            }
         }
 
         /// <summary>The frame a death comes in: the tick moves, and the Death event; after it, events alone (P-53).</summary>
@@ -189,75 +193,91 @@ namespace Backend.Client.Core.Tests
         [Test]
         public void ADeadPlayerSentNoFramesIsNotLostWhileItsPingsAreAnswered()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            arena.Send(0, DeathFrame());
-            PollUntil(m, () => m.SnapshotsApplied == 2, "the death");
-            clock.NowMs += MatchConnection.PingEveryMs;
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.InMatch),
-                "dead, the arena sends no frames: waiting to respawn, or for co-op's next wave, is not a loss");
-            arena.Send(0, new byte[] { Wire.MsgPong, 0, 0, 0, 0, 9 });
-            PollUntil(m, () => m.RoundTripMs >= 0, "a ping answered");
-            clock.NowMs += MatchConnection.PingEveryMs + MatchConnection.SilenceMs - 1;
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.InMatch), "an answer heard restarts the wait");
-            clock.NowMs += 2;
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.Lost), "its ping unanswered past its time: the path is gone");
+            using (var arena = new FakeArena())
+            {
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    arena.Send(0, DeathFrame());
+                    PollUntil(m, () => m.SnapshotsApplied == 2, "the death");
+                    clock.NowMs += MatchConnection.PingEveryMs;
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.InMatch),
+                        "dead, the arena sends no frames: waiting to respawn, or for co-op's next wave, is not a loss");
+                    arena.Send(0, new byte[] { Wire.MsgPong, 0, 0, 0, 0, 9 });
+                    PollUntil(m, () => m.RoundTripMs >= 0, "a ping answered");
+                    clock.NowMs += MatchConnection.PingEveryMs + MatchConnection.SilenceMs - 1;
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.InMatch), "an answer heard restarts the wait");
+                    clock.NowMs += 2;
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.Lost), "its ping unanswered past its time: the path is gone");
+                }
+            }
         }
 
         [Test]
         public void ADeadPlayerIsNotAliveThoughItsTankIsNeverRemoved()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            arena.Send(0, DeathFrame());
-            PollUntil(m, () => m.SnapshotsApplied == 2, "the death");
-            Assert.That(m.World[Wire.SelfHandle].Alive, Is.True, "the arena sends no remove of the own tank, only the Death");
-            Assert.That(m.Alive, Is.False, "dead: the HUD's Respawn shows, no input is sent, nothing is predicted (P-54)");
-            arena.Send(0, new FrameBuilder(1).Tank(Wire.SelfHandle, 10, 10, "Me").Build());
-            PollUntil(m, () => m.SnapshotsApplied == 3, "respawned");
-            Assert.That(m.Alive, Is.True, "the world's ticks again: alive");
+            using (var arena = new FakeArena())
+            {
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    arena.Send(0, DeathFrame());
+                    PollUntil(m, () => m.SnapshotsApplied == 2, "the death");
+                    Assert.That(m.World[Wire.SelfHandle].Alive, Is.True, "the arena sends no remove of the own tank, only the Death");
+                    Assert.That(m.Alive, Is.False, "dead: the HUD's Respawn shows, no input is sent, nothing is predicted (P-54)");
+                    arena.Send(0, new FrameBuilder(1).Tank(Wire.SelfHandle, 10, 10, "Me").Build());
+                    PollUntil(m, () => m.SnapshotsApplied == 3, "respawned");
+                    Assert.That(m.Alive, Is.True, "the world's ticks again: alive");
+                }
+            }
         }
 
         [Test]
         public void ARespawnedPlayerIsHeldToTheFramesAgain()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            arena.Send(0, DeathFrame());
-            arena.Send(0, new FrameBuilder(0).Event(Wire.EvtDeath, new byte[] { 5, 0 }).Build());
-            PollUntil(m, () => m.SnapshotsApplied == 3, "the death, then events alone");
-            clock.NowMs += MatchConnection.SilenceMs + 1;
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.InMatch), "still dead: a frame of events alone moves no tick");
-            arena.Send(0, new FrameBuilder(1).Build());
-            PollUntil(m, () => m.SnapshotsApplied == 4, "respawned: the world's ticks again");
-            clock.NowMs += MatchConnection.SilenceMs + 1;
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.Lost), "alive again, silent 3 s: lost");
+            using (var arena = new FakeArena())
+            {
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    arena.Send(0, DeathFrame());
+                    arena.Send(0, new FrameBuilder(0).Event(Wire.EvtDeath, new byte[] { 5, 0 }).Build());
+                    PollUntil(m, () => m.SnapshotsApplied == 3, "the death, then events alone");
+                    clock.NowMs += MatchConnection.SilenceMs + 1;
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.InMatch), "still dead: a frame of events alone moves no tick");
+                    arena.Send(0, new FrameBuilder(1).Build());
+                    PollUntil(m, () => m.SnapshotsApplied == 4, "respawned: the world's ticks again");
+                    clock.NowMs += MatchConnection.SilenceMs + 1;
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.Lost), "alive again, silent 3 s: lost");
+                }
+            }
         }
 
         [Test]
         public void ABackgroundedMatchIsNotLostForTheFramesItIsNotSent()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            m.SetBackgrounded(true);
-            clock.NowMs += MatchConnection.SilenceMs * 10;
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.InMatch));
-            m.SetBackgrounded(false);
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.InMatch), "back in front: its wait starts now");
-            clock.NowMs += MatchConnection.SilenceMs + 1;
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.Lost));
+            using (var arena = new FakeArena())
+            {
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    m.SetBackgrounded(true);
+                    clock.NowMs += MatchConnection.SilenceMs * 10;
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.InMatch));
+                    m.SetBackgrounded(false);
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.InMatch), "back in front: its wait starts now");
+                    clock.NowMs += MatchConnection.SilenceMs + 1;
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.Lost));
+                }
+            }
         }
 
         [Test]
@@ -268,17 +288,19 @@ namespace Backend.Client.Core.Tests
             try
             {
                 var clock = new ManualClock();
-                using var m = new MatchConnection(new MatchSettings
+                using (var m = new MatchConnection(new MatchSettings
                 {
                     Host = "127.0.0.1", Port = ((IPEndPoint)silent.LocalEndpoint).Port, Tls = true,
-                }, clock);
-                m.Join("TicketNumberOne");
-                Thread.Sleep(200);
-                m.Poll();
-                Assert.That(m.State, Is.EqualTo(MatchState.Connecting), "the TLS handshake waits on the server");
-                clock.NowMs += MatchConnection.ConnectMs + 1;
-                m.Poll();
-                Assert.That((m.State, m.End), Is.EqualTo((MatchState.Ended, MatchEnd.Unreachable)));
+                }, clock))
+                {
+                    m.Join("TicketNumberOne");
+                    Thread.Sleep(200);
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.Connecting), "the TLS handshake waits on the server");
+                    clock.NowMs += MatchConnection.ConnectMs + 1;
+                    m.Poll();
+                    Assert.That((m.State, m.End), Is.EqualTo((MatchState.Ended, MatchEnd.Unreachable)));
+                }
             }
             finally
             {
@@ -289,45 +311,59 @@ namespace Backend.Client.Core.Tests
         [Test]
         public void AJoinNeverWelcomedIsGivenUpOn()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = Connect(arena, clock);
-            m.Join("TicketNumberOne");
-            PollUntil(m, () => m.State == MatchState.Joining, "joining");
-            clock.NowMs += MatchConnection.JoinMs - 1;
-            m.Poll();
-            Assert.That(m.State, Is.EqualTo(MatchState.Joining));
-            clock.NowMs += 2;
-            m.Poll();
-            Assert.That((m.State, m.End), Is.EqualTo((MatchState.Ended, MatchEnd.Unreachable)));
+            using (var arena = new FakeArena())
+            {
+                var clock = new ManualClock();
+                using (var m = Connect(arena, clock))
+                {
+                    m.Join("TicketNumberOne");
+                    PollUntil(m, () => m.State == MatchState.Joining, "joining");
+                    clock.NowMs += MatchConnection.JoinMs - 1;
+                    m.Poll();
+                    Assert.That(m.State, Is.EqualTo(MatchState.Joining));
+                    clock.NowMs += 2;
+                    m.Poll();
+                    Assert.That((m.State, m.End), Is.EqualTo((MatchState.Ended, MatchEnd.Unreachable)));
+                }
+            }
         }
 
         [Test]
         public void ATicketOrSecretThatCannotBeSentIsRefusedBeforeAnythingIsDialled()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            foreach (string bad in new[] { null, "", "has a space", new string('x', 65) })
+            using (var arena = new FakeArena())
             {
-                using var m = Connect(arena, clock);
-                Assert.Throws<ArgumentException>(() => m.Join(bad), $"join with '{bad}'");
-                using var r = Connect(arena, clock);
-                Assert.Throws<ArgumentException>(() => r.Resume(bad), $"resume with '{bad}'");
+                var clock = new ManualClock();
+                foreach (string bad in new[] { null, "", "has a space", new string('x', 65) })
+                {
+                    using (var m = Connect(arena, clock))
+                    {
+                        Assert.Throws<ArgumentException>(() => m.Join(bad), $"join with '{bad}'");
+                        using (var r = Connect(arena, clock))
+                        {
+                            Assert.Throws<ArgumentException>(() => r.Resume(bad), $"resume with '{bad}'");
+                        }
+                    }
+                }
+                Thread.Sleep(100);
+                Assert.That(arena.Connections, Is.Zero, "not dialled to fail on every Poll after");
             }
-            Thread.Sleep(100);
-            Assert.That(arena.Connections, Is.Zero, "not dialled to fail on every Poll after");
         }
 
         [Test]
         public void AMazesWelcomeGivesTheWorldItsWalls()
         {
-            using var arena = new FakeArena();
-            using var m = Connect(arena, new ManualClock());
-            m.Join("TicketNumberOne");
-            PollUntil(m, () => m.State == MatchState.Joining, "joining");
-            arena.Send(arena.Next().connection, FakeArena.Welcome("s", mazeSeed: 2026));
-            PollUntil(m, () => m.State == MatchState.InMatch, "in the match");
-            Assert.That(m.World.Walls, Is.EqualTo(Maze.Walls(2026)));
+            using (var arena = new FakeArena())
+            {
+                using (var m = Connect(arena, new ManualClock()))
+                {
+                    m.Join("TicketNumberOne");
+                    PollUntil(m, () => m.State == MatchState.Joining, "joining");
+                    arena.Send(arena.Next().connection, FakeArena.Welcome("s", mazeSeed: 2026));
+                    PollUntil(m, () => m.State == MatchState.InMatch, "in the match");
+                    Assert.That(m.World.Walls, Is.EqualTo(Maze.Walls(2026)));
+                }
+            }
         }
 
         [TestCase(Wire.KickBadTicket, MatchEnd.BadTicket)]
@@ -340,15 +376,19 @@ namespace Backend.Client.Core.Tests
         [TestCase(99, MatchEnd.ServerFault)]
         public void EachKickEndsTheConnectionWithItsOwnNextStep(int reason, MatchEnd end)
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            arena.Send(0, new byte[] { Wire.MsgKick, (byte)reason });
-            PollUntil(m, () => m.State == MatchState.Ended, "ended");
-            Assert.That(m.End, Is.EqualTo(end));
-            Thread.Sleep(200);
-            m.Poll();
-            Assert.That(arena.Connections, Is.EqualTo(1), "a kick is never answered by dialling again");
+            using (var arena = new FakeArena())
+            {
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    arena.Send(0, new byte[] { Wire.MsgKick, (byte)reason });
+                    PollUntil(m, () => m.State == MatchState.Ended, "ended");
+                    Assert.That(m.End, Is.EqualTo(end));
+                    Thread.Sleep(200);
+                    m.Poll();
+                    Assert.That(arena.Connections, Is.EqualTo(1), "a kick is never answered by dialling again");
+                }
+            }
         }
 
         /// <summary>A raw arena, reading only when the test says: the client joined and welcomed.</summary>
@@ -468,52 +508,64 @@ namespace Backend.Client.Core.Tests
         [Test]
         public void ALostConnectionIsResumedWithTheLatestSecretAndAFreshWorld()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock, secret: "secret-from-welcome");
-            ClientWorld before = m.World;
-            arena.Close(0);
-            PollUntil(m, () => m.State == MatchState.Lost, "lost");
-            Assert.That(arena.Connections, Is.EqualTo(1), "not at once: after the first delay");
+            using (var arena = new FakeArena())
+            {
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock, secret: "secret-from-welcome"))
+                {
+                    ClientWorld before = m.World;
+                    arena.Close(0);
+                    PollUntil(m, () => m.State == MatchState.Lost, "lost");
+                    Assert.That(arena.Connections, Is.EqualTo(1), "not at once: after the first delay");
 
-            clock.NowMs += 500;
-            PollUntil(m, () => m.State == MatchState.Joining, "resuming");
-            var resume = arena.Drain(Wire.MsgResume).Single();
-            Assert.That(resume.Skip(3).Take(19), Is.EqualTo(System.Text.Encoding.ASCII.GetBytes("secret-from-welcome")));
-            arena.Send(1, FakeArena.Welcome("a-new-secret"));
-            PollUntil(m, () => m.State == MatchState.InMatch, "back");
-            Assert.That(m.World, Is.Not.SameAs(before), "a resume starts a fresh view");
-            Assert.That(m.Resumes, Is.EqualTo(1));
-            Assert.That(m.Welcome.ResumeSecret, Is.EqualTo("a-new-secret"));
+                    clock.NowMs += 500;
+                    PollUntil(m, () => m.State == MatchState.Joining, "resuming");
+                    var resume = arena.Drain(Wire.MsgResume).Single();
+                    Assert.That(resume.Skip(3).Take(19), Is.EqualTo(System.Text.Encoding.ASCII.GetBytes("secret-from-welcome")));
+                    arena.Send(1, FakeArena.Welcome("a-new-secret"));
+                    PollUntil(m, () => m.State == MatchState.InMatch, "back");
+                    Assert.That(m.World, Is.Not.SameAs(before), "a resume starts a fresh view");
+                    Assert.That(m.Resumes, Is.EqualTo(1));
+                    Assert.That(m.Welcome.ResumeSecret, Is.EqualTo("a-new-secret"));
+                }
+            }
         }
 
         [Test]
         public void AColdResumeSendsTheKeptSecretInPlaceOfAJoin()
         {
-            using var arena = new FakeArena();
-            // A new connection, as after the app was killed and restarted, knowing only what it kept.
-            using var m = Connect(arena, new ManualClock());
-            m.Resume("kept-on-the-device");
-            PollUntil(m, () => m.State == MatchState.Joining, "resuming");
-            var first = arena.Next();
-            Assert.That(first.frame.Take(2), Is.EqualTo(new byte[] { Wire.MsgResume, Wire.Version }), "a Resume, not a Join");
-            Assert.That(first.frame.Skip(3).Take(18), Is.EqualTo(System.Text.Encoding.ASCII.GetBytes("kept-on-the-device")));
-            arena.Send(first.connection, FakeArena.Welcome("the-next-one"));
-            PollUntil(m, () => m.State == MatchState.InMatch, "back in its stay");
-            Assert.That(m.Welcome.ResumeSecret, Is.EqualTo("the-next-one"), "the one to keep now");
-            Assert.Throws<InvalidOperationException>(() => m.Resume("again"), "one start per connection");
+            using (var arena = new FakeArena())
+            {
+                // A new connection, as after the app was killed and restarted, knowing only what it kept.
+                using (var m = Connect(arena, new ManualClock()))
+                {
+                    m.Resume("kept-on-the-device");
+                    PollUntil(m, () => m.State == MatchState.Joining, "resuming");
+                    var first = arena.Next();
+                    Assert.That(first.frame.Take(2), Is.EqualTo(new byte[] { Wire.MsgResume, Wire.Version }), "a Resume, not a Join");
+                    Assert.That(first.frame.Skip(3).Take(18), Is.EqualTo(System.Text.Encoding.ASCII.GetBytes("kept-on-the-device")));
+                    arena.Send(first.connection, FakeArena.Welcome("the-next-one"));
+                    PollUntil(m, () => m.State == MatchState.InMatch, "back in its stay");
+                    Assert.That(m.Welcome.ResumeSecret, Is.EqualTo("the-next-one"), "the one to keep now");
+                    Assert.Throws<InvalidOperationException>(() => m.Resume("again"), "one start per connection");
+                }
+            }
         }
 
         [Test]
         public void AColdResumeOfAStayOverGoesBackToTheLobby()
         {
-            using var arena = new FakeArena();
-            using var m = Connect(arena, new ManualClock());
-            m.Resume("spent");
-            PollUntil(m, () => m.State == MatchState.Joining, "resuming");
-            arena.Send(arena.Next().connection, new byte[] { Wire.MsgKick, Wire.KickBadTicket });
-            PollUntil(m, () => m.State == MatchState.Ended, "ended");
-            Assert.That(m.End, Is.EqualTo(MatchEnd.BadTicket));
+            using (var arena = new FakeArena())
+            {
+                using (var m = Connect(arena, new ManualClock()))
+                {
+                    m.Resume("spent");
+                    PollUntil(m, () => m.State == MatchState.Joining, "resuming");
+                    arena.Send(arena.Next().connection, new byte[] { Wire.MsgKick, Wire.KickBadTicket });
+                    PollUntil(m, () => m.State == MatchState.Ended, "ended");
+                    Assert.That(m.End, Is.EqualTo(MatchEnd.BadTicket));
+                }
+            }
         }
 
         [Test]
@@ -521,257 +573,299 @@ namespace Backend.Client.Core.Tests
         {
             var arena = new FakeArena();
             var clock = new ManualClock();
-            using var m = new MatchConnection(new MatchSettings { Host = "127.0.0.1", Port = arena.Port }, clock);
-            arena.Dispose();                        // gone, as a stopped arena is
-            m.Resume("kept");
-            PollUntil(m, () => m.State == MatchState.Lost, "lost, not ended: the stay may still be there");
-            clock.NowMs += 60_000;
-            PollUntil(m, () => m.State == MatchState.Ended, "given up");
-            Assert.That(m.End, Is.EqualTo(MatchEnd.ResumeExpired));
+            using (var m = new MatchConnection(new MatchSettings { Host = "127.0.0.1", Port = arena.Port }, clock))
+            {
+                arena.Dispose();                        // gone, as a stopped arena is
+                m.Resume("kept");
+                PollUntil(m, () => m.State == MatchState.Lost, "lost, not ended: the stay may still be there");
+                clock.NowMs += 60_000;
+                PollUntil(m, () => m.State == MatchState.Ended, "given up");
+                Assert.That(m.End, Is.EqualTo(MatchEnd.ResumeExpired));
+            }
         }
 
         [Test]
         public void AFrameThatCannotBeAppliedIsADesyncAndIsResumed()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            arena.Send(0, new FrameBuilder(1).Move(42, 1, 1).Build());      // a handle it does not hold
-            PollUntil(m, () => m.State == MatchState.Lost, "lost");
-            Assert.That(m.LastProblem, Does.StartWith("desync"));
-            clock.NowMs += 500;
-            PollUntil(m, () => arena.Connections == 2, "dialled again");
+            using (var arena = new FakeArena())
+            {
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    arena.Send(0, new FrameBuilder(1).Move(42, 1, 1).Build());      // a handle it does not hold
+                    PollUntil(m, () => m.State == MatchState.Lost, "lost");
+                    Assert.That(m.LastProblem, Does.StartWith("desync"));
+                    clock.NowMs += 500;
+                    PollUntil(m, () => arena.Connections == 2, "dialled again");
+                }
+            }
         }
 
         [Test]
         public void ResumesBackOffAndGiveUpAfterAMinute()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            arena.Dispose();                        // the arena is gone, and stays gone
-            PollUntil(m, () => m.State == MatchState.Lost, "lost");
-            long lostAt = clock.NowMs;
-            var tries = new List<long>();
-            while (m.State != MatchState.Ended && clock.NowMs - lostAt < 70_000)
+            using (var arena = new FakeArena())
             {
-                MatchState was = m.State;
-                m.Poll();
-                if (was == MatchState.Lost && m.State == MatchState.Connecting)
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
                 {
-                    tries.Add(clock.NowMs - lostAt);
-                    PollUntil(m, () => m.State != MatchState.Connecting, "the attempt fails");
-                    continue;
+                    arena.Dispose();                        // the arena is gone, and stays gone
+                    PollUntil(m, () => m.State == MatchState.Lost, "lost");
+                    long lostAt = clock.NowMs;
+                    var tries = new List<long>();
+                    while (m.State != MatchState.Ended && clock.NowMs - lostAt < 70_000)
+                    {
+                        MatchState was = m.State;
+                        m.Poll();
+                        if (was == MatchState.Lost && m.State == MatchState.Connecting)
+                        {
+                            tries.Add(clock.NowMs - lostAt);
+                            PollUntil(m, () => m.State != MatchState.Connecting, "the attempt fails");
+                            continue;
+                        }
+                        clock.NowMs += 100;
+                    }
+                    Assert.That(m.End, Is.EqualTo(MatchEnd.ResumeExpired));
+                    Assert.That(tries.Take(5), Is.EqualTo(new long[] { 500, 1_500, 3_500, 7_500, 15_500 }),
+                        "each wait twice the last, from half a second");
+                    Assert.That(tries.Skip(4).Zip(tries.Skip(5), (a, b) => b - a), Is.All.EqualTo(8_000), "then every 8 s");
+                    Assert.That(clock.NowMs - lostAt, Is.InRange(60_000, 60_100), "and not past the minute a stay waits");
                 }
-                clock.NowMs += 100;
             }
-            Assert.That(m.End, Is.EqualTo(MatchEnd.ResumeExpired));
-            Assert.That(tries.Take(5), Is.EqualTo(new long[] { 500, 1_500, 3_500, 7_500, 15_500 }),
-                "each wait twice the last, from half a second");
-            Assert.That(tries.Skip(4).Zip(tries.Skip(5), (a, b) => b - a), Is.All.EqualTo(8_000), "then every 8 s");
-            Assert.That(clock.NowMs - lostAt, Is.InRange(60_000, 60_100), "and not past the minute a stay waits");
         }
 
         [Test]
         public void InputGoesOutTenTimesASecondWhileAliveCarryingTheAckAndTheLatchedFire()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            arena.DrainAll();
-
-            // A tap between two sends: pressed and released before the next input goes out.
-            m.SetInput(Wire.MoveUp, 1234, true, Wire.FlagAutofire);
-            m.SetInput(Wire.MoveUp, 1234, false, Wire.FlagAutofire);
-            for (int i = 0; i < 10; i++)
+            using (var arena = new FakeArena())
             {
-                clock.NowMs += 100;
-                m.Poll();
-            }
-            var inputs = arena.Drain(Wire.MsgInput);
-            Assert.That(inputs, Has.Count.InRange(10, 11), "ten in a second");
-            var r = new WireReader(inputs[0]);
-            r.U8();
-            r.Varint();                              // seq
-            Assert.That(r.Varint(), Is.EqualTo(5), "the ack: the tick of the last frame applied");
-            Assert.That(r.U8(), Is.EqualTo(Wire.MoveUp));
-            Assert.That(r.U16(), Is.EqualTo(1234));
-            Assert.That(r.U8(), Is.EqualTo(Wire.FlagAutofire | Wire.FlagFire), "the tap was not lost");
-            Assert.That(inputs.Last()[inputs.Last().Length - 1], Is.EqualTo(Wire.FlagAutofire), "and was sent once");
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    arena.DrainAll();
 
-            m.SetBackgrounded(true);
-            for (int i = 0; i < 10; i++)
-            {
-                clock.NowMs += 100;
-                m.Poll();
+                    // A tap between two sends: pressed and released before the next input goes out.
+                    m.SetInput(Wire.MoveUp, 1234, true, Wire.FlagAutofire);
+                    m.SetInput(Wire.MoveUp, 1234, false, Wire.FlagAutofire);
+                    for (int i = 0; i < 10; i++)
+                    {
+                        clock.NowMs += 100;
+                        m.Poll();
+                    }
+                    var inputs = arena.Drain(Wire.MsgInput);
+                    Assert.That(inputs, Has.Count.InRange(10, 11), "ten in a second");
+                    var r = new WireReader(inputs[0]);
+                    r.U8();
+                    r.Varint();                              // seq
+                    Assert.That(r.Varint(), Is.EqualTo(5), "the ack: the tick of the last frame applied");
+                    Assert.That(r.U8(), Is.EqualTo(Wire.MoveUp));
+                    Assert.That(r.U16(), Is.EqualTo(1234));
+                    Assert.That(r.U8(), Is.EqualTo(Wire.FlagAutofire | Wire.FlagFire), "the tap was not lost");
+                    Assert.That(inputs.Last()[inputs.Last().Length - 1], Is.EqualTo(Wire.FlagAutofire), "and was sent once");
+
+                    m.SetBackgrounded(true);
+                    for (int i = 0; i < 10; i++)
+                    {
+                        clock.NowMs += 100;
+                        m.Poll();
+                    }
+                    var sent = arena.DrainAll();
+                    Assert.That(sent.Where(f => f[0] == Wire.MsgLifecycle).Select(f => f[1]),
+                        Is.EqualTo(new byte[] { Wire.LifecycleBackground }));
+                    Assert.That(sent.Where(f => f[0] == Wire.MsgInput), Is.Empty, "none in the background");
+                }
             }
-            var sent = arena.DrainAll();
-            Assert.That(sent.Where(f => f[0] == Wire.MsgLifecycle).Select(f => f[1]),
-                Is.EqualTo(new byte[] { Wire.LifecycleBackground }));
-            Assert.That(sent.Where(f => f[0] == Wire.MsgInput), Is.Empty, "none in the background");
         }
 
         [Test]
         public void TheOwnTankMovesAtOnceItsStepsStampedWithTheSeqThatCarriesThemAndTheInputSent()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);                 // its first input, seq 1, went out now
-            Assert.That(m.OwnTank.Predicting, Is.False, "no rule yet: drawn where the server has it");
-            arena.Send(0, new FrameBuilder(1).Move(Wire.SelfHandle, 8_000, 8_000).MotionRule(0.16f, 30f).Motion(0, 0, 0).Build());
-            PollUntil(m, () => m.OwnTank.Predicting, "predicting");
-            var start = new MotionState { X = 2_000f, Y = 2_000f };
-            Assert.That((m.OwnTank.X, m.OwnTank.Y), Is.EqualTo((start.X, start.Y)), "from where the server put it");
-            arena.DrainAll();
-
-            // Steps 1 and 2 to the right, then a change of mind: step 3 down, and seq 2 goes out with it,
-            // 100 ms after seq 1; steps 4 and 5 down, for seq 3.
-            m.SetInput(Wire.MoveRight, 0, false, 0);
-            for (int i = 1; i <= 5; i++)
+            using (var arena = new FakeArena())
             {
-                clock.NowMs += OwnTank.StepMs;
-                m.Poll();
-                if (i == 2) m.SetInput(Wire.MoveDown, 0, false, 0);
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))                 // its first input, seq 1, went out now
+                {
+                    Assert.That(m.OwnTank.Predicting, Is.False, "no rule yet: drawn where the server has it");
+                    arena.Send(0, new FrameBuilder(1).Move(Wire.SelfHandle, 8_000, 8_000).MotionRule(0.16f, 30f).Motion(0, 0, 0).Build());
+                    PollUntil(m, () => m.OwnTank.Predicting, "predicting");
+                    var start = new MotionState { X = 2_000f, Y = 2_000f };
+                    Assert.That((m.OwnTank.X, m.OwnTank.Y), Is.EqualTo((start.X, start.Y)), "from where the server put it");
+                    arena.DrainAll();
+
+                    // Steps 1 and 2 to the right, then a change of mind: step 3 down, and seq 2 goes out with it,
+                    // 100 ms after seq 1; steps 4 and 5 down, for seq 3.
+                    m.SetInput(Wire.MoveRight, 0, false, 0);
+                    for (int i = 1; i <= 5; i++)
+                    {
+                        clock.NowMs += OwnTank.StepMs;
+                        m.Poll();
+                        if (i == 2) m.SetInput(Wire.MoveDown, 0, false, 0);
+                    }
+                    Assert.That(m.OwnTank.X, Is.GreaterThan(2_000.2f), "moved at once, before any frame said so");
+                    Assert.That(m.World[Wire.SelfHandle].X / Wire.PosScale, Is.EqualTo(2_000f), "while the server's is where it was");
+                    var inputs = arena.Drain(Wire.MsgInput);
+                    var r = new WireReader(inputs.Single());
+                    r.U8();
+                    Assert.That(r.Varint(), Is.EqualTo(2), "one input in the 200 ms: seq 2");
+
+                    // The server applied seq 2, down, once by its frame's tick: the first step stamped 2.
+                    MotionState one = start;
+                    TankMotion.Step(ref one, Wire.MoveDown, 0.16f, 30f, 5_700f, 5_700f, null);
+                    int qy = (int)Math.Round(one.Y * Wire.PosScale), qvy = (int)Math.Round(one.Vy * Wire.VelocityScale);
+                    float error = float.NaN;
+                    m.OwnTank.OnReconciled = (e, c) => error = e;
+                    arena.Send(0, new FrameBuilder(2, seqDelta: 2).Move(Wire.SelfHandle, 0, qy - 8_000).Motion(1, 0, qvy).Build());
+                    PollUntil(m, () => m.OwnTank.Compared == 1, "the frame compared");
+                    var server = new MotionState { X = 2_000f, Y = qy / Wire.PosScale, Vy = qvy / Wire.VelocityScale };
+                    MotionState expected = server;
+                    for (int i = 2; i <= 5; i++) TankMotion.Step(ref expected, Wire.MoveDown, 0.16f, 30f, 5_700f, 5_700f, null);
+                    Assert.That((m.OwnTank.X, m.OwnTank.Y), Is.EqualTo((expected.X, expected.Y)),
+                        "steps 2 to 5 replayed down: seq 2's steps took the input it went out with");
+                    Assert.That(error, Is.EqualTo(0.29f).Within(0.02f), "step 1 was predicted to the right, a seventh of a unit");
+
+                    m.SetBackgrounded(true);
+                    clock.NowMs += OwnTank.StepMs;
+                    m.Poll();
+                    Assert.That(m.OwnTank.Predicting, Is.False, "parked: nothing predicted");
+                }
             }
-            Assert.That(m.OwnTank.X, Is.GreaterThan(2_000.2f), "moved at once, before any frame said so");
-            Assert.That(m.World[Wire.SelfHandle].X / Wire.PosScale, Is.EqualTo(2_000f), "while the server's is where it was");
-            var inputs = arena.Drain(Wire.MsgInput);
-            var r = new WireReader(inputs.Single());
-            r.U8();
-            Assert.That(r.Varint(), Is.EqualTo(2), "one input in the 200 ms: seq 2");
-
-            // The server applied seq 2, down, once by its frame's tick: the first step stamped 2.
-            MotionState one = start;
-            TankMotion.Step(ref one, Wire.MoveDown, 0.16f, 30f, 5_700f, 5_700f, null);
-            int qy = (int)Math.Round(one.Y * Wire.PosScale), qvy = (int)Math.Round(one.Vy * Wire.VelocityScale);
-            float error = float.NaN;
-            m.OwnTank.OnReconciled = (e, c) => error = e;
-            arena.Send(0, new FrameBuilder(2, seqDelta: 2).Move(Wire.SelfHandle, 0, qy - 8_000).Motion(1, 0, qvy).Build());
-            PollUntil(m, () => m.OwnTank.Compared == 1, "the frame compared");
-            var server = new MotionState { X = 2_000f, Y = qy / Wire.PosScale, Vy = qvy / Wire.VelocityScale };
-            MotionState expected = server;
-            for (int i = 2; i <= 5; i++) TankMotion.Step(ref expected, Wire.MoveDown, 0.16f, 30f, 5_700f, 5_700f, null);
-            Assert.That((m.OwnTank.X, m.OwnTank.Y), Is.EqualTo((expected.X, expected.Y)),
-                "steps 2 to 5 replayed down: seq 2's steps took the input it went out with");
-            Assert.That(error, Is.EqualTo(0.29f).Within(0.02f), "step 1 was predicted to the right, a seventh of a unit");
-
-            m.SetBackgrounded(true);
-            clock.NowMs += OwnTank.StepMs;
-            m.Poll();
-            Assert.That(m.OwnTank.Predicting, Is.False, "parked: nothing predicted");
         }
 
         [Test]
         public void EveryFrameIsToldWithItsRemovalsNotOnlyTheLastPolled()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            arena.Send(0, new FrameBuilder(1).Bullet(7, 0, 0, 0, 10, 60).Bullet(8, 0, 0, 0, 10, 60).Build());
-            PollUntil(m, () => m.SnapshotsApplied == 2, "two bullets");
-            var removed = new List<int>();
-            m.OnFrame = () => { foreach (Removal r in m.World.Removals) removed.Add(r.Handle); };
-            arena.Send(0, new FrameBuilder(1).Remove(7).Build());
-            arena.Send(0, new FrameBuilder(1).Remove(8).Build());
-            Thread.Sleep(300);                          // both in the inbox before one poll
-            m.Poll();
-            Assert.That(removed, Is.EqualTo(new[] { 7, 8 }), "each frame's removals, while the world holds them (T-57)");
-            Assert.That(m.World.Removals.Count, Is.EqualTo(1), "the world keeps the last frame's only, hence the callback");
+            using (var arena = new FakeArena())
+            {
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    arena.Send(0, new FrameBuilder(1).Bullet(7, 0, 0, 0, 10, 60).Bullet(8, 0, 0, 0, 10, 60).Build());
+                    PollUntil(m, () => m.SnapshotsApplied == 2, "two bullets");
+                    var removed = new List<int>();
+                    m.OnFrame = () => { foreach (Removal r in m.World.Removals) removed.Add(r.Handle); };
+                    arena.Send(0, new FrameBuilder(1).Remove(7).Build());
+                    arena.Send(0, new FrameBuilder(1).Remove(8).Build());
+                    Thread.Sleep(300);                          // both in the inbox before one poll
+                    m.Poll();
+                    Assert.That(removed, Is.EqualTo(new[] { 7, 8 }), "each frame's removals, while the world holds them (T-57)");
+                    Assert.That(m.World.Removals.Count, Is.EqualTo(1), "the world keeps the last frame's only, hence the callback");
+                }
+            }
         }
 
         [Test]
         public void EveryFramesEventsAreToldNotOnlyTheLastPolled()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            var heard = new List<(int, string)>();
-            m.OnEvent = e => heard.Add((e.PhraseId, e.SpeakerName));
-            byte[] Said(int id, string name)
+            using (var arena = new FakeArena())
             {
-                var p = new List<byte> { 0 };
-                FrameBuilder.Varint(p, id);
-                p.Add((byte)name.Length);
-                p.AddRange(System.Text.Encoding.UTF8.GetBytes(name));
-                return new FrameBuilder(1).Event(Wire.EvtPhrase, p.ToArray()).Build();
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    var heard = new List<(int, string)>();
+                    m.OnEvent = e => heard.Add((e.PhraseId, e.SpeakerName));
+                    byte[] Said(int id, string name)
+                    {
+                        var p = new List<byte> { 0 };
+                        FrameBuilder.Varint(p, id);
+                        p.Add((byte)name.Length);
+                        p.AddRange(System.Text.Encoding.UTF8.GetBytes(name));
+                        return new FrameBuilder(1).Event(Wire.EvtPhrase, p.ToArray()).Build();
+                    }
+                    arena.Send(0, Said(3, "ada"));
+                    arena.Send(0, Said(9, "bo"));
+                    Thread.Sleep(300);                          // both in the inbox before one poll (P-33)
+                    m.Poll();
+                    Assert.That(heard, Is.EqualTo(new[] { (3, "ada"), (9, "bo") }));
+                    Assert.That(m.World.EventCount, Is.EqualTo(1), "the world keeps the last frame's only, hence the callback");
+                }
             }
-            arena.Send(0, Said(3, "ada"));
-            arena.Send(0, Said(9, "bo"));
-            Thread.Sleep(300);                          // both in the inbox before one poll (P-33)
-            m.Poll();
-            Assert.That(heard, Is.EqualTo(new[] { (3, "ada"), (9, "bo") }));
-            Assert.That(m.World.EventCount, Is.EqualTo(1), "the world keeps the last frame's only, hence the callback");
         }
 
         [Test]
         public void APhraseSaidGoesOutAsItsId()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            arena.DrainAll();
-            m.Say(200);
-            Assert.That(arena.Drain(Wire.MsgPhrase), Is.EqualTo(new[] { new byte[] { Wire.MsgPhrase, 0xC8, 0x01 } }));
+            using (var arena = new FakeArena())
+            {
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    arena.DrainAll();
+                    m.Say(200);
+                    Assert.That(arena.Drain(Wire.MsgPhrase), Is.EqualTo(new[] { new byte[] { Wire.MsgPhrase, 0xC8, 0x01 } }));
+                }
+            }
         }
 
         [Test]
         public void ASandboxsPowersGoOutAsAnActionAndAValue()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            arena.DrainAll();
-            m.SetLevel(45);
-            m.SummonGuardian();
-            Assert.That(arena.Drain(Wire.MsgSandbox), Is.EqualTo(new[]
+            using (var arena = new FakeArena())
             {
-                new byte[] { Wire.MsgSandbox, Wire.SandboxLevel, 45 },
-                new byte[] { Wire.MsgSandbox, Wire.SandboxGuardian, 0 },
-            }));
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    arena.DrainAll();
+                    m.SetLevel(45);
+                    m.SummonGuardian();
+                    Assert.That(arena.Drain(Wire.MsgSandbox), Is.EqualTo(new[]
+                    {
+                        new byte[] { Wire.MsgSandbox, Wire.SandboxLevel, 45 },
+                        new byte[] { Wire.MsgSandbox, Wire.SandboxGuardian, 0 },
+                    }));
+                }
+            }
         }
 
         [Test]
         public void ASandboxsPowersAskedBeforeTheWelcomeAreNotSent()
         {
-            using var arena = new FakeArena();
-            using var m = Connect(arena, new ManualClock());
-            m.Join("TicketNumberOne");
-            PollUntil(m, () => m.State == MatchState.Joining, "joining");
-            arena.Next();                                       // the Join
-            m.SetLevel(45);                                     // the arena would keep it, and apply it late
-            m.SummonGuardian();
-            arena.Send(0, FakeArena.Welcome("s"));
-            PollUntil(m, () => m.State == MatchState.InMatch, "in the match");
-            m.Say(3);                                           // something sent after, to wait for
-            byte[] f;
-            while ((f = arena.Next().frame)[0] != Wire.MsgPhrase)
-                Assert.That(f[0], Is.Not.EqualTo(Wire.MsgSandbox), "nothing asked before the Welcome went out");
+            using (var arena = new FakeArena())
+            {
+                using (var m = Connect(arena, new ManualClock()))
+                {
+                    m.Join("TicketNumberOne");
+                    PollUntil(m, () => m.State == MatchState.Joining, "joining");
+                    arena.Next();                                       // the Join
+                    m.SetLevel(45);                                     // the arena would keep it, and apply it late
+                    m.SummonGuardian();
+                    arena.Send(0, FakeArena.Welcome("s"));
+                    PollUntil(m, () => m.State == MatchState.InMatch, "in the match");
+                    m.Say(3);                                           // something sent after, to wait for
+                    byte[] f;
+                    while ((f = arena.Next().frame)[0] != Wire.MsgPhrase)
+                        Assert.That(f[0], Is.Not.EqualTo(Wire.MsgSandbox), "nothing asked before the Welcome went out");
+                }
+            }
         }
 
         [Test]
         public void APingGoesOutEveryTenSecondsInEveryStateAndMeasuresTheRoundTrip()
         {
-            using var arena = new FakeArena();
-            var clock = new ManualClock();
-            using var m = InMatch(arena, clock);
-            var first = arena.Drain(Wire.MsgPing);
-            Assert.That(first, Has.Count.EqualTo(1), "one at once, on joining");
-            arena.Send(0, new byte[] { Wire.MsgPong }.Concat(first[0].Skip(1).Take(4)).Concat(new byte[] { 9 }).ToArray());
-            clock.NowMs += 40;
-            PollUntil(m, () => m.RoundTripMs >= 0, "a round trip");
-            Assert.That(m.RoundTripMs, Is.EqualTo(40));
-
-            arena.Send(0, new FrameBuilder(1).Remove(Wire.SelfHandle).Build());   // dead: no input, still pings
-            PollUntil(m, () => !m.Alive, "dead");
-            // Ten seconds on, frames arriving as they do: ten silent seconds would be a connection lost.
-            for (int i = 0; i < 5; i++)
+            using (var arena = new FakeArena())
             {
-                long applied = m.SnapshotsApplied;
-                clock.NowMs += 2_000;
-                arena.Send(0, new FrameBuilder(2 + i).Build());
-                PollUntil(m, () => m.SnapshotsApplied > applied, "a frame");
+                var clock = new ManualClock();
+                using (var m = InMatch(arena, clock))
+                {
+                    var first = arena.Drain(Wire.MsgPing);
+                    Assert.That(first, Has.Count.EqualTo(1), "one at once, on joining");
+                    arena.Send(0, new byte[] { Wire.MsgPong }.Concat(first[0].Skip(1).Take(4)).Concat(new byte[] { 9 }).ToArray());
+                    clock.NowMs += 40;
+                    PollUntil(m, () => m.RoundTripMs >= 0, "a round trip");
+                    Assert.That(m.RoundTripMs, Is.EqualTo(40));
+
+                    arena.Send(0, new FrameBuilder(1).Remove(Wire.SelfHandle).Build());   // dead: no input, still pings
+                    PollUntil(m, () => !m.Alive, "dead");
+                    // Ten seconds on, frames arriving as they do: ten silent seconds would be a connection lost.
+                    for (int i = 0; i < 5; i++)
+                    {
+                        long applied = m.SnapshotsApplied;
+                        clock.NowMs += 2_000;
+                        arena.Send(0, new FrameBuilder(2 + i).Build());
+                        PollUntil(m, () => m.SnapshotsApplied > applied, "a frame");
+                    }
+                    Assert.That(arena.Drain(Wire.MsgPing), Has.Count.EqualTo(1));
+                }
             }
-            Assert.That(arena.Drain(Wire.MsgPing), Has.Count.EqualTo(1));
         }
     }
 }

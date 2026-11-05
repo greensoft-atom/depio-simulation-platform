@@ -75,6 +75,8 @@ namespace Backend.Client.Core
         public string QueueState { get; private set; } = "none";
         public string QueueRefusal { get; private set; }
         private int _queueJoinId;
+        // The last join's, for its refusal: a queue push outdates the join's answer (T-61), not its refusal (T-67).
+        private int _queueJoinAsked;
 
         /// <summary>The last match found and asked about (evt.match.ready); an answer refused leaves <see cref="AnswerRefusal"/>.</summary>
         public MatchReady Ready { get; private set; }
@@ -135,7 +137,7 @@ namespace Backend.Client.Core
             // A queue of its own: a match before it, played or not, is over.
             QueueState = "none";
             Ready = null;
-            _queueJoinId = Send("queue.join", JsonValue.NewObject().Set("mode", mode));
+            _queueJoinId = _queueJoinAsked = Send("queue.join", JsonValue.NewObject().Set("mode", mode));
         }
 
         /// <summary>
@@ -156,7 +158,7 @@ namespace Backend.Client.Core
         {
             if (State != LobbyState.Ready) throw new InvalidOperationException("the lobby is not ready");
             QueueState = "none";
-            _queueJoinId = 0;                                   // a join's answer still to come is older (T-61)
+            _queueJoinId = _queueJoinAsked = 0;                 // a join's answer still to come is older (T-61)
             Send("queue.leave", null);
         }
 
@@ -323,7 +325,7 @@ namespace Backend.Client.Core
                 LastError = code + ": " + d["message"].AsString;
                 if (id != 0 && id == _authId && code == "invalid_session") Finish(LobbyState.InvalidSession);
                 else if (id != 0 && id == _matchRequestId) GrantRefusal = code;
-                else if (id != 0 && id == _queueJoinId) QueueRefusal = code;
+                else if (id != 0 && id == _queueJoinAsked) QueueRefusal = code;
                 else if (id != 0 && id == _partyRequestId) PartyRefusal = code;
                 else if (id != 0 && id == _answerId) AnswerRefusal = code;
             }

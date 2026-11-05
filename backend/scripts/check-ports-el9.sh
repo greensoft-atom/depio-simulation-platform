@@ -30,7 +30,7 @@ if [ "${1:-}" != --inside ]; then
     trap 'rm -rf "$WORK"' EXIT
     echo "--- publishing the C# headless client, self-contained for linux-x64"
     DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1 "$DOTNET" publish "$REPO/client/Headless/Backend.Client.Headless.csproj" \
-        -c Release -r linux-x64 --self-contained true -p:InvariantGlobalization=true -o "$WORK/headless" \
+        -c Release -f net8.0 -r linux-x64 --self-contained true -p:InvariantGlobalization=true -o "$WORK/headless" \
         > "$WORK/publish.log" 2>&1 || { tail -20 "$WORK/publish.log"; exit 1; }
     IMAGE=backend-check-ports-el9
     docker build -q -t "$IMAGE" - > /dev/null <<'EOF' || exit 1

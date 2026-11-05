@@ -97,7 +97,7 @@ namespace Backend.Client.Core.Tests
             var p = new List<byte>();
             foreach (float f in new[] { accel, radius })
             {
-                int bits = BitConverter.SingleToInt32Bits(f);
+                int bits = FloatBits.Of(f);
                 p.AddRange(new[] { (byte)(bits >> 24), (byte)(bits >> 16), (byte)(bits >> 8), (byte)bits });
             }
             return Event(Wire.EvtMotionRule, p.ToArray());
@@ -434,7 +434,7 @@ namespace Backend.Client.Core.Tests
             w.Apply(new FrameBuilder(1).Tank(Wire.SelfHandle, 100, 200, "Ada").MotionRule(0.16f, 30f).Motion(3, 384, -64).Build());
             Assert.That(w.EventCount, Is.Zero, "the layer above is never handed them");
             Assert.That(w.Motion.HasRule, Is.True);
-            Assert.That(BitConverter.SingleToInt32Bits(w.Motion.Accel), Is.EqualTo(BitConverter.SingleToInt32Bits(0.16f)));
+            Assert.That(FloatBits.Of(w.Motion.Accel), Is.EqualTo(FloatBits.Of(0.16f)));
             Assert.That(w.Motion.Radius, Is.EqualTo(30f));
             Assert.That(w.Motion.InFrame, Is.True);
             Assert.That(w.Motion.InputTicks, Is.EqualTo(3));

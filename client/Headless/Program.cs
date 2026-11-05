@@ -128,54 +128,56 @@ namespace Backend.Client.Headless
         private static void Play()
         {
             var (player, grant) = NewPlayerWithGrant();
-            using var m = Connect(grant);
-            m.Join(grant.TicketId);
-            Check(RunUntil(m, 10_000, () => m.Alive), "joined, and the own tank is in the world");
-            Check(m.Welcome.SelfHandle == Wire.SelfHandle, $"the Welcome names handle {Wire.SelfHandle}");
-            // The table the arena runs, from platform, named by the Welcome (D-24): two processes agree.
-            ApiResult<ClassTableInfo> classes = Api.Classes().Result;
-            Check(classes.Ok && classes.Value.Version == m.Welcome.ContentVersion,
-                $"the class table platform serves is the one the Welcome names ({m.Welcome.ContentVersion})");
-            Check(classes.Ok && classes.Value.Classes.Count > 0 && classes.Value.Classes[0].Name == "Basic",
-                "and it begins with Basic");
-            Check(classes.Ok && classes.Value.Classes.Exists(c => c.Name == "Guardian" && c.OpensAt == int.MaxValue),
-                "and has co-op's boss, which no level opens (01 §8.5)");
-            int x0 = m.World[Wire.SelfHandle].X;
-            long frames0 = m.SnapshotsApplied;
-            m.SetInput(Wire.MoveRight, Wire.QuantiseAim(0f), true, Wire.FlagAutofire);
-            RunFor(m, 3_000);
-            int moved = m.World[Wire.SelfHandle].X - x0;
-            long frames = m.SnapshotsApplied - frames0;
-            Console.WriteLine($"    player {player}: moved {moved / Wire.PosScale:F0} units right in 3 s, {frames} frames, round trip {m.RoundTripMs} ms");
-            // At level 1 the server's rule (sim.Room: accel 0.16, friction 0.9) tops out at 1.44 units
-            // a tick, 36 a second: 3 s is at most 108, less the ramp to top speed and the frame
-            // still in flight, about 93. Under 70 would mean inputs lost or late.
-            Check(moved >= 70 * Wire.PosScale && moved <= 108 * Wire.PosScale,
-                "the own tank moved right at its top speed: the server read every input");
-            Check(frames >= 30 && frames <= 50, "15 frames a second, give or take");
-            Check(m.RoundTripMs >= 0, "a Pong came back");
+            using (var m = Connect(grant))
+            {
+                m.Join(grant.TicketId);
+                Check(RunUntil(m, 10_000, () => m.Alive), "joined, and the own tank is in the world");
+                Check(m.Welcome.SelfHandle == Wire.SelfHandle, $"the Welcome names handle {Wire.SelfHandle}");
+                // The table the arena runs, from platform, named by the Welcome (D-24): two processes agree.
+                ApiResult<ClassTableInfo> classes = Api.Classes().Result;
+                Check(classes.Ok && classes.Value.Version == m.Welcome.ContentVersion,
+                    $"the class table platform serves is the one the Welcome names ({m.Welcome.ContentVersion})");
+                Check(classes.Ok && classes.Value.Classes.Count > 0 && classes.Value.Classes[0].Name == "Basic",
+                    "and it begins with Basic");
+                Check(classes.Ok && classes.Value.Classes.Exists(c => c.Name == "Guardian" && c.OpensAt == int.MaxValue),
+                    "and has co-op's boss, which no level opens (01 §8.5)");
+                int x0 = m.World[Wire.SelfHandle].X;
+                long frames0 = m.SnapshotsApplied;
+                m.SetInput(Wire.MoveRight, Wire.QuantiseAim(0f), true, Wire.FlagAutofire);
+                RunFor(m, 3_000);
+                int moved = m.World[Wire.SelfHandle].X - x0;
+                long frames = m.SnapshotsApplied - frames0;
+                Console.WriteLine($"    player {player}: moved {moved / Wire.PosScale:F0} units right in 3 s, {frames} frames, round trip {m.RoundTripMs} ms");
+                // At level 1 the server's rule (sim.Room: accel 0.16, friction 0.9) tops out at 1.44 units
+                // a tick, 36 a second: 3 s is at most 108, less the ramp to top speed and the frame
+                // still in flight, about 93. Under 70 would mean inputs lost or late.
+                Check(moved >= 70 * Wire.PosScale && moved <= 108 * Wire.PosScale,
+                    "the own tank moved right at its top speed: the server read every input");
+                Check(frames >= 30 && frames <= 50, "15 frames a second, give or take");
+                Check(m.RoundTripMs >= 0, "a Pong came back");
 
-            // Twin, at level 1: refused, and nothing else happens (01 §4).
-            m.ChooseClass(1);
-            // Then still, and aimed at the middle of the map. Driving right on, a tank that spawned
-            // near the right wall reached it, and every bullet it fired there left the map before a
-            // snapshot could show it: 3 runs in 60 (P-32).
-            Entity me = m.World[Wire.SelfHandle];
-            double towardMiddle = Math.Atan2(m.Welcome.MapHeight / 2.0 - me.Y / (double)Wire.PosScale,
-                                             m.Welcome.MapWidth / 2.0 - me.X / (double)Wire.PosScale);
-            m.SetInput(0, Wire.QuantiseAim((float)towardMiddle), true, Wire.FlagAutofire);
-            // Protocol 2 carries a bullet's speed exactly: at level 1 with no points, 10 units a
-            // tick, 20 in half units. The protection that stops a new tank firing is over by now.
-            int bullet = 0;
-            RunUntil(m, 5_000, () => (bullet = OwnBullet(m)) != 0);
-            if (bullet == 0) DescribeSurroundings(m);   // P-32: intermittent, so say what the tank saw
-            Check(bullet != 0, "the own tank's bullets arrive as predicted creates");
-            Check(bullet != 0 && m.World[bullet].Speed == 20, "at exactly 10 units a tick");
-            Check(bullet != 0 && m.World[bullet].Radius == 8, "and a Basic's size, 8 units, as protocol 3 carries it");
-            Check(m.World[Wire.SelfHandle].ClassId == 0, "still Basic");
-            Check(State(m) == MatchState.InMatch, "still in the match");
-            m.Leave();
-            Check(m.End == MatchEnd.Left, "left on purpose");
+                // Twin, at level 1: refused, and nothing else happens (01 §4).
+                m.ChooseClass(1);
+                // Then still, and aimed at the middle of the map. Driving right on, a tank that spawned
+                // near the right wall reached it, and every bullet it fired there left the map before a
+                // snapshot could show it: 3 runs in 60 (P-32).
+                Entity me = m.World[Wire.SelfHandle];
+                double towardMiddle = Math.Atan2(m.Welcome.MapHeight / 2.0 - me.Y / (double)Wire.PosScale,
+                                                 m.Welcome.MapWidth / 2.0 - me.X / (double)Wire.PosScale);
+                m.SetInput(0, Wire.QuantiseAim((float)towardMiddle), true, Wire.FlagAutofire);
+                // Protocol 2 carries a bullet's speed exactly: at level 1 with no points, 10 units a
+                // tick, 20 in half units. The protection that stops a new tank firing is over by now.
+                int bullet = 0;
+                RunUntil(m, 5_000, () => (bullet = OwnBullet(m)) != 0);
+                if (bullet == 0) DescribeSurroundings(m);   // P-32: intermittent, so say what the tank saw
+                Check(bullet != 0, "the own tank's bullets arrive as predicted creates");
+                Check(bullet != 0 && m.World[bullet].Speed == 20, "at exactly 10 units a tick");
+                Check(bullet != 0 && m.World[bullet].Radius == 8, "and a Basic's size, 8 units, as protocol 3 carries it");
+                Check(m.World[Wire.SelfHandle].ClassId == 0, "still Basic");
+                Check(State(m) == MatchState.InMatch, "still in the match");
+                m.Leave();
+                Check(m.End == MatchEnd.Left, "left on purpose");
+            }
         }
 
         /// <summary>
@@ -187,22 +189,24 @@ namespace Backend.Client.Headless
         private static void Prediction()
         {
             var (player, grant) = NewPlayerWithGrant();
-            using var m = Connect(grant);
-            m.Join(grant.TicketId);
-            Check(RunUntil(m, 10_000, () => m.Alive), "joined, and the own tank is in the world");
-            Check(RunUntil(m, 3_000, () => m.OwnTank.Predicting), "the own tank is predicted: the server told its rule");
-            var walk = Walk(m, firing: false);
-            var fire = Walk(m, firing: true);
-            Report("walking", walk);
-            Report("firing ", fire);
-            Check(walk.Compared >= walk.Frames * 9 / 10, $"nearly every frame matched a step ({walk.Compared} of {walk.Frames})");
-            Check(walk.Jumps == 0 && fire.Jumps == 0, "and none needed a jump");
-            Check(Percentile(walk.Errors, 50) <= PredictionMedianLimit,
-                $"walking, the median frame found the tank where it was predicted, within {PredictionMedianLimit} units");
-            Check(Percentile(walk.Errors, 95) <= PredictionP95Limit,
-                $"and 95 in 100 within {PredictionP95Limit}: what is off is knocks, which are not predicted");
-            Check(Percentile(walk.Leads, 50) >= 1f, "the drawn tank is ahead of the newest sample: the lag is hidden");
-            m.Leave();
+            using (var m = Connect(grant))
+            {
+                m.Join(grant.TicketId);
+                Check(RunUntil(m, 10_000, () => m.Alive), "joined, and the own tank is in the world");
+                Check(RunUntil(m, 3_000, () => m.OwnTank.Predicting), "the own tank is predicted: the server told its rule");
+                var walk = Walk(m, firing: false);
+                var fire = Walk(m, firing: true);
+                Report("walking", walk);
+                Report("firing ", fire);
+                Check(walk.Compared >= walk.Frames * 9 / 10, $"nearly every frame matched a step ({walk.Compared} of {walk.Frames})");
+                Check(walk.Jumps == 0 && fire.Jumps == 0, "and none needed a jump");
+                Check(Percentile(walk.Errors, 50) <= PredictionMedianLimit,
+                    $"walking, the median frame found the tank where it was predicted, within {PredictionMedianLimit} units");
+                Check(Percentile(walk.Errors, 95) <= PredictionP95Limit,
+                    $"and 95 in 100 within {PredictionP95Limit}: what is off is knocks, which are not predicted");
+                Check(Percentile(walk.Leads, 50) >= 1f, "the drawn tank is ahead of the newest sample: the lag is hidden");
+                m.Leave();
+            }
         }
 
         private const float PredictionMedianLimit = 0.5f, PredictionP95Limit = 4f;
@@ -291,20 +295,22 @@ namespace Backend.Client.Headless
 
             // A new stay, wearing it: 10 units a tick at level 1, 12.5 with the barrel, 25 in half units.
             Grant second = GrantFor(session);
-            using var worn2 = Connect(second);
-            worn2.Join(second.TicketId);
-            Check(RunUntil(worn2, 10_000, () => worn2.Alive), "joined again, wearing it");
-            Entity me = worn2.World[Wire.SelfHandle];
-            double towardMiddle = Math.Atan2(worn2.Welcome.MapHeight / 2.0 - me.Y / (double)Wire.PosScale,
-                                             worn2.Welcome.MapWidth / 2.0 - me.X / (double)Wire.PosScale);
-            worn2.SetInput(0, Wire.QuantiseAim((float)towardMiddle), true, Wire.FlagAutofire);
-            int bullet = 0;
-            RunUntil(worn2, 8_000, () => (bullet = OwnBullet(worn2)) != 0);   // spawn protection is 3 s
-            if (bullet == 0) DescribeSurroundings(worn2);
-            Check(bullet != 0, "its bullets arrive");
-            int speed = bullet == 0 ? 0 : worn2.World[bullet].Speed;
-            Check(speed == 25, $"at 12.5 units a tick, the barrel's 25 % on 10 (speed {speed} in half units)");
-            worn2.Leave();
+            using (var worn2 = Connect(second))
+            {
+                worn2.Join(second.TicketId);
+                Check(RunUntil(worn2, 10_000, () => worn2.Alive), "joined again, wearing it");
+                Entity me = worn2.World[Wire.SelfHandle];
+                double towardMiddle = Math.Atan2(worn2.Welcome.MapHeight / 2.0 - me.Y / (double)Wire.PosScale,
+                                                 worn2.Welcome.MapWidth / 2.0 - me.X / (double)Wire.PosScale);
+                worn2.SetInput(0, Wire.QuantiseAim((float)towardMiddle), true, Wire.FlagAutofire);
+                int bullet = 0;
+                RunUntil(worn2, 8_000, () => (bullet = OwnBullet(worn2)) != 0);   // spawn protection is 3 s
+                if (bullet == 0) DescribeSurroundings(worn2);
+                Check(bullet != 0, "its bullets arrive");
+                int speed = bullet == 0 ? 0 : worn2.World[bullet].Speed;
+                Check(speed == 25, $"at 12.5 units a tick, the barrel's 25 % on 10 (speed {speed} in half units)");
+                worn2.Leave();
+            }
         }
 
         /// <summary>
@@ -337,35 +343,39 @@ namespace Backend.Client.Headless
             var (ada, _) = NewSession();
             var (bob, _) = NewSession();
             // Each in the lobby, where every change of the team is pushed (04 §2, Q-35).
-            using var la = NewLobby();
-            using var lb = NewLobby();
-            la.Connect(ada.Token);
-            lb.Connect(bob.Token);
-            Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb),
-                "both are in the lobby");
-            string name = "t" + Guid.NewGuid().ToString("N").Substring(0, 10);
-            ApiResult<TeamInfo> made = Api.CreateTeam(ada.Token, name).Result;
-            Check(made.Ok && made.Value.Name == name && made.Value.Members[0].Role == "leader", $"ada made team {name} and leads it ({made})");
-            Check(Api.InviteToTeam(ada.Token, bob.PlayerId).Result.Ok, "and invited bob");
-            ApiResult<List<TeamInvite>> invites = Api.TeamInvites(bob.Token).Result;
-            Check(invites.Ok && invites.Value.Exists(i => i.TeamName == name), "bob sees the invitation");
-            ApiResult<TeamInfo> joined = Api.AcceptTeamInvite(bob.Token, made.Value.Id).Result;
-            Check(joined.Ok && joined.Value.Members.Count == 2, "and accepts it: two in the team");
-            Check(RunLobbiesUntil(5_000, () => la.Team?.Members.Count == 2 && lb.Team?.Members.Count == 2, la, lb),
-                "both were pushed the team of two (evt.team.update)");
-            ApiResult<TeamInfo> promoted = Api.SetTeamRole(ada.Token, bob.PlayerId, "vice_leader").Result;
-            Check(promoted.Ok && promoted.Value.Members.Exists(m => m.PlayerId == bob.PlayerId && m.Role == "vice_leader"),
-                "ada makes bob a vice leader");
-            ApiResult<TeamInfo> handed = Api.HandOverTeam(ada.Token, bob.PlayerId).Result;
-            Check(handed.Ok && handed.Value.Members[0].PlayerId == bob.PlayerId, "and hands him the team");
-            Check(Api.LeaveTeam(ada.Token).Result.Ok, "ada leaves");
-            Check(Api.MyTeam(bob.Token).Result.Value?.Members.Count == 1, "bob leads it alone");
-            Check(RunLobbiesUntil(5_000, () => la.Team == null && lb.Team?.Members.Count == 1, la, lb),
-                "ada was pushed no team, bob his team of one");
-            Check(Api.DisbandTeam(bob.Token).Result.Ok, "and disbands it");
-            Check(RunLobbiesUntil(5_000, () => lb.Team == null, la, lb), "and was pushed no team");
-            ApiResult<TeamInfo> gone = Api.MyTeam(bob.Token).Result;
-            Check(!gone.Ok && gone.Status == 404 && gone.Code == "no_team", "and is in no team");
+            using (var la = NewLobby())
+            {
+                using (var lb = NewLobby())
+                {
+                    la.Connect(ada.Token);
+                    lb.Connect(bob.Token);
+                    Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb),
+                        "both are in the lobby");
+                    string name = "t" + Guid.NewGuid().ToString("N").Substring(0, 10);
+                    ApiResult<TeamInfo> made = Api.CreateTeam(ada.Token, name).Result;
+                    Check(made.Ok && made.Value.Name == name && made.Value.Members[0].Role == "leader", $"ada made team {name} and leads it ({made})");
+                    Check(Api.InviteToTeam(ada.Token, bob.PlayerId).Result.Ok, "and invited bob");
+                    ApiResult<List<TeamInvite>> invites = Api.TeamInvites(bob.Token).Result;
+                    Check(invites.Ok && invites.Value.Exists(i => i.TeamName == name), "bob sees the invitation");
+                    ApiResult<TeamInfo> joined = Api.AcceptTeamInvite(bob.Token, made.Value.Id).Result;
+                    Check(joined.Ok && joined.Value.Members.Count == 2, "and accepts it: two in the team");
+                    Check(RunLobbiesUntil(5_000, () => la.Team?.Members.Count == 2 && lb.Team?.Members.Count == 2, la, lb),
+                        "both were pushed the team of two (evt.team.update)");
+                    ApiResult<TeamInfo> promoted = Api.SetTeamRole(ada.Token, bob.PlayerId, "vice_leader").Result;
+                    Check(promoted.Ok && promoted.Value.Members.Exists(m => m.PlayerId == bob.PlayerId && m.Role == "vice_leader"),
+                        "ada makes bob a vice leader");
+                    ApiResult<TeamInfo> handed = Api.HandOverTeam(ada.Token, bob.PlayerId).Result;
+                    Check(handed.Ok && handed.Value.Members[0].PlayerId == bob.PlayerId, "and hands him the team");
+                    Check(Api.LeaveTeam(ada.Token).Result.Ok, "ada leaves");
+                    Check(Api.MyTeam(bob.Token).Result.Value?.Members.Count == 1, "bob leads it alone");
+                    Check(RunLobbiesUntil(5_000, () => la.Team == null && lb.Team?.Members.Count == 1, la, lb),
+                        "ada was pushed no team, bob his team of one");
+                    Check(Api.DisbandTeam(bob.Token).Result.Ok, "and disbands it");
+                    Check(RunLobbiesUntil(5_000, () => lb.Team == null, la, lb), "and was pushed no team");
+                    ApiResult<TeamInfo> gone = Api.MyTeam(bob.Token).Result;
+                    Check(!gone.Ok && gone.Status == 404 && gone.Code == "no_team", "and is in no team");
+                }
+            }
         }
 
         /// <summary>
@@ -483,17 +493,21 @@ namespace Backend.Client.Headless
 
             MatchGrant grant = Api.RequestMatch(session.Token).Result.Value;
             var g = new Grant { Host = grant.ArenaHost, Port = grant.ArenaPort, TicketId = grant.TicketId, Tls = grant.Tls, TlsName = grant.TlsName };
-            using var m = Connect(g);
-            m.Join(g.TicketId);
-            Check(RunUntil(m, 10_000, () => m.Alive && m.World[Wire.SelfHandle].Skin != 0) && m.World[Wire.SelfHandle].Skin == 1,
-                $"in the public arena, its own tank told as skin 1 ({m.World[Wire.SelfHandle].Skin})");
+            using (var m = Connect(g))
+            {
+                m.Join(g.TicketId);
+                Check(RunUntil(m, 10_000, () => m.Alive && m.World[Wire.SelfHandle].Skin != 0) && m.World[Wire.SelfHandle].Skin == 1,
+                    $"in the public arena, its own tank told as skin 1 ({m.World[Wire.SelfHandle].Skin})");
 
-            var (other, _) = NewSession();
-            MatchGrant plain = Api.RequestMatch(other.Token).Result.Value;
-            var pg = new Grant { Host = plain.ArenaHost, Port = plain.ArenaPort, TicketId = plain.TicketId, Tls = plain.Tls, TlsName = plain.TlsName };
-            using var p = Connect(pg);
-            p.Join(pg.TicketId);
-            Check(RunUntil(p, 10_000, () => p.Alive) && p.World[Wire.SelfHandle].Skin == 0, "another, wearing none, told none");
+                var (other, _) = NewSession();
+                MatchGrant plain = Api.RequestMatch(other.Token).Result.Value;
+                var pg = new Grant { Host = plain.ArenaHost, Port = plain.ArenaPort, TicketId = plain.TicketId, Tls = plain.Tls, TlsName = plain.TlsName };
+                using (var p = Connect(pg))
+                {
+                    p.Join(pg.TicketId);
+                    Check(RunUntil(p, 10_000, () => p.Alive) && p.World[Wire.SelfHandle].Skin == 0, "another, wearing none, told none");
+                }
+            }
         }
 
         /// <summary>
@@ -509,23 +523,25 @@ namespace Backend.Client.Headless
                   && fresh.Value.Tiers[4].Premium.ItemId == "boost_xp_hour", $"a new pass: nothing yet, forty tiers ({fresh})");
             Check(DrillSql("INSERT INTO season_pass (player_id, season_id, points) SELECT " + session.PlayerId
                   + ", id, 245 FROM season WHERE placed_at IS NULL ORDER BY id DESC LIMIT 1"), "245 points, as a fixture");
-            using var lobby = NewLobby();
-            JsonValue paid = null;
-            lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
-            lobby.Connect(session.Token);
-            Check(RunLobbiesUntil(10_000, () => lobby.State == LobbyState.Ready, lobby), "in the lobby");
-            Check(PaidStay(session) > 0, "a stay, paid");
-            Check(RunLobbiesUntil(10_000, () => paid != null, lobby) && paid["pass"]["points"].AsInt >= 10
-                  && paid["pass"]["tier"].AsInt == 1 && paid["pass"]["coins"].AsLong == 150,
-                $"told by evt.rewards: its points, the first tier, 150 coins ({paid?["pass"]})");
-            Check(Api.SeasonPass(session.Token).Result.Value?.Tier == 1, "the pass at the first tier");
+            using (var lobby = NewLobby())
+            {
+                JsonValue paid = null;
+                lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
+                lobby.Connect(session.Token);
+                Check(RunLobbiesUntil(10_000, () => lobby.State == LobbyState.Ready, lobby), "in the lobby");
+                Check(PaidStay(session) > 0, "a stay, paid");
+                Check(RunLobbiesUntil(10_000, () => paid != null, lobby) && paid["pass"]["points"].AsInt >= 10
+                      && paid["pass"]["tier"].AsInt == 1 && paid["pass"]["coins"].AsLong == 150,
+                    $"told by evt.rewards: its points, the first tier, 150 coins ({paid?["pass"]})");
+                Check(Api.SeasonPass(session.Token).Result.Value?.Tier == 1, "the pass at the first tier");
 
-            Check(Granted(session.PlayerId, 500, "gems", 1), "given 500 gems, as a fixture, through the ledger");
-            ApiResult<PremiumAnswer> bought = Api.BuyPremium(session.Token).Result;
-            Check(bought.Ok && bought.Value.Result == "bought" && bought.Value.Gems == 15 && bought.Value.Pass.Premium,
-                $"premium bought, the first premium tier's 15 gems paid at once ({bought})");
-            ApiResult<PremiumAnswer> again = Api.BuyPremium(session.Token).Result;
-            Check(again.Ok && again.Value.Result == "already_bought" && again.Value.Gems == 15, $"once ({again})");
+                Check(Granted(session.PlayerId, 500, "gems", 1), "given 500 gems, as a fixture, through the ledger");
+                ApiResult<PremiumAnswer> bought = Api.BuyPremium(session.Token).Result;
+                Check(bought.Ok && bought.Value.Result == "bought" && bought.Value.Gems == 15 && bought.Value.Pass.Premium,
+                    $"premium bought, the first premium tier's 15 gems paid at once ({bought})");
+                ApiResult<PremiumAnswer> again = Api.BuyPremium(session.Token).Result;
+                Check(again.Ok && again.Value.Result == "already_bought" && again.Value.Gems == 15, $"once ({again})");
+            }
         }
 
         /// <summary>
@@ -538,15 +554,17 @@ namespace Backend.Client.Headless
             var (session, _) = NewSession();
             Check(DrillSql($"UPDATE player SET xp = 50000, level = 4 WHERE id = {session.PlayerId}"),
                 "given 50 000 xp with level 4 stored, as a fixture");
-            using var lobby = NewLobby();
-            JsonValue paid = null;
-            lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
-            lobby.Connect(session.Token);
-            Check(RunLobbiesUntil(10_000, () => lobby.State == LobbyState.Ready, lobby), "in the lobby");
-            Check(PaidStay(session) > 0, "a stay, paid");
-            Check(RunLobbiesUntil(10_000, () => paid != null, lobby) && paid["gems"].AsLong == 20,
-                $"told by evt.rewards: 20 gems, level 5's milestone ({paid})");
-            Check(Api.Inventory(session.Token).Result.Value.Gems == 20, "and the 20 are in the wallet");
+            using (var lobby = NewLobby())
+            {
+                JsonValue paid = null;
+                lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
+                lobby.Connect(session.Token);
+                Check(RunLobbiesUntil(10_000, () => lobby.State == LobbyState.Ready, lobby), "in the lobby");
+                Check(PaidStay(session) > 0, "a stay, paid");
+                Check(RunLobbiesUntil(10_000, () => paid != null, lobby) && paid["gems"].AsLong == 20,
+                    $"told by evt.rewards: 20 gems, level 5's milestone ({paid})");
+                Check(Api.Inventory(session.Token).Result.Value.Gems == 20, "and the 20 are in the wallet");
+            }
         }
 
         /// <summary>
@@ -582,58 +600,60 @@ namespace Backend.Client.Headless
             int season = before.Value.Current.Id;
             Console.WriteLine($"    season {season}, to end {before.Value.Current.EndsAt}");
             long gemsA = Api.Inventory(ada.Token).Result.Value.Gems, gemsB = Api.Inventory(bob.Token).Result.Value.Gems;
-            using var lobby = NewLobby();
-            bool told = false;
-            lobby.OnPush += (t, d) => { if (t == "evt.inbox") told = true; };
-            lobby.Connect(ada.Token);
-            Check(RunLobbiesUntil(10_000, () => lobby.State == LobbyState.Ready, lobby), "ada is in the lobby");
+            using (var lobby = NewLobby())
+            {
+                bool told = false;
+                lobby.OnPush += (t, d) => { if (t == "evt.inbox") told = true; };
+                lobby.Connect(ada.Token);
+                Check(RunLobbiesUntil(10_000, () => lobby.State == LobbyState.Ready, lobby), "ada is in the lobby");
 
-            var ended = Admin("POST", "/admin/seasons/end", "{\"reason\":\"the season drill\"}");
-            Check(ended.IsSuccessStatusCode, $"an operator ended season {season} now ({(int)ended.StatusCode})");
-            // The worker's season job looks each minute, its first a minute after it started.
-            var clock = System.Diagnostics.Stopwatch.StartNew();
-            bool closed = false;
-            long nextLook = 0;
-            while (!closed && clock.ElapsedMilliseconds < 150_000)
-            {
-                lobby.Poll();
-                if (clock.ElapsedMilliseconds >= nextLook)
+                var ended = Admin("POST", "/admin/seasons/end", "{\"reason\":\"the season drill\"}");
+                Check(ended.IsSuccessStatusCode, $"an operator ended season {season} now ({(int)ended.StatusCode})");
+                // The worker's season job looks each minute, its first a minute after it started.
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                bool closed = false;
+                long nextLook = 0;
+                while (!closed && clock.ElapsedMilliseconds < 150_000)
                 {
-                    nextLook += 1_000;
-                    closed = Api.Seasons().Result.Value?.Current?.Id == season + 1
-                        && Api.Inventory(ada.Token).Result.Value.Gems >= gemsA + 100;
+                    lobby.Poll();
+                    if (clock.ElapsedMilliseconds >= nextLook)
+                    {
+                        nextLook += 1_000;
+                        closed = Api.Seasons().Result.Value?.Current?.Id == season + 1
+                            && Api.Inventory(ada.Token).Result.Value.Gems >= gemsA + 100;
+                    }
+                    Thread.Sleep(50);
                 }
-                Thread.Sleep(50);
+                Console.WriteLine($"    closed {clock.ElapsedMilliseconds / 1000} s after the operator's call");
+                Check(closed, $"the worker closed it: season {season + 1} begun, its first place paid");
+                bool both = false;
+                for (int i = 0; i < 20 && !both; i++)
+                {
+                    both = Api.Inventory(ada.Token).Result.Value.Gems == gemsA + 200;
+                    if (!both) Thread.Sleep(250);
+                }
+                Check(both && Api.Inventory(bob.Token).Result.Value.Gems == gemsB + 60,
+                    "ada paid 200 gems, 100 for the duel board's first place and 100 for her team's; bob 60 for second, none for the team");
+                Check(RunLobbiesUntil(5_000, () => told, lobby), "ada was told to look: evt.inbox");
+                List<InboxItem> items = Api.Inbox(ada.Token).Result.Value;
+                Check(items.Exists(i => i.Kind == "season_reward" && i.Ref == season * 10L + 1)
+                    && items.Exists(i => i.Kind == "season_reward" && i.Ref == season * 10L + 5),
+                    $"her inbox names season {season}'s duel board and its board of teams");
+                ApiResult<List<RankRow>> teamPlace = Api.AroundMe("teams", ada.Token, season).Result;
+                Check(teamPlace.Ok && teamPlace.Value.Exists(r => r.TeamId == team.Value.Id && r.Rank == 1 && r.Score == 2950),
+                    $"season {season}'s board of teams keeps her team first ({teamPlace})");
+                Check(Api.AroundMe("teams", bob.Token, season).Result.Code == "not_ranked", "and bob, who did not play for it, has no place there");
+                ApiResult<List<RankRow>> mine = Api.AroundMe("duel", ada.Token, season).Result;
+                Check(mine.Ok && mine.Value.Exists(r => r.PlayerId == ada.PlayerId && r.Rank == 1 && r.Score == 2950),
+                    $"season {season}'s duel board keeps her first, at 2 950 ({mine})");
+                bool reset = false;
+                for (int i = 0; i < 20 && !reset; i++)
+                {
+                    reset = Api.AroundMe("duel", ada.Token).Result.Code == "not_ranked";
+                    if (!reset) Thread.Sleep(500);
+                }
+                Check(reset, "and in the new season she is not listed: its ten rated matches are to play");
             }
-            Console.WriteLine($"    closed {clock.ElapsedMilliseconds / 1000} s after the operator's call");
-            Check(closed, $"the worker closed it: season {season + 1} begun, its first place paid");
-            bool both = false;
-            for (int i = 0; i < 20 && !both; i++)
-            {
-                both = Api.Inventory(ada.Token).Result.Value.Gems == gemsA + 200;
-                if (!both) Thread.Sleep(250);
-            }
-            Check(both && Api.Inventory(bob.Token).Result.Value.Gems == gemsB + 60,
-                "ada paid 200 gems, 100 for the duel board's first place and 100 for her team's; bob 60 for second, none for the team");
-            Check(RunLobbiesUntil(5_000, () => told, lobby), "ada was told to look: evt.inbox");
-            List<InboxItem> items = Api.Inbox(ada.Token).Result.Value;
-            Check(items.Exists(i => i.Kind == "season_reward" && i.Ref == season * 10L + 1)
-                && items.Exists(i => i.Kind == "season_reward" && i.Ref == season * 10L + 5),
-                $"her inbox names season {season}'s duel board and its board of teams");
-            ApiResult<List<RankRow>> teamPlace = Api.AroundMe("teams", ada.Token, season).Result;
-            Check(teamPlace.Ok && teamPlace.Value.Exists(r => r.TeamId == team.Value.Id && r.Rank == 1 && r.Score == 2950),
-                $"season {season}'s board of teams keeps her team first ({teamPlace})");
-            Check(Api.AroundMe("teams", bob.Token, season).Result.Code == "not_ranked", "and bob, who did not play for it, has no place there");
-            ApiResult<List<RankRow>> mine = Api.AroundMe("duel", ada.Token, season).Result;
-            Check(mine.Ok && mine.Value.Exists(r => r.PlayerId == ada.PlayerId && r.Rank == 1 && r.Score == 2950),
-                $"season {season}'s duel board keeps her first, at 2 950 ({mine})");
-            bool reset = false;
-            for (int i = 0; i < 20 && !reset; i++)
-            {
-                reset = Api.AroundMe("duel", ada.Token).Result.Code == "not_ranked";
-                if (!reset) Thread.Sleep(500);
-            }
-            Check(reset, "and in the new season she is not listed: its ten rated matches are to play");
         }
 
         /// <summary>
@@ -649,19 +669,21 @@ namespace Backend.Client.Headless
             Check(before.Ok && before.Value.Count == 17
                 && before.Value.Exists(a => a.Id == "matches_50" && a.Progress == 49 && !a.Reached),
                 $"seventeen listed; the fiftieth stay not yet reached, at 49 ({before})");
-            using var lobby = NewLobby();
-            JsonValue paid = null;
-            lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
-            lobby.Connect(session.Token);
-            Check(RunLobbiesUntil(10_000, () => lobby.State == LobbyState.Ready, lobby), "in the lobby");
-            Check(PaidStay(session) > 0, "a stay, paid");
-            Check(RunLobbiesUntil(10_000, () => paid != null, lobby) && paid["gems"].AsLong == 10
-                && paid["achievements"].Count == 1 && paid["achievements"][0].AsString == "matches_50",
-                $"told by evt.rewards: 10 gems, and matches_50 named ({paid})");
-            Check(Api.Inventory(session.Token).Result.Value.Gems == 10, "and the 10 are in the wallet");
-            ApiResult<List<AchievementInfo>> after = Api.Achievements(session.Token).Result;
-            Check(after.Ok && after.Value.Exists(a => a.Id == "matches_50" && a.Reached && a.Progress == 50),
-                "listed as reached, at 50");
+            using (var lobby = NewLobby())
+            {
+                JsonValue paid = null;
+                lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
+                lobby.Connect(session.Token);
+                Check(RunLobbiesUntil(10_000, () => lobby.State == LobbyState.Ready, lobby), "in the lobby");
+                Check(PaidStay(session) > 0, "a stay, paid");
+                Check(RunLobbiesUntil(10_000, () => paid != null, lobby) && paid["gems"].AsLong == 10
+                    && paid["achievements"].Count == 1 && paid["achievements"][0].AsString == "matches_50",
+                    $"told by evt.rewards: 10 gems, and matches_50 named ({paid})");
+                Check(Api.Inventory(session.Token).Result.Value.Gems == 10, "and the 10 are in the wallet");
+                ApiResult<List<AchievementInfo>> after = Api.Achievements(session.Token).Result;
+                Check(after.Ok && after.Value.Exists(a => a.Id == "matches_50" && a.Reached && a.Progress == 50),
+                    "listed as reached, at 50");
+            }
         }
 
         /// <summary>
@@ -690,32 +712,54 @@ namespace Backend.Client.Headless
                     + $" '{today.Day}', '{g.Id}', {(g.Id == stays.Id ? g.Target - 1 : g.Target)})");
             Check(set, $"the other two met and {stays.Id} a stay short, as a fixture");
             var wallet = Api.Inventory(session.Token).Result.Value;
-            using var lobby = NewLobby();
-            JsonValue paid = null;
-            lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
-            lobby.Connect(session.Token);
-            Check(RunLobbiesUntil(10_000, () => lobby.State == LobbyState.Ready, lobby), "in the lobby");
-            Check(PaidStay(session) > 0, "a stay, paid");
-            Check(RunLobbiesUntil(10_000, () => paid != null, lobby) && paid["goals"].Count == 1
-                && paid["goals"][0].AsString == stays.Id && paid["goalCoins"].AsLong == stays.Coins && paid["gems"].AsLong == 3,
-                $"told by evt.rewards: {stays.Id} met, its {stays.Coins} coins, and the set's 3 gems ({paid})");
-            var after = Api.Inventory(session.Token).Result.Value;
-            Check(paid != null && after.Coins == wallet.Coins + paid["coins"].AsLong + stays.Coins && after.Gems == wallet.Gems + 3,
-                "and in the wallet: the match's coins and the goal's, and the 3 gems");
-            GoalsInfo done = Api.Goals(session.Token).Result.Value;
-            Check(done.Goals.TrueForAll(g => g.Done) && done.SetDone, "today's three listed as met, and the set");
+            using (var lobby = NewLobby())
+            {
+                JsonValue paid = null;
+                lobby.OnPush += (t, d) => { if (t == "evt.rewards") paid = d; };
+                lobby.Connect(session.Token);
+                Check(RunLobbiesUntil(10_000, () => lobby.State == LobbyState.Ready, lobby), "in the lobby");
+                Check(PaidStay(session) > 0, "a stay, paid");
+                Check(RunLobbiesUntil(10_000, () => paid != null, lobby) && paid["goals"].Count == 1
+                    && paid["goals"][0].AsString == stays.Id && paid["goalCoins"].AsLong == stays.Coins && paid["gems"].AsLong == 3,
+                    $"told by evt.rewards: {stays.Id} met, its {stays.Coins} coins, and the set's 3 gems ({paid})");
+                var after = Api.Inventory(session.Token).Result.Value;
+                Check(paid != null && after.Coins == wallet.Coins + paid["coins"].AsLong + stays.Coins && after.Gems == wallet.Gems + 3,
+                    "and in the wallet: the match's coins and the goal's, and the 3 gems");
+                GoalsInfo done = Api.Goals(session.Token).Result.Value;
+                Check(done.Goals.TrueForAll(g => g.Done) && done.SetDone, "today's three listed as met, and the set");
+            }
+        }
+
+        /// <summary>Math.Clamp, which .NET Framework has not.</summary>
+        private static float Clamp(float v, float lo, float hi) => v < lo ? lo : v > hi ? hi : v;
+
+        /// <summary>One argument as Windows' rule, which .NET follows everywhere, splits it back: quotes and the backslashes before them escaped.</summary>
+        private static string Quoted(string s)
+        {
+            var q = new System.Text.StringBuilder("\"");
+            int slashes = 0;
+            foreach (char c in s)
+            {
+                if (c == '\\') { slashes++; continue; }
+                if (c == '"') q.Append('\\', slashes * 2 + 1).Append('"');
+                else q.Append('\\', slashes).Append(c);
+                slashes = 0;
+            }
+            return q.Append('\\', slashes * 2).Append('"').ToString();
         }
 
         private static bool DrillSql(string sql)
         {
             string run = Environment.GetEnvironmentVariable("BACKEND_DRILL_SQL");
             if (run == null) return false;
-            var start = new System.Diagnostics.ProcessStartInfo(run) { RedirectStandardError = true };
-            start.ArgumentList.Add(sql);
-            using var p = System.Diagnostics.Process.Start(start);
-            p.StandardError.ReadToEnd();
-            p.WaitForExit();
-            return p.ExitCode == 0;
+            // One argument, quoted as .NET splits Arguments on every runtime (ArgumentList is .NET's alone, D-109).
+            var start = new System.Diagnostics.ProcessStartInfo(run, Quoted(sql)) { RedirectStandardError = true, UseShellExecute = false };
+            using (var p = System.Diagnostics.Process.Start(start))
+            {
+                p.StandardError.ReadToEnd();
+                p.WaitForExit();
+                return p.ExitCode == 0;
+            }
         }
 
         /// <summary>
@@ -837,28 +881,32 @@ namespace Backend.Client.Headless
         {
             var (lead, _) = NewSession();
             var (applicant, _) = NewSession();
-            using var ll = NewLobby();
-            using var la = NewLobby();
-            var toLead = new List<string>();
-            ll.OnPush += (t, d) => toLead.Add(t);
-            ll.Connect(lead.Token);
-            la.Connect(applicant.Token);
-            Check(RunLobbiesUntil(10_000, () => ll.State == LobbyState.Ready && la.State == LobbyState.Ready, ll, la),
-                "the leader-to-be and the applicant are in the lobby");
-            string name = "ap" + (lead.PlayerId % 100_000);
-            ApiResult<TeamInfo> made = Api.CreateTeam(lead.Token, name).Result;
-            Check(made.Ok, $"a team made ({made})");
-            if (!made.Ok) return;
-            ApiResult<List<TeamFound>> found = Api.FindTeams(applicant.Token, name).Result;
-            Check(found.Ok && found.Value.Exists(t => t.Id == made.Value.Id), $"found by its name ({found})");
-            ApiResult<bool> applied = Api.ApplyToTeam(applicant.Token, made.Value.Id).Result;
-            Check(applied.Ok, $"applied ({applied})");
-            Check(RunLobbiesUntil(5_000, () => toLead.Contains("evt.inbox"), ll, la), "the leader told, through the gateway");
-            ApiResult<List<TeamApplicant>> listed = Api.TeamApplications(lead.Token).Result;
-            Check(listed.Ok && listed.Value.Exists(a => a.PlayerId == applicant.PlayerId), $"and sees it ({listed})");
-            ApiResult<TeamInfo> accepted = Api.AnswerApplication(lead.Token, applicant.PlayerId, true).Result;
-            Check(accepted.Ok && accepted.Value.Members.Count == 2, $"accepted: a team of two ({accepted})");
-            Check(RunLobbiesUntil(5_000, () => la.Team?.Id == made.Value.Id, ll, la), "the applicant's lobby told they are in");
+            using (var ll = NewLobby())
+            {
+                using (var la = NewLobby())
+                {
+                    var toLead = new List<string>();
+                    ll.OnPush += (t, d) => toLead.Add(t);
+                    ll.Connect(lead.Token);
+                    la.Connect(applicant.Token);
+                    Check(RunLobbiesUntil(10_000, () => ll.State == LobbyState.Ready && la.State == LobbyState.Ready, ll, la),
+                        "the leader-to-be and the applicant are in the lobby");
+                    string name = "ap" + (lead.PlayerId % 100_000);
+                    ApiResult<TeamInfo> made = Api.CreateTeam(lead.Token, name).Result;
+                    Check(made.Ok, $"a team made ({made})");
+                    if (!made.Ok) return;
+                    ApiResult<List<TeamFound>> found = Api.FindTeams(applicant.Token, name).Result;
+                    Check(found.Ok && found.Value.Exists(t => t.Id == made.Value.Id), $"found by its name ({found})");
+                    ApiResult<bool> applied = Api.ApplyToTeam(applicant.Token, made.Value.Id).Result;
+                    Check(applied.Ok, $"applied ({applied})");
+                    Check(RunLobbiesUntil(5_000, () => toLead.Contains("evt.inbox"), ll, la), "the leader told, through the gateway");
+                    ApiResult<List<TeamApplicant>> listed = Api.TeamApplications(lead.Token).Result;
+                    Check(listed.Ok && listed.Value.Exists(a => a.PlayerId == applicant.PlayerId), $"and sees it ({listed})");
+                    ApiResult<TeamInfo> accepted = Api.AnswerApplication(lead.Token, applicant.PlayerId, true).Result;
+                    Check(accepted.Ok && accepted.Value.Members.Count == 2, $"accepted: a team of two ({accepted})");
+                    Check(RunLobbiesUntil(5_000, () => la.Team?.Id == made.Value.Id, ll, la), "the applicant's lobby told they are in");
+                }
+            }
         }
 
         /// <summary>
@@ -908,51 +956,53 @@ namespace Backend.Client.Headless
             {
                 Check(Until(10_000, () => Array.TrueForAll(lobbies, l => l.State == LobbyState.Ready)), "three players are in the lobby");
                 string At(double seconds) => DateTime.UtcNow.AddSeconds(seconds).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-                using var http = new System.Net.Http.HttpClient();
-                var create = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, admin + "/admin/tournaments")
+                using (var http = new System.Net.Http.HttpClient())
                 {
-                    Content = new System.Net.Http.StringContent("{\"reason\":\"drill\",\"name\":\"Drill league\",\"maxEntries\":3,"
-                        + $"\"registrationEnds\":\"{At(8)}\",\"startsAt\":\"{At(10)}\",\"roundMinutes\":1,\"prizes\":[300,200,100],"
-                        + "\"format\":\"round_robin\"}"),
-                };
-                create.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
-                var created = http.Send(create);
-                Check((int) created.StatusCode == 200, $"the operator created a round robin ({(int) created.StatusCode})");
-                long id = JsonValue.Parse(created.Content.ReadAsStringAsync().Result)["id"].AsLong;
-                Check(Played("player", "rated_duels", Array.ConvertAll(seeds, s => s.PlayerId)),
-                    "the three given ten rated duels, as a fixture (Q-43)");
-                var before = new long[3];
-                for (int i = 0; i < 3; i++)
-                {
-                    Check(Api.EnterTournament(seeds[i].Token, id).Result.Ok, $"player {i + 1} entered");
-                    before[i] = CoinsBesideGoals(seeds[i]);
-                }
+                    var create = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, admin + "/admin/tournaments")
+                    {
+                        Content = new System.Net.Http.StringContent("{\"reason\":\"drill\",\"name\":\"Drill league\",\"maxEntries\":3,"
+                            + $"\"registrationEnds\":\"{At(8)}\",\"startsAt\":\"{At(10)}\",\"roundMinutes\":1,\"prizes\":[300,200,100],"
+                            + "\"format\":\"round_robin\"}"),
+                    };
+                    create.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
+                    var created = http.SendAsync(create).GetAwaiter().GetResult();
+                    Check((int) created.StatusCode == 200, $"the operator created a round robin ({(int) created.StatusCode})");
+                    long id = JsonValue.Parse(created.Content.ReadAsStringAsync().Result)["id"].AsLong;
+                    Check(Played("player", "rated_duels", Array.ConvertAll(seeds, s => s.PlayerId)),
+                        "the three given ten rated duels, as a fixture (Q-43)");
+                    var before = new long[3];
+                    for (int i = 0; i < 3; i++)
+                    {
+                        Check(Api.EnterTournament(seeds[i].Token, id).Result.Ok, $"player {i + 1} entered");
+                        before[i] = CoinsBesideGoals(seeds[i]);
+                    }
 
-                Check(Until(30_000, () => lobbies[1].TournamentMatch?.TournamentId == id && lobbies[2].TournamentMatch?.TournamentId == id),
-                    "round 1: seeds 2 and 3 were pushed their match");
-                Check(lobbies[0].TournamentMatch == null, "and seed 1 sits it out");
-                Check(Walkover(lobbies[1], 1), "seed 2 came alone, and won by walkover");
-                Check(Until(100_000, () => lobbies[0].TournamentMatch?.Round == 2 && lobbies[2].TournamentMatch?.Round == 2),
-                    "round 2, a minute on: seeds 1 and 3");
-                Check(Walkover(lobbies[0], 2), "seed 1 came alone, and won by walkover");
-                Check(Until(100_000, () => lobbies[0].TournamentMatch?.Round == 3 && lobbies[1].TournamentMatch?.Round == 3),
-                    "round 3: seeds 1 and 2");
-                Check(Walkover(lobbies[0], 3), "seed 1 came alone again, and won");
-                Check(Until(20_000, () => Api.Tournament(id).Result.Value.State == "finished"), "the round robin is finished");
-                TournamentInfo done = Api.Tournament(id).Result.Value;
-                Check(done.Format == "round_robin" && done.Standings.Count == 3, "its view says round robin, with standings");
-                Check(done.Standings.Count == 3 && done.Standings[0].PlayerId == seeds[0].PlayerId && done.Standings[0].Points == 6
-                      && done.Standings[1].PlayerId == seeds[1].PlayerId && done.Standings[1].Points == 3
-                      && done.Standings[2].PlayerId == seeds[2].PlayerId && done.Standings[2].Points == 0,
-                    "standings 6, 3 and 0: two wins, one, none");
-                var prize = new long[] { 300, 200, 100 };
-                for (int i = 0; i < 3; i++)
-                {
-                    long got = CoinsBesideGoals(seeds[i]) - before[i];
-                    Check(got == prize[i], $"seed {i + 1} was paid {got} beside its goals, the prize {prize[i]} for its place");
+                    Check(Until(30_000, () => lobbies[1].TournamentMatch?.TournamentId == id && lobbies[2].TournamentMatch?.TournamentId == id),
+                        "round 1: seeds 2 and 3 were pushed their match");
+                    Check(lobbies[0].TournamentMatch == null, "and seed 1 sits it out");
+                    Check(Walkover(lobbies[1], 1), "seed 2 came alone, and won by walkover");
+                    Check(Until(100_000, () => lobbies[0].TournamentMatch?.Round == 2 && lobbies[2].TournamentMatch?.Round == 2),
+                        "round 2, a minute on: seeds 1 and 3");
+                    Check(Walkover(lobbies[0], 2), "seed 1 came alone, and won by walkover");
+                    Check(Until(100_000, () => lobbies[0].TournamentMatch?.Round == 3 && lobbies[1].TournamentMatch?.Round == 3),
+                        "round 3: seeds 1 and 2");
+                    Check(Walkover(lobbies[0], 3), "seed 1 came alone again, and won");
+                    Check(Until(20_000, () => Api.Tournament(id).Result.Value.State == "finished"), "the round robin is finished");
+                    TournamentInfo done = Api.Tournament(id).Result.Value;
+                    Check(done.Format == "round_robin" && done.Standings.Count == 3, "its view says round robin, with standings");
+                    Check(done.Standings.Count == 3 && done.Standings[0].PlayerId == seeds[0].PlayerId && done.Standings[0].Points == 6
+                          && done.Standings[1].PlayerId == seeds[1].PlayerId && done.Standings[1].Points == 3
+                          && done.Standings[2].PlayerId == seeds[2].PlayerId && done.Standings[2].Points == 0,
+                        "standings 6, 3 and 0: two wins, one, none");
+                    var prize = new long[] { 300, 200, 100 };
+                    for (int i = 0; i < 3; i++)
+                    {
+                        long got = CoinsBesideGoals(seeds[i]) - before[i];
+                        Check(got == prize[i], $"seed {i + 1} was paid {got} beside its goals, the prize {prize[i]} for its place");
+                    }
+                    Check(Array.TrueForAll(seeds, s => Api.Inventory(s.Token).Result.Value.Gems == 0),
+                        "and no gems: three entries, and gems are paid from four (04 §8)");
                 }
-                Check(Array.TrueForAll(seeds, s => Api.Inventory(s.Token).Result.Value.Gems == 0),
-                    "and no gems: three entries, and gems are paid from four (04 §8)");
             }
             finally
             {
@@ -1003,80 +1053,82 @@ namespace Backend.Client.Headless
             {
                 Check(Until(10_000, () => Array.TrueForAll(lobbies, l => l.State == LobbyState.Ready)), "four players are in the lobby");
                 string At(double seconds) => DateTime.UtcNow.AddSeconds(seconds).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-                using var http = new System.Net.Http.HttpClient();
-                var create = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, admin + "/admin/tournaments")
+                using (var http = new System.Net.Http.HttpClient())
                 {
-                    Content = new System.Net.Http.StringContent("{\"reason\":\"drill\",\"name\":\"Drill cup\",\"maxEntries\":4,"
-                        + $"\"registrationEnds\":\"{At(8)}\",\"startsAt\":\"{At(10)}\",\"roundMinutes\":1,\"prizes\":[300,200,100]}}"),
-                };
-                create.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
-                var created = http.Send(create);
-                Check((int) created.StatusCode == 200, $"the operator created it ({(int) created.StatusCode})");
-                long id = JsonValue.Parse(created.Content.ReadAsStringAsync().Result)["id"].AsLong;
-                ApiResult<TournamentInfo> early = Api.EnterTournament(seeds[0].Token, id).Result;
-                Check(!early.Ok && early.Code == "too_few_rated", $"a player with no rated duels is refused ({early})");
-                Check(Played("player", "rated_duels", Array.ConvertAll(seeds, s => s.PlayerId)),
-                    "the four given ten rated duels, as a fixture (Q-43)");
-                var before = new long[4];
-                for (int i = 0; i < 4; i++)
-                {
-                    Check(Api.EnterTournament(seeds[i].Token, id).Result.Ok, $"player {i + 1} entered");
-                    before[i] = CoinsBesideGoals(seeds[i]);
-                }
-                Check(Api.Tournaments().Result.Value.Exists(t => t.Id == id && t.Entries.Count == 4), "listed, with four entries");
-
-                // Round 1, at the start: 1 v 4 in the one room free, and 2 v 3 once it is free again.
-                Check(Until(30_000, () => lobbies[0].TournamentMatch?.TournamentId == id && lobbies[3].TournamentMatch?.TournamentId == id),
-                    "at the start, seeds 1 and 4 were pushed their match");
-                Check(lobbies[1].TournamentMatch == null && lobbies[2].TournamentMatch == null,
-                    "and 2 and 3 were not: their room is promised to that match");
-                TournamentInfo bracket = Api.Tournament(id).Result.Value;
-                Check(bracket.State == "running" && Array.TrueForAll(new[] { 0, 1, 2, 3 }, i => bracket.Entries[i].PlayerId == seeds[i].PlayerId),
-                    "running, seeded in the order they entered");
-                Check(bracket.Matches[0].PlayerA == seeds[0].PlayerId && bracket.Matches[0].PlayerB == seeds[3].PlayerId
-                      && bracket.Matches[1].PlayerA == seeds[1].PlayerId && bracket.Matches[1].PlayerB == seeds[2].PlayerId,
-                    "1 plays 4 and 2 plays 3");
-                ApiResult<TournamentGrant> asked = Api.TournamentMatch(seeds[0].Token, id).Result;
-                Check(asked.Ok && asked.Value.TicketId == lobbies[0].TournamentMatch.TicketId, "and the grant asked for is the one pushed");
-                ApiResult<QueueStatus> queued = Api.JoinQueue(seeds[0].Token, "duel").Result;
-                Check(!queued.Ok && queued.Code == "in_match", $"called, seed 1 may not queue meanwhile ({queued}; Q-44)");
-                var clock = System.Diagnostics.Stopwatch.StartNew();
-                MatchConnection four = Play(lobbies[3].TournamentMatch);
-                Check(Until(45_000, () => four.State == MatchState.Ended) && four.End == MatchEnd.MatchOver,
-                    $"seed 4 came alone, and won by walkover ({four.End})");
-                Check(Until(30_000, () => lobbies[1].TournamentMatch?.TournamentId == id && lobbies[2].TournamentMatch?.TournamentId == id),
-                    "then 2 and 3 were pushed theirs");
-                Console.WriteLine($"    {clock.ElapsedMilliseconds / 1000} s after the first was joined");
-                MatchConnection two = Play(lobbies[1].TournamentMatch);
-                Check(Until(45_000, () => two.State == MatchState.Ended) && two.End == MatchEnd.MatchOver,
-                    $"seed 2 came alone, was let in, and won by walkover ({two.End})");
-                Check(Until(20_000, () =>
+                    var create = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, admin + "/admin/tournaments")
                     {
-                        TournamentInfo t = Api.Tournament(id).Result.Value;
-                        return t.CurrentRound == 2 && t.Matches[0].Winner == seeds[3].PlayerId && t.Matches[1].Winner == seeds[1].PlayerId;
-                    }), "the walkovers were read: 4 and 2 through, the round over");
+                        Content = new System.Net.Http.StringContent("{\"reason\":\"drill\",\"name\":\"Drill cup\",\"maxEntries\":4,"
+                            + $"\"registrationEnds\":\"{At(8)}\",\"startsAt\":\"{At(10)}\",\"roundMinutes\":1,\"prizes\":[300,200,100]}}"),
+                    };
+                    create.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
+                    var created = http.SendAsync(create).GetAwaiter().GetResult();
+                    Check((int) created.StatusCode == 200, $"the operator created it ({(int) created.StatusCode})");
+                    long id = JsonValue.Parse(created.Content.ReadAsStringAsync().Result)["id"].AsLong;
+                    ApiResult<TournamentInfo> early = Api.EnterTournament(seeds[0].Token, id).Result;
+                    Check(!early.Ok && early.Code == "too_few_rated", $"a player with no rated duels is refused ({early})");
+                    Check(Played("player", "rated_duels", Array.ConvertAll(seeds, s => s.PlayerId)),
+                        "the four given ten rated duels, as a fixture (Q-43)");
+                    var before = new long[4];
+                    for (int i = 0; i < 4; i++)
+                    {
+                        Check(Api.EnterTournament(seeds[i].Token, id).Result.Ok, $"player {i + 1} entered");
+                        before[i] = CoinsBesideGoals(seeds[i]);
+                    }
+                    Check(Api.Tournaments().Result.Value.Exists(t => t.Id == id && t.Entries.Count == 4), "listed, with four entries");
 
-                // The final, a minute on: 4 against 2, and only 4 comes.
-                clock.Restart();
-                bool pushed = Until(90_000, () => lobbies[3].TournamentMatch.Round == 2 && lobbies[1].TournamentMatch.Round == 2);
-                Check(pushed, "the final was pushed to both");
-                if (!pushed) return;
-                Console.WriteLine($"    {clock.ElapsedMilliseconds / 1000} s after the round ended");
-                Check(clock.ElapsedMilliseconds >= 50_000, "a minute between rounds, give or take the ticks");
-                MatchConnection final = Play(lobbies[3].TournamentMatch);
-                Check(Until(45_000, () => final.State == MatchState.Ended) && final.End == MatchEnd.MatchOver,
-                    $"seed 4 came alone, and the final ended a walkover ({final.End})");
-                Check(Until(20_000, () => Api.Tournament(id).Result.Value.State == "finished"), "the tournament is finished");
-                TournamentInfo done = Api.Tournament(id).Result.Value;
-                Check(done.Matches[2].Winner == seeds[3].PlayerId, "won by seed 4");
-                var prize = new long[] { 100, 200, 100, 300 };
-                var gems = new long[] { 5, 15, 5, 30 };
-                for (int i = 0; i < 4; i++)
-                {
-                    long got = CoinsBesideGoals(seeds[i]) - before[i];
-                    Check(got == prize[i], $"seed {i + 1} was paid {got} beside its goals, the prize {prize[i]}");
-                    long gemsGot = Api.Inventory(seeds[i].Token).Result.Value.Gems;
-                    Check(gemsGot == gems[i], $"and {gemsGot} gems, its place's from four entries (04 §8)");
+                    // Round 1, at the start: 1 v 4 in the one room free, and 2 v 3 once it is free again.
+                    Check(Until(30_000, () => lobbies[0].TournamentMatch?.TournamentId == id && lobbies[3].TournamentMatch?.TournamentId == id),
+                        "at the start, seeds 1 and 4 were pushed their match");
+                    Check(lobbies[1].TournamentMatch == null && lobbies[2].TournamentMatch == null,
+                        "and 2 and 3 were not: their room is promised to that match");
+                    TournamentInfo bracket = Api.Tournament(id).Result.Value;
+                    Check(bracket.State == "running" && Array.TrueForAll(new[] { 0, 1, 2, 3 }, i => bracket.Entries[i].PlayerId == seeds[i].PlayerId),
+                        "running, seeded in the order they entered");
+                    Check(bracket.Matches[0].PlayerA == seeds[0].PlayerId && bracket.Matches[0].PlayerB == seeds[3].PlayerId
+                          && bracket.Matches[1].PlayerA == seeds[1].PlayerId && bracket.Matches[1].PlayerB == seeds[2].PlayerId,
+                        "1 plays 4 and 2 plays 3");
+                    ApiResult<TournamentGrant> asked = Api.TournamentMatch(seeds[0].Token, id).Result;
+                    Check(asked.Ok && asked.Value.TicketId == lobbies[0].TournamentMatch.TicketId, "and the grant asked for is the one pushed");
+                    ApiResult<QueueStatus> queued = Api.JoinQueue(seeds[0].Token, "duel").Result;
+                    Check(!queued.Ok && queued.Code == "in_match", $"called, seed 1 may not queue meanwhile ({queued}; Q-44)");
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    MatchConnection four = Play(lobbies[3].TournamentMatch);
+                    Check(Until(45_000, () => four.State == MatchState.Ended) && four.End == MatchEnd.MatchOver,
+                        $"seed 4 came alone, and won by walkover ({four.End})");
+                    Check(Until(30_000, () => lobbies[1].TournamentMatch?.TournamentId == id && lobbies[2].TournamentMatch?.TournamentId == id),
+                        "then 2 and 3 were pushed theirs");
+                    Console.WriteLine($"    {clock.ElapsedMilliseconds / 1000} s after the first was joined");
+                    MatchConnection two = Play(lobbies[1].TournamentMatch);
+                    Check(Until(45_000, () => two.State == MatchState.Ended) && two.End == MatchEnd.MatchOver,
+                        $"seed 2 came alone, was let in, and won by walkover ({two.End})");
+                    Check(Until(20_000, () =>
+                        {
+                            TournamentInfo t = Api.Tournament(id).Result.Value;
+                            return t.CurrentRound == 2 && t.Matches[0].Winner == seeds[3].PlayerId && t.Matches[1].Winner == seeds[1].PlayerId;
+                        }), "the walkovers were read: 4 and 2 through, the round over");
+
+                    // The final, a minute on: 4 against 2, and only 4 comes.
+                    clock.Restart();
+                    bool pushed = Until(90_000, () => lobbies[3].TournamentMatch.Round == 2 && lobbies[1].TournamentMatch.Round == 2);
+                    Check(pushed, "the final was pushed to both");
+                    if (!pushed) return;
+                    Console.WriteLine($"    {clock.ElapsedMilliseconds / 1000} s after the round ended");
+                    Check(clock.ElapsedMilliseconds >= 50_000, "a minute between rounds, give or take the ticks");
+                    MatchConnection final = Play(lobbies[3].TournamentMatch);
+                    Check(Until(45_000, () => final.State == MatchState.Ended) && final.End == MatchEnd.MatchOver,
+                        $"seed 4 came alone, and the final ended a walkover ({final.End})");
+                    Check(Until(20_000, () => Api.Tournament(id).Result.Value.State == "finished"), "the tournament is finished");
+                    TournamentInfo done = Api.Tournament(id).Result.Value;
+                    Check(done.Matches[2].Winner == seeds[3].PlayerId, "won by seed 4");
+                    var prize = new long[] { 100, 200, 100, 300 };
+                    var gems = new long[] { 5, 15, 5, 30 };
+                    for (int i = 0; i < 4; i++)
+                    {
+                        long got = CoinsBesideGoals(seeds[i]) - before[i];
+                        Check(got == prize[i], $"seed {i + 1} was paid {got} beside its goals, the prize {prize[i]}");
+                        long gemsGot = Api.Inventory(seeds[i].Token).Result.Value.Gems;
+                        Check(gemsGot == gems[i], $"and {gemsGot} gems, its place's from four entries (04 §8)");
+                    }
                 }
             }
             finally
@@ -1159,22 +1211,24 @@ namespace Backend.Client.Headless
         private static void Resume()
         {
             var (_, grant) = NewPlayerWithGrant();
-            using var m = Connect(grant);
-            m.Join(grant.TicketId);
-            Check(RunUntil(m, 10_000, () => m.Alive), "joined");
-            long self = m.Welcome.SelfEntityId;
-            string secret = m.Welcome.ResumeSecret;
-            RunFor(m, 1_000);
+            using (var m = Connect(grant))
+            {
+                m.Join(grant.TicketId);
+                Check(RunUntil(m, 10_000, () => m.Alive), "joined");
+                long self = m.Welcome.SelfEntityId;
+                string secret = m.Welcome.ResumeSecret;
+                RunFor(m, 1_000);
 
-            m.DropForTest();                              // a phone walking out of wifi
-            Check(RunUntil(m, 10_000, () => m.Resumes == 1 && m.Alive), "resumed within the tank's 10 s grace");
-            Console.WriteLine($"    resumed; last problem: {m.LastProblem}");
-            Check(m.Welcome.SelfEntityId == self, "the same tank");
-            Check(m.Welcome.ResumeSecret != secret, "a new secret: the old one is spent");
-            long frames0 = m.SnapshotsApplied;
-            RunFor(m, 1_000);
-            Check(m.SnapshotsApplied - frames0 >= 10, "frames flow again on the fresh view");
-            m.Leave();
+                m.DropForTest();                              // a phone walking out of wifi
+                Check(RunUntil(m, 10_000, () => m.Resumes == 1 && m.Alive), "resumed within the tank's 10 s grace");
+                Console.WriteLine($"    resumed; last problem: {m.LastProblem}");
+                Check(m.Welcome.SelfEntityId == self, "the same tank");
+                Check(m.Welcome.ResumeSecret != secret, "a new secret: the old one is spent");
+                long frames0 = m.SnapshotsApplied;
+                RunFor(m, 1_000);
+                Check(m.SnapshotsApplied - frames0 >= 10, "frames flow again on the fresh view");
+                m.Leave();
+            }
         }
 
         /// <summary>
@@ -1193,49 +1247,57 @@ namespace Backend.Client.Headless
             RunFor(m, 1_000);
             m.Dispose();                                   // killed: the socket closed, and no Leave
 
-            using var again = Connect(grant);              // the restarted app's, from what it kept
-            again.Resume(kept);
-            Check(RunUntil(again, 10_000, () => again.Alive), "a new connection resumed the stay with the kept secret");
-            Check(again.Welcome.SelfEntityId == self, "the same tank, within its 10 s grace");
-            Check(again.Welcome.ResumeSecret != kept, "and a new secret to keep");
+            using (var again = Connect(grant))              // the restarted app's, from what it kept
+            {
+                again.Resume(kept);
+                Check(RunUntil(again, 10_000, () => again.Alive), "a new connection resumed the stay with the kept secret");
+                Check(again.Welcome.SelfEntityId == self, "the same tank, within its 10 s grace");
+                Check(again.Welcome.ResumeSecret != kept, "and a new secret to keep");
 
-            using var stale = Connect(grant);
-            stale.Resume(kept);
-            Check(RunUntil(stale, 10_000, () => stale.State == MatchState.Ended) && stale.End == MatchEnd.BadTicket,
-                $"the spent secret is refused: back to the lobby ({stale.End})");
-            RunFor(again, 500);
-            Check(again.Alive, "and the resumed stay is untouched by it");
-            again.Leave();
+                using (var stale = Connect(grant))
+                {
+                    stale.Resume(kept);
+                    Check(RunUntil(stale, 10_000, () => stale.State == MatchState.Ended) && stale.End == MatchEnd.BadTicket,
+                        $"the spent secret is refused: back to the lobby ({stale.End})");
+                    RunFor(again, 500);
+                    Check(again.Alive, "and the resumed stay is untouched by it");
+                    again.Leave();
+                }
+            }
         }
 
         /// <summary>A ticket nobody issued is Kick(1): back to the lobby, not a retry.</summary>
         private static void BadTicket()
         {
             var (_, grant) = NewPlayerWithGrant();
-            using var m = Connect(grant);
-            m.Join("NoSuchTicketAnywhere00");
-            Check(RunUntil(m, 10_000, () => m.State == MatchState.Ended), "the arena answered");
-            Check(m.End == MatchEnd.BadTicket, $"ended as BadTicket (it ended as {m.End})");
+            using (var m = Connect(grant))
+            {
+                m.Join("NoSuchTicketAnywhere00");
+                Check(RunUntil(m, 10_000, () => m.State == MatchState.Ended), "the arena answered");
+                Check(m.End == MatchEnd.BadTicket, $"ended as BadTicket (it ended as {m.End})");
+            }
         }
 
         /// <summary>Backgrounded, the frames stop; back in the foreground, they start again (02 §10).</summary>
         private static void Lifecycle()
         {
             var (_, grant) = NewPlayerWithGrant();
-            using var m = Connect(grant);
-            m.Join(grant.TicketId);
-            Check(RunUntil(m, 10_000, () => m.Alive), "joined");
-            m.SetBackgrounded(true);
-            RunFor(m, 500);                               // what was in flight arrives
-            long frames0 = m.SnapshotsApplied;
-            RunFor(m, 2_000);
-            Check(m.SnapshotsApplied - frames0 <= 1, $"no frames in the background ({m.SnapshotsApplied - frames0})");
-            m.SetBackgrounded(false);
-            long frames1 = m.SnapshotsApplied;
-            RunFor(m, 1_500);
-            Check(m.SnapshotsApplied - frames1 >= 10, "frames again in the foreground");
-            Check(State(m) == MatchState.InMatch, "the stay went on throughout");
-            m.Leave();
+            using (var m = Connect(grant))
+            {
+                m.Join(grant.TicketId);
+                Check(RunUntil(m, 10_000, () => m.Alive), "joined");
+                m.SetBackgrounded(true);
+                RunFor(m, 500);                               // what was in flight arrives
+                long frames0 = m.SnapshotsApplied;
+                RunFor(m, 2_000);
+                Check(m.SnapshotsApplied - frames0 <= 1, $"no frames in the background ({m.SnapshotsApplied - frames0})");
+                m.SetBackgrounded(false);
+                long frames1 = m.SnapshotsApplied;
+                RunFor(m, 1_500);
+                Check(m.SnapshotsApplied - frames1 >= 10, "frames again in the foreground");
+                Check(State(m) == MatchState.InMatch, "the stay went on throughout");
+                m.Leave();
+            }
         }
 
         /// <summary>An arena whose certificate this client does not trust is not joined, and not retried.</summary>
@@ -1243,14 +1305,16 @@ namespace Backend.Client.Headless
         {
             var (_, grant) = NewPlayerWithGrant();
             Check(grant.Tls, "the grant says TLS");
-            using var m = new MatchConnection(new MatchSettings
+            using (var m = new MatchConnection(new MatchSettings
             {
                 Host = grant.Host, Port = grant.Port, Tls = true, TlsName = grant.TlsName,
                 Trust = new TrustRoot(_wrongTrust),
-            }, new SystemClock());
-            m.Join(grant.TicketId);
-            Check(RunUntil(m, 10_000, () => m.State == MatchState.Ended), "the attempt ended");
-            Check(m.End == MatchEnd.Unreachable, $"refused as unreachable (it ended as {m.End}): {m.LastProblem}");
+            }, new SystemClock()))
+            {
+                m.Join(grant.TicketId);
+                Check(RunUntil(m, 10_000, () => m.State == MatchState.Ended), "the attempt ended");
+                Check(m.End == MatchEnd.Unreachable, $"refused as unreachable (it ended as {m.End}): {m.LastProblem}");
+            }
         }
 
         /// <summary>
@@ -1260,37 +1324,41 @@ namespace Backend.Client.Headless
         private static void LobbyToResult()
         {
             var (session, _) = NewSession();
-            using var lobby = NewLobby();
-            lobby.Connect(session.Token);
-            Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.Ready), "the lobby authenticated the session");
-            Check(lobby.PlayerId == session.PlayerId, "as the player who logged in");
-            lobby.RequestMatch();
-            Check(RunLobbyUntil(lobby, 10_000, () => lobby.Grant != null || lobby.GrantRefusal != null), "the lobby answered the match request");
-            MatchGrant g = lobby.Grant;
-            Check(g != null, $"with a grant ({lobby.GrantRefusal})");
-            if (g == null) return;
-
-            using var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls, TlsName = g.TlsName });
-            m.Join(g.TicketId);
-            Check(RunUntil(m, 10_000, () => m.Alive), "joined the arena the lobby named");
-            long coins0 = Api.Inventory(session.Token).Result.Value.Coins;
-            m.SetInput(Wire.MoveDown, Wire.QuantiseAim(1.57f), true, Wire.FlagAutofire);
-            RunFor(m, 6_500);                            // past the reward rules' 5 s minimum
-            m.Leave();
-
-            // Leaving publishes the stay's result; the worker applies it to MySQL.
-            long coins = coins0;
-            var clock = System.Diagnostics.Stopwatch.StartNew();
-            while (clock.ElapsedMilliseconds < 20_000 && coins == coins0)
+            using (var lobby = NewLobby())
             {
-                Thread.Sleep(250);
-                lobby.Poll();
-                coins = Api.Inventory(session.Token).Result.Value.Coins;
+                lobby.Connect(session.Token);
+                Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.Ready), "the lobby authenticated the session");
+                Check(lobby.PlayerId == session.PlayerId, "as the player who logged in");
+                lobby.RequestMatch();
+                Check(RunLobbyUntil(lobby, 10_000, () => lobby.Grant != null || lobby.GrantRefusal != null), "the lobby answered the match request");
+                MatchGrant g = lobby.Grant;
+                Check(g != null, $"with a grant ({lobby.GrantRefusal})");
+                if (g == null) return;
+
+                using (var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls, TlsName = g.TlsName }))
+                {
+                    m.Join(g.TicketId);
+                    Check(RunUntil(m, 10_000, () => m.Alive), "joined the arena the lobby named");
+                    long coins0 = Api.Inventory(session.Token).Result.Value.Coins;
+                    m.SetInput(Wire.MoveDown, Wire.QuantiseAim(1.57f), true, Wire.FlagAutofire);
+                    RunFor(m, 6_500);                            // past the reward rules' 5 s minimum
+                    m.Leave();
+
+                    // Leaving publishes the stay's result; the worker applies it to MySQL.
+                    long coins = coins0;
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    while (clock.ElapsedMilliseconds < 20_000 && coins == coins0)
+                    {
+                        Thread.Sleep(250);
+                        lobby.Poll();
+                        coins = Api.Inventory(session.Token).Result.Value.Coins;
+                    }
+                    Console.WriteLine($"    coins {coins0} -> {coins} after {clock.ElapsedMilliseconds} ms");
+                    Check(coins >= coins0 + 10, "the taking-part reward arrived: arena, queue, worker, MySQL, API");
+                    Check(lobby.State == LobbyState.Ready, "the lobby stayed connected throughout");
+                    Check(Api.Shop().Result.Ok, "the shop answers");
+                }
             }
-            Console.WriteLine($"    coins {coins0} -> {coins} after {clock.ElapsedMilliseconds} ms");
-            Check(coins >= coins0 + 10, "the taking-part reward arrived: arena, queue, worker, MySQL, API");
-            Check(lobby.State == LobbyState.Ready, "the lobby stayed connected throughout");
-            Check(Api.Shop().Result.Ok, "the shop answers");
         }
 
         /// <summary>Two players in the lobby, both queued for a duel and both matched by the push (04 §4).</summary>
@@ -1334,29 +1402,33 @@ namespace Backend.Client.Headless
                 la.OnPush += (t, d) => { if (t == "evt.rewards") paidA = d; };
                 lb.OnPush += (t, d) => { if (t == "evt.rewards") paidB = d; };
                 long coinsA = Api.Inventory(a.Token).Result.Value.Coins, coinsB = Api.Inventory(b.Token).Result.Value.Coins;
-                using var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls, TlsName = la.Grant.TlsName });
-                using var mb = Connect(new Grant { Host = lb.Grant.ArenaHost, Port = lb.Grant.ArenaPort, TicketId = lb.Grant.TicketId, Tls = lb.Grant.Tls, TlsName = lb.Grant.TlsName });
-                ma.Join(la.Grant.TicketId);
-                mb.Join(lb.Grant.TicketId);
-                Check(RunMatchesUntil(10_000, () => ma.Alive && mb.Alive, la, lb, ma, mb), "both joined the room made for the match");
-                Check(ma.Welcome.Mode == 1, "and the Welcome says duel");
-                // Nobody fires: the three minutes run out, and equal kills are a draw.
-                var clock = System.Diagnostics.Stopwatch.StartNew();
-                Check(RunMatchesUntil(200_000, () => ma.State == MatchState.Ended && mb.State == MatchState.Ended, la, lb, ma, mb),
-                    "the match ended");
-                Console.WriteLine($"    ended after {clock.ElapsedMilliseconds / 1000} s: {ma.End}, {mb.End}");
-                Check(ma.End == MatchEnd.MatchOver && mb.End == MatchEnd.MatchOver, "both were told the match is over: Kick(6)");
-                Check(WaitForCoins(a, coinsA + 50) && WaitForCoins(b, coinsB + 50), "the result reached MySQL: a draw, both placed first");
-                Check(RunLobbiesUntil(10_000, () => paidA != null && paidB != null, la, lb)
-                      && paidA["mode"].AsString == "duel" && paidA["coins"].AsLong == 50 && paidB["coins"].AsLong == 50
-                      && paidA["matchUid"].AsString == paidB["matchUid"].AsString,
-                    $"and each was told what it paid, by evt.rewards ({paidA}; {paidB})");
-                // The duel board (04 §7, Q-40): read from MySQL, listing a player after ten rated duels.
-                ApiResult<List<RankRow>> board = Api.Leaderboard("duel", 10).Result;
-                Check(board.Ok, $"the duel's rating board answers ({board.Status})");
-                ApiResult<List<RankRow>> mine = Api.AroundMe("duel", a.Token).Result;
-                Check(!mine.Ok && mine.Status == 404 && mine.Code == "not_ranked", $"and one rated duel is not yet ten ({mine})");
-                Check(la.State == LobbyState.Ready && lb.State == LobbyState.Ready, "both lobbies stayed connected throughout");
+                using (var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls, TlsName = la.Grant.TlsName }))
+                {
+                    using (var mb = Connect(new Grant { Host = lb.Grant.ArenaHost, Port = lb.Grant.ArenaPort, TicketId = lb.Grant.TicketId, Tls = lb.Grant.Tls, TlsName = lb.Grant.TlsName }))
+                    {
+                        ma.Join(la.Grant.TicketId);
+                        mb.Join(lb.Grant.TicketId);
+                        Check(RunMatchesUntil(10_000, () => ma.Alive && mb.Alive, la, lb, ma, mb), "both joined the room made for the match");
+                        Check(ma.Welcome.Mode == 1, "and the Welcome says duel");
+                        // Nobody fires: the three minutes run out, and equal kills are a draw.
+                        var clock = System.Diagnostics.Stopwatch.StartNew();
+                        Check(RunMatchesUntil(200_000, () => ma.State == MatchState.Ended && mb.State == MatchState.Ended, la, lb, ma, mb),
+                            "the match ended");
+                        Console.WriteLine($"    ended after {clock.ElapsedMilliseconds / 1000} s: {ma.End}, {mb.End}");
+                        Check(ma.End == MatchEnd.MatchOver && mb.End == MatchEnd.MatchOver, "both were told the match is over: Kick(6)");
+                        Check(WaitForCoins(a, coinsA + 50) && WaitForCoins(b, coinsB + 50), "the result reached MySQL: a draw, both placed first");
+                        Check(RunLobbiesUntil(10_000, () => paidA != null && paidB != null, la, lb)
+                              && paidA["mode"].AsString == "duel" && paidA["coins"].AsLong == 50 && paidB["coins"].AsLong == 50
+                              && paidA["matchUid"].AsString == paidB["matchUid"].AsString,
+                            $"and each was told what it paid, by evt.rewards ({paidA}; {paidB})");
+                        // The duel board (04 §7, Q-40): read from MySQL, listing a player after ten rated duels.
+                        ApiResult<List<RankRow>> board = Api.Leaderboard("duel", 10).Result;
+                        Check(board.Ok, $"the duel's rating board answers ({board.Status})");
+                        ApiResult<List<RankRow>> mine = Api.AroundMe("duel", a.Token).Result;
+                        Check(!mine.Ok && mine.Status == 404 && mine.Code == "not_ranked", $"and one rated duel is not yet ten ({mine})");
+                        Check(la.State == LobbyState.Ready && lb.State == LobbyState.Ready, "both lobbies stayed connected throughout");
+                    }
+                }
             }
         }
 
@@ -1371,13 +1443,15 @@ namespace Backend.Client.Headless
             using (la) using (lb)
             {
                 if (la.Grant == null) return;
-                using var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls, TlsName = la.Grant.TlsName });
-                ma.Join(la.Grant.TicketId);
-                var clock = System.Diagnostics.Stopwatch.StartNew();
-                Check(RunMatchesUntil(45_000, () => ma.State == MatchState.Ended, la, lb, ma), "the match ended without the other side");
-                Console.WriteLine($"    ended after {clock.ElapsedMilliseconds / 1000} s: {ma.End}");
-                Check(ma.End == MatchEnd.MatchOver, "told the match is over: Kick(6)");
-                Check(clock.ElapsedMilliseconds >= 25_000, "after the join window, not before");
+                using (var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls, TlsName = la.Grant.TlsName }))
+                {
+                    ma.Join(la.Grant.TicketId);
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    Check(RunMatchesUntil(45_000, () => ma.State == MatchState.Ended, la, lb, ma), "the match ended without the other side");
+                    Console.WriteLine($"    ended after {clock.ElapsedMilliseconds / 1000} s: {ma.End}");
+                    Check(ma.End == MatchEnd.MatchOver, "told the match is over: Kick(6)");
+                    Check(clock.ElapsedMilliseconds >= 25_000, "after the join window, not before");
+                }
             }
         }
 
@@ -1427,7 +1501,7 @@ namespace Backend.Client.Headless
             float nearX = 0, nearY = 0, near = float.MaxValue;
             foreach (Wall w in scout.World.Walls)
             {
-                float px = Math.Clamp(sx, w.MinX, w.MaxX), py = Math.Clamp(sy, w.MinY, w.MaxY);
+                float px = Clamp(sx, w.MinX, w.MaxX), py = Clamp(sy, w.MinY, w.MaxY);
                 float d = (float)Math.Sqrt((px - sx) * (px - sx) + (py - sy) * (py - sy));
                 // A bullet is born 39 units out at level 1: one fired at a nearer wall ends in a tick,
                 // before any snapshot carries it; so does one whose way there crosses another wall (T-57).
@@ -1459,7 +1533,7 @@ namespace Backend.Client.Headless
                         float rx = r.X / Wire.PosScale, ry = r.Y / Wire.PosScale;
                         foreach (Wall w in scout.World.Walls)
                         {
-                            float px = Math.Clamp(rx, w.MinX, w.MaxX), py = Math.Clamp(ry, w.MinY, w.MaxY);
+                            float px = Clamp(rx, w.MinX, w.MaxX), py = Clamp(ry, w.MinY, w.MaxY);
                             closest = Math.Min(closest, (float)Math.Sqrt((px - rx) * (px - rx) + (py - ry) * (py - ry)));
                             if (w.Hits(rx, ry, 20)) atAWall = true;
                         }
@@ -1489,124 +1563,132 @@ namespace Backend.Client.Headless
         {
             var (a, nameA) = NewSession();
             var (b, nameB) = NewSession();
-            using var la = NewLobby();
-            using var lb = NewLobby();
-            la.Connect(a.Token);
-            lb.Connect(b.Token);
-            Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb),
-                "both are in the lobby");
-            la.InviteToParty(lb.PlayerId);
-            Check(RunLobbiesUntil(5_000, () => lb.Invitation != null, la, lb), "the invitation was pushed");
-            if (lb.Invitation == null) return;
-            lb.AcceptInvitation(lb.Invitation.PartyId);
-            Check(RunLobbiesUntil(5_000, () => la.Party != null && la.Party.Members.Count == 2, la, lb), "a party of two");
-
-            long coinsA = Api.Inventory(a.Token).Result.Value.Coins, coinsB = Api.Inventory(b.Token).Result.Value.Coins;
-            ApiResult<MatchGrant> member = Api.OpenSandbox(b.Token).Result;
-            Check(!member.Ok && member.Code == "in_party", $"a member does not open one ({member})");
-            ApiResult<MatchGrant> opened = Api.OpenSandbox(a.Token).Result;
-            // A 503 is "not now", as a client takes it: a room freed by a match just over is in the
-            // directory within seconds, and the drill's arena has two (T-27).
-            for (int i = 0; i < 10 && !opened.Ok && opened.Status == 503; i++)
+            using (var la = NewLobby())
             {
-                Thread.Sleep(1_000);
-                opened = Api.OpenSandbox(a.Token).Result;
-            }
-            Check(opened.Ok && opened.Value.Mode == "sandbox", $"the leader opened a sandbox for the party ({opened})");
-            if (!opened.Ok) return;
-            Check(RunLobbiesUntil(10_000, () => la.Grant != null && lb.Grant != null, la, lb),
-                "both were sent there by evt.match.found");
-            if (la.Grant == null || lb.Grant == null) return;
-            Check(la.Grant.Mode == "sandbox" && lb.Grant.Mode == "sandbox" && la.Grant.TicketId == opened.Value.TicketId,
-                "for the sandbox, the leader's push and answer one ticket");
-
-            using var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls, TlsName = la.Grant.TlsName });
-            using var mb = Connect(new Grant { Host = lb.Grant.ArenaHost, Port = lb.Grant.ArenaPort, TicketId = lb.Grant.TicketId, Tls = lb.Grant.Tls, TlsName = lb.Grant.TlsName });
-            ma.Join(la.Grant.TicketId);
-            mb.Join(lb.Grant.TicketId);
-            Check(RunMatchesUntil(10_000, () => ma.Alive && mb.Alive, la, lb, ma, mb), "both joined, at once");
-            Check(ma.Welcome.Mode == 9 && mb.Welcome.Mode == 9, "and the Welcome says sandbox");
-            // One sandbox a player until it ends (D-54): leaving the queue's record frees no second.
-            Api.LeaveQueue(a.Token).Wait();
-            Api.LeaveQueue(b.Token).Wait();
-            ApiResult<MatchGrant> another = Api.OpenSandbox(a.Token).Result;
-            Check(!another.Ok && another.Code == "in_sandbox", $"and no second while in it, the queue's record left or not ({another})");
-
-            long level = 0;
-            var toldA = new List<string>();
-            var toldB = new List<string>();
-            ma.OnEvent = e =>
-            {
-                if (e.Type == Wire.EvtStats) level = Math.Max(level, e.Level);
-                if (e.Type == Wire.EvtKill) toldA.Add(e.Killer + ">" + e.Victim);
-            };
-            mb.OnEvent = e => { if (e.Type == Wire.EvtKill) toldB.Add(e.Killer + ">" + e.Victim); };
-            ma.SetLevel(45);
-            Check(RunMatchesUntil(10_000, () => level == 45, la, lb, ma, mb), $"the leader's tank rebuilt at level 45 ({level})");
-
-            // The kill feed (01 §9, Q-34): the leader, its points in damage, penetration and reload,
-            // goes after the member, who stands still; in a match both are told who killed whom.
-            for (int i = 0; i < 7; i++)
-            {
-                ma.UpgradeStat(5);
-                ma.UpgradeStat(4);
-                ma.UpgradeStat(6);
-            }
-            string killing = nameA + ">" + nameB;
-            string seenAs = null;
-            bool Hunted()
-            {
-                Entity self = ma.World[Wire.SelfHandle];
-                // Out of view, the leader drives to where the member's own client has it: the drill's knowledge,
-                // not a player's. From the middle a view of 1 600 does not reach a member spawned near an
-                // edge of the sandbox's 2 000, and the leader waited there for a tank it could never see (T-42).
-                Entity member = mb.World[Wire.SelfHandle];
-                float cx = (member.Alive ? member.X : ma.Welcome.MapWidth / 2f * Wire.PosScale) - self.X;
-                float cy = (member.Alive ? member.Y : ma.Welcome.MapHeight / 2f * Wire.PosScale) - self.Y;
-                ma.SetInput((Math.Abs(cx) > 50 * Wire.PosScale ? (cx > 0 ? Wire.MoveRight : Wire.MoveLeft) : 0)
-                            | (Math.Abs(cy) > 50 * Wire.PosScale ? (cy > 0 ? Wire.MoveDown : Wire.MoveUp) : 0), 0, false, 0);
-                for (int h = 0; h < Wire.MaxHandles; h++)
+                using (var lb = NewLobby())
                 {
-                    // The one other tank: no bots here, and no Guardian yet.
-                    Entity e = ma.World[h];
-                    if (h == Wire.SelfHandle || !e.Alive || e.Kind != Wire.KindTank) continue;
-                    seenAs = e.Name;
-                    float dx = e.X - self.X, dy = e.Y - self.Y;
-                    int move = Math.Sqrt(dx * dx + dy * dy) > 300 * Wire.PosScale
-                        ? (dx > 0 ? Wire.MoveRight : Wire.MoveLeft) | (dy > 0 ? Wire.MoveDown : Wire.MoveUp) : 0;
-                    ma.SetInput(move, Wire.QuantiseAim((float)Math.Atan2(dy, dx)), true, Wire.FlagAutofire);
-                }
-                return toldA.Contains(killing) && toldB.Contains(killing);
-            }
-            bool hunted = RunMatchesUntil(40_000, Hunted, la, lb, ma, mb);
-            if (!hunted)
-                Console.WriteLine($"    the leader at ({ma.World[Wire.SelfHandle].X / Wire.PosScale:F0}, {ma.World[Wire.SelfHandle].Y / Wire.PosScale:F0}),"
-                    + $" the member at ({mb.World[Wire.SelfHandle].X / Wire.PosScale:F0}, {mb.World[Wire.SelfHandle].Y / Wire.PosScale:F0}),"
-                    + $" the map {ma.Welcome.MapWidth} square");
-            Check(hunted,
-                $"a kill in the match told to both: {killing} (the leader heard {string.Join(", ", toldA)}; the member {string.Join(", ", toldB)})");
-            Check(seenAs == nameB, $"and the member's tank was seen by its name ({seenAs}; D-52)");
-            ma.SetInput(0, 0, false, 0);
-            if (!mb.Alive) mb.Respawn();
-            ma.SummonGuardian();
-            bool Guardian(MatchConnection m)
-            {
-                for (int h = 0; h < Wire.MaxHandles; h++)
-                {
-                    Entity e = m.World[h];
-                    if (e.Alive && e.Kind == Wire.KindTank && (e.ClassId == 49 || e.ClassId == 50)) return true;
-                }
-                return false;
-            }
-            Check(RunMatchesUntil(40_000, () => Guardian(ma) || Guardian(mb), la, lb, ma, mb), "a Guardian summoned came into view, hunting");
+                    la.Connect(a.Token);
+                    lb.Connect(b.Token);
+                    Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb),
+                        "both are in the lobby");
+                    la.InviteToParty(lb.PlayerId);
+                    Check(RunLobbiesUntil(5_000, () => lb.Invitation != null, la, lb), "the invitation was pushed");
+                    if (lb.Invitation == null) return;
+                    lb.AcceptInvitation(lb.Invitation.PartyId);
+                    Check(RunLobbiesUntil(5_000, () => la.Party != null && la.Party.Members.Count == 2, la, lb), "a party of two");
 
-            ma.Leave();
-            mb.Leave();
-            Check(RunMatchesUntil(10_000, () => ma.State == MatchState.Ended && mb.State == MatchState.Ended, la, lb, ma, mb),
-                "both left");
-            RunLobbiesUntil(75_000, () => false, la, lb);           // the room ends a minute after it empties
-            Check(Api.Inventory(a.Token).Result.Value.Coins == coinsA && Api.Inventory(b.Token).Result.Value.Coins == coinsB,
-                "nothing paid: a sandbox publishes no result");
+                    long coinsA = Api.Inventory(a.Token).Result.Value.Coins, coinsB = Api.Inventory(b.Token).Result.Value.Coins;
+                    ApiResult<MatchGrant> member = Api.OpenSandbox(b.Token).Result;
+                    Check(!member.Ok && member.Code == "in_party", $"a member does not open one ({member})");
+                    ApiResult<MatchGrant> opened = Api.OpenSandbox(a.Token).Result;
+                    // A 503 is "not now", as a client takes it: a room freed by a match just over is in the
+                    // directory within seconds, and the drill's arena has two (T-27).
+                    for (int i = 0; i < 10 && !opened.Ok && opened.Status == 503; i++)
+                    {
+                        Thread.Sleep(1_000);
+                        opened = Api.OpenSandbox(a.Token).Result;
+                    }
+                    Check(opened.Ok && opened.Value.Mode == "sandbox", $"the leader opened a sandbox for the party ({opened})");
+                    if (!opened.Ok) return;
+                    Check(RunLobbiesUntil(10_000, () => la.Grant != null && lb.Grant != null, la, lb),
+                        "both were sent there by evt.match.found");
+                    if (la.Grant == null || lb.Grant == null) return;
+                    Check(la.Grant.Mode == "sandbox" && lb.Grant.Mode == "sandbox" && la.Grant.TicketId == opened.Value.TicketId,
+                        "for the sandbox, the leader's push and answer one ticket");
+
+                    using (var ma = Connect(new Grant { Host = la.Grant.ArenaHost, Port = la.Grant.ArenaPort, TicketId = la.Grant.TicketId, Tls = la.Grant.Tls, TlsName = la.Grant.TlsName }))
+                    {
+                        using (var mb = Connect(new Grant { Host = lb.Grant.ArenaHost, Port = lb.Grant.ArenaPort, TicketId = lb.Grant.TicketId, Tls = lb.Grant.Tls, TlsName = lb.Grant.TlsName }))
+                        {
+                            ma.Join(la.Grant.TicketId);
+                            mb.Join(lb.Grant.TicketId);
+                            Check(RunMatchesUntil(10_000, () => ma.Alive && mb.Alive, la, lb, ma, mb), "both joined, at once");
+                            Check(ma.Welcome.Mode == 9 && mb.Welcome.Mode == 9, "and the Welcome says sandbox");
+                            // One sandbox a player until it ends (D-54): leaving the queue's record frees no second.
+                            Api.LeaveQueue(a.Token).Wait();
+                            Api.LeaveQueue(b.Token).Wait();
+                            ApiResult<MatchGrant> another = Api.OpenSandbox(a.Token).Result;
+                            Check(!another.Ok && another.Code == "in_sandbox", $"and no second while in it, the queue's record left or not ({another})");
+
+                            long level = 0;
+                            var toldA = new List<string>();
+                            var toldB = new List<string>();
+                            ma.OnEvent = e =>
+                            {
+                                if (e.Type == Wire.EvtStats) level = Math.Max(level, e.Level);
+                                if (e.Type == Wire.EvtKill) toldA.Add(e.Killer + ">" + e.Victim);
+                            };
+                            mb.OnEvent = e => { if (e.Type == Wire.EvtKill) toldB.Add(e.Killer + ">" + e.Victim); };
+                            ma.SetLevel(45);
+                            Check(RunMatchesUntil(10_000, () => level == 45, la, lb, ma, mb), $"the leader's tank rebuilt at level 45 ({level})");
+
+                            // The kill feed (01 §9, Q-34): the leader, its points in damage, penetration and reload,
+                            // goes after the member, who stands still; in a match both are told who killed whom.
+                            for (int i = 0; i < 7; i++)
+                            {
+                                ma.UpgradeStat(5);
+                                ma.UpgradeStat(4);
+                                ma.UpgradeStat(6);
+                            }
+                            string killing = nameA + ">" + nameB;
+                            string seenAs = null;
+                            bool Hunted()
+                            {
+                                Entity self = ma.World[Wire.SelfHandle];
+                                // Out of view, the leader drives to where the member's own client has it: the drill's knowledge,
+                                // not a player's. From the middle a view of 1 600 does not reach a member spawned near an
+                                // edge of the sandbox's 2 000, and the leader waited there for a tank it could never see (T-42).
+                                Entity theirs = mb.World[Wire.SelfHandle];
+                                float cx = (theirs.Alive ? theirs.X : ma.Welcome.MapWidth / 2f * Wire.PosScale) - self.X;
+                                float cy = (theirs.Alive ? theirs.Y : ma.Welcome.MapHeight / 2f * Wire.PosScale) - self.Y;
+                                ma.SetInput((Math.Abs(cx) > 50 * Wire.PosScale ? (cx > 0 ? Wire.MoveRight : Wire.MoveLeft) : 0)
+                                            | (Math.Abs(cy) > 50 * Wire.PosScale ? (cy > 0 ? Wire.MoveDown : Wire.MoveUp) : 0), 0, false, 0);
+                                for (int h = 0; h < Wire.MaxHandles; h++)
+                                {
+                                    // The one other tank: no bots here, and no Guardian yet.
+                                    Entity e = ma.World[h];
+                                    if (h == Wire.SelfHandle || !e.Alive || e.Kind != Wire.KindTank) continue;
+                                    seenAs = e.Name;
+                                    float dx = e.X - self.X, dy = e.Y - self.Y;
+                                    int move = Math.Sqrt(dx * dx + dy * dy) > 300 * Wire.PosScale
+                                        ? (dx > 0 ? Wire.MoveRight : Wire.MoveLeft) | (dy > 0 ? Wire.MoveDown : Wire.MoveUp) : 0;
+                                    ma.SetInput(move, Wire.QuantiseAim((float)Math.Atan2(dy, dx)), true, Wire.FlagAutofire);
+                                }
+                                return toldA.Contains(killing) && toldB.Contains(killing);
+                            }
+                            bool hunted = RunMatchesUntil(40_000, Hunted, la, lb, ma, mb);
+                            if (!hunted)
+                                Console.WriteLine($"    the leader at ({ma.World[Wire.SelfHandle].X / Wire.PosScale:F0}, {ma.World[Wire.SelfHandle].Y / Wire.PosScale:F0}),"
+                                    + $" the member at ({mb.World[Wire.SelfHandle].X / Wire.PosScale:F0}, {mb.World[Wire.SelfHandle].Y / Wire.PosScale:F0}),"
+                                    + $" the map {ma.Welcome.MapWidth} square");
+                            Check(hunted,
+                                $"a kill in the match told to both: {killing} (the leader heard {string.Join(", ", toldA)}; the member {string.Join(", ", toldB)})");
+                            Check(seenAs == nameB, $"and the member's tank was seen by its name ({seenAs}; D-52)");
+                            ma.SetInput(0, 0, false, 0);
+                            if (!mb.Alive) mb.Respawn();
+                            ma.SummonGuardian();
+                            bool Guardian(MatchConnection m)
+                            {
+                                for (int h = 0; h < Wire.MaxHandles; h++)
+                                {
+                                    Entity e = m.World[h];
+                                    if (e.Alive && e.Kind == Wire.KindTank && (e.ClassId == 49 || e.ClassId == 50)) return true;
+                                }
+                                return false;
+                            }
+                            Check(RunMatchesUntil(40_000, () => Guardian(ma) || Guardian(mb), la, lb, ma, mb), "a Guardian summoned came into view, hunting");
+
+                            ma.Leave();
+                            mb.Leave();
+                            Check(RunMatchesUntil(10_000, () => ma.State == MatchState.Ended && mb.State == MatchState.Ended, la, lb, ma, mb),
+                                "both left");
+                            RunLobbiesUntil(75_000, () => false, la, lb);           // the room ends a minute after it empties
+                            Check(Api.Inventory(a.Token).Result.Value.Coins == coinsA && Api.Inventory(b.Token).Result.Value.Coins == coinsB,
+                                "nothing paid: a sandbox publishes no result");
+                        }
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -1825,47 +1907,51 @@ namespace Backend.Client.Headless
             var (ada, _) = NewSession();
             var (bob, _) = NewSession();
             var (cyd, _) = NewSession();
-            using var la = NewLobby();
-            using var lb = NewLobby();
-            var toAda = new List<string>();
-            var toBob = new List<string>();
-            la.OnPush += (t, d) => toAda.Add(t + ":" + d["playerId"].AsLong);
-            lb.OnPush += (t, d) => toBob.Add(t + ":" + d["playerId"].AsLong);
-            la.Connect(ada.Token);
-            lb.Connect(bob.Token);
-            Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb),
-                "ada and bob are in the lobby; cyd is not");
+            using (var la = NewLobby())
+            {
+                using (var lb = NewLobby())
+                {
+                    var toAda = new List<string>();
+                    var toBob = new List<string>();
+                    la.OnPush += (t, d) => toAda.Add(t + ":" + d["playerId"].AsLong);
+                    lb.OnPush += (t, d) => toBob.Add(t + ":" + d["playerId"].AsLong);
+                    la.Connect(ada.Token);
+                    lb.Connect(bob.Token);
+                    Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb),
+                        "ada and bob are in the lobby; cyd is not");
 
-            Check(Api.AskFriend(ada.Token, bob.PlayerId).Result.Value == "asked", "ada asked bob");
-            Check(RunLobbiesUntil(5_000, () => toBob.Contains("evt.friend.request:" + ada.PlayerId) && toBob.Exists(p => p.StartsWith("evt.inbox")), la, lb),
-                $"bob was told, and to look in his inbox ({string.Join(" ", toBob)})");
-            List<InboxItem> items = Api.Inbox(bob.Token).Result.Value;
-            Check(items.Count == 1 && items[0].Kind == "friend_request" && items[0].Ref == ada.PlayerId && !items[0].Read,
-                "and there it is, unread");
-            Check(Api.AskFriend(bob.Token, ada.PlayerId).Result.Value == "friends", "bob asked back: friends");
-            Check(RunLobbiesUntil(5_000, () => toAda.Contains("evt.friend.accepted:" + bob.PlayerId), la, lb), "ada was told");
+                    Check(Api.AskFriend(ada.Token, bob.PlayerId).Result.Value == "asked", "ada asked bob");
+                    Check(RunLobbiesUntil(5_000, () => toBob.Contains("evt.friend.request:" + ada.PlayerId) && toBob.Exists(p => p.StartsWith("evt.inbox")), la, lb),
+                        $"bob was told, and to look in his inbox ({string.Join(" ", toBob)})");
+                    List<InboxItem> items = Api.Inbox(bob.Token).Result.Value;
+                    Check(items.Count == 1 && items[0].Kind == "friend_request" && items[0].Ref == ada.PlayerId && !items[0].Read,
+                        "and there it is, unread");
+                    Check(Api.AskFriend(bob.Token, ada.PlayerId).Result.Value == "friends", "bob asked back: friends");
+                    Check(RunLobbiesUntil(5_000, () => toAda.Contains("evt.friend.accepted:" + bob.PlayerId), la, lb), "ada was told");
 
-            Api.AskFriend(ada.Token, cyd.PlayerId).Wait();
-            Check(Api.AskFriend(cyd.Token, ada.PlayerId).Result.Value == "friends", "ada and cyd are friends too");
-            FriendsInfo mine = Api.Friends(ada.Token).Result.Value;
-            Check(mine.Friends.Exists(f => f.PlayerId == bob.PlayerId && f.Online)
-                  && mine.Friends.Exists(f => f.PlayerId == cyd.PlayerId && !f.Online), "bob online, cyd offline");
+                    Api.AskFriend(ada.Token, cyd.PlayerId).Wait();
+                    Check(Api.AskFriend(cyd.Token, ada.PlayerId).Result.Value == "friends", "ada and cyd are friends too");
+                    FriendsInfo mine = Api.Friends(ada.Token).Result.Value;
+                    Check(mine.Friends.Exists(f => f.PlayerId == bob.PlayerId && f.Online)
+                          && mine.Friends.Exists(f => f.PlayerId == cyd.PlayerId && !f.Online), "bob online, cyd offline");
 
-            Check(Api.Block(cyd.Token, ada.PlayerId).Result.Ok, "cyd blocked ada");
-            Check(!Api.Friends(ada.Token).Result.Value.Friends.Exists(f => f.PlayerId == cyd.PlayerId), "which ended their friendship");
-            Check(Api.AskFriend(ada.Token, cyd.PlayerId).Result.Value == "asked", "ada's next request is answered as any");
-            Check(Api.Friends(cyd.Token).Result.Value.Requests.Count == 0, "and never reaches cyd");
-            // Nor does anything ada can read differ from a request to anyone else (S-14, D-56).
-            Check(Api.Friends(ada.Token).Result.Value.Asked.Exists(r => r.PlayerId == cyd.PlayerId), "ada sees it among hers");
-            ApiResult<string> again = Api.AskFriend(ada.Token, cyd.PlayerId).Result;
-            Check(again.Status == 409 && again.Code == "already_asked", $"and asking again is already_asked ({again.Code})");
-            // Whether cyd is in the lobby is a friend's to know: ada, no longer one, is answered as sent (S-16).
-            la.InviteToParty(cyd.PlayerId);
-            Check(RunLobbiesUntil(5_000, () => la.Party != null, la, lb) && la.PartyRefusal == null,
-                $"a party invitation to cyd, not in the lobby, is answered as sent ({la.PartyRefusal})");
+                    Check(Api.Block(cyd.Token, ada.PlayerId).Result.Ok, "cyd blocked ada");
+                    Check(!Api.Friends(ada.Token).Result.Value.Friends.Exists(f => f.PlayerId == cyd.PlayerId), "which ended their friendship");
+                    Check(Api.AskFriend(ada.Token, cyd.PlayerId).Result.Value == "asked", "ada's next request is answered as any");
+                    Check(Api.Friends(cyd.Token).Result.Value.Requests.Count == 0, "and never reaches cyd");
+                    // Nor does anything ada can read differ from a request to anyone else (S-14, D-56).
+                    Check(Api.Friends(ada.Token).Result.Value.Asked.Exists(r => r.PlayerId == cyd.PlayerId), "ada sees it among hers");
+                    ApiResult<string> again = Api.AskFriend(ada.Token, cyd.PlayerId).Result;
+                    Check(again.Status == 409 && again.Code == "already_asked", $"and asking again is already_asked ({again.Code})");
+                    // Whether cyd is in the lobby is a friend's to know: ada, no longer one, is answered as sent (S-16).
+                    la.InviteToParty(cyd.PlayerId);
+                    Check(RunLobbiesUntil(5_000, () => la.Party != null, la, lb) && la.PartyRefusal == null,
+                        $"a party invitation to cyd, not in the lobby, is answered as sent ({la.PartyRefusal})");
 
-            Check(Api.ReadInbox(bob.Token, items[0].Id).Result.Ok && Api.Inbox(bob.Token).Result.Value.TrueForAll(i => i.Read),
-                "bob read his inbox");
+                    Check(Api.ReadInbox(bob.Token, items[0].Id).Result.Ok && Api.Inbox(bob.Token).Result.Value.TrueForAll(i => i.Read),
+                        "bob read his inbox");
+                }
+            }
         }
 
         /// <summary>
@@ -1908,69 +1994,71 @@ namespace Backend.Client.Headless
             {
                 Check(Until(10_000, () => Array.TrueForAll(lobbies, l => l.State == LobbyState.Ready)), "six players are in the lobby");
                 string At(double seconds) => DateTime.UtcNow.AddSeconds(seconds).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-                using var http = new System.Net.Http.HttpClient();
-                var create = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, admin + "/admin/tournaments")
+                using (var http = new System.Net.Http.HttpClient())
                 {
-                    Content = new System.Net.Http.StringContent("{\"reason\":\"drill\",\"name\":\"Drill team cup\",\"maxEntries\":2,"
-                        + $"\"registrationEnds\":\"{At(15)}\",\"startsAt\":\"{At(17)}\",\"roundMinutes\":1,"
-                        + "\"prizes\":[300,200,100],\"mode\":\"teams\"}"),
-                };
-                create.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
-                var created = http.Send(create);
-                Check((int) created.StatusCode == 200, $"the operator created a teams' tournament ({(int) created.StatusCode})");
-                long id = JsonValue.Parse(created.Content.ReadAsStringAsync().Result)["id"].AsLong;
-
-                string suffix = Guid.NewGuid().ToString("N").Substring(0, 6);
-                var teams = new long[2];
-                for (int t = 0; t < 2; t++)
-                {
-                    LobbyClient lead = lobbies[3 * t];
-                    ApiResult<TeamInfo> made = Api.CreateTeam(sessions[3 * t].Token, "tc" + t + suffix).Result;
-                    Check(made.Ok, $"team {t + 1} made");
-                    if (!made.Ok) return;
-                    teams[t] = made.Value.Id;
-                    for (int k = 1; k < 3; k++)
+                    var create = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, admin + "/admin/tournaments")
                     {
-                        LobbyClient member = lobbies[3 * t + k];
-                        Api.InviteToTeam(sessions[3 * t].Token, sessions[3 * t + k].PlayerId).Wait();
-                        Api.AcceptTeamInvite(sessions[3 * t + k].Token, teams[t]).Wait();
-                        lead.InviteToParty(member.PlayerId);
-                        Until(5_000, () => member.Invitation != null);
-                        if (member.Invitation != null) member.AcceptInvitation(member.Invitation.PartyId);
-                    }
-                    Check(Until(5_000, () => lead.Party != null && lead.Party.Members.Count == 3), $"team {t + 1}'s party of three");
-                    Check(Played("team", "rated_matches", new[] { teams[t] }), $"team {t + 1} given ten rated team matches, as a fixture (Q-43)");
-                    ApiResult<TournamentInfo> entered = Api.EnterTournament(sessions[3 * t].Token, id).Result;
-                    Check(entered.Ok, $"and its leader entered it ({entered})");
-                }
-                TournamentInfo listed = Api.Tournament(id).Result.Value;
-                Check(listed.Mode == "teams" && listed.Entries.Count == 2 && listed.Entries.TrueForAll(e => e.Roster.Count == 3),
-                    "two teams entered, each with its roster of three");
+                        Content = new System.Net.Http.StringContent("{\"reason\":\"drill\",\"name\":\"Drill team cup\",\"maxEntries\":2,"
+                            + $"\"registrationEnds\":\"{At(15)}\",\"startsAt\":\"{At(17)}\",\"roundMinutes\":1,"
+                            + "\"prizes\":[300,200,100],\"mode\":\"teams\"}"),
+                    };
+                    create.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
+                    var created = http.SendAsync(create).GetAwaiter().GetResult();
+                    Check((int) created.StatusCode == 200, $"the operator created a teams' tournament ({(int) created.StatusCode})");
+                    long id = JsonValue.Parse(created.Content.ReadAsStringAsync().Result)["id"].AsLong;
 
-                Check(Until(40_000, () => Array.TrueForAll(lobbies, l => l.TournamentMatch?.TournamentId == id)),
-                    "at the start, the final was pushed to all six");
-                if (!Array.TrueForAll(lobbies, l => l.TournamentMatch != null)) return;
-                Check(Array.TrueForAll(lobbies, l => l.TournamentMatch.Mode == "teams"), "a team match");
-                TournamentInfo bracket = Api.Tournament(id).Result.Value;
-                long higher = bracket.Matches[0].TeamA.Value, lower = bracket.Matches[0].TeamB.Value;
-                int comes = lower == teams[0] ? 0 : 3;
-                var before = Array.ConvertAll(sessions, CoinsBesideGoals);
-                for (int k = 0; k < 3; k++)
-                {
-                    TournamentGrant g = lobbies[comes + k].TournamentMatch;
-                    var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls, TlsName = g.TlsName });
-                    matches.Add(m);
-                    m.Join(g.TicketId);
-                }
-                Check(Until(45_000, () => matches.TrueForAll(m => m.State == MatchState.Ended))
-                      && matches.TrueForAll(m => m.End == MatchEnd.MatchOver), "the lower seed's roster came alone, and won by walkover");
-                Check(Until(20_000, () => Api.Tournament(id).Result.Value.State == "finished"), "the tournament is finished");
-                Check(Api.Tournament(id).Result.Value.Matches[0].WinnerTeam == lower, "won by the lower seed");
-                for (int i = 0; i < 6; i++)
-                {
-                    long prize = (i >= comes && i < comes + 3) ? 300 : 200;
-                    long got = CoinsBesideGoals(sessions[i]) - before[i];
-                    Check(got == prize, $"player {i + 1} paid {got} beside its goals, the team's prize {prize}");
+                    string suffix = Guid.NewGuid().ToString("N").Substring(0, 6);
+                    var teams = new long[2];
+                    for (int t = 0; t < 2; t++)
+                    {
+                        LobbyClient lead = lobbies[3 * t];
+                        ApiResult<TeamInfo> made = Api.CreateTeam(sessions[3 * t].Token, "tc" + t + suffix).Result;
+                        Check(made.Ok, $"team {t + 1} made");
+                        if (!made.Ok) return;
+                        teams[t] = made.Value.Id;
+                        for (int k = 1; k < 3; k++)
+                        {
+                            LobbyClient member = lobbies[3 * t + k];
+                            Api.InviteToTeam(sessions[3 * t].Token, sessions[3 * t + k].PlayerId).Wait();
+                            Api.AcceptTeamInvite(sessions[3 * t + k].Token, teams[t]).Wait();
+                            lead.InviteToParty(member.PlayerId);
+                            Until(5_000, () => member.Invitation != null);
+                            if (member.Invitation != null) member.AcceptInvitation(member.Invitation.PartyId);
+                        }
+                        Check(Until(5_000, () => lead.Party != null && lead.Party.Members.Count == 3), $"team {t + 1}'s party of three");
+                        Check(Played("team", "rated_matches", new[] { teams[t] }), $"team {t + 1} given ten rated team matches, as a fixture (Q-43)");
+                        ApiResult<TournamentInfo> entered = Api.EnterTournament(sessions[3 * t].Token, id).Result;
+                        Check(entered.Ok, $"and its leader entered it ({entered})");
+                    }
+                    TournamentInfo listed = Api.Tournament(id).Result.Value;
+                    Check(listed.Mode == "teams" && listed.Entries.Count == 2 && listed.Entries.TrueForAll(e => e.Roster.Count == 3),
+                        "two teams entered, each with its roster of three");
+
+                    Check(Until(40_000, () => Array.TrueForAll(lobbies, l => l.TournamentMatch?.TournamentId == id)),
+                        "at the start, the final was pushed to all six");
+                    if (!Array.TrueForAll(lobbies, l => l.TournamentMatch != null)) return;
+                    Check(Array.TrueForAll(lobbies, l => l.TournamentMatch.Mode == "teams"), "a team match");
+                    TournamentInfo bracket = Api.Tournament(id).Result.Value;
+                    long higher = bracket.Matches[0].TeamA.Value, lower = bracket.Matches[0].TeamB.Value;
+                    int comes = lower == teams[0] ? 0 : 3;
+                    var before = Array.ConvertAll(sessions, CoinsBesideGoals);
+                    for (int k = 0; k < 3; k++)
+                    {
+                        TournamentGrant g = lobbies[comes + k].TournamentMatch;
+                        var m = Connect(new Grant { Host = g.ArenaHost, Port = g.ArenaPort, TicketId = g.TicketId, Tls = g.Tls, TlsName = g.TlsName });
+                        matches.Add(m);
+                        m.Join(g.TicketId);
+                    }
+                    Check(Until(45_000, () => matches.TrueForAll(m => m.State == MatchState.Ended))
+                          && matches.TrueForAll(m => m.End == MatchEnd.MatchOver), "the lower seed's roster came alone, and won by walkover");
+                    Check(Until(20_000, () => Api.Tournament(id).Result.Value.State == "finished"), "the tournament is finished");
+                    Check(Api.Tournament(id).Result.Value.Matches[0].WinnerTeam == lower, "won by the lower seed");
+                    for (int i = 0; i < 6; i++)
+                    {
+                        long prize = (i >= comes && i < comes + 3) ? 300 : 200;
+                        long got = CoinsBesideGoals(sessions[i]) - before[i];
+                        Check(got == prize, $"player {i + 1} paid {got} beside its goals, the team's prize {prize}");
+                    }
                 }
             }
             finally
@@ -2203,19 +2291,23 @@ namespace Backend.Client.Headless
                 return;
             }
             Session a = NewSession().session, b = NewSession().session;
-            using var la = NewLobby();
-            using var lb = NewLobby();
-            string toldA = null, toldB = null;
-            la.OnPush += (t, d) => { if (t == "evt.notice") toldA = d["text"].AsString; };
-            lb.OnPush += (t, d) => { if (t == "evt.notice") toldB = d["text"].AsString; };
-            la.Connect(a.Token);
-            lb.Connect(b.Token);
-            Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb),
-                "both are in the lobby");
-            string text = "Back in five minutes: a drill " + Guid.NewGuid().ToString("N").Substring(0, 6);
-            var sent = Admin("POST", "/admin/notice", "{\"text\":\"" + text + "\",\"reason\":\"drill\"}");
-            Check((int)sent.StatusCode == 202, $"the operator sent a notice ({(int)sent.StatusCode} {sent.Content.ReadAsStringAsync().Result})");
-            Check(RunLobbiesUntil(5_000, () => toldA == text && toldB == text, la, lb), "and both were told it, word for word");
+            using (var la = NewLobby())
+            {
+                using (var lb = NewLobby())
+                {
+                    string toldA = null, toldB = null;
+                    la.OnPush += (t, d) => { if (t == "evt.notice") toldA = d["text"].AsString; };
+                    lb.OnPush += (t, d) => { if (t == "evt.notice") toldB = d["text"].AsString; };
+                    la.Connect(a.Token);
+                    lb.Connect(b.Token);
+                    Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb),
+                        "both are in the lobby");
+                    string text = "Back in five minutes: a drill " + Guid.NewGuid().ToString("N").Substring(0, 6);
+                    var sent = Admin("POST", "/admin/notice", "{\"text\":\"" + text + "\",\"reason\":\"drill\"}");
+                    Check((int)sent.StatusCode == 202, $"the operator sent a notice ({(int)sent.StatusCode} {sent.Content.ReadAsStringAsync().Result})");
+                    Check(RunLobbiesUntil(5_000, () => toldA == text && toldB == text, la, lb), "and both were told it, word for word");
+                }
+            }
         }
 
         /// <summary>The operator's API, as the drill runs it: a POST or GET with the secret.</summary>
@@ -2223,13 +2315,15 @@ namespace Backend.Client.Headless
         {
             string admin = Environment.GetEnvironmentVariable("BACKEND_ADMIN_URL");
             string secret = Environment.GetEnvironmentVariable("BACKEND_ADMIN_TOKEN");
-            using var http = new System.Net.Http.HttpClient();
-            var request = new System.Net.Http.HttpRequestMessage(new System.Net.Http.HttpMethod(method), admin + path);
-            if (body != null) request.Content = new System.Net.Http.StringContent(body);
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
-            var response = http.Send(request);
-            response.Content.LoadIntoBufferAsync().Wait();
-            return response;
+            using (var http = new System.Net.Http.HttpClient())
+            {
+                var request = new System.Net.Http.HttpRequestMessage(new System.Net.Http.HttpMethod(method), admin + path);
+                if (body != null) request.Content = new System.Net.Http.StringContent(body);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
+                var response = http.SendAsync(request).GetAwaiter().GetResult();
+                response.Content.LoadIntoBufferAsync().Wait();
+                return response;
+            }
         }
 
         /// <summary>
@@ -2246,40 +2340,46 @@ namespace Backend.Client.Headless
             var (sa, _) = NewSession();
             MatchGrant first = Api.RequestMatch(sa.Token).Result.Value;
             var ga = new Grant { Host = first.ArenaHost, Port = first.ArenaPort, TicketId = first.TicketId, Tls = first.Tls, TlsName = first.TlsName };
-            using var ma = Connect(ga);
-            ma.Join(ga.TicketId);
-            Check(RunUntil(ma, 10_000, () => ma.Alive), "a player in the public arena");
-            Check((int) Admin("POST", $"/admin/players/{sa.PlayerId}/kick", "{\"reason\":\"drill\"}").StatusCode == 202,
-                "the operator kicked them");
-            Check(RunUntil(ma, 10_000, () => ma.State == MatchState.Ended), "and their match ended");
-            Check(ma.End == MatchEnd.Removed, $"removed, Kick(7) ({ma.End})");
-
-            var (_, gb) = NewPlayerWithGrant();
-            using var mb = Connect(gb);
-            mb.Join(gb.TicketId);
-            Check(RunUntil(mb, 10_000, () => mb.Alive), "another player in the public arena");
-            string room = null;
-            string arena = null;
-            for (int i = 0; i < 20 && room == null; i++)
+            using (var ma = Connect(ga))
             {
-                RunFor(mb, 500);                              // the rooms, as the next announcement has them
-                JsonValue rooms = JsonValue.Parse(Admin("GET", "/admin/rooms", null).Content.ReadAsStringAsync().Result);
-                for (int r = 0; r < rooms.Count; r++)
-                    if (rooms[r]["players"].AsInt > 0) { room = rooms[r]["room"].AsString; arena = rooms[r]["arena"].AsString; }
-            }
-            Check(room != null, $"the operator sees the room ({arena} {room})");
-            if (room == null) return;
-            Check((int) Admin("POST", $"/admin/rooms/{arena}/{room}/close", "{\"reason\":\"drill\"}").StatusCode == 202,
-                "and closes it");
-            Check(RunUntil(mb, 10_000, () => mb.State == MatchState.Ended) && mb.End == MatchEnd.Removed,
-                $"its player was removed, Kick(7) ({mb.End})");
+                ma.Join(ga.TicketId);
+                Check(RunUntil(ma, 10_000, () => ma.Alive), "a player in the public arena");
+                Check((int) Admin("POST", $"/admin/players/{sa.PlayerId}/kick", "{\"reason\":\"drill\"}").StatusCode == 202,
+                    "the operator kicked them");
+                Check(RunUntil(ma, 10_000, () => ma.State == MatchState.Ended), "and their match ended");
+                Check(ma.End == MatchEnd.Removed, $"removed, Kick(7) ({ma.End})");
 
-            ApiResult<MatchGrant> again = Api.RequestMatch(sa.Token).Result;
-            Check(again.Ok, $"the player removed, not banned, may play again ({again})");
-            if (!again.Ok) return;
-            using var back = Connect(new Grant { Host = again.Value.ArenaHost, Port = again.Value.ArenaPort, TicketId = again.Value.TicketId, Tls = again.Value.Tls, TlsName = again.Value.TlsName });
-            back.Join(again.Value.TicketId);
-            Check(RunUntil(back, 10_000, () => back.Alive), "and is back in the arena");
+                var (_, gb) = NewPlayerWithGrant();
+                using (var mb = Connect(gb))
+                {
+                    mb.Join(gb.TicketId);
+                    Check(RunUntil(mb, 10_000, () => mb.Alive), "another player in the public arena");
+                    string room = null;
+                    string arena = null;
+                    for (int i = 0; i < 20 && room == null; i++)
+                    {
+                        RunFor(mb, 500);                              // the rooms, as the next announcement has them
+                        JsonValue rooms = JsonValue.Parse(Admin("GET", "/admin/rooms", null).Content.ReadAsStringAsync().Result);
+                        for (int r = 0; r < rooms.Count; r++)
+                            if (rooms[r]["players"].AsInt > 0) { room = rooms[r]["room"].AsString; arena = rooms[r]["arena"].AsString; }
+                    }
+                    Check(room != null, $"the operator sees the room ({arena} {room})");
+                    if (room == null) return;
+                    Check((int) Admin("POST", $"/admin/rooms/{arena}/{room}/close", "{\"reason\":\"drill\"}").StatusCode == 202,
+                        "and closes it");
+                    Check(RunUntil(mb, 10_000, () => mb.State == MatchState.Ended) && mb.End == MatchEnd.Removed,
+                        $"its player was removed, Kick(7) ({mb.End})");
+
+                    ApiResult<MatchGrant> again = Api.RequestMatch(sa.Token).Result;
+                    Check(again.Ok, $"the player removed, not banned, may play again ({again})");
+                    if (!again.Ok) return;
+                    using (var back = Connect(new Grant { Host = again.Value.ArenaHost, Port = again.Value.ArenaPort, TicketId = again.Value.TicketId, Tls = again.Value.Tls, TlsName = again.Value.TlsName }))
+                    {
+                        back.Join(again.Value.TicketId);
+                        Check(RunUntil(back, 10_000, () => back.Alive), "and is back in the arena");
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -2292,25 +2392,27 @@ namespace Backend.Client.Headless
             var (session, name) = NewSession();
             MatchGrant grant = Api.RequestMatch(session.Token).Result.Value;
             var g = new Grant { Host = grant.ArenaHost, Port = grant.ArenaPort, TicketId = grant.TicketId, Tls = grant.Tls, TlsName = grant.TlsName };
-            using var m = Connect(g);
-            var heard = new List<(int, int, string)>();
-            m.OnEvent = e => { if (e.Type == Wire.EvtPhrase) heard.Add((e.Speaker, e.PhraseId, e.SpeakerName)); };
-            m.Join(g.TicketId);
-            Check(RunUntil(m, 10_000, () => m.Alive), "a player in the public arena");
-            ApiResult<PhraseListInfo> list = Api.Phrases().Result;
-            Check(list.Ok && list.Value.Version == m.Welcome.PhraseListVersion && list.Value.Phrases.Count == 16,
-                $"the phrase list platform serves is the one the Welcome names ({m.Welcome.PhraseListVersion}), sixteen phrases");
-            if (!list.Ok) return;
-            PhraseInfo hello = list.Value.Phrases[0];
-            m.Say(hello.Id);
-            Check(RunUntil(m, 5_000, () => heard.Count > 0) && heard[0] == (Wire.SelfHandle, hello.Id, name),
-                $"said \"{hello.Text}\" and heard it back, by their own handle and name ({string.Join(" ", heard)})");
-            m.Say(list.Value.Phrases[1].Id);
-            RunFor(m, 1_000);
-            Check(heard.Count == 1 && m.Alive, "a second at once is dropped, and the player stays");
-            RunFor(m, 1_200);
-            m.Say(list.Value.Phrases[2].Id);
-            Check(RunUntil(m, 5_000, () => heard.Count == 2), $"two seconds on, heard again ({string.Join(" ", heard)})");
+            using (var m = Connect(g))
+            {
+                var heard = new List<(int, int, string)>();
+                m.OnEvent = e => { if (e.Type == Wire.EvtPhrase) heard.Add((e.Speaker, e.PhraseId, e.SpeakerName)); };
+                m.Join(g.TicketId);
+                Check(RunUntil(m, 10_000, () => m.Alive), "a player in the public arena");
+                ApiResult<PhraseListInfo> list = Api.Phrases().Result;
+                Check(list.Ok && list.Value.Version == m.Welcome.PhraseListVersion && list.Value.Phrases.Count == 16,
+                    $"the phrase list platform serves is the one the Welcome names ({m.Welcome.PhraseListVersion}), sixteen phrases");
+                if (!list.Ok) return;
+                PhraseInfo hello = list.Value.Phrases[0];
+                m.Say(hello.Id);
+                Check(RunUntil(m, 5_000, () => heard.Count > 0) && heard[0] == (Wire.SelfHandle, hello.Id, name),
+                    $"said \"{hello.Text}\" and heard it back, by their own handle and name ({string.Join(" ", heard)})");
+                m.Say(list.Value.Phrases[1].Id);
+                RunFor(m, 1_000);
+                Check(heard.Count == 1 && m.Alive, "a second at once is dropped, and the player stays");
+                RunFor(m, 1_200);
+                m.Say(list.Value.Phrases[2].Id);
+                Check(RunUntil(m, 5_000, () => heard.Count == 2), $"two seconds on, heard again ({string.Join(" ", heard)})");
+            }
         }
 
         /// <summary>
@@ -2327,31 +2429,35 @@ namespace Backend.Client.Headless
                 return;
             }
             var (session, name) = NewSession();
-            using var lobby = NewLobby();
-            lobby.Connect(session.Token);
-            Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.Ready), "in the lobby");
-            using var http = new System.Net.Http.HttpClient();
-            System.Net.Http.HttpResponseMessage Call(string action)
+            using (var lobby = NewLobby())
             {
-                var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post,
-                    $"{admin}/admin/players/{session.PlayerId}/{action}")
+                lobby.Connect(session.Token);
+                Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.Ready), "in the lobby");
+                using (var http = new System.Net.Http.HttpClient())
                 {
-                    Content = new System.Net.Http.StringContent("{\"reason\":\"drill\"}"),
-                };
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
-                return http.Send(request);
+                    System.Net.Http.HttpResponseMessage Call(string action)
+                    {
+                        var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post,
+                            $"{admin}/admin/players/{session.PlayerId}/{action}")
+                        {
+                            Content = new System.Net.Http.StringContent("{\"reason\":\"drill\"}"),
+                        };
+                        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
+                        return http.SendAsync(request).GetAwaiter().GetResult();
+                    }
+                    Check((int) Call("ban").StatusCode == 200, "the operator banned the player");
+                    Check(RunLobbyUntil(lobby, 5_000, () => lobby.State == LobbyState.InvalidSession),
+                        $"the lobby was told, and closed ({lobby.LastError})");
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    while (watch.ElapsedMilliseconds < 3_000) { lobby.Poll(); Thread.Sleep(50); }
+                    Check(lobby.State == LobbyState.InvalidSession, "and did not reconnect");
+                    Check(Api.Queue(session.Token).Result.Status == 401, "the session is gone");
+                    ApiResult<Session> refused = Patiently(() => Api.Login(name, "hunter2-hunter2"));
+                    Check(!refused.Ok && refused.Code == "banned", $"logging in is refused ({refused.Code})");
+                    Check((int) Call("unban").StatusCode == 200, "the operator lifted it");
+                    Check(Patiently(() => Api.Login(name, "hunter2-hunter2")).Ok, "and the player logs in again");
+                }
             }
-            Check((int) Call("ban").StatusCode == 200, "the operator banned the player");
-            Check(RunLobbyUntil(lobby, 5_000, () => lobby.State == LobbyState.InvalidSession),
-                $"the lobby was told, and closed ({lobby.LastError})");
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            while (watch.ElapsedMilliseconds < 3_000) { lobby.Poll(); Thread.Sleep(50); }
-            Check(lobby.State == LobbyState.InvalidSession, "and did not reconnect");
-            Check(Api.Queue(session.Token).Result.Status == 401, "the session is gone");
-            ApiResult<Session> refused = Patiently(() => Api.Login(name, "hunter2-hunter2"));
-            Check(!refused.Ok && refused.Code == "banned", $"logging in is refused ({refused.Code})");
-            Check((int) Call("unban").StatusCode == 200, "the operator lifted it");
-            Check(Patiently(() => Api.Login(name, "hunter2-hunter2")).Ok, "and the player logs in again");
         }
 
         /// <summary>
@@ -2460,27 +2566,31 @@ namespace Backend.Client.Headless
         {
             var (a, _) = NewSession();
             var (b, _) = NewSession();
-            using var la = NewLobby();
-            using var lb = NewLobby();
-            la.Connect(a.Token);
-            lb.Connect(b.Token);
-            Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb), "both players are in the lobby");
-            la.JoinQueue("duel");
-            lb.JoinQueue("duel");
-            Check(RunLobbiesUntil(15_000, () => la.Ready != null && lb.Ready != null, la, lb), "both were asked by evt.match.ready");
-            if (la.Ready == null || lb.Ready == null) return;
-            QueueStatus asked = Api.Queue(b.Token).Result.Value;
-            Check(asked.State == "confirming" && asked.MatchUid == lb.Ready.MatchUid && asked.SecondsLeft is > 0 and <= 10,
-                $"and GET /v1/queue says so, with the time left ({asked.State}, {asked.SecondsLeft} s)");
-            lb.AcceptMatch();
-            la.DeclineMatch();
-            Check(RunLobbiesUntil(5_000, () => lb.QueueState == "queued", la, lb), "one declined: the other is told it is queued again");
-            Check(la.Grant == null && lb.Grant == null, "and nobody is sent to a room");
-            Check(Api.Queue(a.Token).Result.Value.State == "none", "the one who declined is out of the queue");
-            la.JoinQueue("duel");
-            Check(RunLobbiesUntil(5_000, () => la.QueueRefusal != null, la, lb) && la.QueueRefusal == "queue_locked",
-                $"and may not queue again for a while ({la.QueueRefusal})");
-            lb.LeaveQueue();
+            using (var la = NewLobby())
+            {
+                using (var lb = NewLobby())
+                {
+                    la.Connect(a.Token);
+                    lb.Connect(b.Token);
+                    Check(RunLobbiesUntil(10_000, () => la.State == LobbyState.Ready && lb.State == LobbyState.Ready, la, lb), "both players are in the lobby");
+                    la.JoinQueue("duel");
+                    lb.JoinQueue("duel");
+                    Check(RunLobbiesUntil(15_000, () => la.Ready != null && lb.Ready != null, la, lb), "both were asked by evt.match.ready");
+                    if (la.Ready == null || lb.Ready == null) return;
+                    QueueStatus asked = Api.Queue(b.Token).Result.Value;
+                    Check(asked.State == "confirming" && asked.MatchUid == lb.Ready.MatchUid && asked.SecondsLeft > 0 && asked.SecondsLeft <= 10,
+                        $"and GET /v1/queue says so, with the time left ({asked.State}, {asked.SecondsLeft} s)");
+                    lb.AcceptMatch();
+                    la.DeclineMatch();
+                    Check(RunLobbiesUntil(5_000, () => lb.QueueState == "queued", la, lb), "one declined: the other is told it is queued again");
+                    Check(la.Grant == null && lb.Grant == null, "and nobody is sent to a room");
+                    Check(Api.Queue(a.Token).Result.Value.State == "none", "the one who declined is out of the queue");
+                    la.JoinQueue("duel");
+                    Check(RunLobbiesUntil(5_000, () => la.QueueRefusal != null, la, lb) && la.QueueRefusal == "queue_locked",
+                        $"and may not queue again for a while ({la.QueueRefusal})");
+                    lb.LeaveQueue();
+                }
+            }
         }
 
         private static bool RunAllUntil(int ms, Func<bool> done, LobbyClient[] lobbies, List<MatchConnection> matches)
@@ -2543,25 +2653,31 @@ namespace Backend.Client.Headless
         private static void Replaced()
         {
             var (session, _) = NewSession();
-            using var first = NewLobby();
-            first.Connect(session.Token);
-            Check(RunLobbyUntil(first, 10_000, () => first.State == LobbyState.Ready), "the first device is in the lobby");
-            using var second = NewLobby();
-            second.Connect(session.Token);
-            Check(RunLobbyUntil(second, 10_000, () => second.State == LobbyState.Ready), "the second device is in the lobby");
-            Check(RunLobbyUntil(first, 5_000, () => first.State == LobbyState.Replaced), "the first was told it was replaced");
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            while (watch.ElapsedMilliseconds < 3_000) { first.Poll(); second.Poll(); Thread.Sleep(50); }
-            Check(first.State == LobbyState.Replaced, "and did not reconnect, which would replace the second in turn");
-            Check(second.State == LobbyState.Ready, "the second is still in");
+            using (var first = NewLobby())
+            {
+                first.Connect(session.Token);
+                Check(RunLobbyUntil(first, 10_000, () => first.State == LobbyState.Ready), "the first device is in the lobby");
+                using (var second = NewLobby())
+                {
+                    second.Connect(session.Token);
+                    Check(RunLobbyUntil(second, 10_000, () => second.State == LobbyState.Ready), "the second device is in the lobby");
+                    Check(RunLobbyUntil(first, 5_000, () => first.State == LobbyState.Replaced), "the first was told it was replaced");
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    while (watch.ElapsedMilliseconds < 3_000) { first.Poll(); second.Poll(); Thread.Sleep(50); }
+                    Check(first.State == LobbyState.Replaced, "and did not reconnect, which would replace the second in turn");
+                    Check(second.State == LobbyState.Ready, "the second is still in");
+                }
+            }
         }
 
         /// <summary>A token the store does not know is refused, and not retried: log in again.</summary>
         private static void BadSession()
         {
-            using var lobby = NewLobby();
-            lobby.Connect("not-a-session-token");
-            Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.InvalidSession), $"refused as an invalid session ({lobby.LastError})");
+            using (var lobby = NewLobby())
+            {
+                lobby.Connect("not-a-session-token");
+                Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.InvalidSession), $"refused as an invalid session ({lobby.LastError})");
+            }
         }
 
         private static bool RunLobbyUntil(LobbyClient lobby, int ms, Func<bool> done)

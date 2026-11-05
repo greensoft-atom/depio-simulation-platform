@@ -173,6 +173,9 @@ namespace Backend.Client.Core
         /// acknowledge. A <see cref="ProtocolException"/> leaves the world part-applied: drop it
         /// with the connection and resume (08 §3).
         /// </summary>
+        /// <summary>A whole array as the frame: .NET Framework turns no array into a segment by itself (D-109).</summary>
+        public long Apply(byte[] frame) => Apply(new ArraySegment<byte>(frame));
+
         public long Apply(ArraySegment<byte> frame)
         {
             _eventCount = 0;

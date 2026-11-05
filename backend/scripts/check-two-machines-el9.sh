@@ -158,7 +158,7 @@ echo "--- the page's steps: $(grep -c . "$WORK/items") items, for B's arenas $(g
 # publishes it; in /check/headless on both machines.
 DOTNET=${DOTNET:-/opt/dotnet/dotnet}
 DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1 "$DOTNET" publish "$REPO/client/Headless/Backend.Client.Headless.csproj" \
-    -c Release -r linux-x64 --self-contained true -p:InvariantGlobalization=true -o "$WORK/headless" \
+    -c Release -f net8.0 -r linux-x64 --self-contained true -p:InvariantGlobalization=true -o "$WORK/headless" \
     > "$WORK/publish.log" 2>&1 || { tail -20 "$WORK/publish.log"; echo "  FAIL the C# client not published"; exit 1; }
 
 # The repository, as a clone has it, for A's install; A from an image needs none.

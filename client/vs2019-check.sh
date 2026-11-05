@@ -16,7 +16,7 @@ if [ "${1:-}" != --inside ]; then
     [ -d "$U/Managed/UnityEngine" ] || { echo "no Unity 2019.4.28f1 in $U: client/unity2019-check.sh fetches it"; exit 1; }
     status=0
     for image in mcr.microsoft.com/dotnet/sdk:5.0 mcr.microsoft.com/dotnet/sdk:3.1; do
-        docker run --rm -v "$C:/src/client:ro" -v "$U:/unity:ro" -v "$C/vs2019-check.sh:/check.sh:ro" "$image" \
+        docker run --rm -v "$(dirname "$C"):/src:ro" -v "$U:/unity:ro" -v "$C/vs2019-check.sh:/check.sh:ro" "$image" \
             bash /check.sh --inside || status=1
     done
     [ $status = 0 ] && echo "VS 2019 CHECK PASSED (built by VS 2019's MSBuild and Roslyn; not in Visual Studio, not run on .NET Framework)" \
@@ -24,13 +24,17 @@ if [ "${1:-}" != --inside ]; then
     exit $status
 fi
 export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
-cp -r /src/client /w && cd /w
+# The client, and the three files its tests take from the rest of the repository, where the checkout has them.
+mkdir -p /w/protocol-spike/vectors /w/backend/sim/src/test/resources /w/backend/arena/src/test/resources
+cp -r /src/client /w/client && cp /src/protocol-spike/vectors/vectors.txt /w/protocol-spike/vectors/ \
+    && cp /src/backend/sim/src/test/resources/maze-2026.txt /w/backend/sim/src/test/resources/ \
+    && cp /src/backend/arena/src/test/resources/motion-2026.txt /w/backend/arena/src/test/resources/ && cd /w/client
 echo "--- SDK $(dotnet --version): MSBuild $(dotnet msbuild -version -nologo | tail -1), VS 2019's"
 FAILS=0
 run() {
     local what=$1; shift
     if "$@" > /tmp/log 2>&1; then echo "  ok   $what"
-    else echo "  FAIL $what"; grep -E 'error|warning' /tmp/log | sed 's|/w/||' | sort -u | head -12; FAILS=$((FAILS + 1)); fi
+    else echo "  FAIL $what"; grep -E 'error|warning' /tmp/log | sed 's|/w/client/||' | sort -u | head -12; FAILS=$((FAILS + 1)); fi
 }
 REFS='<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />'
 run "the core's project, .NET Standard 2.0" dotnet build Core/Backend.Client.Core.csproj -c Release -warnaserror

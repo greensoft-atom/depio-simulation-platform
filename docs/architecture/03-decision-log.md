@@ -3436,6 +3436,9 @@ development machine's accounts are the team's, on the owner's network; productio
 
 ### D-108 — The client for Unity 2019.4 and .NET Framework: C# 7.3, a certificate check of its own, an RSA root
 
+**Superseded in part by [D-109](#d-109--every-client-project-in-visual-studio-2019-c-73-the-tests-and-the-driver-on-net-framework-471-as-well)** (2026-11-05): the solution holds all four projects, the tests and the driver
+on .NET Framework 4.7.1 too, not the core and UnityCheck alone.
+
 **Decided 2026-11-05** (plan item 129; the owner: the UI team works in Unity 2019.4, around 2019.4.28, and Visual
 Studio 2019 on .NET Framework; 2019.4.28f1 taken, and every 2019.4 compiles the same C# 7.3).
 
@@ -3491,3 +3494,36 @@ not the code here); `UnityWebRequest` (the Unity layer's, not the engine-free co
 **Cost.** An RSA signature per full handshake on the front, about a millisecond of a core, where ECDSA's was a tenth;
 the core's own WebSocket (some 200 lines) and DER reading (some 100), tested here. Not seen here: the editor itself
 (it needs a licence), Unity's TLS (in the editor and the player only), and an Android phone.
+
+### D-109 — Every client project in Visual Studio 2019: C# 7.3, the tests and the driver on .NET Framework 4.7.1 as well
+
+**Decided 2026-11-05** (plan item 130; the owner: the tests inside VS 2019 too, and all the C# and Unity client's
+work so).
+
+**Decision.**
+- **One solution, VS 2019's, all four projects, C# 7.3.** Core and UnityCheck .NET Standard 2.0 (D-108). Core.Tests
+  and Headless **.NET Framework 4.7.1**, what VS 2019 builds and runs and Unity 2019's .NET 4.x is; and .NET 8 beside
+  it where MSBuild is 17 or later (`TargetFrameworks` by `MSBuildAssemblyVersion`): the .NET 8 SDK here, VS 2022. VS
+  2019 sees 4.7.1 alone, builds the four, and runs the tests in its Test Explorer.
+- **Here, each build where it runs.** The drills keep .NET 8's driver (`Headless/bin/Debug/net8.0`; on Linux only
+  .NET speaks TLS 1.2, not Mono outside Unity), `dotnet test Core.Tests -f net8.0` as before; and the 4.7.1 tests run
+  on **Unity 2019.4.28f1's own Mono** (`unity2019-check.sh`, by NUnitLite in the runtime check): the core's tests on
+  the team's runtime, TLS between two of its own ends.
+- **The tests' certificates are files**, made once by `Core.Tests/Pki/make.sh` (openssl, RSA as `private-ca.sh`
+  makes them) and committed with their keys, test keys alone: `CertificateRequest`, which made them in the tests, is
+  .NET Framework 4.7.2's and .NET Core's, not 4.7.1's or Unity 2019's. Long-lived where a test needs one valid, dated
+  in the past or decades ahead where it needs one expired or not yet valid.
+- **The tests' servers are their own**: TLS by `SslStream.AuthenticateAsServer`, WebSockets by a handshake and frames
+  of the tests' own, as .NET Framework has no WebSocket server but Windows' `HttpListener`. The one check .NET
+  Framework cannot make, the name a client's handshake gives (a server's SNI), is .NET 8's alone.
+
+**Why.** The owner's team builds and tests in VS 2019 and Unity 2019; a solution part of which VS 2019 cannot open,
+and tests it cannot run, are not theirs.
+
+**Not chosen:** .NET 5 or .NET Core 3.1 for the tests (VS 2019 builds them, but both are out of support and neither
+is a runtime Unity 2019 or the team's .NET Framework has); .NET Framework alone (this machine's drills need .NET 8's
+TLS, and its tests would then run on Mono alone); running the tests in Unity's Test Runner here (the editor needs a
+licence).
+
+**Cost.** Two builds of the tests and the driver here; the tests' certificate files to renew before 2049, when the
+longest-lived expires (`make.sh` again).

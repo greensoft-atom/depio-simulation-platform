@@ -50,8 +50,8 @@ namespace Backend.Client.Core.Tests
 
         private static void AssertAt(OwnTank tank, MotionState expected, string what)
         {
-            Assert.That(BitConverter.SingleToInt32Bits(tank.X), Is.EqualTo(BitConverter.SingleToInt32Bits(expected.X)), what + ": x " + tank.X + " against " + expected.X);
-            Assert.That(BitConverter.SingleToInt32Bits(tank.Y), Is.EqualTo(BitConverter.SingleToInt32Bits(expected.Y)), what + ": y " + tank.Y + " against " + expected.Y);
+            Assert.That(FloatBits.Of(tank.X), Is.EqualTo(FloatBits.Of(expected.X)), what + ": x " + tank.X + " against " + expected.X);
+            Assert.That(FloatBits.Of(tank.Y), Is.EqualTo(FloatBits.Of(expected.Y)), what + ": y " + tank.Y + " against " + expected.Y);
         }
 
         /// <summary>

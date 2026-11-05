@@ -1,15 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- The client's core, driven without Unity against the real stack (docs 08 §6). A tool for
-       this machine, not part of the app, so it may use what .NET has and Unity does not. -->
+  <!-- The client's core, driven without Unity against the real stack (docs 08 §6): C# 7.3 on .NET Framework 4.7.1,
+       which Visual Studio 2019 builds and a Windows machine runs (D-109); and .NET 8 where MSBuild is 17 or later,
+       which the drills here run (on Linux only .NET speaks TLS 1.2: bin/Debug/net8.0). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <LangVersion>9.0</LangVersion>
+    <TargetFrameworks>net471</TargetFrameworks>
+    <TargetFrameworks Condition="'$(MSBuildAssemblyVersion)' &gt;= '17.0'">net471;net8.0</TargetFrameworks>
+    <LangVersion>7.3</LangVersion>
     <Nullable>disable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RootNamespace>Backend.Client.Headless</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Net.Http" Condition="'$(TargetFramework)' == 'net471'" />
     <ProjectReference Include="../Core/Backend.Client.Core.csproj" />
   </ItemGroup>
 </Project>

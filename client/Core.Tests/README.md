@@ -1,13 +1,15 @@
 # Core.Tests
 
 The core's tests ([08 §6](../../docs/detailed-design/08-client.md#6-testing)):
-NUnit on .NET 8, C# 9: Unity 2022.3's test runner and later can run them unchanged; Unity 2019 compiles C# 7.3
-alone, so on its runtime the core is run by `../unity2019-check.sh` instead (D-108). Packages: NUnit 3.14.0, NUnit3TestAdapter 4.6.0,
+NUnit, C# 7.3, on .NET Framework 4.7.1, which Visual Studio 2019 builds and runs and Unity 2019's test runner
+compiles, and on .NET 8 where MSBuild is 17 or later, which this machine runs (`-f net8.0`); and on Unity 2019.4's own
+Mono, compiled by its compiler, by `../unity2019-check.sh` (D-109). The certificates they read are files in `Pki/`,
+made by `Pki/make.sh` (openssl, RSA, test keys alone): .NET Framework 4.7.1 cannot make them. Packages: NUnit 3.14.0, NUnit3TestAdapter 4.6.0,
 Microsoft.NET.Test.Sdk 17.11.1; a project reference to `Core`.
 
 ```bash
 cd client
-DOTNET_NOLOGO=1 /opt/dotnet/dotnet test Core.Tests --logger "console;verbosity=normal"   # read "Total tests:"
+DOTNET_NOLOGO=1 /opt/dotnet/dotnet test Core.Tests -f net8.0 --logger "console;verbosity=normal"   # read "Total tests:"
 ```
 
 `dotnet test` says "Passed!" even when its host dies part-way, counting only
@@ -32,7 +34,10 @@ never copied, so the two sides are held to the same bytes:
 | `ManualClock` | `MatchConnectionTests.cs` | An `IClock` moved by hand: backoff, cadence and the minute without waiting |
 | `FrameBuilder` | `ClientWorldTests.cs` | Builds snapshot frames field by field |
 | `Hosts` | `ApiClientTests.cs` | An `HttpMessageHandler` that answers by host, with hosts that cannot be reached: endpoint rotation without a network |
-| `ScriptedLobby` | `LobbyClientTests.cs` | A lobby on a loopback WebSocket whose replies and pushes the test writes: the client's queue and reconnects driven where the real lobby cannot be made to go on demand |
+| `ScriptedLobby`, `ServerSocket` | `LobbyClientTests.cs` | A lobby on a loopback WebSocket of the tests' own (Mono and .NET Framework off Windows have no WebSocket server) whose replies, pushes, fragments and close the test writes: the client's queue and reconnects driven where the real lobby cannot be made to go on demand |
+| `WebSocketServer` | `TrustRootTests.cs` | A server's side of a WebSocket: the opening answered (its `Sec-WebSocket-Accept` as given), a client's masked frames read |
+| `TestPki` | `TrustRootTests.cs` | The certificates of `Pki/`, and the test servers' keys with them |
+| `FloatBits` | `TankMotionTests.cs` | A float's bits and back, which .NET Framework's `BitConverter` has not |
 | `MemorySecureStore` | the core | The store `AccountKeeper` is tested against |
 
 ## The tests, by file
@@ -55,7 +60,7 @@ that is gone.
 | `PartyStateTests.cs` | 6 | | an older state of the same party not applied; none kept against an older state of the party it ended; another party, or none unnamed, applied; a state with no version applied as it comes; a late state of a party left not applied in the next one, even one left without its end |
 | `JsonTests.cs` | 3 | 1, fifteen rows | the API's answers read; escapes and names in any script surviving a round trip; what is not JSON refused; nesting bounded |
 | `ApiClientTests.cs` | 37 | | endpoints tried in turn and the one that answered tried first; a refusal an answer, not a reason to try elsewhere, with its `Retry-After`; none answering is unreachable; a POST that timed out not sent again elsewhere, a read that did; a success that is not JSON not taken for one; every call's route, method, body and bearer, and its answer read: guests and renames, the class table, the phrase list, the skin table, the shop in coins and gems, purchases, item levels, gems for money and its 503, the season pass, equipment, boosts, teams, applications, tournaments of both kinds and a round robin, the queue, a sandbox, a match asked about, a party, social calls, achievements, goals, seasons and boards; `AccountKeeper`'s first launch, a key refused, the store touched only on the thread that signed in, as Unity's main thread requires, and an account deleted, a guest's key forgotten with it (D-84) |
-| `LobbyClientTests.cs` | 9 | | after a match the queue is "none" again and a new join is queued; a join's answer that comes late, after a queue push or after a leave, dropped (T-61); a declined match forgotten; a message split inside a character read whole; a lobby that stops answering found lost and dialled again; reconnects spread, not in step; the WebSocket the core's own (D-108): an answer whose `Sec-WebSocket-Accept` is wrong refused, a ping answered with a masked pong carrying its payload |
+| `LobbyClientTests.cs` | 10 | | after a match the queue is "none" again and a new join is queued; a join's answer that comes late, after a queue push or after a leave, dropped (T-61); a declined match forgotten; a message split inside a character read whole; a lobby that stops answering found lost and dialled again; reconnects spread, not in step; the WebSocket the core's own (D-108): an answer whose `Sec-WebSocket-Accept` is wrong refused, a ping answered with a masked pong carrying its payload; a join refused after a queue push still the join's refusal, and one left before its refusal not (T-67) |
 | `TrustRootTests.cs` | 8 | | the backend's root (D-82), checked by the client itself (D-108): a certificate it signed accepted for each name it holds (DNS, IPv4, IPv6); refused from another root, for another name, expired, not yet valid, signed with SHA-384, altered, or none; years past 2029 read as written; a root of another key refused, saying why; the root read from its PEM; a match giving the grant's TLS name in its handshake; the API through `HttpWebRequest` and the lobby over `wss://`, each checked for its own host |
 | `EncryptedOnlyTests.cs` | 3 | 1, six rows | a players' build connects encrypted alone (D-104): `https://` and `wss://` accepted, in capitals too; an API endpoint that is plain, or after an encrypted one, a lobby that is plain or no WebSocket, an address with no scheme and no lobby, each refused by name; no endpoint refused; a grant without TLS refused |
 | `ReadmeTestListTests.cs` | 1 | | this table held to the code (DOC-31): a row for each file with tests, naming it, with its `[Test]` and parameterised methods counted, and no row for a file that is gone |

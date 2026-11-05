@@ -24,6 +24,8 @@ namespace Backend.Client.Core
         private readonly int _start, _end;
         private int _at;
 
+        public WireReader(byte[] bytes) : this(new ArraySegment<byte>(bytes)) { }
+
         public WireReader(ArraySegment<byte> bytes)
         {
             _bytes = bytes.Array ?? Array.Empty<byte>();

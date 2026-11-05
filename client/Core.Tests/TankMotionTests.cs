@@ -7,6 +7,13 @@ using NUnit.Framework;
 
 namespace Backend.Client.Core.Tests
 {
+    /// <summary>A float's bits and back, as .NET Framework has no BitConverter for (D-109): the same bytes either way.</summary>
+    internal static class FloatBits
+    {
+        public static int Of(float f) => BitConverter.ToInt32(BitConverter.GetBytes(f), 0);
+        public static float From(int bits) => BitConverter.ToSingle(BitConverter.GetBytes(bits), 0);
+    }
+
     /// <summary>
     /// The movement rule ported, against the trajectory the server's own Room wrote
     /// (backend/arena/src/test/resources/motion-2026.txt, docs 02 §9, D-62): every step's position and
@@ -23,7 +30,7 @@ namespace Backend.Client.Core.Tests
             public readonly List<(int move, MotionState after)> Steps = new List<(int, MotionState)>();
         }
 
-        private static float F(string hex) => BitConverter.Int32BitsToSingle(int.Parse(hex, NumberStyles.HexNumber));
+        private static float F(string hex) => FloatBits.From(int.Parse(hex, NumberStyles.HexNumber));
 
         private static List<Case> Cases()
         {
@@ -78,7 +85,7 @@ namespace Backend.Client.Core.Tests
         private static void Same(float actual, float expected, string name, int step, string what)
         {
             // Bits, not a tolerance: the same operations in the same order give the same floats.
-            if (BitConverter.SingleToInt32Bits(actual) != BitConverter.SingleToInt32Bits(expected))
+            if (FloatBits.Of(actual) != FloatBits.Of(expected))
                 Assert.Fail($"{name}, step {step}: {what} {actual:R} where the room has {expected:R}");
         }
 
