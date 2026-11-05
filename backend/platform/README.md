@@ -559,7 +559,7 @@ an embedded j-redis. The live drill (`client/headless-drill.sh`, see the
 
 | Test class | Tests | What it covers |
 |---|---|---|
-| `net/PlatformHttpServerTest` | 87 | every route over HTTP against real MySQL and j-redis: answers, codes, the body limit, exact paths, addresses behind nginx and the forwarded ones the front's nginx is believed for (D-82), a grant's TLS name, the store failing; an account deleted, a guest's, one finished after a store's failure, its guesses counted as logins (D-84) |
+| `net/PlatformHttpServerTest` | 89 | every route over HTTP against real MySQL and j-redis: answers, codes, the body limit, exact paths (a route's path alone, a path no route has a JSON 404, D-107), the API's health under `/v1/`, addresses behind nginx and the forwarded ones the front's nginx is believed for (D-82), a grant's TLS name, the store failing; an account deleted, a guest's, one finished after a store's failure, its guesses counted as logins (D-84) |
 | `MatchmakerTest` | 43 | lining up every mode's sides, the confirm step's every path, races between matchers (T-16, T-32 to T-34), tournament calls, the lease, the metrics; a made match's grant and push carrying the arena's TLS name (D-82) |
 | `net/AdminServerTest` | 24 | every admin call, its audit and its refusals; starting only when named, with a secret, on loopback; alerts listed from the store with their silences, a silence made, listed and lifted, each audited, and its refusals (04 §12); what each machine's watch last saw listed (item 102) |
 | `watch/RulesTest` | 15 | the runbook's §5 as rules: each fires at its threshold and after its wait, fed rounds 15 s apart, and not before; resolution; every rule named and documented |

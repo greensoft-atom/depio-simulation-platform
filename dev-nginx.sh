@@ -1,8 +1,8 @@
 #!/bin/bash
 # nginx in front of a run by hand (decision D-92, docs/development/03-build-and-run.md §5): the release's own nginx
 # with the release's own configuration (nginx-conf/) rewritten into work/nginx for this machine, on the site's ports
-# and every address. The player API and the lobby over HTTPS on NGINX_HTTPS_PORT (443), NGINX_HTTP_PORT (80) a
-# redirect to it, and matches over TLS on NGINX_MATCH_PORT (9001), routed by ARENA_TLS_NAME to the arena on
+# and every address. The player API and the lobby over HTTPS on NGINX_HTTPS_PORT (443) and in clear on
+# NGINX_HTTP_PORT (80, D-107), and matches over TLS on NGINX_MATCH_PORT (9001), routed by ARENA_TLS_NAME to the arena on
 # 127.0.0.1:ARENA_PORT (dev-backend.sh). The certificate names PUBLIC_ADDRESS, 127.0.0.1 and the arena's name, from a
 # root of the backend's own CA (private-ca.sh) made once in work/nginx/ca and kept: clients trust
 # work/nginx/ca/ca.pem, and nothing else. 80 and 443 need root, or a lowered threshold; the workers run as nobody.
@@ -10,11 +10,12 @@
 # NGINX_MATCH_PORT passed to the arena; no 443, no certificate.
 #
 #   ./dev-nginx.sh start | stop | restart | status
-#   ./dev-nginx.sh test      its configuration, 80's redirect, 443's and 9001's certificate, the platform behind it;
+#   ./dev-nginx.sh test      its configuration, 80 and 443's certificate with the platform behind them, 9001's;
 #                            plain: its configuration and the platform behind 80
 set -euo pipefail
 . "$(dirname "$0")/dev-env.sh"
-F=$WORK/nginx
+# NGINX_DIR: the drill's nginx in front of its own processes (headless-drill.sh FRONT, D-107).
+F=${NGINX_DIR:-$WORK/nginx}
 R=$(ls -d "$B"/backend/target/release/backend-*/ 2> /dev/null | head -1 || true); R=${R%/}
 NGINX=$R/nginx/sbin/nginx
 CA=$F/ca/ca.pem
@@ -62,18 +63,16 @@ certificate() {
 
 # The release's configuration for this machine (D-92): its paths to work/nginx and the release, its upstreams to
 # this run's ports (each group's first server kept, the others dropped), its stream map to the arena's name alone,
-# to the local arena, its listen ports, server_name, what needs root or IPv6; and the server on 80, a redirect.
-# Plain (D-101): 443's server on 80 and 9001 without TLS, passed to the one arena (no name to route by) without the
-# PROXY line (D-105), no redirect.
+# to the local arena, its listen ports, server_name, what needs root or IPv6; and 443's server on 80 too, without
+# TLS: the API and the lobby on both (D-107). Plain (D-101): 443's server on 80 alone and 9001, without TLS, passed
+# to the one arena (no name to route by) without the PROXY line (D-105).
 rewrite() {
-    local out=$F/conf.new f user_line= to=https://\$host redirect what plain=()
-    local https_listen="$NGINX_HTTPS_PORT ssl" match_listen="$NGINX_MATCH_PORT ssl"
+    local out=$F/conf.new f user_line= what plain=()
+    local https_listen="$NGINX_HTTPS_PORT ssl;\\n\\1listen $NGINX_HTTP_PORT" match_listen="$NGINX_MATCH_PORT ssl"
     [ "$(id -u)" = 0 ] && user_line="user nobody $(id -gn nobody);"   # a user's nginx ignores the directive
-    [ "$NGINX_HTTPS_PORT" = 443 ] || to=$to:$NGINX_HTTPS_PORT
-    redirect="\n    # Plain HTTP only sends a client to HTTPS, the method and the body kept (D-92).\n    server {\n        listen $NGINX_HTTP_PORT;\n        return 308 $to\$request_uri;\n    }\n"
-    what="the server on $NGINX_HTTP_PORT added"
+    what="443's server on $NGINX_HTTP_PORT too, without TLS (D-107)"
     if [ "$PLAIN" = 1 ]; then
-        https_listen=$NGINX_HTTP_PORT match_listen=$NGINX_MATCH_PORT redirect= what="TLS taken out (D-101)"
+        https_listen=$NGINX_HTTP_PORT match_listen=$NGINX_MATCH_PORT what="TLS taken out (D-101)"
         # No PROXY line either: the plain way's arena has no TLS name, and reads none (D-105).
         plain=(-e '/^[[:space:]]*ssl_/d' -e '/^[[:space:]]*proxy_protocol on;/d' \
             -e "s|^\([[:space:]]*\)proxy_pass \$backend_arena;|\1proxy_pass 127.0.0.1:$ARENA_PORT;|")
@@ -95,7 +94,7 @@ rewrite() {
               -e '/^[[:space:]]*worker_rlimit_nofile /d' \
               -e "s|^\([[:space:]]*\)worker_connections [0-9]*;|\1worker_connections 1024;|" \
               -e "s|^user nginx;|$user_line|" \
-              -e "s|^http {|http {\n    client_body_temp_path $F/temp/client_body;\n    proxy_temp_path $F/temp/proxy;\n    # The workers, nobody, may not reach a checkout under /root: no response is buffered to a file.\n    proxy_max_temp_file_size 0;\n$redirect|" "$f" \
+              -e "s|^http {|http {\n    client_body_temp_path $F/temp/client_body;\n    proxy_temp_path $F/temp/proxy;\n    # The workers, nobody, may not reach a checkout under /root: no response is buffered to a file.\n    proxy_max_temp_file_size 0;\n|" "$f" \
           | awk -v gw="$GATEWAY_PORT" -v pf="$PLATFORM_PORT" -v arena="$ARENA_PORT" -v tls="$ARENA_TLS_NAME" -v file="${f##*/}" '
               BEGIN { port["backend_gateway"] = gw; port["backend_platform"] = pf }
               /^[ \t]*upstream[ \t]+[A-Za-z0-9_]+[ \t]*\{/ { up = $2; first = 1; print; next }
@@ -184,8 +183,8 @@ start)
         echo "  matches          $PUBLIC_ADDRESS:$NGINX_MATCH_PORT, plain, to the arena on 127.0.0.1:$ARENA_PORT"
         echo "  in clear         for a network you trust alone: passwords, tokens and tickets cross it readable (D-101)"
     else
-        echo "  the player API   $https_url/v1/   ($http_url/ redirects there)"
-        echo "  the lobby        wss://${https_url#https://}/lobby"
+        echo "  the player API   $https_url/v1/, and $http_url/v1/ in clear (D-107)"
+        echo "  the lobby        wss://${https_url#https://}/lobby, and ws://${http_url#http://}/lobby"
         echo "  matches          $PUBLIC_ADDRESS:$NGINX_MATCH_PORT, TLS as $ARENA_TLS_NAME, to the arena on 127.0.0.1:$ARENA_PORT"
         echo "  clients trust    $CA, and nothing else: copy it to them"
     fi
@@ -225,20 +224,17 @@ test)
     fi
     # Each as a client dialling the address would see it, the connection made to 127.0.0.1.
     to127() { echo "--connect-to $PUBLIC_ADDRESS:$1:127.0.0.1:$1"; }
+    # 80 plain in both ways (D-107).
+    got=$(curl -sS --max-time 10 $(to127 "$NGINX_HTTP_PORT") -o /dev/null -w '%{http_code}' "$http_url/v1/content/classes" 2>&1 || true)
+    case $got in
+        200) echo "ok      $NGINX_HTTP_PORT: plain, and the platform answers through it (200)" ;;
+        502|504) echo "FAILED  $NGINX_HTTP_PORT: plain, but the platform behind it does not answer ($got): ./dev-backend.sh start"; exit 1 ;;
+        *) echo "FAILED  $NGINX_HTTP_PORT: $got, not the platform's 200"; exit 1 ;;
+    esac
     if [ "$PLAIN" = 1 ]; then
-        got=$(curl -sS --max-time 10 $(to127 "$NGINX_HTTP_PORT") -o /dev/null -w '%{http_code}' "$http_url/v1/content/classes" 2>&1 || true)
-        case $got in
-            200) echo "ok      $NGINX_HTTP_PORT: plain, and the platform answers through it (200)" ;;
-            502|504) echo "FAILED  $NGINX_HTTP_PORT: plain, but the platform behind it does not answer ($got): ./dev-backend.sh start"; exit 1 ;;
-            *) echo "FAILED  $NGINX_HTTP_PORT: $got"; exit 1 ;;
-        esac
         echo "--      $NGINX_MATCH_PORT: plain, nothing to check without a match: ./dev-backend.sh test plays one through it"
         exit 0
     fi
-    got=$(curl -sS --max-time 10 $(to127 "$NGINX_HTTP_PORT") -o /dev/null -w '%{http_code} %{redirect_url}' \
-        "$http_url/v1/content/classes" 2>&1 || true)
-    [ "$got" = "308 $https_url/v1/content/classes" ] || { echo "FAILED  $NGINX_HTTP_PORT: $got, not a 308 to $https_url/v1/content/classes"; exit 1; }
-    echo "ok      $NGINX_HTTP_PORT: 308 to $https_url/v1/content/classes"
     got=$(curl -sS --max-time 10 --cacert "$CA" $(to127 "$NGINX_HTTPS_PORT") -o /dev/null -w '%{http_code}' \
         "$https_url/v1/content/classes" 2>&1 || true)
     case $got in

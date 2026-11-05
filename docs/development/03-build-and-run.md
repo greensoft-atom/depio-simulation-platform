@@ -284,7 +284,7 @@ too: stop the run first ([07](07-after-a-code-change.md)). **`test` checks the r
 | `dev-mysql.sh` | the `backend` user logs in over TCP to both databases; `backend_dev`'s schema version |
 | `dev-jredis.sh` | `PING`, then a key of its own set, read and deleted |
 | `dev-backend.sh` | the four running, nginx running, and two bots through nginx: registered, logged in, the lobby, a ticket, five seconds played and left |
-| `dev-nginx.sh` | `nginx -t`; 80 a 308 to `https`; 443's certificate for the address and the platform behind it; 9001's for the arena's name |
+| `dev-nginx.sh` | `nginx -t`; 80 in clear and 443's certificate for the address, the platform behind each; 9001's for the arena's name |
 
 **Each refuses what it needs and does not have**, naming the script that gives it: the
 backend's `start` with no MySQL or no j-redis, its `test` and `bots` with no nginx, j-redis's
@@ -335,7 +335,7 @@ site's ports and every IPv4 address.
 | | Here | On the site |
 |---|---|---|
 | The player API and the lobby | `https://<address>/v1/...`, `wss://<address>/lobby` | the same, 443 |
-| Plain HTTP | `http://<address>/...`: a 308 to `https`, the method and the body kept | closed (D-82) |
+| Plain HTTP | `http://<address>/v1/...`, `ws://<address>/lobby`: the same routes in clear ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)); a development build alone | closed (D-82) |
 | Matches | `<address>:9001`, TLS, routed by the arena's name to 127.0.0.1:9021 | 9001, to each machine's arenas |
 | The configuration | the release's `nginx-conf/`, rewritten into `work/nginx/conf` | `/etc/backend/nginx` |
 | The certificate | `work/nginx/tls`, naming the address, 127.0.0.1 and the arena's name, from a root of its own, `work/nginx/ca/ca.pem` | operations/06 |
@@ -387,7 +387,7 @@ sudo PLAIN=1 PUBLIC_ADDRESS=192.168.1.20 ./dev-nginx.sh start    # or nginx by s
 | The player API | `http://<address>/v1/...` (80) | `https://<address>/v1/...` (443) |
 | The lobby | `ws://<address>/lobby` (80) | `wss://<address>/lobby` (443) |
 | Matches | `<address>:9001`, plain, to the one arena | `<address>:9001`, TLS, routed by the arena's name |
-| The firewall | 80 and 9001 | 443 and 9001 (80 too here, a redirect; on the site closed) |
+| The firewall | 80 and 9001 | 443 and 9001 (80 too here, in clear: open it only to a network you trust; on the site closed) |
 | What the app is given | those two URLs, no root certificate | those two URLs and `ca.pem` |
 
 **The app goes from one to the other by its settings alone**: `BackendClient`'s API endpoints and lobby URL, and its

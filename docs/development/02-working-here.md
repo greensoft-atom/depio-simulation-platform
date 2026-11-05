@@ -94,8 +94,9 @@ carries ([03 §1](03-build-and-run.md#1-what-you-need-and-what-the-repository-to
 **Ports taken by others:** 6379 (a valkey server, not ours: start j-redis on
 another port), 6381, 8082. **A run by hand's** (D-92): 3314, 6380, 8080, 8081, 9021, and
 nginx on 80, 443 and 9001 on every IPv4 address. This machine's firewall lets 80 in from the
-internet (ufw), so while `dev-nginx.sh` runs here its redirect is reachable from outside;
-443 and 9001 are not. **The drills' ports:** 6390 and 6392 (j-redis and its
+internet (ufw), so while `dev-nginx.sh` runs here on 80 the API and the lobby are reachable from outside in
+clear (D-107; a redirect before): run it here on moved ports (`NGINX_HTTP_PORT=8088 NGINX_HTTPS_PORT=8443
+NGINX_MATCH_PORT=9443`, each command with them), which the firewall closes; 443 and 9001 are not open either. **The drills' ports:** 6390 and 6392 (j-redis and its
 replica), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 to 9199 (metrics
 and the admin API), 9193 and 9194 (a second worker's metrics, the alerts' receiver), 3307 to 3309
 (the drills' own MySQL servers).

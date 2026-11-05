@@ -299,7 +299,7 @@ And each way's own:
 
 | | TLS (the default) | Plain (`PLAIN=1`) |
 |---|---|---|
-| Port 80 | a server of its own: `return 308` to `https://` (the method and the body kept) | the 443 server, without TLS: the API and the lobby |
+| Port 80 | the 443 server listens on it too, without TLS: the API and the lobby in clear ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx); a redirect before) | the 443 server, without TLS: the API and the lobby |
 | Port 443 | the API and the lobby, TLS | not listened on |
 | Port 9001 | TLS, the arena by its name, with the PROXY line | without TLS, `proxy_pass 127.0.0.1:9021` (no name to route by), no PROXY line: the arena has no TLS name |
 | The certificate | from a root of its own made once, `work/nginx/ca/`, naming `PUBLIC_ADDRESS`, `127.0.0.1` and `a1.arena.internal` | none |
@@ -309,13 +309,15 @@ The app's settings, the three ways side by side:
 
 | | The site | Development, TLS | Development, plain |
 |---|---|---|---|
-| API endpoint | `https://203.0.113.10` | `https://<PUBLIC_ADDRESS>` | `http://<PUBLIC_ADDRESS>` |
-| Lobby | `wss://203.0.113.10/lobby` | `wss://<PUBLIC_ADDRESS>/lobby` | `ws://<PUBLIC_ADDRESS>/lobby` |
+| API endpoint | `https://203.0.113.10` | `https://<PUBLIC_ADDRESS>`, or `http://<PUBLIC_ADDRESS>` | `http://<PUBLIC_ADDRESS>` |
+| Lobby | `wss://203.0.113.10/lobby` | `wss://<PUBLIC_ADDRESS>/lobby`, or `ws://<PUBLIC_ADDRESS>/lobby` | `ws://<PUBLIC_ADDRESS>/lobby` |
 | Root it trusts | the site's `ca.pem` | the development root, `work/nginx/ca/ca.pem` | none |
 | The app | the players' build | either | a development build alone |
 
 The two roots are different: a build for development carries the development root, and the players' build the
-site's. A players' build refuses `http://`, `ws://` and a match without TLS, and says why
+site's. In the TLS way a development build on `http://` still plays over TLS: its matches go to 9001 as the grant
+says, and it trusts the development root for them. Whatever reaches the machine's 80 reads that traffic, passwords
+and tokens too: the firewall of a development machine decides who. A players' build refuses `http://`, `ws://` and a match without TLS, and says why
 ([D-104](../architecture/03-decision-log.md#d-104--the-players-build-connects-encrypted-alone-https-wss-and-a-match-over-tls)). On Android the plain way may also need the development build to allow cleartext, which is
 not checked here (no Unity).
 
@@ -387,4 +389,212 @@ The scripts that check these routes as written:
 | `check-install-guide-el9.sh` | the install guide as written: a registration through nginx, every arena's name on 9001 |
 | `check-two-machines-el9.sh` | matches by the C# client on B's arenas through A's nginx |
 | `check-nginx-logs.sh` | the logs' rotation |
-| `dev-nginx.sh test`, `dev-backend.sh test` | a run by hand, TLS or plain: nginx's configuration, its certificate, two bots registered, in the lobby and in a match through nginx |
+| `dev-nginx.sh test`, `dev-backend.sh test` | a run by hand, TLS or plain: nginx's configuration, 80 and 443 with the platform behind them, its certificate, two bots registered, in the lobby and in a match through nginx |
+| `headless-drill.sh` with `FRONT=https`, `FRONT=http` or `FRONT=plain`, and `NEWMAN=1` | every route of §10 through the release's nginx as `dev-nginx.sh` configures it, on the drill's own stack: the Postman collection first (every HTTP route, its body, each answer's status tested), then the C# client's scenarios (the API, the lobby, matches on 9001's place, read by the arena from the PROXY line in the TLS ways); 8095 for 80, 8096 for 443, 9095 for 9001 ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)) |
+
+## 10. Every route, one by one
+
+Every route the app takes, from the phone through nginx to the process that answers, as the code has it on
+2026-11-05 ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)), and what ran each through nginx in the checks of that day: `headless-drill.sh` with
+`FRONT=https`, `http` and `plain` and `NEWMAN=1` (§9), nginx's own access log read, Postman's user agent the
+collection's requests and none the C# client's.
+
+### 10.1 HTTP, to the platform
+
+Common to every row: nginx's server on 443 (and 80 on a development machine, §5), a body of 4 KB at most (nginx's
+own 413 beyond, not JSON), the location's proxy settings (`backend-platform.conf`, §4.3: `X-Forwarded-For`,
+timeouts) to `backend_platform`, and the platform's answer, JSON. A path no route has, or a route's path with more
+after it, is the platform's JSON 404 `no_such_route`. "Bearer" is `Authorization: Bearer <token>` from
+`POST /v1/sessions`; "req" a field the route refuses the request without, "opt" one it does not need. Each route's
+errors and examples: [api/01](../api/01-http-api.md).
+
+<!-- The table: the platform's routes read from PlatformHttpServer, and the runs' access logs (D-107). -->
+#### Health
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+| `GET /v1/health` | none | none | 200 `{"status":"ok"}` | `/v1/` | the collection |
+| `GET /health` (in fact any method, and any path starting with `/health`) | none | none | 200 `{"status":"ok"}` | not passed: outside `/v1/` | — |
+
+#### Accounts and sessions
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+| `POST /v1/accounts` | none (throttled per address; 503 `busy` when the hasher's line is full) | `RegisterRequest`: `username` string req, `password` string req (missing either: 400 `invalid_body`), `displayName` string opt | 201 `{"playerId"}` | `= /v1/accounts`: 2 a second an address, burst 30 | the client and the collection |
+| `DELETE /v1/accounts` | bearer, plus the account's password in the body for a registered account | `PasswordRequest`: `password` string. Required when `AccountDeletion.needsPassword` holds (not a guest and not already deleted), else 400 `invalid_body`. Ignored for a guest | 204 | `= /v1/accounts`: 2 a second an address, burst 30 | the client and the collection |
+| `POST /v1/accounts/upgrade` | bearer (the guest's) | `RegisterRequest`: `username` req, `password` req (400 `invalid_body`), `displayName` opt | 200 `{}` | `= /v1/accounts/upgrade`: 2 a second an address, burst 30 | the client and the collection |
+| `PUT /v1/accounts/name` | bearer | `RenameRequest`: `displayName` string req. A missing one reaches `AuthService.rename` as `""` and answers 400 `invalid_display_name`, never `invalid_body` | 200 `{"playerId","displayName"}` | `/v1/` | the client and the collection |
+| `POST /v1/guests` | none (throttled per address) | none | 201 `{"playerId","guestKey","displayName"}` | `= /v1/guests`: 2 a second an address, burst 30 | the client and the collection |
+| `POST /v1/sessions` | none (throttled; the password form is also throttled per account and can answer `busy`) | `LoginRequest`: either `guestKey` string alone (if present, it wins and the rest is ignored), or `username` string req + `password` string req (400 `invalid_body`) | 200 `{"token","playerId","expiresInSeconds"}` | `= /v1/sessions`: 2 a second an address, burst 30 | the client and the collection |
+| `DELETE /v1/sessions` | bearer, present only: an unknown token gets 204 too | none | 204 | `= /v1/sessions`: 2 a second an address, burst 30 | the collection |
+
+#### Content
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+| `GET /v1/content/classes` | none | none (optional header `If-None-Match`) | 200 `{"version","classes"}` with `ETag`; 304 when `If-None-Match` equals it | `/v1/` | the client and the collection |
+| `GET /v1/content/phrases` | none | none (optional `If-None-Match`) | 200 `{"version","phrases"}` with `ETag`; 304 | `/v1/` | the client and the collection |
+| `GET /v1/content/skins` | none | none (optional `If-None-Match`) | 200 `{"version","skins"}` with `ETag`; 304 | `/v1/` | the client and the collection |
+
+#### The economy
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+| `GET /v1/shop` | none | none | 200 `{"offers":[{sku,itemId,price,requiresLevel,availableTo,currency}]}` | `/v1/` | the client and the collection |
+| `GET /v1/inventory` | bearer | none | 200 `{"coins","gems","items":[{itemId,qty,level}]}` | `/v1/` | the client and the collection |
+| `POST /v1/inventory/{itemId}/level` (`itemId` matches `[a-z0-9_]{1,40}`, otherwise 404 `no_such_route`) | bearer | `PurchaseRequest`: `key` string req (16 to 48 of `[a-z0-9-]`; missing or malformed: 400 `invalid_key`); `sku` is ignored | 200 `{"itemId","level","coins"}` (also when the key was already used) | `/v1/` | the client and the collection |
+| `POST /v1/purchases` | bearer | `PurchaseRequest`: `sku` string req, `key` string req (missing either: 400 `invalid_body`; a malformed key: 400 `invalid_key`, 16 to 48) | 200 `{"result","itemId","coins","held","gems"}` (`bought` or `already_bought`) | `/v1/` | the client and the collection |
+| `GET /v1/equipment` (also `/v1/equipment/`) | bearer | none | 200 `{"slots","bonus"}` | `/v1/` | the collection |
+| `PUT /v1/equipment/{slot}` (`slot`: `barrel`, `armor`, `core`, `treads` or `skin`; anything else is 400 `invalid_slot`) | bearer | `WearRequest`: `itemId` string req (400 `invalid_body`) | 200 `{"slots","bonus"}` | `/v1/` | the client and the collection |
+| `DELETE /v1/equipment/{slot}` | bearer | none | 200 `{"slots","bonus"}` | `/v1/` | the collection |
+| `GET /v1/boosts` | bearer | none | 200 `{"boosts":[{kind,itemId,percent,endsAt}]}` (no `result`) | `/v1/` | the collection |
+| `POST /v1/boosts` | bearer | `ActivateRequest`: `itemId` string req, `key` string req (missing either: 400 `invalid_body`; a malformed key: 400 `invalid_key`, 16 to 48) | 200 `{"result","boosts"}` (`activated` or `already_activated`) | `/v1/` | the client and the collection |
+| `GET /v1/payments/packs` | none. Every `/v1/payments` route answers 503 `payments_off` unless `BACKEND_PAYMENT_PROVIDER=simulated`; that check comes after the path and method checks | none | 200 `{"packs":[{productId,gems,priceCents,currency}]}` | `/v1/` | the client and the collection |
+| `POST /v1/payments` | bearer | `OrderRequest`: `productId` string req, `key` string req (missing either: 400 `invalid_body`; a malformed key: 400 `invalid_key`, 16 to 36 of `[a-z0-9-]`) | 200 `{"order":{orderId,productId,gems,bonus,priceCents,currency,state,createdAt}}` | `/v1/` | the client and the collection |
+| `GET /v1/payments/{orderId}` (`orderId`: 36 of `[0-9a-f-]`, otherwise 404 `no_such_route`) | bearer | none | 200 `{"order":{...}}` | `/v1/` | the client and the collection |
+| `POST /v1/payments/{orderId}/simulate` | bearer | `SimulateRequest`: `outcome` string req, `paid` or `declined` (anything else, or missing: 400 `invalid_outcome`) | 200 `{"order","confirmed","gems"}` | `/v1/` | the client and the collection |
+| `GET /v1/pass` | bearer | none | 200 `{"season","endsAt","points","tier","premium","premiumGems","tierPoints","tiers"}` | `/v1/` | the client and the collection |
+| `POST /v1/pass/premium` | bearer | none | 200 `{"result","gems","pass"}` (`bought` or `already_bought`) | `/v1/` | the client and the collection |
+
+#### Progress, seasons and boards
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+| `GET /v1/achievements` | bearer | none | 200 `{"achievements":[{id,stat,threshold,gems,progress,reached}]}` | `/v1/` | the client and the collection |
+| `GET /v1/goals` | bearer | none | 200 `{"day","resetsAt","goals":[{id,kind,target,coins,progress,done}],"setGems","setDone"}` | `/v1/` | the client and the collection |
+| `GET /v1/seasons` | none | none | 200 `{"current","past"}` (`current` null when no season is open; at most 12 past) | `/v1/` | the client and the collection |
+| `GET /v1/leaderboards/{board}?limit=&season=` | none | none | 200 `{"board","entries":[{rank,playerId,name,score}]}`; for `teams` the rows are `{rank,teamId,name,score}` | `/v1/` | the client and the collection |
+| `GET /v1/leaderboards/{board}/me?season=` | bearer | none | 200 `{"board","rank","score","entries"}` (5 rows each side) | `/v1/` | the client and the collection |
+
+#### Matchmaking
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+| `POST /v1/match-requests` | bearer | none | 200 `{"arenaHost","arenaPort","ticketId","tls","tlsName"?}` (`tlsName` left out when null) | `/v1/` | the client and the collection |
+| `POST /v1/queue` | bearer | `QueueRequest`: `mode` string req. Missing, unknown, `ffa` or `sandbox` answers 400 `unknown_mode`, not `invalid_body`. The modes it queues: duel, tvt, rffa, coop, teams, domination, tag, maze | 200 `{"state":"queued","mode","waitedSeconds":0}` | `/v1/` | the client and the collection |
+| `GET /v1/queue` | bearer | none | 200 `{"state",...}` (`mode`, `waitedSeconds`, `grant`, `matchUid`, `secondsLeft` left out when null) | `/v1/` | the client and the collection |
+| `DELETE /v1/queue` | bearer | none | 200 `{"state":"none"}` | `/v1/` | the client and the collection |
+| `POST /v1/queue/accept` | bearer | `AnswerRequest`: `matchUid` string req (400 `invalid_body`) | 200, the same answer as `GET /v1/queue` | `/v1/` | the collection |
+| `POST /v1/queue/decline` | bearer | `AnswerRequest`: `matchUid` string req (400 `invalid_body`) | 200, the same answer as `GET /v1/queue` | `/v1/` | — |
+| `POST /v1/sandbox` | bearer | none | 200 `{"arenaHost","arenaPort","ticketId","tls","mode":"sandbox","tlsName"?}` | `/v1/` | the client and the collection |
+
+#### The party
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+| `GET /v1/party` | bearer | none | 200 the party | `/v1/` | the client and the collection |
+| `POST /v1/party/invite` | bearer | `playerId` integer req | 200 the party | `/v1/` | the collection |
+| `POST /v1/party/accept` | bearer | `partyId` string req | 200 the party | `/v1/` | the collection |
+| `POST /v1/party/leave` | bearer | none | 200 the party (ended or none) | `/v1/` | the collection |
+| `POST /v1/party/kick` | bearer | `playerId` integer req | 200 the party | `/v1/` | the collection |
+| `POST /v1/party/say` | bearer | `phraseId` integer req | 200 the party | `/v1/` | the collection |
+
+#### Friends, blocks and the inbox
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+| `GET /v1/friends` (also `/v1/friends/`) | bearer | none | 200 `{"friends":[{playerId,name,online}],"requests":[{playerId,name,expiresAt}],"asked":[...]}` | `/v1/` | the client and the collection |
+| `POST /v1/friends` | bearer | `PlayerRequest`: `playerId` integer req (400 `invalid_body`) | 200 `{"state"}` (`asked` or `friends`) | `/v1/` | the client and the collection |
+| `DELETE /v1/friends/{playerId}` | bearer | none | 200 `{}` | `/v1/` | the collection |
+| `DELETE /v1/friend-requests/{playerId}` | bearer | none | 200 `{}` | `/v1/` | the collection |
+| `GET /v1/blocks` (also `/v1/blocks/`) | bearer | none | 200 `{"blocked":[{playerId,name}]}` | `/v1/` | the collection |
+| `POST /v1/blocks` | bearer | `PlayerRequest`: `playerId` integer req (400 `invalid_body`) | 200 `{}` | `/v1/` | the client and the collection |
+| `DELETE /v1/blocks/{playerId}` | bearer | none | 200 `{}` | `/v1/` | the collection |
+| `GET /v1/inbox` (also `/v1/inbox/`) | bearer | none | 200 `{"items":[{id,kind,ref,at,read}]}` | `/v1/` | the client and the collection |
+| `POST /v1/inbox/read` | bearer | `InboxRead`: `upTo` integer req (400 `invalid_body`) | 200 `{}` | `/v1/` | the client and the collection |
+
+#### Teams
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+| `GET /v1/teams?name=` (also `/v1/teams/`) | bearer | none. The query `name` is required, 1 to 16 code points, not blank; otherwise 400 `invalid_name` | 200 `{"teams":[{id,name,members (a count),rating}]}` | `/v1/` | the client and the collection |
+| `POST /v1/teams` | bearer | `name` string req. A missing one is checked as `""` and answers 400 `invalid_name`, not `invalid_body` | 200 TeamView | `/v1/` | the client and the collection |
+| `GET /v1/teams/{teamId}` | bearer | none | 200 `{"id","name","members" (a count),"rating"}` | `/v1/` | the client and the collection |
+| `GET /v1/teams/mine` | bearer | none | 200 TeamView | `/v1/` | the client and the collection |
+| `DELETE /v1/teams/mine` | bearer | none | 200 `{}` | `/v1/` | the client and the collection |
+| `POST /v1/teams/mine/invites` | bearer | `playerId` integer req (400 `invalid_body`) | 200 TeamView | `/v1/` | the client and the collection |
+| `POST /v1/teams/mine/leave` | bearer | none needed (read and ignored) | 200 `{}` | `/v1/` | the client and the collection |
+| `POST /v1/teams/mine/leader` | bearer | `playerId` integer req (400 `invalid_body`) | 200 TeamView | `/v1/` | the client and the collection |
+| `PUT /v1/teams/mine/name` | bearer | `name` string req (missing: 400 `invalid_name`) | 200 TeamView | `/v1/` | the client and the collection |
+| `GET /v1/teams/mine/applications` | bearer | none | 200 `{"applications":[{playerId,name,expiresAt}]}` | `/v1/` | the client and the collection |
+| `POST /v1/teams/mine/applications/{playerId}` | bearer | `accept` boolean req (400 `invalid_body`) | 200 TeamView | `/v1/` | the client and the collection |
+| `DELETE /v1/teams/mine/members/{playerId}` | bearer | none needed (not read for DELETE) | 200 TeamView | `/v1/` | the collection |
+| `POST /v1/teams/mine/members/{playerId}/role` | bearer | `role` string req (missing: 400 `invalid_body`; not `vice_leader` or `member`: 400 `invalid_role`) | 200 TeamView | `/v1/` | the client and the collection |
+| `POST /v1/teams/{teamId}/applications` | bearer | none | 200 `{}` | `/v1/` | the client and the collection |
+| `DELETE /v1/teams/{teamId}/applications` | bearer | none | 200 `{}` | `/v1/` | the collection |
+| `GET /v1/team-invites` (also `/v1/team-invites/`) | bearer | none | 200 `{"invites":[{teamId,teamName,expiresAt}]}` | `/v1/` | the client and the collection |
+| `POST /v1/team-invites/{teamId}` | bearer | `TeamRequest`: `accept` boolean req (400 `invalid_body`) | 200 TeamView when accepting, `{"invites":[...]}` when declining | `/v1/` | the client and the collection |
+| `GET /v1/team-applications` | bearer | none | 200 `{"applications":[{teamId,teamName,expiresAt}]}` | `/v1/` | the collection |
+
+#### Tournaments
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+| `GET /v1/tournaments` (also `/v1/tournaments/`) | none | none | 200 `{"tournaments":[...]}`: those in registration, seeded or running, each with `"matches":[]` | `/v1/` | the client and the collection |
+| `GET /v1/tournaments/{id}` | none | none | 200 one tournament, with its matches (and `standings` for a round robin) | `/v1/` | the client and the collection |
+| `POST /v1/tournaments/{id}/entries` | bearer | none | 200 the tournament | `/v1/` | the client and the collection |
+| `DELETE /v1/tournaments/{id}/entries` | bearer | none | 200 the tournament | `/v1/` | the collection |
+| `GET /v1/tournaments/{id}/match` | bearer | none | 200 the grant, a JSON string from `TournamentService.match`, written as is | `/v1/` | the client and the collection |
+
+#### ## Other paths the code accepts (not counted as rows)
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+
+#### ## Disagreements with docs/api/01
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+
+#### ## Unsure
+
+| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
+|---|---|---|---|---|---|
+
+Through nginx in the runs, every route but two: `POST /v1/queue/decline`, which the app sends as the lobby's
+`match.decline` (§10.2), the gateway passing it to the platform on the private side, not through nginx; and
+`/health`, the process's own, which nginx does not pass.
+
+### 10.2 The lobby, to a gateway
+
+One location, `= /lobby` (§4.2): the WebSocket's upgrade passed to `backend_gateway`, the gateway with the fewest
+connections (`least_conn`, §4.4), the connection held as long as the app keeps it. The app's messages and what each
+does on the platform (the gateway calls it on the private side, with the session's token); the fields and refusals
+are the HTTP route's ([api/02 §4](../api/02-lobby-websocket.md#4-what-a-client-sends)):
+
+| The app sends `t` | `d` | The platform's route it is |
+|---|---|---|
+| `auth` | `{"token"}`, first, within 5 s | the session's check, in the store |
+| `ping` | | none: the heartbeat, at least every 30 s |
+| `match.request` | | `POST /v1/match-requests` |
+| `queue.join`, `queue.leave` | `{"mode"}`, none | `POST /v1/queue`, `DELETE /v1/queue` |
+| `match.accept`, `match.decline` | `{"matchUid"}` | `POST /v1/queue/accept`, `POST /v1/queue/decline` |
+| `party.invite`, `party.kick` | `{"playerId"}` | `POST /v1/party/invite`, `POST /v1/party/kick` |
+| `party.accept` | `{"partyId"}` | `POST /v1/party/accept` |
+| `party.leave` | | `POST /v1/party/leave` |
+| `party.say` | `{"phraseId"}` | `POST /v1/party/say` |
+
+And what the gateway pushes, `evt.match.ready`, `evt.match.found`, `evt.queue.update`, the party's, the team's, the
+friends', `evt.inbox`, `evt.rewards`, `evt.tournament.match`, `evt.notice`, `evt.session.revoked`,
+`evt.session.replaced` and `evt.resync`: [api/02 §6](../api/02-lobby-websocket.md#6-pushes). Through nginx in the
+runs: every scenario's lobby, `ws://` on 80's place and `wss://` on 443's.
+
+### 10.3 A match, to an arena
+
+9001's server (§4.5): TLS ended by nginx, the arena chosen by the name the handshake gives (the grant's `tlsName`),
+and the connection passed on after nginx's PROXY line, which the arena reads for the phone's address (§7); in the
+plain way of a development machine, no TLS, no line, the one arena. Then the match's own binary frames, each a varint
+length and its bytes ([02-networking §3](../detailed-design/02-networking.md#3-messages)):
+
+| From the app | | From the arena | |
+|---|---|---|---|
+| `Join` (1) | the protocol's version, the grant's ticket, a profile | `Welcome` (1) | the own handle, the rate, the map, the resume secret |
+| `Input` (2) | sequence, the last tick seen, move, aim, fire | `Snapshot` (2) | the world's changes, 02 §4 |
+| `UpgradeStat` (3), `ChooseClass` (4) | a stat, a class | `Pong` (3) | the app's clock back, the server's tick |
+| `Respawn` (5), `Phrase` (6) | none, a phrase | `Kick` (4) | why |
+| `Ping` (7), `Lifecycle` (8) | the clock every 10 s, foreground or background | | |
+| `Leave` (9), `Resume` (10) | none, the resume secret | | |
+| `Sandbox` (11) | a sandbox's powers | | |
+
+Through nginx in the runs: every scenario's matches, on 9001's place, over TLS in the TLS ways, read by the arena
+from the PROXY line (its log names each player's address), plain in the plain way.

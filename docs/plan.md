@@ -4178,15 +4178,25 @@ disk, nothing in Git's history. Test first: `NoLinksTest` (tools) and `check-rel
 links, then passing; four mutants caught. The release in UBI 9.5: 0 failed. Docs: D-106, O-98, DOC-44 (09's table
 still said RHEL 9's libraries), 09 §2, `vendor/README`, `VERSIONS.md`, the tools README.
 
-#### 128. Every route from the app through nginx to its process, one by one, both ways (the owner, 2026-11-05)
+#### 128. ~~Every route from the app through nginx to its process, one by one, both ways (the owner, 2026-11-05).~~ — **done 2026-11-05**
 
-The owner's `http://<address>/v1/health` was a 404 from the platform, "No context found for request": the health
-check is `/health`, outside `/v1/`, which nginx does not pass, while the Postman collection, pointed at nginx as its
-README says, starts with it. And a run by hand's 80 answers a redirect to 443, which the owner does not want: 80
-should take the API and the lobby itself in development; production stays 443 alone. To do: `/v1/health`; 80 plain
-in development; every HTTP route (the collection's 135 requests, bodies and answers tested), the lobby and a match
-run through nginx, plain on 80 and over TLS on 443, and each route written down: method, path, body, nginx's location
-and limits, the process.
+The owner's `http://<address>/v1/health` was a 404 from the platform, "No context found for request", and a run by
+hand's 80 answered a redirect the owner did not want. **Found and fixed** (D-107): the API's health only at
+`/health`, outside the `/v1/` nginx passes (P-61), now `GET /v1/health` too; a path no route has answered the
+server's HTML page, and ten routes answered paths under them (`/v1/shop/x` the shop, `/v1/leaderboardsX/alltime` a
+board), each now exact and a JSON 404 (P-62, found reading all 77 routes against the code); the API's reference
+said seven things the code does not (DOC-45). **Development's 80** serves the API and the lobby in clear in both
+ways; production unchanged, 443 alone. **Every route through nginx** (T-65): `headless-drill.sh FRONT=https|http|plain
+NEWMAN=1`, the release's nginx as `dev-nginx.sh` configures it in front of the drill's stack, the Postman collection
+then the client's scenarios. Three full runs, each way: the collection 135 requests, none failed; the scenarios all
+passing but two duels short of a room (the collection's sandbox still open: one more room with `NEWMAN=1`), `maze`
+once (T-66) and `decline` once (T-67), the plain run cut by the session's end at its 41st. Again with the room and
+the paths fixed: the collection 137 requests (a team's application withdrawn added: every route then run), none
+failed, each way; the scenarios all passing but `maze` once more (T-66, open, the maze's seed). Each of the 77 routes,
+its body, nginx's location and what ran it: operations/11 §10. Test first: `/v1/health` and the paths (404s and
+HTML before), `dev-nginx.sh test` (80's 308 before), each failing, then passing; mutants caught (the health's
+prefix and method, the second listen line). Docs: D-107 (D-92 in part superseded), P-61, P-62, T-65 to T-67,
+DOC-45, operations/11 §5, §9, §10, 05, api/01 and its README, development/02 and 03, deploy/README, CLAUDE.md.
 
 #### 129. The client in Unity 2019.4 and Visual Studio 2019, .NET Framework (the owner, 2026-11-05)
 

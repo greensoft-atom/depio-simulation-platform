@@ -1779,6 +1779,44 @@ class PlatformHttpServerTest {
     }
 
     @Test
+    @Timeout(60)
+    @DisplayName("the API's health, under /v1/ so it is reached through nginx, answers GET alone at its path (D-107)")
+    void healthUnderTheApi() throws Exception {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(URI.create(base + "/v1/health")).GET().build());
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(body(response).get("status").asText()).isEqualTo("ok");
+
+        assertThat(send(HttpRequest.newBuilder(URI.create(base + "/v1/health"))
+                .POST(HttpRequest.BodyPublishers.noBody()).build()).statusCode()).isEqualTo(405);
+        assertThat(send(HttpRequest.newBuilder(URI.create(base + "/v1/health/x")).GET().build()).statusCode())
+                .isEqualTo(404);
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("a route of one path answers that path alone, and a path no route has is the API's JSON 404 (D-107)")
+    void everyRouteAtItsOwnPath() throws Exception {
+        // The server matches a context by prefix: each of these reached its route's handler, and a path under no
+        // context was the JDK's own HTML page, "No context found for request".
+        String[][] wrong = {
+                {"GET", "/v1/shop/x"}, {"GET", "/v1/seasons/x"}, {"GET", "/v1/achievements/x"}, {"GET", "/v1/goals/x"},
+                {"GET", "/v1/content/classes/x"}, {"GET", "/v1/content/phrases/x"}, {"GET", "/v1/content/skins/x"},
+                {"GET", "/v1/leaderboardsX/alltime"}, {"GET", "/v1/boosts/x"}, {"POST", "/v1/match-requests/x"},
+                {"POST", "/v1/sandbox/x"}, {"POST", "/v1/purchases/x"}, {"GET", "/v1/nothing"}, {"GET", "/nothing"},
+        };
+        for (String[] r : wrong) {
+            HttpResponse<String> response = send(HttpRequest.newBuilder(URI.create(base + r[1]))
+                    .method(r[0], HttpRequest.BodyPublishers.ofString("{}")).build());
+            assertThat(response.statusCode()).as(r[0] + " " + r[1]).isEqualTo(404);
+            assertThat(body(response).get("code").asText()).as(r[0] + " " + r[1]).isEqualTo("no_such_route");
+        }
+        // Their own paths still answer.
+        assertThat(send(HttpRequest.newBuilder(URI.create(base + "/v1/shop")).GET().build()).statusCode()).isEqualTo(200);
+        assertThat(send(HttpRequest.newBuilder(URI.create(base + "/v1/leaderboards/alltime")).GET().build()).statusCode())
+                .isEqualTo(200);
+    }
+
+    @Test
     @Timeout(120)
     @DisplayName("concurrent logins all succeed and each gets its own token")
     void concurrentLogins() throws Exception {

@@ -2802,6 +2802,9 @@ configuration, and a script of its own beside `run-local.sh`).
 
 ### D-92 — A script for each service of a run by hand, and nginx on the site's ports in front of it
 
+**Superseded in part by [D-107](#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)** (2026-11-05): 80 is no longer a redirect; in the TLS way 443's
+server listens on it too, without TLS.
+
 **Decided 2026-11-01** (plan item 110; the owner, after D-91: they run the system as root; phones' app and a
 laptop's Postman are to reach it through nginx on 80, 443 and 9001; a script of its own for nginx, MySQL, j-redis
 and the backend, each with start, status, stop, restart and test, and build for j-redis and the backend; the
@@ -3388,3 +3391,45 @@ finds its plugins by listing `*.so` files, so a name dropped can be a plugin los
 
 **Cost.** 43 MB more on disk in a checkout and in a release (378 MB to 421), and nothing in Git's history: a copy is
 the same object as the file it copies.
+
+### D-107 — Development's 80 serves the API and the lobby itself; the API's health under `/v1/`; every route checked through nginx
+
+**Decided 2026-11-05** (plan item 128; the owner: `http://<address>/v1/health` answered a 404, and 80's redirect is
+not wanted: in development a plain request on 80 should reach the services, and production's 443 keep its own way).
+
+**Decision.**
+- **`GET /v1/health`** on the platform, beside `/health`: the same answer, without the database, matched exactly
+  (`/v1/health/x` is a 404, another method a 405). nginx passes it as it passes every `/v1/` path, so the app, Postman
+  or a probe from outside can ask whether the API answers through the front. `/health` stays for the watch and the
+  checks on the machine; nginx still passes nothing outside `/v1/` and `/lobby`.
+- **Every route at its own path.** A path no route has is the API's JSON 404 `no_such_route` (a context at `/`), where
+  it was the server's HTML page, "No context found for request", the owner's 404; and a route of one path answers that
+  path alone: the server matches a context by its prefix, so `/v1/shop/x` was the shop, `/v1/leaderboardsX/alltime`
+  the all-time board and `/v1/boosts/x` the boosts. Found reading every route against the code (77, method and path).
+- **Development's 80 serves.** In `dev-nginx.sh`'s TLS way, 443's server listens on 80 too, without TLS: the API and
+  the lobby on both, by the same locations and limits, and no redirect. The plain way is as it was (80 and 9001
+  without TLS, no 443, D-101). Matches go as the way says: in the TLS way over TLS on 9001, so a development build on
+  80 still plays over TLS, trusting the run's `ca.pem`.
+- **Production unchanged**: the release's configuration listens on 443 and 9001 alone, 80 has nothing and the
+  firewall closes it (D-82), and a players' build refuses `http://` itself (D-104).
+- **Every route through nginx.** `headless-drill.sh` with `FRONT` puts the release's nginx, configured by
+  `dev-nginx.sh`'s own rewrite, in front of the drill's processes on ports of its own, and runs the client through
+  it: `FRONT=https` (the TLS way, 443's place), `FRONT=http` (the TLS way, 80's place: the API and the lobby plain,
+  matches over TLS) and `FRONT=plain` (the plain way). With `NEWMAN=1` the Postman collection runs first, through the
+  same address, on the fresh stack: every HTTP route, with its body, and each answer's status tested; then the C#
+  client's scenarios, the lobby's and the matches' (9001's place).
+
+**Why.** The health check was outside the API's prefix, so through nginx it was the platform's own 404, "No context
+found for request", while the collection, which the API's README points at nginx, begins with it. The redirect
+(D-92) kept passwords and tokens off the network in plain text; since then the plain way (D-101) serves 80 anyway,
+the players' build refuses `http://` (D-104), and on a development machine the owner, Postman and the team's editor
+want 80 to answer. Nothing had run every route through nginx: the drills went to the processes' own ports, and the
+checks through nginx ran sixteen scenarios.
+
+**Not chosen:** nginx passing `/health` (one more location, outside the prefix every route shares, and `/health`
+answers any method and any path below it); the plain way the default (the TLS way is the site's, and is what a
+build for players is tried against; 80 now serves in both); a server of its own on 80 (a copy of 443's locations
+to keep in step, where a second `listen` gives the same ones).
+
+**Cost.** What D-92 avoided: on 80, a development account's password and token cross the network readable. A
+development machine's accounts are the team's, on the owner's network; production has nothing on 80.

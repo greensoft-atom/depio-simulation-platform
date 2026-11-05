@@ -21,7 +21,7 @@ Why each rule is as it is: [04 — platform services](../detailed-design/04-plat
 ## The Postman collection
 
 [`backend.postman_collection.json`](backend.postman_collection.json) (Postman's format 2.1):
-135 requests in 14 folders (00 to 13), one scenario from the health check to the end of a season. Three
+137 requests in 14 folders (00 to 13), one scenario from the health check to the end of a season, every route of the player API among them (D-107). Three
 players (A, B, C) and a guest are made, with names unique to the run; each request tests its
 status and keeps in the collection's variables what later ones need (tokens, ids, an order,
 a team, a tournament).
@@ -91,8 +91,14 @@ rooms, each on a port of its own.
   after the test database gave them, and say so. A few shapes the runs could not produce (a
   board with rows, a tournament's match grant, the pushes no request triggered) are given from
   the code, and say so.
-- **Not checked**: anything through nginx (its TLS, its limits and its own 413 and 429 are
-  described from its configuration), and the match protocol (it has its own drills).
+- **Through nginx, on 2026-11-05** (D-107): the collection on the live drill's own stack, the release's nginx in
+  front of it as `dev-nginx.sh` configures it (`headless-drill.sh FRONT=… NEWMAN=1`), three ways: over TLS on 443's
+  place, in clear on 80's, and the plain way. 135 requests, 137 checks, none failed, each way; with the API's health
+  under `/v1/` and a team's application withdrawn added, 137 requests and 139 checks, again none failed. Every
+  player-API request reached nginx's access log, the admin API's (loopback, not nginx's) apart. Then the C# client's
+  scenarios through the same nginx: [operations/11 §10](../operations/11-phone-to-backend-routes.md#10-every-route-one-by-one).
+- **Not checked**: nginx's limits (its own 413 and 429 are described from its configuration), and the match
+  protocol here (it has its own drills).
 
 To run it again: the stack as [build and run §5](../development/03-build-and-run.md#5-running-it-by-hand)
 starts it, the platform with `BACKEND_PAYMENT_PROVIDER=simulated`, `BACKEND_ADMIN_ADDR` and

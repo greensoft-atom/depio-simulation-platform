@@ -245,17 +245,17 @@ public final class PlatformHttpServer implements AutoCloseable {
         server.createContext("/v1/accounts/name", exchange -> exact(exchange, "PUT", "/v1/accounts/name", this::rename));
         server.createContext("/v1/guests", exchange -> exact(exchange, "POST", "/v1/guests", this::createGuest));
         server.createContext("/v1/sessions", this::sessions);
-        server.createContext("/v1/match-requests", exchange -> route(exchange, "POST", this::requestMatch));
+        server.createContext("/v1/match-requests", exchange -> exact(exchange, "POST", "/v1/match-requests", this::requestMatch));
         server.createContext("/v1/queue", this::queue);
-        server.createContext("/v1/sandbox", exchange -> route(exchange, "POST", this::openSandbox));
+        server.createContext("/v1/sandbox", exchange -> exact(exchange, "POST", "/v1/sandbox", this::openSandbox));
         server.createContext("/v1/party", this::party);
         server.createContext("/v1/leaderboards", exchange -> route(exchange, "GET", this::leaderboard));
-        server.createContext("/v1/seasons", exchange -> route(exchange, "GET", this::seasons));
-        server.createContext("/v1/achievements", exchange -> route(exchange, "GET", this::achievements));
-        server.createContext("/v1/goals", exchange -> route(exchange, "GET", this::goals));
-        server.createContext("/v1/shop", exchange -> route(exchange, "GET", this::shop));
+        server.createContext("/v1/seasons", exchange -> exact(exchange, "GET", "/v1/seasons", this::seasons));
+        server.createContext("/v1/achievements", exchange -> exact(exchange, "GET", "/v1/achievements", this::achievements));
+        server.createContext("/v1/goals", exchange -> exact(exchange, "GET", "/v1/goals", this::goals));
+        server.createContext("/v1/shop", exchange -> exact(exchange, "GET", "/v1/shop", this::shop));
         server.createContext("/v1/inventory", this::inventoryRoutes);
-        server.createContext("/v1/purchases", exchange -> route(exchange, "POST", this::purchase));
+        server.createContext("/v1/purchases", exchange -> exact(exchange, "POST", "/v1/purchases", this::purchase));
         server.createContext("/v1/payments", exchange -> guard(exchange, this::payments));
         server.createContext("/v1/pass", exchange -> guard(exchange, this::pass));
         server.createContext("/v1/equipment", exchange -> guard(exchange, this::equipment));
@@ -268,10 +268,16 @@ public final class PlatformHttpServer implements AutoCloseable {
         server.createContext("/v1/friend-requests", exchange -> guard(exchange, this::friendRequests));
         server.createContext("/v1/blocks", exchange -> guard(exchange, this::blocks));
         server.createContext("/v1/inbox", exchange -> guard(exchange, this::inbox));
-        server.createContext("/v1/content/classes", exchange -> route(exchange, "GET", this::classes));
-        server.createContext("/v1/content/phrases", exchange -> route(exchange, "GET", this::phrases));
-        server.createContext("/v1/content/skins", exchange -> route(exchange, "GET", this::skins));
+        server.createContext("/v1/content/classes", exchange -> exact(exchange, "GET", "/v1/content/classes", this::classes));
+        server.createContext("/v1/content/phrases", exchange -> exact(exchange, "GET", "/v1/content/phrases", this::phrases));
+        server.createContext("/v1/content/skins", exchange -> exact(exchange, "GET", "/v1/content/skins", this::skins));
         server.createContext("/health", exchange -> respond(exchange, 200, "{\"status\":\"ok\"}"));
+        // The same under the API's prefix, which nginx passes: asked through the front (D-107).
+        server.createContext("/v1/health", exchange -> exact(exchange, "GET", "/v1/health",
+                ex -> respond(ex, 200, "{\"status\":\"ok\"}")));
+        // A path no route has: the API's JSON 404, where the server's own answer was an HTML page (D-107).
+        server.createContext("/", exchange -> guard(exchange, ex -> error(ex, 404, "no_such_route",
+                "no route at " + ex.getRequestURI().getPath() + ": docs/api/01-http-api.md")));
     }
 
     /** What the platform API reports (04 §11). */
@@ -1106,6 +1112,10 @@ public final class PlatformHttpServer implements AutoCloseable {
     /** {@code GET /v1/boosts}: those running; {@code POST}: activates one held, once per key (04 §8). */
     private void boosts(HttpExchange exchange) throws IOException, SQLException {
         String method = exchange.getRequestMethod();
+        if (!exchange.getRequestURI().getPath().equals("/v1/boosts")) {
+            error(exchange, 404, "no_such_route", "use /v1/boosts");
+            return;
+        }
         if (!"GET".equals(method) && !"POST".equals(method)) {
             methodNotAllowed(exchange, "GET, POST");
             return;
@@ -1692,8 +1702,9 @@ public final class PlatformHttpServer implements AutoCloseable {
         String path = exchange.getRequestURI().getPath()
                 .substring("/v1/leaderboards".length());
         String[] parts = path.split("/");
-        // "/alltime" splits to ["", "alltime"]; "/alltime/me" to ["", "alltime", "me"].
-        if (parts.length < 2 || parts.length > 3
+        // "/alltime" splits to ["", "alltime"]; "/alltime/me" to ["", "alltime", "me"]; "X/alltime", a path the
+        // context's prefix also takes, to ["X", "alltime"], refused (D-107).
+        if (!path.startsWith("/") || parts.length < 2 || parts.length > 3
                 || (parts.length == 3 && !"me".equals(parts[2]))) {
             error(exchange, 404, "no_such_route", "use /v1/leaderboards/{board}[/me]");
             return;
@@ -2119,8 +2130,8 @@ public final class PlatformHttpServer implements AutoCloseable {
     }
 
     /**
-     * A POST to a route nginx limits, which is matched exactly here: the server matches a context by
-     * prefix, so {@code /v1/sessions/} would otherwise reach the handler past nginx's limit (S-18).
+     * A route of one path, matched exactly here: the server matches a context by prefix, so {@code /v1/sessions/}
+     * would otherwise reach the handler past nginx's limit (S-18), and {@code /v1/shop/x} the shop (D-107).
      */
     private void exact(HttpExchange exchange, String method, String path, Handler handler) throws IOException {
         route(exchange, method, ex -> {

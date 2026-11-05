@@ -276,7 +276,7 @@ Each script's own settings are in [scripts/README](../scripts/README.md). Those 
 | `WORK` | `dev-env.sh`, so every script beside it | `work/` in the checkout: Maven's settings and local repository, `TMPDIR`, the development MySQL, a run by hand (D-80) |
 | `MYSQL_PORT` | `dev-env.sh`, so every script beside it | 3314, the development MySQL's |
 | `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT` | `dev-env.sh`: `dev-jredis.sh`, `dev-backend.sh`, `dev-nginx.sh` | 6380, 8080, 8081, 9021, each on 127.0.0.1 (D-92) |
-| `NGINX_HTTP_PORT`, `NGINX_HTTPS_PORT`, `NGINX_MATCH_PORT` | `dev-env.sh`: `dev-nginx.sh`, and `dev-backend.sh`, whose arena announces the last | 80 (a redirect), 443 (the player API and the lobby), 9001 (matches), every IPv4 address; 80 and 443 need root (D-92) |
+| `NGINX_HTTP_PORT`, `NGINX_HTTPS_PORT`, `NGINX_MATCH_PORT` | `dev-env.sh`: `dev-nginx.sh`, and `dev-backend.sh`, whose arena announces the last | 80 (the player API and the lobby in clear, D-107), 443 (the same over TLS), 9001 (matches), every IPv4 address; 80 and 443 need root (D-92) |
 | `PUBLIC_ADDRESS`, `ARENA_TLS_NAME` | `dev-env.sh`: `dev-nginx.sh` (the certificate), `dev-backend.sh` (the arena's announcement) | the machine's first address (`hostname -I`), else 127.0.0.1; `a1.arena.internal` (D-92) |
 | `DEBUG` | `dev-backend.sh`, `dev-jredis.sh` | unset; `DEBUG=1` for debugger ports 5005 to 5009 |
 | `IMAGE` | `check-release-el9.sh` | `registry.access.redhat.com/ubi9/ubi-minimal:9.5` |
@@ -329,7 +329,7 @@ primary's port; the copy off the site leaves C by SSH, to the host the owner nam
 | 3314 | the development MySQL, `vendor/`'s 8.4 (`backend_test`, `backend_dev`) | `dev-mysql.sh`: the tests, the benchmarks, `run-local.sh` and both drills, which start it when it is not running; the processes' and the tests' built-in defaults (D-80, O-40). Nothing here uses a machine's own 3306 |
 | 6380, 8080, 8081, 9021 | j-redis, platform, gateway, arena | `dev-jredis.sh`, `dev-backend.sh` (D-92) |
 | 6380, 8080, 8081, 9001 | the same, in the by-hand example of [backend/README](../README.md#running-it), with no nginx | that example |
-| 80, 443, 9001 | the release's nginx in front of a run by hand, on every IPv4 address: a redirect, the API and the lobby, matches | `dev-nginx.sh` (D-92) |
+| 80, 443, 9001 | the release's nginx in front of a run by hand, on every IPv4 address: the API and the lobby in clear and over TLS, matches | `dev-nginx.sh` (D-92, D-107) |
 | 5005 to 5009 | the debugger, one per process | `DEBUG=1 ./run-local.sh start` |
 
 All bind `127.0.0.1` but nginx's. 6381 and 8082 belong to other processes on the development machine.

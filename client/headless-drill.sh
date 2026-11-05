@@ -92,6 +92,16 @@ MODE_PORTS=()
 [ "${MYSQL_FAILOVER:-0}" != 0 ] && MODE_PORTS+=(3307 3308)
 [ "${IDLEGUEST:-0}" = 1 ] && MODE_PORTS+=(9193)
 [ "${WATCH:-0}" = 1 ] && MODE_PORTS+=(9194)
+# FRONT (D-107): the release's nginx in front of the drill's processes, as dev-nginx.sh configures it, on ports of its
+# own (8095 for 80, 8096 for 443, 9095 for 9001), and the client through it: https and http the TLS way, the API and
+# the lobby on 443's place or on 80's (matches over TLS either way), plain the plain way (D-101). NEWMAN=1: the
+# Postman collection through the same address first, on the fresh stack.
+FRONT=${FRONT:-}
+if [ -n "$FRONT" ]; then
+  case $FRONT in https|http|plain) ;; *) echo "FRONT is https, http or plain, not $FRONT"; exit 2 ;; esac
+  [ "${TLS:-0}" = 1 ] && { echo "FRONT with TLS=1: an arena behind the front has no TLS of its own (D-82)"; exit 2; }
+  MODE_PORTS+=(8095 8096 9095)
+fi
 "$B/backend/scripts/check-bind.sh" 6390 8093 8094 9011 9195 9196 9197 9198 9199 "${MODE_PORTS[@]}" || exit 1
 D=$(mktemp -d); mkdir -p "$D/data" "$D/spool"
 echo "logs in $D"
@@ -103,6 +113,7 @@ PIDS=()
 # early left them on, at the next drill's ports (O-80).
 cleanup() { touch "$D/soak.stop" 2>/dev/null; local jobs; jobs=$(jobs -p)
            for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-} $jobs; do kill "$p" 2>/dev/null; done; sleep 2; for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-} $jobs; do kill -9 "$p" 2>/dev/null; done
+           [ "${NGINX_STARTED:-0}" = 1 ] && "${FRONTENV[@]}" "$B/dev-nginx.sh" stop > /dev/null 2>&1
            [ "${DEV_MYSQL_STARTED:-0}" = 1 ] && "$B/dev-mysql.sh" stop > /dev/null 2>&1; }
 trap cleanup EXIT
 # NFR-2's p50 and p95 per profile from a scrape of the arena: a histogram's buckets come in its
@@ -140,6 +151,15 @@ if [ "${TLS:-0}" = 1 ]; then
   printf 'drill-pass\n' > "$T/arena-pass"
   TLSENV=(env BACKEND_ARENA_TLS_KEYSTORE="$T/arena.p12" BACKEND_ARENA_TLS_PASSWORD_FILE="$T/arena-pass")
   TRUST=(--trust "$T/arena.crt" --wrong-trust "$T/other.crt")
+fi
+API=http://127.0.0.1:8093 LOBBY=ws://127.0.0.1:8094/lobby ARENAENV=() FRONTENV=()
+if [ -n "$FRONT" ]; then
+  FRONTENV=(env NGINX_DIR="$D/nginx" PUBLIC_ADDRESS=127.0.0.1 PLATFORM_PORT=8093 GATEWAY_PORT=8094 ARENA_PORT=9011
+            ARENA_TLS_NAME=a1.arena.internal NGINX_HTTP_PORT=8095 NGINX_HTTPS_PORT=8096 NGINX_MATCH_PORT=9095
+            PLAIN=$([ "$FRONT" = plain ] && echo 1 || echo 0))
+  # The arena announces nginx's port; behind the front's TLS, its name too, and it reads nginx's PROXY line (D-105).
+  ARENAENV=(env BACKEND_ADVERTISE_PORT=9095)
+  [ "$FRONT" = plain ] || ARENAENV+=(BACKEND_ADVERTISE_TLS_NAME=a1.arena.internal)
 fi
 
 # The drill's database: backend_dev on the development MySQL, never the machine's own on 3306 (O-40).
@@ -225,9 +245,10 @@ sleep 2
 # the collector the units give it (deploy/systemd), with a heap this shared machine can spare.
 ROOMS=2; SHAPES=200; [ -n "${BOTS:-}" ] && ROOMS=$(( ${BOTS%%:*} / 150 + 1 )) && SHAPES=1500   # as arena.env.example
 [ "${SOAK:-0}" = 1 ] && ROOMS=$(( ROOMS + 2 ))   # the soak's duels: one playing, one ending (T-30)
+[ "${NEWMAN:-0}" = 1 ] && ROOMS=$(( ROOMS + 1 ))  # the collection's sandbox, still open when the duels begin (T-65)
 [ -n "${BOTS:-}" ] && OPENS="$OPENS -XX:+UseZGC -XX:+ZGenerational -Xmx2g"
 BACKEND_METRICS_ADDR=127.0.0.1:9197 \
-"${TLSENV[@]}" $J $OPENS ${ARENA_OPTS:-} -cp "$R/lib/arena/*" com.backend.arena.ArenaMain 9011 5700 150 $SHAPES $ROOMS 127.0.0.1 6390 \
+"${TLSENV[@]}" "${ARENAENV[@]}" $J $OPENS ${ARENA_OPTS:-} -cp "$R/lib/arena/*" com.backend.arena.ArenaMain 9011 5700 150 $SHAPES $ROOMS 127.0.0.1 6390 \
    arena-drill 0 "$D/spool" 127.0.0.1 127.0.0.1 > "$D/arena.log" 2>&1 & PIDS+=($!)
 # The equip, boost and levels scenarios want items whose effect a stay measures exactly: a barrel giving 25 %
 # bullet speed and a coins boost, for 1 coin each. They are added to the release's shop and item table, read from
@@ -277,6 +298,27 @@ curl -s -o /dev/null http://127.0.0.1:8093/health || { echo "DRILL FAILED: the p
 sleep 3
 # A process that ended here fails the drill: the scenarios that do not need it passed without it (O-80).
 for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null || { echo "DRILL FAILED: process $p died during start-up"; exit 1; }; done
+if [ -n "$FRONT" ]; then
+  NGINX_STARTED=1
+  "${FRONTENV[@]}" "$B/dev-nginx.sh" start > "$D/nginx.log" 2>&1 || { cat "$D/nginx.log"; echo "DRILL FAILED: nginx in front"; exit 1; }
+  "$B/backend/scripts/private-ca.sh" root "$D/other-ca" > /dev/null    # a root the client must not trust (untrusted)
+  case $FRONT in
+    https) API=https://127.0.0.1:8096 LOBBY=wss://127.0.0.1:8096/lobby ;;
+    *)     API=http://127.0.0.1:8095  LOBBY=ws://127.0.0.1:8095/lobby ;;
+  esac
+  [ "$FRONT" = plain ] || TRUST=(--trust "$D/nginx/ca/ca.pem" --wrong-trust "$D/other-ca/ca.pem")
+  echo "--- through nginx ($FRONT): the API $API, the lobby $LOBBY, matches 127.0.0.1:9095$([ "$FRONT" = plain ] && echo ", plain" || echo " over TLS")"
+fi
+if [ "${NEWMAN:-0}" = 1 ]; then
+  echo "--- the Postman collection through $API, every HTTP route ($(date +%T))"
+  NEWMAN_CA=(); [ "$FRONT" = https ] && NEWMAN_CA=(--ssl-extra-ca-certs "$D/nginx/ca/ca.pem")
+  npx --yes newman run "$B/docs/api/backend.postman_collection.json" --env-var baseUrl="$API" \
+      --env-var adminUrl=http://127.0.0.1:9196 --env-var adminToken=drill-admin-secret "${NEWMAN_CA[@]}" \
+      --reporters cli --reporter-cli-no-banner --reporter-cli-no-console > "$D/newman.log" 2>&1
+  NEWMAN_RC=$?
+  sed -n '/┌/,$p' "$D/newman.log" | head -40
+  [ "$NEWMAN_RC" = 0 ] || { echo "NEWMAN FAILED (exit $NEWMAN_RC): $D/newman.log"; grep -E '^\s+[0-9]+\. ' "$D/newman.log" | head -20; }
+fi
 
 # The arena's pid is the second started: stopped mid-scenario, it drains (01 §8.6).
 if [ -n "${DRAIN_AFTER:-}" ]; then
@@ -299,7 +341,7 @@ run_client() {
   drill_sql
   BACKEND_DRILL_SQL="$D/drill-sql.sh" \
   BACKEND_ADMIN_URL=http://127.0.0.1:9196 BACKEND_ADMIN_TOKEN=drill-admin-secret \
-  DOTNET_NOLOGO=1 "$DOTNET" "$C/Headless/bin/Debug/net8.0/Backend.Client.Headless.dll" http://127.0.0.1:8093 --lobby ws://127.0.0.1:8094/lobby "${TRUST[@]}" "$@"
+  DOTNET_NOLOGO=1 "$DOTNET" "$C/Headless/bin/Debug/net8.0/Backend.Client.Headless.dll" "$API" --lobby "$LOBBY" "${TRUST[@]}" "$@"
 }
 # The failovers in steps, so that a load run can put the bots' leaving between the kill and the
 # promotion (architecture/02 §6).
@@ -654,6 +696,7 @@ if [ -n "${BOTS:-}" ]; then
 else
 run_client "$@"
 STATUS=$?
+[ "${NEWMAN_RC:-0}" = 0 ] || STATUS=1
 fi
 if [ "$FAILOVER" != 0 ] && [ -z "${UNDER_LOAD:-}" ]; then
   sleep 3                                              # the last results through the spool

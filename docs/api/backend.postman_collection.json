@@ -25,7 +25,7 @@
   "item": [
     {
       "name": "00 Health",
-      "description": "The platform answers. Not reachable through nginx (only /v1/ and /lobby are proxied).",
+      "description": "The platform answers, through nginx too: under /v1/, which nginx passes (D-107).",
       "item": [
         {
           "name": "Health",
@@ -35,7 +35,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"GET /health answers 200\", function () {",
+                  "pm.test(\"GET /v1/health answers 200\", function () {",
                   "    pm.expect(pm.response.code).to.be.oneOf([200]);",
                   "});",
                   "let body = null;",
@@ -49,11 +49,12 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/health",
+              "raw": "{{baseUrl}}/v1/health",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
+                "v1",
                 "health"
               ]
             },
@@ -3661,6 +3662,88 @@
         },
         {
           "name": "C applies",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/teams/{{teamId}}/applications answers 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  ""
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenC}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/teams/{{teamId}}/applications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "teams",
+                "{{teamId}}",
+                "applications"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "C withdraws the application",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"DELETE /v1/teams/{{teamId}}/applications answers 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  ""
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenC}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/teams/{{teamId}}/applications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "teams",
+                "{{teamId}}",
+                "applications"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "C applies again",
           "event": [
             {
               "listen": "test",

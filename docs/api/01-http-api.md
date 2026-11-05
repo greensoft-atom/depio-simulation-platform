@@ -15,9 +15,10 @@ Postman collection's run of 2026-10-06 against a stack built from this repositor
 |---|---|
 | Production, through the front's nginx (TLS) | `https://<the site's address>/v1/...`, for example `https://203.0.113.10/v1/shop`; the certificate is the backend's own CA's, so a client trusts its root, `ca.pem` (`curl --cacert ca.pem`; [operations/06](../operations/06-certificates.md)) |
 | One machine, straight to `platform` (tests, the examples below) | `http://127.0.0.1:8080/v1/...` (`PLATFORM_PORT`; the examples ran on 8180) |
-| A run by hand, through `dev-nginx.sh`'s nginx ([D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)) | `https://<address>/v1/...`, trusting `work/nginx/ca/ca.pem` (`curl --cacert work/nginx/ca/ca.pem`; [development/03 §5.0](../development/03-build-and-run.md#50-clients-on-other-machines-the-front)); `http://<address>/...` answers a 308 to it |
+| A run by hand, through `dev-nginx.sh`'s nginx ([D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)) | `https://<address>/v1/...`, trusting `work/nginx/ca/ca.pem` (`curl --cacert work/nginx/ca/ca.pem`; [development/03 §5.0](../development/03-build-and-run.md#50-clients-on-other-machines-the-front)); or `http://<address>/v1/...` in clear, on 80 ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)) |
 
-nginx proxies `/v1/` and `/lobby` only, so `/health` is not reachable from outside. It also
+nginx proxies `/v1/` and `/lobby` only: the API's health is `/v1/health`, and the platform's own `/health` is not
+reachable from outside (D-107). It also
 limits every request to the four login and registration paths (`/v1/sessions`, `/v1/accounts`,
 `/v1/guests`, `/v1/accounts/upgrade`; a logout and an account deletion included) to 2 a second
 per address (burst 30), answering
@@ -25,11 +26,13 @@ its own 429 (not JSON) over that, and takes bodies of 4 KB at most (its own 413,
 
 ### Requests
 
-- **JSON** bodies, UTF-8; `Content-Type` is not checked. At most **4096 bytes**, or **413**
-  `body_too_large`.
-- Unknown fields are ignored. A body that is empty, not JSON, or has a value of the wrong
-  type counts as no body, and the route answers its own 400 (`invalid_body` or the field's
-  code).
+- **JSON** bodies, UTF-8; `Content-Type` is not checked. At most **4096 bytes**: through nginx, a larger body on
+  any route is nginx's own 413 (not JSON); the platform reached directly answers **413** `body_too_large` on the
+  routes that read a body.
+- Unknown fields are ignored. A value of another JSON type is converted where it can be, as Jackson's defaults do
+  (`"2"` and `2.7` to the number 2, `123` to the text `"123"`, `1` to `true`); a body that is empty, not JSON, or
+  has a value that cannot be converted (`"x"` for a number) counts as no body, and the route answers its own 400
+  (`invalid_body` or the field's code).
 - **Authentication**: `Authorization: Bearer <token>`, the token from `POST /v1/sessions`.
   Routes marked "Bearer" below answer **401** `no_token` without it and **401**
   `invalid_session` when it names no live session (unknown, expired, logged out, or the
@@ -62,9 +65,9 @@ Any route can also answer:
 | 503 | `storage_unavailable` | MySQL or the store did not answer: try again shortly |
 | 500 | `internal` | a fault: report it |
 
-A path under no route's prefix gets the server's own 404 page (HTML), not JSON; a wrong path
-under one (`/v1/sessions/x`, `/v1/teams/x`) is a JSON 404 `no_such_route`, or `not_found` under
-`/v1/queue/` and `/v1/party/`.
+A path no route has (`/v1/nothing`), or a route's path with more after it (`/v1/shop/x`, `/v1/sessions/x`), is a
+JSON 404 `no_such_route`, or `not_found` under `/v1/queue/` and `/v1/party/` (D-107; the server's own HTML page, and
+the route itself for some, before). A wrong method on such a path may be answered 405 first.
 
 ### Limits
 
@@ -80,12 +83,14 @@ under one (`/v1/sessions/x`, `/v1/teams/x`) is a JSON 404 `no_such_route`, or `n
 
 ## 1. Health
 
-### `GET /health`
+### `GET /v1/health`, `GET /health`
 
-No auth. Checks nothing but that the process answers; for the machine's own monitoring.
+No auth. Checks nothing but that the process answers, without the database. `/v1/health` is the API's, reached
+through nginx like every `/v1/` path, from the app, Postman or a probe outside (D-107); it answers GET alone, at that
+path alone. `/health` is the process's own, for the machine's monitoring and the watch, and nginx does not pass it.
 
 ```http
-GET /health
+GET /v1/health
 ```
 ```json
 200 {"status":"ok"}
@@ -457,7 +462,8 @@ POST /v1/payments
 ```
 
 **`GET /v1/payments/{orderId}`**: Bearer. The order, the player's own only (else 404
-`no_such_order`).
+`no_such_order`). `orderId` is the order's UUID as it was answered, 36 of `0-9 a-f -`; anything else names no
+route (404 `no_such_route`).
 
 **`POST /v1/payments/{orderId}/simulate`**: Bearer. Body `{"outcome": "paid" | "declined"}`:
 what a provider would report.
@@ -554,8 +560,9 @@ kept per season.
 | `duel`, `rffa`, `tvt` | the rating in that mode; a player is listed after 10 rated matches in it | per season |
 | `teams` | the team's rating; listed after 10 rated team matches | per season |
 
-The top: public, `?limit=` 1 to 100 (default 50); the rating boards and `teams` take
-`?season=<id>` for a past season (default: the current one).
+The top: public, `?limit=` 1 to 100 (default 50; a number outside is brought within, and anything else is the
+default); the rating boards and `teams` take `?season=<id>` for a past season (default: the current one), at the
+top and at `/me` alike.
 
 ```http
 GET /v1/leaderboards/alltime?limit=10
@@ -640,7 +647,7 @@ POST /v1/queue
 
 | Status | code | When |
 |---|---|---|
-| 400 | `unknown_mode` | `{"code":"unknown_mode","message":"no queue for chess"}`; `ffa` and `sandbox` too |
+| 400 | `unknown_mode` | `{"code":"unknown_mode","message":"no queue for chess"}`; `ffa` and `sandbox` too, and a body without `mode` (`no queue for null`) |
 | 409 | `already_queued` | `{"code":"already_queued","message":"already in a queue"}` |
 | 409 | `in_match` | a grant or a tournament match is waiting: `GET /v1/queue` |
 | 409 | `in_party` | a member is not the party's leader |
@@ -886,8 +893,8 @@ The worker seeds a tournament when registration ends, runs its rounds and pays i
 
 ### `GET /v1/tournaments`, `GET /v1/tournaments/{id}`
 
-Public. The open ones (registration, seeded, running); one by its id in any state, with its
-matches.
+Public. The open ones (registration, seeded, running) as `{"tournaments":[...]}`, each as below (its `matches`
+empty); one by its id in any state, with its matches, as below.
 
 ```json
 200 {"id":1,"name":"Weekly Cup","mode":"duel","format":"elimination","state":"registration","maxEntries":8,
