@@ -1,7 +1,8 @@
 #!/bin/bash
 # Checks a release on RHEL 9's own userspace with nothing installed (docs/detailed-design/09 §7): this
 # script runs itself in Red Hat's UBI 9 minimal image, the release mounted read-only, finds no symbolic link
-# in it (D-106: a copy that does not keep links leaves text in their place), and starts what
+# in it (D-106: a copy that does not keep links leaves text in their place), finds every library of every native
+# file in it, starts every MySQL program and has the server load every MySQL plugin (D-110), and starts what
 # the release carries: MySQL 8.4 (initialised), j-redis, the platform (which migrates the database and
 # serves a registration and a login), the gateway, a worker, an arena, and nginx in front of the
 # platform over HTTP and HTTPS; then the shipped nginx configuration's own test. It prints what the
@@ -22,6 +23,7 @@ if [ "${1:-}" != --inside ]; then
 fi
 ln -sfn "/opt/$REL_NAME" /opt/backend
 R=/opt/backend
+PACE=${PACE:-1}         # how many times longer each wait: check-release-guest-el9.sh's guest, emulated, is slower
 O="--add-opens java.base/java.nio=ALL-UNNAMED"
 ok() { echo "  ok   $*"; }
 bad() { echo "  FAIL $*"; FAILS=$((FAILS + 1)); }
@@ -33,11 +35,31 @@ echo "--- links: none, since a copy that does not keep them leaves text in their
 links=$(cd "/opt/$REL_NAME" && shopt -s globstar dotglob && for f in **; do [ ! -L "$f" ] || echo "$f"; done)
 [ -z "$links" ] && ok "no link" || bad "$(wc -l <<< "$links") links, among them $(head -3 <<< "$links" | tr '\n' ' ')"
 
-echo "--- libraries the release's binaries need that this image lacks"
-for b in runtime/bin/java mysql/bin/mysqld mysql/bin/mysql mysql/bin/mysqldump mysql/bin/mysqlbinlog mysql/bin/mysqladmin nginx/sbin/nginx; do
-    miss=$(LD_TRACE_LOADED_OBJECTS=1 "$R/$b" 2>&1 | grep "not found" | awk '{print $1}' | tr '\n' ' ')
-    [ -z "$miss" ] && ok "$b" || bad "$b lacks: $miss"
+echo "--- every native file's libraries, as this system's loader finds them (D-110)"
+# Every ELF file, known by its first four bytes. The runtime's libraries are asked with the JVM's directory, as java
+# loads them; its four desktop ones name X11's and ALSA's, which a headless server never loads. Nothing else may lack one.
+desktop='^runtime/lib/lib(awt_xawt|jawt|splashscreen|jsound)\.so$'
+elfs=$(cd "$R" && shopt -s globstar && for f in **; do
+    [ -f "$f" ] && [ "$(head -c4 "$f" | od -An -c | tr -d ' ')" = 177ELF ] && echo "$f"; done)
+before=$FAILS
+for f in $elfs; do
+    case $f in runtime/*) lp=$R/runtime/lib/server ;; *) lp= ;; esac
+    miss=$(LD_LIBRARY_PATH=$lp ldd "$R/$f" 2>&1 | grep "not found" | sed 's/^[[:space:]]*//' | sort -u)
+    [[ $f =~ $desktop ]] && miss=$(grep -vE '^lib(X11|Xext|Xrender|Xtst|Xi|asound)\.so\.[0-9]+ => not found$' <<< "$miss")
+    [ -z "$miss" ] || bad "$f: $(tr '\n' ' ' <<< "$miss")"
 done
+[ $FAILS = $before ] && ok "$(wc -l <<< "$elfs") native files, every library found"
+
+echo "--- every MySQL program starts"
+# Four take no --version and say so; what matters is that the loader got them that far. It stops with 127, or with 1
+# and "version ... not found" when a library needs a newer glibc than the system's.
+before=$FAILS
+for p in $(grep '^mysql/bin/' <<< "$elfs"); do
+    out=$("$R/$p" --version 2>&1 < /dev/null); rc=$?
+    [ $rc != 127 ] && ! grep -qE "error while loading shared libraries|symbol lookup error|version .* not found \(required by" <<< "$out" \
+        || bad "$p: $(head -2 <<< "$out")"
+done
+[ $FAILS = $before ] && ok "$(grep -c '^mysql/bin/' <<< "$elfs") programs"
 
 echo "--- MySQL 8.4"
 mkdir -p /tmp/m
@@ -45,14 +67,22 @@ mkdir -p /tmp/m
     && ok "initialised" || { bad "initialise"; tail -5 /tmp/m/init.log; }
 "$R/mysql/bin/mysqld" --no-defaults --datadir=/tmp/m/data --user=root --port=3306 --bind-address=127.0.0.1 \
     --mysqlx=OFF --socket=/tmp/m/s --log-error=/tmp/m/err.log --default-time-zone=+00:00 &
-for i in $(seq 60); do "$R/mysql/bin/mysqladmin" -S /tmp/m/s -u root ping > /dev/null 2>&1 && break; sleep 1; done
+for i in $(seq $((60 * PACE))); do "$R/mysql/bin/mysqladmin" -S /tmp/m/s -u root ping > /dev/null 2>&1 && break; sleep 1; done
 "$R/mysql/bin/mysql" -S /tmp/m/s -u root -e "CREATE DATABASE backend_dev; CREATE USER backend@'%' IDENTIFIED BY 'pw';
     GRANT ALL ON backend_dev.* TO backend@'%'" && ok "running: $("$R/mysql/bin/mysql" -S /tmp/m/s -u root -N -e 'SELECT VERSION()')" \
     || bad "MySQL not serving"
+# INSTALL PLUGIN loads the file before it looks for the name in it: 1127, no such name, is a file the server loaded
+# with every symbol bound; 1126 is one it could not, with the loader's reason. Components and client plugins too.
+before=$FAILS
+for f in "$R"/mysql/lib/plugin/*.so; do
+    out=$("$R/mysql/bin/mysql" -S /tmp/m/s -u root -e "INSTALL PLUGIN backend_load_probe SONAME '$(basename "$f")'" 2>&1)
+    grep -q "ERROR 1127" <<< "$out" || bad "$(basename "$f"): $out"
+done
+[ $FAILS = $before ] && ok "$(ls "$R"/mysql/lib/plugin/*.so | wc -l) plugins, components and client plugins, each loaded by the server"
 
 echo "--- j-redis"
 "$R/runtime/bin/java" $O -jar "$R/jredis/lib/j-redis-server.jar" --port 6390 --dir /tmp > /tmp/jredis.log 2>&1 &
-sleep 4
+sleep $((4 * PACE))
 kill -0 $! 2>/dev/null && ok "running" || { bad "j-redis"; tail -5 /tmp/jredis.log; }
 
 export BACKEND_DB_URL="jdbc:mysql://127.0.0.1:3306/backend_dev?useSSL=false&allowPublicKeyRetrieval=true"
@@ -61,7 +91,7 @@ export BACKEND_DB_USER=backend BACKEND_DB_PASSWORD=pw
 echo "--- platform"
 BACKEND_PAYMENT_PROVIDER=simulated "$R/runtime/bin/java" $O -cp "$R/lib/platform/*" com.backend.platform.PlatformMain \
     127.0.0.1 8080 127.0.0.1 6390 > /tmp/platform.log 2>&1 &
-for i in $(seq 90); do curl -s -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
+for i in $(seq $((90 * PACE))); do curl -s -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
 curl -s -o /dev/null http://127.0.0.1:8080/health && ok "serving" || { bad "platform"; tail -15 /tmp/platform.log; }
 "$R/mysql/bin/mysql" -S /tmp/m/s -u root -N -e "SELECT CONCAT('migrated: ', GROUP_CONCAT(version ORDER BY installed_rank), ', ',
     (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'backend_dev'), ' tables')
@@ -80,12 +110,15 @@ echo "--- gateway, worker, arena"
 mkdir -p /tmp/spool
 "$R/runtime/bin/java" $O -cp "$R/lib/arena/*" com.backend.arena.ArenaMain 9011 5700 150 200 2 127.0.0.1 6390 \
     arena-ubi 0 /tmp/spool 127.0.0.1 127.0.0.1 > /tmp/arena.log 2>&1 & A=$!
-sleep 15
+sleep $((15 * PACE))
 for p in "gateway $G" "worker $W" "arena $A"; do
     set -- $p
     kill -0 "$2" 2>/dev/null && ok "$1 running, $(grep -c ' ERROR ' /tmp/$1.log) errors in its log" || { bad "$1"; tail -8 /tmp/$1.log; }
 done
-grep -q "epoll" /tmp/arena.log && ok "the arena on Netty's native epoll" || echo "  (the arena's log names no epoll transport)"
+for i in $(seq $((60 * PACE))); do grep -q "transport: " /tmp/arena.log && break; sleep 1; done
+t=$(grep -o "transport: [a-z]*" /tmp/arena.log | head -1)
+[ "$t" = "transport: epoll" ] && ok "the arena on Netty's native epoll" \
+    || echo "  (the arena's log: ${t:-no transport yet}; $(grep -iE -m2 'epoll|native|unsatisfied' /tmp/arena.log | tr '\n' ' '))"
 
 echo "--- nginx"
 mkdir -p /tmp/n /var/log/backend-nginx

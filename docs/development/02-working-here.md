@@ -206,8 +206,11 @@ install guide runs as written in UBI 8.10 (Q-63). Each certificate script's chec
   Rocky Linux 8 container (`vendor/build-nginx.sh`, with Docker, D-100), never here, and so is any library taken
   from a distribution's packages: RHEL 9's `libnuma` needed 2.33 (plan item 119). A release is checked in UBI 8
   and UBI 9 with nothing installed by
-  `backend/scripts/check-release-el9.sh`
+  `backend/scripts/check-release-el9.sh`, every native file in it
   ([09 §7](../detailed-design/09-release-and-packaging.md#7-how-it-is-verified)).
+- **A library RHEL 9 dropped from its base**: a file built for RHEL 8 can need a library RHEL 9 moved to an extra
+  package, as SASL's `libplain.so` needs `libcrypt.so.1`, in RHEL 9's `libxcrypt-compat` alone (O-99, D-110).
+  Seven programs' libraries all found said nothing of it: `check-release-el9.sh` asks about every ELF file.
 - **A mutant that "survives" because no test ran.** A mutation harness that reads
   "Failures: 0" as survival calls a run in which nothing ran a survivor too: three
   engine mutants "survived" while a test file written ahead of its classes kept the

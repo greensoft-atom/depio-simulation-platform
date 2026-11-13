@@ -574,7 +574,7 @@ With Docker, each on a release:
 
 | Script (`backend/scripts/`) | Checks |
 |---|---|
-| `check-release-el9.sh` | the release in UBI 9 with nothing installed: every binary's libraries, MySQL, j-redis, the four processes, nginx |
+| `check-release-el9.sh` | the release in UBI 9 with nothing installed (`IMAGE=` another, 9.0 to 9.9 checked, and UBI 8.10): every native file's libraries, every MySQL program and plugin (D-110), MySQL, j-redis, the four processes, nginx |
 | `check-units-el9.sh` | the units under RHEL 9's systemd, installed as the deploy document says, nginx as one machine's front: HTTPS and a match connection through 9001, the backend's root trusted alone |
 | `check-install-guide-el9.sh` | the [install guide](../operations/03-install-guide.md), every step as written, with no network: the launch's one machine (D-93), again after a restart, and the runbook's restore on one machine |
 | `check-two-machines-el9.sh` | as root: [two machines](../operations/10-two-machines.md) as written (D-96), on two UBI 9 machines joined by a private link of their own, A installed by the install guide's check and a probe of the site through its nginx throughout; B's own arenas (D-97), matches on them by the C# client through A's nginx, B frozen; then A's MySQL lost and B's promoted, then A lost and the runbook's steps for it on B (needs .NET; about twenty minutes, twelve from an image; `SAVE_A=` and `A_IMAGE=` keep and reuse A installed, `STANDBY_ONLY=1` leaves B's arenas out) |
@@ -586,6 +586,9 @@ with Docker, `IMAGE=` runs it on RHEL 8's and 9's OpenSSL, D-103),
 `backend/scripts/check-nginx-logs.sh` the rotation of nginx's logs, with the release's nginx on a
 loopback port (D-85), and `backend/scripts/check-promote.sh` both promotions' refusals and the MySQL
 handover's order, with stand-in clients, in seconds (D-95).
+On RHEL 9's kernel, with SELinux enforcing, `backend/scripts/check-release-guest-el9.sh` runs the release in the Rocky 9
+guest `check-selinux-el9.sh` makes (QEMU; about half an hour without KVM): `backend-mysql.service` as the install guide
+sets it up, then `check-release-el9.sh`'s own checks (D-110).
 And `vendor/build-nginx.sh` compiles nginx again ([vendor/README](../../vendor/README.md)).
 
 ## 9. The client

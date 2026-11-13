@@ -2,7 +2,7 @@
 # Fetches the pinned downloads, checks each against its pinned SHA-256, and derives the committed
 # directories beside this script (docs/detailed-design/09 §2, D-77): jdk-21, maven-3.9, mysql-8.4 and
 # src. nginx-1.30 is build-nginx.sh's. Not needed to build or run the backend: what it makes is
-# committed. Needs curl, sha256sum, tar, xz and docker (RHEL 8's two libraries for MySQL come from
+# committed. Needs curl, sha256sum, tar, xz and docker (RHEL 8's three libraries for MySQL come from
 # its packages, read in a Rocky Linux 8 container: glibc 2.28, the release's floor, D-100).
 #
 #   vendor/update.sh                  CACHE=<dir> to keep the downloads elsewhere than $TMPDIR
@@ -23,12 +23,13 @@ mysql    https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.11-linux-glibc2.28-
 nginx    https://nginx.org/download/nginx-1.30.5.tar.gz 6c20565aa2325cb82216ae804f4a4ff1875179014759a381c42ddc8e11c4906d
 openssl  https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz 603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
 pcre2    https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.49/pcre2-10.49.tar.gz 929f0b20e62879252a15886b06c89f1edef61a363cbd5826fb041080a5e557ae
-zlib     https://zlib.net/zlib-1.3.2.tar.gz bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
+zlib     https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
 '
 # RHEL 8's packages for the two libraries mysqld takes from the system (09 §2), from Rocky Linux 8: RHEL 9's libnuma
-# needs glibc 2.33, and the release runs on 2.28 (D-100).
+# needs glibc 2.33, and the release runs on 2.28 (D-100). And libxcrypt's libcrypt.so.1, which MySQL's SASL PLAIN
+# plugin (sasl2/libplain.so) needs and RHEL 9 has only in libxcrypt-compat (D-110).
 EL8_IMAGE=rockylinux/rockylinux:8
-EL8_LIBS="libaio numactl-libs"
+EL8_LIBS="libaio numactl-libs libxcrypt"
 
 fetch() {                                     # fetch <name>: the file's path in the cache, checked
     local line url sum file
@@ -70,7 +71,7 @@ rm -rf "$HERE/maven-3.9"
 mkdir -p "$HERE/maven-3.9"
 tar -xzf "$m" -C "$HERE/maven-3.9" --strip-components=1
 
-# MySQL: the minimal generic build, less what nothing here uses, and the two libraries it takes from
+# MySQL: the minimal generic build, less what nothing here uses, and the three libraries it needs from
 # the system put in lib/private, which its RUNPATH ($ORIGIN/../lib/private) searches first.
 echo "--- mysql"
 m=$(fetch mysql)
@@ -87,10 +88,10 @@ docker run --rm -v "$work:/out" "$EL8_IMAGE" bash -c "
     dnf -q -y install dnf-plugins-core cpio > /dev/null
     cd /tmp && dnf -q download $EL8_LIBS --arch x86_64
     for r in *.rpm; do rpm2cpio \$r | cpio -idm --quiet; done
-    cp -a usr/lib64/libaio.so.1* usr/lib64/libnuma.so.1* /out/
+    cp -a usr/lib64/libaio.so.1* usr/lib64/libnuma.so.1* lib64/libcrypt.so.1* /out/
     rpm -qp --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' *.rpm > /out/el8-libs.txt
     chown $(id -u):$(id -g) /out/*"
-cp -a "$work"/libaio.so.1* "$work"/libnuma.so.1* "$HERE/mysql-8.4/lib/private/"
+cp -a "$work"/libaio.so.1* "$work"/libnuma.so.1* "$work"/libcrypt.so.1* "$HERE/mysql-8.4/lib/private/"
 cp "$work/el8-libs.txt" "$HERE/mysql-8.4/lib/private/EL8-LIBRARIES.txt"
 
 # The sources nginx is built from, as published.

@@ -22,8 +22,9 @@ Every binary in the repository is chosen or built to run on **glibc 2.28**, RHEL
 both and on RHEL 8: the JDK and MySQL are vendors' builds for older glibc (Temurin's for 2.17, MySQL's "generic"
 for 2.28); nginx is compiled in a Rocky Linux 8 container, never on the development machine, whose glibc 2.38
 symbols RHEL lacks; the two libraries MySQL takes from the system come from RHEL 8's own packages, RHEL 9's
-`libnuma` needing 2.33. Checked in Red Hat's UBI 8 and UBI 9 images, RHEL's userspace with nothing installed
-(§7). **The units start on systemd 239**, RHEL 8's, since they carry no secret (D-102; checked in UBI 8.10): three of
+`libnuma` needing 2.33, and so does a third, `libcrypt.so.1`, which RHEL 9 has only in an extra package (D-110).
+Checked in Red Hat's UBI 8 and UBI 9 images, RHEL's userspace with nothing installed, and on RHEL 9's kernel with
+SELinux enforcing (§7). **The units start on systemd 239**, RHEL 8's, since they carry no secret (D-102; checked in UBI 8.10): three of
 their sandbox settings are newer, `ProtectHostname=` (242), `ProtectKernelLogs=` (244) and `ProtectClock=` (245), and
 239 ignores them with a warning; RHEL 9's 252 applies them all. **The certificate scripts take OpenSSL 1.1.1**,
 RHEL 8's, as well as RHEL 9's 3.x (D-103, O-94 fixed), and the install guide runs as written in UBI 8.10 as in UBI
@@ -35,7 +36,7 @@ RHEL 8's, as well as RHEL 9's 3.x (D-103, O-94 fixed), and the install guide run
 |---|---|---|---|
 | `vendor/jdk-21/` | Temurin 21.0.12.1+1 | Adoptium's tarball, its SHA-256 checked | The image re-linked with `jlink --compress zip-6`, every module and tool kept: its `lib/modules` is 59 MB, not 136, under GitHub's 100 MB limit for a file. `jmods/` kept, so `jlink` can make runtimes. `src.zip` left out. |
 | `vendor/maven-3.9/` | Apache Maven 3.9.16 | Apache's tarball, its SHA-512 checked | none |
-| `vendor/mysql-8.4/` | MySQL Community 8.4.11 LTS | Oracle's "minimal" generic Linux tarball for glibc 2.28, SHA-256 pinned at download | Left out: the Japanese full-text dictionaries (`lib/mecab`, 130 MB), the static client libraries and headers. Added to `lib/private/`, which `mysqld` searches first: `libaio.so.1` and `libnuma.so.1` from RHEL 8's packages (D-100). |
+| `vendor/mysql-8.4/` | MySQL Community 8.4.11 LTS | Oracle's "minimal" generic Linux tarball for glibc 2.28, SHA-256 pinned at download | Left out: the Japanese full-text dictionaries (`lib/mecab`, 130 MB), the static client libraries and headers. Added to `lib/private/`, which `mysqld` searches first: `libaio.so.1` and `libnuma.so.1` from RHEL 8's packages (D-100), and `libcrypt.so.1` from RHEL 8's libxcrypt, for the SASL PLAIN plugin (`sasl2/libplain.so`; D-110). |
 | `vendor/nginx-1.30/` | nginx 1.30.5 | built from source (§5) | OpenSSL 3.5.9 LTS, PCRE2 10.49 and zlib 1.3.2 compiled in |
 | `vendor/src/` | | the sources nginx is built from, as published, SHA-256 pinned | |
 | `java21-offline/` | | every Java library the build uses | (existing, unchanged) |
@@ -138,7 +139,8 @@ have them. glibc and `libstdc++` keep every older version's symbols in their new
 the binaries and an older one does not; ncurses keeps its soname 6, which RHEL 8 and 9 both ship. Everything else
 they load is in the release: OpenSSL, PCRE2 and zlib compiled into nginx, MySQL's `lib/private` (its OpenSSL and
 protobuf, RHEL 8's `libaio` and `libnuma`; its Kerberos, LDAP and SASL only for authentication plugins the site does
-not load). The runtime's desktop libraries name X11's and ALSA's, which a server process never loads (headless).
+not load, and RHEL 8's `libcrypt.so.1` for SASL's PLAIN plugin, as RHEL 9 has only `libcrypt.so.2` unless
+`libxcrypt-compat` is installed, D-110). The runtime's desktop libraries name X11's and ALSA's, which a server process never loads (headless).
 
 **No symbolic link**, in `vendor/` or a release ([D-106](../architecture/03-decision-log.md#d-106--nothing-in-the-repository-or-a-release-is-a-symbolic-link)): each link upstream's archives carry (MySQL's `lib/`, the JDK's `legal/`) is a copy of the file it named, made by
 `vendor/update.sh`, and `make-release.sh` does the same to the runtime's `legal/`, which `jlink` makes of links. A copy
@@ -201,13 +203,23 @@ longer needed. On RHEL 9, SELinux runs a service started from `/opt` unconfined.
    release with `build-offline.sh`.
 2. **The release runs on RHEL 9 with nothing installed**:
    `backend/scripts/check-release-el9.sh` runs it in `ubi9/ubi-minimal:9.5` (another
-   tag with `IMAGE=`): every binary's libraries found; MySQL initialised and
-   started; j-redis; the platform migrating it and serving a registration and a
+   tag with `IMAGE=`): every native file's libraries found, all 249 ELF files in the release, by the system's loader
+   (D-110: until then seven programs; the runtime's desktop libraries may lack X11's and ALSA's alone); every MySQL
+   program started; MySQL initialised and started, and every plugin, component and client plugin loaded by the server; j-redis; the platform migrating it and serving a registration and a
    login; the gateway, a worker and an arena (on Netty's native epoll); nginx
    proxying to the platform over HTTP and HTTPS; and `nginx -t` on the shipped
    configuration. Mutation-checked: a release without `libaio` fails it. The same in `ubi8/ubi-minimal:8.10`
    (D-100): every binary on glibc 2.28, which a release with RHEL 9's `libnuma` and a Rocky 9 nginx failed.
-3. **The units run on RHEL 9's systemd**: `backend/scripts/check-units-el9.sh` runs
+   Since D-110, run on every RHEL 9 release, UBI 9 minimal 9.0 to 9.9, and on Rocky 9. It found SASL's
+   `libplain.so` needing `libcrypt.so.1`, which RHEL 9 lacks (O-99). Mutation-checked: Ubuntu's `libnuma` in the
+   release (glibc 2.38), a program and a plugin with a symbol the loader cannot bind, and a desktop library lacking
+   a library that is not X11's, each fails it.
+3. **The release on RHEL 9's kernel, SELinux enforcing** (D-110): `backend/scripts/check-release-guest-el9.sh` boots
+   the Rocky 9 guest `check-selinux-el9.sh` makes, on a layer thrown away after, and sets MySQL up from the release
+   as the install guide does: `backend-mysql.service` started by systemd, TLS over TCP, InnoDB's native AIO on the
+   guest's kernel, the binary log read by `mysqlbinlog` and a dump by `mysqldump`, `mysqld` in `unconfined_service_t`,
+   no denial. Then `check-release-el9.sh`'s checks in the guest, as root.
+4. **The units run on RHEL 9's systemd**: `backend/scripts/check-units-el9.sh` runs
    a release and the repository's `deploy/` in `ubi9/ubi-init:9.5`, systemd 252 its
    first process; installs as the deploy document says, starts `backend-mysql`
    (`Type=notify`), `backend-store@session`, `backend-platform` and `backend-nginx`,
@@ -225,10 +237,10 @@ longer needed. On RHEL 9, SELinux runs a service started from `/opt` unconfined.
    `install-certificate.sh` wrote (until D-102 the check gave the processes their
    secrets by a drop-in of its own: systemd in a container cannot deliver a credential),
    AES-256 with a SHA-256 MAC whichever OpenSSL made it (D-103). Run in UBI 8.10 too.
-4. **The certificate scripts on each OpenSSL** (D-103): `backend/scripts/check-certificates.sh`
+5. **The certificate scripts on each OpenSSL** (D-103): `backend/scripts/check-certificates.sh`
    on this machine's 3.0.13, and with `IMAGE=` in UBI 9.5 (3.2.2) and in UBI 8.10 with `openssl`
    added (1.1.1k), every check the same on each.
-5. **The drills** run every process on the release's runtime, and their own MySQL
+6. **The drills** run every process on the release's runtime, and their own MySQL
    servers on the release's MySQL 8.4: every scenario, the MySQL failover and the
    backup drill, which had only ever run on 8.0.
-6. **The backend's tests** against a MySQL 8.4 server from the release.
+7. **The backend's tests** against a MySQL 8.4 server from the release.

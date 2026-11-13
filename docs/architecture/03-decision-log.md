@@ -3527,3 +3527,39 @@ licence).
 
 **Cost.** Two builds of the tests and the driver here; the tests' certificate files to renew before 2049, when the
 longest-lived expires (`make.sh` again).
+
+### D-110 — Every native file in the release loads on RHEL 9, each one checked; RHEL 8's `libcrypt.so.1` beside `libaio` and `libnuma`
+
+**Decided 2026-11-13** (plan item 131; the owner: some of MySQL's libraries may not be for Red Hat, and they should be
+tested more carefully on RHEL 9).
+
+**Decision.**
+- **Every native file, not seven programs.** `check-release-el9.sh` finds every ELF file in the release and asks
+  RHEL 9's loader for each one's libraries, with nothing installed. The runtime's own libraries are asked with the
+  JVM's directory, as `java` loads them. The only names allowed to be missing are X11's and ALSA's, for the runtime's
+  four desktop libraries (`libawt_xawt`, `libjawt`, `libsplashscreen`, `libjsound`), which a headless server never
+  loads. Any other missing name fails the check.
+- **Each one run.** Every MySQL program is started with `--version`. The running server loads every plugin and
+  component, and the client loads every client authentication plugin. A library whose dependencies are all found can
+  still fail when its code runs or its symbols are bound, and the server's own load is the proof that it does not.
+- **RHEL 8's `libcrypt.so.1` in `lib/private`.** MySQL's SASL PLAIN mechanism, `sasl2/libplain.so`, which the LDAP
+  SASL client plugin loads, needs `libcrypt.so.1`. That is RHEL 8's libxcrypt. RHEL 9's is `libcrypt.so.2`, and
+  `.so.1` comes only with `libxcrypt-compat`, which a server does not have unless someone installs it. The file comes
+  from RHEL 8's package, as `libaio` and `libnuma` do (`vendor/update.sh`), and `libplain`'s own search path,
+  `$ORIGIN/..`, finds it.
+- **Every RHEL 9 release, and RHEL 9's kernel.** The check runs in UBI 9 minimal from 9.0 to 9.9 and in Rocky 9. A
+  container is RHEL 9's files on this machine's kernel, without SELinux, so the check also runs in a Rocky 9 guest
+  under QEMU, which has RHEL 9's kernel and SELinux enforcing. There the release's `backend-mysql.service` runs as
+  the install sets it up, and the check records the service's SELinux domain and finds no denial.
+
+**Why.** The owner asked. The check said "every binary's libraries found", but it only looked at seven programs, and
+that gap hid a library that cannot load on RHEL 9 (O-99).
+
+**Not chosen:**
+- Taking out the SASL plugins, which the site never loads: that is a judgement for each of Oracle's files, and the
+  next unused one would be found the same way.
+- Asking the install to add `libxcrypt-compat`: one more system package, where the release otherwise carries what
+  MySQL loads (09 §4.2).
+
+**Cost.** Two copies of one 136 KB library. Like `libaio` and `libnuma`, it is outside `dnf`'s updates, and the next
+`update.sh` takes RHEL 8's newest. The guest's part of the check takes about half an hour without KVM.

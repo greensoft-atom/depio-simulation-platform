@@ -78,7 +78,7 @@ ours, monthly ([runbook §6](../docs/operations/02-runbook.md#6-routine)).
 | nginx                      | https://nginx.org/en/security_advisories.html                                        |
 | OpenSSL 3.5                | https://openssl-library.org/news/vulnerabilities/                                    |
 | PCRE2, zlib                | their release notes, on GitHub and zlib.net                                          |
-| libaio, numactl (RHEL 8's) | Red Hat's errata for those packages                                                  |
+| libaio, numactl, libxcrypt (RHEL 8's) | Red Hat's errata for those packages                                       |
 
 ## On your custom OS, add one more check to the three I gave you earlier:
 

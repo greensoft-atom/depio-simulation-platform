@@ -4242,6 +4242,37 @@ driver, every scenario and the collection, all passing, and `TLS=1`; `check-port
 `decline` through nginx three times since. Docs: D-109 (D-108 in part
 superseded), P-65, T-68, 08 §6, the client's READMEs, working-here (the standing decision, two traps), CLAUDE.md.
 
+#### 131. ~~Every native file in the release on RHEL 9, one by one (the owner, 2026-11-13, D-110).~~ — **done 2026-11-13**
+
+The owner: some of MySQL's libraries may not be for Red Hat, and they should be tested more carefully on RHEL 9.
+
+**Done** (D-110):
+- `check-release-el9.sh` now asks RHEL's loader about every ELF file in the release, 249 where it asked about seven.
+  It starts every MySQL program (21) and has the server load every plugin, component and client plugin (34).
+- Test first: it failed on the release as it was for one reason, O-99. SASL's `libplain.so` needs `libcrypt.so.1`,
+  which RHEL 9 has only in `libxcrypt-compat`.
+- **Fixed** with RHEL 8's `libcrypt.so.1` in `lib/private`, which `vendor/update.sh` takes like `libaio` and
+  `libnuma`. `update.sh` then ran from start to finish in a scratch directory and made the committed `vendor/` byte
+  for byte, apart from the new library, once its zlib pin had been moved to GitHub (O-100: zlib.net's link was 404).
+
+**Checked:**
+- Every part of the check passes on UBI 9 minimal 9.0, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8 and 9.9, on Rocky 9.8
+  and on UBI 8.10, each with nothing installed.
+- On RHEL 9's kernel with SELinux enforcing, by the new `check-release-guest-el9.sh` in the Rocky 9.8 guest (kernel
+  5.14.0-687):
+  - `backend-mysql.service` set up as the install guide does, in `unconfined_service_t`;
+  - TLSv1.3 over TCP, InnoDB's native AIO, `mysqlbinlog` over TLS, `mysqldump`;
+  - no denial;
+  - then the whole check again, the arena on Netty's native epoll.
+- There, a fixed wait had read the arena's log before an emulated start wrote it. The check now waits for the arena's
+  line and prints what it says.
+- Mutation-checked, five releases each failing where they should: `libcrypt` removed, Ubuntu's `libnuma` (glibc
+  2.38), a program and a plugin with a symbol the loader cannot bind, and `libawt.so` removed. The `libnuma` one at
+  first passed the programs step: the loader exits 1 with "version … not found". That message is matched now.
+
+Docs: D-110, O-99, O-100, the register's open list (P-65 and T-66 had not been in it), 09 §1, §2, §4.2 and §7, vendor's
+VERSIONS and README, 03 §8, working-here (a trap), CLAUDE.md.
+
 ---
 
 ### Completed 2026-09-23

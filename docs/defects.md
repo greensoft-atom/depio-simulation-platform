@@ -3,9 +3,10 @@
 Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
-re-ordered around it rather than the other way round. **Open as of 2026-11-01:**
-none; O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
-Every entry is fixed,
+re-ordered around it rather than the other way round. **Open as of 2026-11-13:**
+P-65 (Unity's float mode in the editor and a player, for the team to see) and T-66 (a drill's check, by the maze's
+seed); O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
+Every other entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
 **Ids.** P protocol (§2), D data and the result pipeline (§3), M simulation
@@ -1374,6 +1375,37 @@ runs. **Fixed:** the statements on standard input. By the install guide's check,
 22.04 and later). **Fixed** with item 119, nginx then built for glibc 2.28 (D-100): `start` tries `nginx -v` before
 anything, and its failure is said as the release's nginx not running on this machine, glibc 2.28 named. Test first,
 with a stub failing as the loader does: the old line, then the new; the check skipped, the old line again.
+
+**O-100 (L), found 2026-11-13, FIXED the same day** (plan item 131, while `vendor/update.sh` was run whole to add
+O-99's library). The pinned zlib download, `https://zlib.net/zlib-1.3.2.tar.gz`, answered 404, and `update.sh`
+stopped before its last step. zlib.net keeps only the newest release at its top level (1.4 now) and moves older ones
+to `fossils/`. **Fixed:** the pin names GitHub's release of 1.3.2, as OpenSSL's and PCRE2's do. GitHub's file and
+the fossil have the pinned SHA-256. `update.sh` then ran from start to finish in a scratch directory, and what it
+made was the committed `vendor/` byte for byte (JDK, Maven, MySQL, the sources), apart from O-99's library. Whether
+nginx moves to zlib 1.4 is a separate step, `build-nginx.sh` and a release, for the monthly reading of advisories
+(vendor/README).
+
+**O-99 (M), found 2026-11-13, FIXED the same day** (plan item 131; the owner: some of MySQL's libraries may not be for Red Hat).
+On RHEL 9, one file in the release cannot load. MySQL's SASL PLAIN mechanism, `lib/private/sasl2/libplain.so` (and
+its two other names), needs `libcrypt.so.1`. That is RHEL 8's libxcrypt: RHEL 9 has `libcrypt.so.2`, and `.so.1`
+only with `libxcrypt-compat`, which a server does not have unless someone installs it. Found when every ELF file of
+the release was put to RHEL 9's loader: 247 files, and this was the one missing a library that is not the runtime's
+own. `check-release-el9.sh` had said "every binary's libraries found", but it only looked at seven programs. The
+backend never loads `libplain`: only the LDAP SASL client plugin does, and the site uses no LDAP sign-in. The rest of
+`lib/private`, Oracle's build on Oracle Linux 8 (`krb5-1.22-el8`) and RHEL 8's `libaio` and `libnuma`, loads on
+RHEL 9. **Fixed** (D-110): RHEL 8's `libcrypt.so.1`, from libxcrypt 4.1.1 (glibc 2.25 at most), is in `lib/private`,
+put there by `vendor/update.sh` like the other two, and `libplain`'s search path, `$ORIGIN/..`, finds it.
+`check-release-el9.sh` now asks about every ELF file (249), starts every MySQL program (21) and has the server load
+every plugin (34). Test first: it failed on the release as it was, on `libplain`'s three names alone; then it passed
+on UBI 9 minimal 9.0 to 9.9, Rocky 9.8 and UBI 8.10. It was also run in a Rocky 9.8 guest (kernel 5.14.0-687, SELinux
+enforcing), where `backend-mysql.service` ran as the install guide sets it up (`check-release-guest-el9.sh`).
+Mutation-checked: each new part fails on the release it should.
+- `libcrypt.so.1` removed: `libplain` again.
+- Ubuntu's `libnuma` (glibc 2.38): the library, `mysqld`'s start and MySQL. The programs step at first passed this
+  one, because the loader stops with 1 and "version … not found", not 127; it now looks for that message too.
+- A program and a plugin with a symbol the loader cannot bind: the programs step and the server's load, where the
+  library listing saw nothing.
+- `libawt.so` removed: the desktop libraries' exception lets X11 and ALSA through, and nothing else.
 
 **O-98 (H), found 2026-11-05, FIXED the same day** (plan item 127; the owner: the release's MySQL would not start on
 their machine until they copied `libaio.so.1` and `libnuma.so.1` in from an older build). `vendor/` committed 242
