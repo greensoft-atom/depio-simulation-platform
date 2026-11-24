@@ -3563,3 +3563,56 @@ that gap hid a library that cannot load on RHEL 9 (O-99).
 
 **Cost.** Two copies of one 136 KB library. Like `libaio` and `libnuma`, it is outside `dnf`'s updates, and the next
 `update.sh` takes RHEL 8's newest. The guest's part of the check takes about half an hour without KVM.
+
+### D-111 — A simple client beside the core: `client-simple/`, three small clients on .NET Standard 2.0, examples in Unity's terms
+
+**Decided 2026-11-24** (plan item 132; the owner: the client in `client/` is too complex to read and use, their Unity
+and C# are older than it looks, .NET Standard 2.1 and not .NET Core, and its HTTP classes do not compile there; a
+simple version is wanted, with HTTP calls to the API, the lobby's WebSocket and the arena's socket, each with its
+lifecycle, easy to read, copy and put into a Unity project).
+
+**Decision.**
+- **Where.** `client-simple/`, beside `client/`, which stays the full client (prediction, the world, drawing, the
+  drills). `Runtime/` is copied into a project's `Assets` as it is; `Examples/` holds three scripts showing the usual
+  flows; its README says what to copy and what to call.
+- **Three clients, one pattern.** `BackendHttp` (the API), `LobbyClient` (the lobby) and `ArenaClient` (a match) each
+  work on a background thread and queue what happens. The app calls their `Update()` from a script's `Update`, which
+  hands each answer and event to its callback on Unity's main thread. No tasks, no `async`, no coroutines.
+- **What every Unity has.** C# 7.3 and the APIs of .NET Standard 2.0, which .NET Standard 2.1 and .NET 4.x both
+  contain: Unity 2019.4 to Unity 6, at any API compatibility level. The API through `HttpWebRequest` (in `System`),
+  not `HttpClient`, which a .NET 4.x level does not reference by default and whose certificate callback Unity 2019's
+  Mono does not implement (D-108). The lobby through a small RFC 6455 client of its own over `TcpClient` and
+  `SslStream`, since `ClientWebSocket` has no certificate callback in .NET Standard 2.0. Matches through `TcpClient`
+  and `SslStream`.
+- **No `UnityEngine` in `Runtime/`**, so it runs outside the editor too, here on Unity 2019's own Mono against the
+  real stack. The examples alone use Unity (`MonoBehaviour`, `Debug.Log`, `JsonUtility`).
+- **JSON as text.** Bodies and messages go in and out as strings; the examples read and write them with Unity's
+  `JsonUtility` and `[Serializable]` classes. A small reader of top-level fields (`Json`) reads the lobby's envelope
+  (`t`, `id`, `d`) and is there for a quick field.
+- **TLS** with the backend's own root (D-82), checked on each connection by the core's `TrustRoot`, copied without
+  its `HttpClient` handler. The players' build takes encrypted connections alone (D-104): the examples refuse a
+  `http://` or `ws://` address and a grant without TLS when `Debug.isDebugBuild` is false.
+- **Left to the core.** A snapshot is handed over as its bytes, with the server's tick; decoding it, predicting and
+  drawing are `ClientWorld`'s and `OwnTank`'s. A lost match connection can be resumed with one call, without the
+  core's retries.
+- **Checked** by `client-simple/check.sh`: compiled by Unity 2019.4.28f1's compiler at C# 7.3, `Runtime/` against
+  .NET Standard 2.0, .NET 4.x and .NET Standard 2.1, the examples against Unity's own `UnityEngine` at both of its
+  levels. Its offline checks run on Unity's Mono. Through the drill's stack (`headless-drill.sh SIMPLE=1`), the same
+  program runs the API, the lobby and a match, the three ways nginx serves them (https, http, plain) and straight to
+  the processes: unencrypted on Unity's Mono; with TLS on .NET 8, since Mono's own TLS outside the editor stops at
+  1.0 and nginx takes 1.2 and 1.3 (in the editor and the player, Unity's TLS speaks 1.2).
+- **Found on the way: P-66.** The core's `HttpClient` does not compile at Unity's .NET 4.x level unless the project
+  references `System.Net.Http`, which is likely what the owner met; `client-simple` has no `HttpClient`.
+
+**Why.** The owner asked. The core is built for the whole app, and its tests and driver run on .NET 8 here (D-109),
+which made it look like .NET Core. A UI team needs a small surface it can read in an hour and paste in.
+
+**Not chosen:**
+- **`UnityWebRequest` for the API**: Unity's own, but it runs only inside the engine, so nothing here could run it.
+  `HttpWebRequest` is in every Unity, and its certificate callback is proven on Unity 2019's Mono (D-108).
+- **A package built on the core**: what the owner found too complex.
+- **`async` and `await`**: they work in Unity, but where a continuation runs depends on the synchronisation context,
+  which catches a UI team out; `Update()` is what a Unity script already has.
+
+**Cost.** A second client to keep in step with the protocols: a new protocol version, message or field is changed in
+both. The drill's `SIMPLE=1` runs it against the drill's own stack, so a change that breaks it fails there.

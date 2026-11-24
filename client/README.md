@@ -7,6 +7,10 @@ real server, and a thin Unity layer that draws it
 ([D-19](../docs/architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer)).
 The diagrams are in [docs/diagrams/06-client.md](../docs/diagrams/06-client.md).
 
+**A smaller client, to read and paste into a project:** [`client-simple/`](../client-simple/README.md) (D-111): the
+API, the lobby and a match in seven files of C# 7.3 on .NET Standard 2.0, with three example scripts; no prediction,
+no world, no drawing.
+
 ## Projects
 
 | Project | What it is | Target | Depends on | Its README |

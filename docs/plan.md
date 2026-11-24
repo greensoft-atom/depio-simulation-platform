@@ -4273,6 +4273,48 @@ The owner: some of MySQL's libraries may not be for Red Hat, and they should be 
 Docs: D-110, O-99, O-100, the register's open list (P-65 and T-66 had not been in it), 09 §1, §2, §4.2 and §7, vendor's
 VERSIONS and README, 03 §8, working-here (a trap), CLAUDE.md.
 
+
+#### 132. ~~A simple client for the UI team, `client-simple/` (the owner, 2026-11-24, D-111).~~ — **done 2026-11-24**
+
+The owner: the client in `client/` is too complex to read and use; their Unity and C# are older than it looks
+(.NET Standard 2.1, not .NET Core), and its HTTP classes do not compile there. Wanted: a simple version for their
+versions, with clean and short C# showing the usual flows: HTTP calls to the API (logging in and the like), the lobby's
+WebSocket with its connection, sending and handling, and the arena's socket the same way; easy to read, to copy and to
+put into a Unity project.
+
+**Done** (D-111):
+- `client-simple/Runtime/`, seven files of C# 7.3 on .NET Standard 2.0's APIs, no `UnityEngine`: `BackendHttp` (the
+  API over `HttpWebRequest`), `LobbyClient` over `WebSocketConnection` (RFC 6455's client side), `ArenaClient` and
+  `ArenaMessages` (a match), `TrustRoot` (the core's check, without its `HttpClient` handler) and `Json` (one field).
+  Each client works on its own thread; `Update()` runs every callback on the caller's.
+- `Examples/`: `HttpExample`, `LobbyExample`, `ArenaExample` and the `JsonUtility` classes they use; the players'
+  build's rule (D-104) in them. A README for the UI team: what to copy, the one rule, each client's steps, the kicks.
+- `check.sh` and `headless-drill.sh SIMPLE=1`. Test first: the check against the client's surface, every member
+  throwing, failed for that reason; then 53 offline checks passed.
+
+**Checked:**
+- Compiled by Unity 2019.4.28f1's compiler at C# 7.3, warnings as errors: `Runtime/` against .NET Standard 2.0, .NET
+  4.x and .NET Standard 2.1; `Examples/` against Unity's own `UnityEngine` at both of its levels.
+- Offline on Unity's Mono, 53 checks: JSON, every match message byte for byte the core's, the arena's answers read as
+  the core reads them, frames, the WebSocket against RFC 6455's examples, the certificate check against `private-ca.sh`'s.
+- Live through the drill's stack, its `play` scenario passing beside it: through nginx over HTTPS (33 checks, .NET 8),
+  HTTP with matches over TLS (31, .NET 8), plain (30, Unity's Mono), and straight to the processes (30, Unity's Mono).
+  The API, the lobby (kept 125 s by its heartbeat, replaced by a second connection), a match (snapshots, a Pong, the
+  app paused and back, a lost connection resumed, Leave), another root refused on each TLS connection, every callback
+  on the thread calling `Update()`.
+- The TLS runs are on .NET 8: Mono's own TLS outside the editor stops at 1.0, and nginx takes 1.2 and 1.3. The first
+  run, on Mono, failed every HTTPS call so (`SecureChannelFailure`), as 08 §6 already said of that Mono.
+- Mutation-checked: 16 mutants offline and 9 live, each caught by its own check. Two first survived. A ping at the
+  Welcome was one `Update()` sends anyway, so it was taken out. A background that sent nothing passed because the
+  check stopped its inputs too, and inputs acknowledge the snapshots, without which the arena holds them back; the
+  check now keeps sending them, and the README and `SendInput` say why.
+- Not seen here: the editor, Unity's own TLS, a phone, IL2CPP.
+
+**Found:** P-66, open. The core's `HttpClient` does not compile at Unity's .NET 4.x level unless the project
+references `System.Net.Http`; `unity2019-check.sh` gave it the reference. Likely what the owner met.
+
+Docs: D-111, P-66 (and the register's open list), 08 §6 and §9, the glossary, the API's README and the client's,
+working-here (a standing decision), CLAUDE.md.
 ---
 
 ### Completed 2026-09-23

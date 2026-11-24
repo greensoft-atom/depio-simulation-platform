@@ -11,6 +11,9 @@ collection that runs all of the HTTP ones in order.
 | A match, binary over TCP | the client, in a match | `<arenaHost>:<arenaPort>`, from a grant, TLS with the grant's `tlsName` behind the front (D-82) | [02-networking](../detailed-design/02-networking.md) |
 | Metrics, Prometheus text | monitoring | `GET /metrics` on each process's loopback port | [operations/01 §7](../operations/01-deploy.md#7-installing-a-machine) |
 
+A small C# client for Unity that makes these calls, with examples: [`client-simple/`](../../client-simple/README.md)
+([D-111](../architecture/03-decision-log.md#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms)).
+
 How a client goes from nothing to a match: register or make a guest, log in (a token), open
 the lobby with that token, queue or ask for a seat, accept the match it is asked about, and
 take the grant to the arena ([01](01-http-api.md) §6, [02](02-lobby-websocket.md) §5).

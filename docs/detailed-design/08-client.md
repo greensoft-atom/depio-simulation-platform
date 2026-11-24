@@ -428,6 +428,7 @@ client adds:
 | The Unity package's scripts | compiled against stubs of the Unity API, for no platform, the editor, iOS and Android; the Android plugin against stubs of Android's | `client/unity-check.sh`, nothing run |
 | The core in Visual Studio 2019 (D-108) | built, warnings as errors, by VS 2019's own MSBuild and Roslyn (16.11, and 16.7), from Microsoft's .NET 5 and .NET Core 3.1 SDK images: the core's project (.NET Standard 2.0); its sources in a .NET Framework 4.7.1 library at C# 7.3 against Microsoft's 4.7.1 reference assemblies; a 4.7.1 app referencing it; Unity 2019.4's project as VS 2019 compiles it (4.7.1, `UnityEngine`, each platform branch); `Backend.Client.sln`, the client's one solution, VS 2019's, its four projects (Core.Tests and Headless at .NET Framework 4.7.1, D-109). A C# 8 operator and an API .NET Framework lacks each failed every build | `client/vs2019-check.sh`; not inside Visual Studio, nothing run on .NET Framework itself |
 | The core and the scripts in Unity 2019.4 (D-108) | compiled by Unity 2019.4.28f1's compiler (Roslyn 2.9.1, C# 7.3, warnings as errors): the core at .NET Standard 2.0 and at .NET 4.x (.NET Framework 4.7.1's references, as Visual Studio 2019 builds), the scripts against its own `UnityEngine` assemblies at both, each platform branch; then the core run on its Mono 5.11: certificates of `private-ca.sh` checked, an EC root refused saying why, JSON under a decimal comma, and the API, the lobby's `wss://` and a match each through TLS to a server there, accepted with the root's certificate and refused with another's; and the core's 193 tests, compiled by its compiler, run there by NUnitLite with `float32` (D-109, P-65) | `client/unity2019-check.sh`; not the editor (a licence), not Unity's TLS (the editor's and the player's; Mono's own here, TLS 1.0), not a phone |
+| The simple client, `client-simple/` (§9, D-111) | compiled by Unity 2019.4.28f1's compiler at C# 7.3, `Runtime/` against .NET Standard 2.0, .NET 4.x and .NET Standard 2.1, `Examples/` against its `UnityEngine` at both levels; offline on its Mono: JSON, every match message byte for byte the core's, the arena's answers read as the core reads them, frames, the WebSocket against RFC 6455's examples, the certificate check; live against the drill's stack, through nginx the three ways and straight to the processes: the API, the lobby and a match, another root refused, every callback on the thread calling `Update()` | `client-simple/check.sh`; `headless-drill.sh SIMPLE=1`; unencrypted on Unity's Mono, with TLS on .NET 8 (Mono's own TLS here stops at 1.0) |
 | Rendering, touch, lifecycle, secure storage, device TLS, frame time on a phone | the Unity editor and devices | **not on this machine** |
 
 The tests use NUnit, which Unity's test runner also runs, so the core's tests can
@@ -593,3 +594,33 @@ package's scripts do not do. Each is the layer above's, on calls the core has:
 | The queue, the party and a tournament match fetched again after a lobby reconnect or `evt.resync` | §5 | `ApiClient.Queue`, `Party`, `TournamentMatch`; `LobbyClient.OnPush` |
 | A purchase key kept on disk until its answer | §5 | `ApiClient.NewPurchaseKey()` |
 | The `saver` traffic profile as a setting | §3 | `MatchSettings.Profile` |
+
+## 9. The simple client (designed 2026-11-24, plan item 132)
+
+`client-simple/` ([D-111](../architecture/03-decision-log.md#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms)),
+for a UI team that wants to read the client in an hour and paste it into a project, beside the full client, which it
+does not replace. Its README is the guide; what it is, in short:
+
+| Part | What | Over |
+|---|---|---|
+| `BackendHttp` | the API: `Get`, `Post`, `Put`, `Delete`, an `HttpAnswer` each (status, body, the API's error code) | `HttpWebRequest` on a pool thread, the root checked per request |
+| `LobbyClient` | the lobby: `Connect(token)` sends `auth` first; `Send(type, data, onReply)` matches the reply by id; pushes to `OnPush`; a ping every 25 s; `OnClosed` once | `WebSocketConnection`, RFC 6455's client side over `TcpClient` and `SslStream` |
+| `ArenaClient` | a match: `Connect` with a grant sends Join; `OnWelcome`, `OnSnapshot(bytes, tick)`, `OnPong`, `OnKick`, `OnClosed`; `SendInput` acknowledges the last tick; a Ping every 10 s; `SetBackground`, `Resume`, `Leave` | `TcpClient`, `SslStream` with the grant's `tlsName`, `ArenaMessages`' frames |
+| `TrustRoot`, `Json` | the core's certificate check, without its `HttpClient` handler; one field of a JSON object | |
+
+**One pattern:** each client works on its own thread and queues what happens; `Update()`, called from a script's
+`Update`, runs every callback on Unity's main thread. No task, no `async`, no coroutine, no `UnityEngine` in
+`Runtime/`, so the same code runs here on Unity's Mono and on .NET 8.
+
+**What it leaves to the core:** a snapshot is handed over as its bytes with the server's tick; decoding it,
+predicting the own tank and drawing are §3 and §4's, in `SnapshotReader`, `ClientWorld` and `OwnTank`. A resume is one
+call, `Resume()`, which the example retries five times within the minute; the core's cold resume, `Retry-After`, the
+lobby's endpoints in turn and a purchase key kept on disk are not in it.
+
+**Its examples** are three scripts (`HttpExample`, `LobbyExample`, `ArenaExample`) and the `[Serializable]` classes
+`JsonUtility` maps; the players' build's rule (D-104) is theirs: `http://`, `ws://` and a grant without TLS are refused
+when `Debug.isDebugBuild` is false.
+
+**A second client to keep in step:** a protocol version, a message or a field changes in both. `headless-drill.sh
+SIMPLE=1` runs it against the drill's own stack, so a change that breaks it fails there.
+

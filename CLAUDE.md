@@ -167,6 +167,9 @@ for the backend, its docs and its client.
   .NET Standard 2.0, `client/Backend.Client.sln` VS 2019's and no solution for another version: all four projects in
   it, C# 7.3, Core.Tests and Headless on .NET Framework 4.7.1 (and .NET 8 where MSBuild is 17 or later, which this
   machine runs: `-f net8.0`; D-109); the backend's CA RSA, which Unity 2019's runtime can check.
+- **`client-simple/` for the UI team** (owner, 2026-11-24; D-111): the API, the lobby and a match in small files
+  they can read and paste, beside the full client; C# 7.3 and .NET Standard 2.0's APIs alone (their Unity takes 2.1),
+  no `HttpClient`, no `UnityEngine` in `Runtime/`, every callback in `Update()`. A protocol change is made in both.
 - **Ports 6381 and 8082 belong to other processes.** Drills use 6390 (j-redis), 6392 (its
   replica, `FAILOVER=1`), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 (platform's
   metrics), 9196 (platform's admin API), 9197, 9198 and 9199 (the arena's, the gateway's and
@@ -228,11 +231,15 @@ client/unity-package.sh && client/unity-check.sh
 TMPDIR=<scratchpad> client/unity2019-check.sh
 # Visual Studio 2019's MSBuild and Roslyn (16.11, 16.7) on the core, .NET Framework 4.7.1, Unity's project, the solution
 client/vs2019-check.sh
+# client-simple (D-111): compiled by Unity 2019.4's compiler at its levels and .NET Standard 2.1, its offline checks on its Mono
+client-simple/check.sh
 
 # Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice erase
 TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]
 # Over TLS, where "untrusted" is a scenario too (without TLS=1 it fails: it needs a certificate)
 TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted
+# client-simple's live check before the scenarios (D-111), through FRONT's nginx: https, http or plain (none: straight)
+SIMPLE=1 FRONT=https TMPDIR=<scratchpad> client/headless-drill.sh play
 # The watch on, a webhook receiver of the drill's: the worker killed after the scenarios, TargetDown listed and sent (08)
 WATCH=1 TMPDIR=<scratchpad> client/headless-drill.sh play
 # A guest aged 181 days in the database after the scenarios, erased by a fresh worker's retention a minute on (D-87)

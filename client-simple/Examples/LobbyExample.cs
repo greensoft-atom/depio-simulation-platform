@@ -1,0 +1,165 @@
+using UnityEngine;
+
+namespace Backend.Client.Simple.Examples
+{
+    /// <summary>
+    /// The lobby: log in (a guest, as HttpExample), connect, and act on what the lobby pushes. A seat in the public
+    /// arena is asked for at once; a duel goes through the queue, where the lobby asks to accept and then sends the
+    /// grant. A grant goes to ArenaExample. A connection lost is made again after a pause; one replaced by another
+    /// device, or revoked, is not.
+    /// </summary>
+    public class LobbyExample : MonoBehaviour
+    {
+        [Tooltip("https://<the site's address>; http://<address> in development")]
+        public string apiUrl = "http://127.0.0.1";
+
+        [Tooltip("wss://<the site's address>/lobby; ws://<address>/lobby in development")]
+        public string lobbyUrl = "ws://127.0.0.1/lobby";
+
+        [Tooltip("The backend's root, ca.pem renamed ca.pem.txt (a TextAsset); none for http:// and ws://")]
+        public TextAsset rootCertificate;
+
+        [Tooltip("Where a grant goes; none, it is only logged")]
+        public ArenaExample arena;
+
+        [Tooltip("Ask for a seat in the public arena as soon as the lobby is connected")]
+        public bool playOnConnect = true;
+
+        private BackendHttp _http;
+        private LobbyClient _lobby;
+        private string _token;
+        private bool _stayClosed;
+        private int _retries;
+        private float _reconnectAt = -1;
+
+        private void Start()
+        {
+            if (!Debug.isDebugBuild && (!apiUrl.StartsWith("https://") || !lobbyUrl.StartsWith("wss://")))
+            {
+                Debug.LogError("A player's build connects over https:// and wss:// alone");
+                return;
+            }
+            string ca = rootCertificate != null ? rootCertificate.text : null;
+            _http = new BackendHttp(apiUrl, ca);
+            _lobby = new LobbyClient(lobbyUrl, ca);
+            _lobby.OnAuthenticated = OnAuthenticated;
+            _lobby.OnPush = OnPush;
+            _lobby.OnClosed = OnClosed;
+            LogIn();
+        }
+
+        // Every callback of BackendHttp and LobbyClient runs in here, on the main thread.
+        private void Update()
+        {
+            _http?.Update();
+            _lobby?.Update();
+            if (_reconnectAt >= 0 && Time.unscaledTime >= _reconnectAt)
+            {
+                _reconnectAt = -1;
+                _lobby.Connect(_token);
+            }
+        }
+
+        private void OnDestroy() => _lobby?.Close();
+
+        private void LogIn()
+        {
+            string key = PlayerPrefs.GetString("guestKey", "");
+            if (key == "")
+            {
+                _http.Post("/v1/guests", null, answer =>
+                {
+                    if (!answer.Ok) { Debug.LogError("No guest made: " + answer.Error); return; }
+                    PlayerPrefs.SetString("guestKey", JsonUtility.FromJson<Guest>(answer.Body).guestKey);
+                    PlayerPrefs.Save();
+                    LogIn();
+                });
+                return;
+            }
+            _http.Post("/v1/sessions", JsonUtility.ToJson(new GuestLogin { guestKey = key }), answer =>
+            {
+                if (!answer.Ok) { Debug.LogError("Not logged in: " + answer.Error); return; }
+                _token = JsonUtility.FromJson<Session>(answer.Body).token;
+                _lobby.Connect(_token);
+            });
+        }
+
+        private void OnAuthenticated(long playerId)
+        {
+            Debug.Log("In the lobby as player " + playerId);
+            _retries = 0;
+            if (playOnConnect) PlayPublicArena();
+        }
+
+        /// <summary>A seat in the public arena: the reply is the grant.</summary>
+        public void PlayPublicArena()
+        {
+            _lobby.Send("match.request", null, reply =>
+            {
+                if (reply.IsError) Debug.LogWarning("No seat: " + reply.ErrorCode);
+                else StartMatch(JsonUtility.FromJson<Grant>(reply.Data));
+            });
+        }
+
+        /// <summary>A duel: queued now; evt.match.ready, then evt.match.found follow as pushes.</summary>
+        public void QueueDuel()
+        {
+            _lobby.Send("queue.join", JsonUtility.ToJson(new QueueRequest { mode = "duel" }), reply =>
+                Debug.Log(reply.IsError ? "Not queued: " + reply.ErrorCode : "Queued for a duel"));
+        }
+
+        public void LeaveQueue() => _lobby.Send("queue.leave", null);
+
+        private void OnPush(LobbyMessage push)
+        {
+            switch (push.Type)
+            {
+                case "evt.match.ready":                     // the matcher asks: accept within the seconds given
+                    MatchReady ready = JsonUtility.FromJson<MatchReady>(push.Data);
+                    _lobby.Send("match.accept", JsonUtility.ToJson(new MatchAnswer { matchUid = ready.matchUid }));
+                    break;
+                case "evt.match.found":                     // everyone accepted: the grant
+                case "evt.tournament.match":
+                    StartMatch(JsonUtility.FromJson<Grant>(push.Data));
+                    break;
+                case "evt.notice":
+                    Debug.Log("Notice: " + JsonUtility.FromJson<Notice>(push.Data).text);
+                    break;
+                case "evt.session.replaced":                // this player connected again elsewhere
+                case "evt.session.revoked":                 // banned, suspended or deleted
+                    _stayClosed = true;
+                    Debug.LogWarning("The lobby ends this connection: " + push.Type + " " + push.Data);
+                    break;
+                case "evt.resync":                          // pushes were lost: fetch what matters again
+                    _http.Get("/v1/queue", answer => Debug.Log("The queue, fetched again: " + answer.Body));
+                    break;
+                default:                                    // evt.party.*, evt.friend.*, evt.rewards, evt.inbox...
+                    Debug.Log("Pushed: " + push.Text);
+                    break;
+            }
+        }
+
+        private void OnClosed(string why)
+        {
+            Debug.Log("The lobby closed: " + why);
+            if (_stayClosed || why == "closed by the client") return;
+            if (why.StartsWith("invalid_session"))
+            {
+                LogIn();                                    // the session ended: a new token, then connect
+                return;
+            }
+            _reconnectAt = Time.unscaledTime + Mathf.Min(30, 2 << _retries++);   // 2, 4, 8, 16, 30 s
+        }
+
+        private void StartMatch(Grant grant)
+        {
+            if (!Debug.isDebugBuild && !grant.tls)
+            {
+                Debug.LogError("A player's build joins a match over TLS alone");
+                return;
+            }
+            Debug.Log("A seat at " + grant.arenaHost + ":" + grant.arenaPort + (grant.tls ? " (TLS)" : ""));
+            if (arena != null) arena.Play(grant);
+        }
+    }
+}
