@@ -12,7 +12,8 @@ collection that runs all of the HTTP ones in order.
 | Metrics, Prometheus text | monitoring | `GET /metrics` on each process's loopback port | [operations/01 §7](../operations/01-deploy.md#7-installing-a-machine) |
 
 A small C# client for Unity that makes these calls, with examples: [`client-simple/`](../../client-simple/README.md)
-([D-111](../architecture/03-decision-log.md#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms)).
+([D-111](../architecture/03-decision-log.md#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms));
+without TLS, for a backend run plain, [`client-simple-no-tls/`](../../client-simple-no-tls/README.md) (D-114).
 
 How a client goes from nothing to a match: register or make a guest, log in (a token), open
 the lobby with that token, queue or ask for a seat, accept the match it is asked about, and

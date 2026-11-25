@@ -599,7 +599,9 @@ The engine-free core, its tests and the headless driver, with the .NET 8 SDK:
 `client/unity2019-check.sh`: Unity 2019.4.28f1's own compiler at both API levels, the package's `csc.rsp` as Unity
 reads it, the core and its tests on Unity's Mono (D-108, D-113); nothing here runs the editor.
 [client/README](../../client/README.md). The simple client: `client-simple/check.sh`, and live
-`SIMPLE=1 client/headless-drill.sh play` ([client-simple/README](../../client-simple/README.md)).
+`SIMPLE=1 client/headless-drill.sh play` ([client-simple/README](../../client-simple/README.md)); without TLS,
+`client-simple-no-tls/check.sh`, which the same drill runs when nothing is encrypted
+([client-simple-no-tls/README](../../client-simple-no-tls/README.md)).
 
 ## 10. When something fails
 

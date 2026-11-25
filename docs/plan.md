@@ -4411,6 +4411,41 @@ lobby and for a match; a match's certificate checked for its host instead of the
 
 Docs: `client-simple`'s README (how it was checked, why not `ClientWebSocket`), 08 §6 and §9, `check.sh`'s header,
 CLAUDE.md.
+
+#### 136. ~~A simple client without TLS, `client-simple-no-tls/` (the owner, 2026-11-25, D-114).~~ — **done 2026-11-25**
+
+The owner: for the WebSocket, the socket, and maybe HTTP too, assume TLS cannot be used; another project,
+`client-simple-no-tls`, for their environment.
+
+**Done** (D-114):
+- `client-simple-no-tls/Runtime/`, six files: `BackendHttp` (`HttpClient`, an address not `http://` refused),
+  `LobbyClient` and `WebSocketConnection` (`ws://` alone), `ArenaClient` (plain TCP, `Connect(host, port, ticketId)`),
+  `ArenaMessages` and `Json` byte for byte `client-simple`'s. No `TrustRoot`, `SslStream` or certificate. `csc.rsp`.
+- `Examples/`: the three, without a root; each stops in a build that is not a Development Build (D-104, Q-64), and
+  `ArenaExample` refuses a grant asking for TLS, saying to run the backend plain. A README: what it reaches (a
+  backend run plain, not the site), what to copy, the three clients, moving to `client-simple` when TLS comes.
+- One check over both trees: `client-simple/check.sh` with `NO_TLS=1` (`client-simple-no-tls/check.sh` runs it), the
+  check program compiled with `NO_TLS` (its TLS checks left out, four helpers where the two clients' calls differ),
+  the shared files compared byte for byte, `Runtime/` searched for TLS types. `headless-drill.sh SIMPLE=1` runs its
+  live check after `client-simple`'s where nothing is encrypted (`FRONT=plain`, or straight to the processes).
+- Q-64 to the owner: may a players' build go without TLS? Recommended no.
+
+**Checked:**
+- Compiled by Unity 2019.4.28f1's compiler: `Runtime/` at .NET Standard 2.0, .NET 4.x (with `csc.rsp`, refused
+  without), .NET Framework 4.5 and .NET Standard 2.1; `Examples/` against `UnityEngine` at both of Unity's levels.
+- Offline on Unity's Mono, 48 checks: `client-simple`'s but its TLS ones, and an `https://` or `wss://` address refused.
+  `client-simple`'s own still 70, its check program reshaped.
+- Live, its `play` scenario passing beside each: straight to the processes and through nginx run plain, both
+  clients 30 of 30 on Unity's Mono; with `FRONT=http` and `https`, `client-simple` 31 and 32 on .NET 8, the no-TLS
+  check left out as its grants ask for TLS. The first http run stopped with the session (its nginx left on 8095,
+  8096 and 9095, stopped by its own script); run again whole.
+- Mutation-checked, five mutants, each caught: an `https://` API address taken, a `wss://` lobby address taken,
+  `ArenaMessages.cs` drifted from `client-simple`'s, a TLS type back in `Runtime/`, and live, a match's Join never
+  sent (which shows the live check runs this tree, not `client-simple`'s).
+- Not seen here: the editor, a phone (Android's rules for traffic in clear among them).
+
+Docs: D-114, Q-64, the client-simple-no-tls README, 08 §9, the front page and the docs index, the glossary, the
+client's and the API's READMEs, 03 §9, 07 §5, working-here, CLAUDE.md.
 ---
 
 ### Completed 2026-09-23

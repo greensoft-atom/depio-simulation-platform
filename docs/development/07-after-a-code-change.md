@@ -108,5 +108,7 @@ The schema is Flyway's migrations, `backend/persistence/src/main/resources/db/mi
 - **The client**: `cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test Core.Tests -f net8.0`, then
   `client/unity-package.sh && client/unity-check.sh` and `client/unity2019-check.sh`
   ([03 §9](03-build-and-run.md#9-the-client)).
-- **The simple client** takes the same change (D-111): `client-simple/`'s messages or calls, then
-  `client-simple/check.sh` and `SIMPLE=1 client/headless-drill.sh play`.
+- **The simple clients** take the same change (D-111, D-114): `client-simple/`'s messages or calls, and
+  `client-simple-no-tls/`'s (its `ArenaMessages.cs` and `Json.cs` are `client-simple`'s, byte for byte, which its check
+  holds); then `client-simple/check.sh`, `client-simple-no-tls/check.sh`, and `SIMPLE=1 client/headless-drill.sh play`
+  with `FRONT=plain` too.

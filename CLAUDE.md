@@ -171,7 +171,9 @@ for the backend, its docs and its client.
   they can read and paste, beside the full client; C# 7.3, the APIs of .NET Framework 4.5 and .NET Standard 2.0 alone
   (their Unity is 2019), no `UnityEngine` in `Runtime/`. The API over `HttpClient`, each call awaited, the backend's
   root as the app's certificate check, `ServicePointManager`'s (owner, 2026-11-25; D-112); the lobby's and the
-  match's callbacks in `Update()`. A protocol change is made in both.
+  match's callbacks in `Update()`. `client-simple-no-tls/` the same without TLS, for a backend run plain, a
+  Development Build alone (owner, 2026-11-25; D-114, Q-64 open); `ArenaMessages.cs` and `Json.cs` byte for byte
+  `client-simple`'s. A protocol change is made in all three clients.
 - **Ports 6381 and 8082 belong to other processes.** Drills use 6390 (j-redis), 6392 (its
   replica, `FAILOVER=1`), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 (platform's
   metrics), 9196 (platform's admin API), 9197, 9198 and 9199 (the arena's, the gateway's and
@@ -237,12 +239,14 @@ client/vs2019-check.sh
 # client-simple (D-111, D-112): compiled by Unity 2019.4's compiler at its levels, .NET Framework 4.5 and .NET Standard 2.1,
 # its offline checks on its Mono (the API's HTTPS, the lobby's wss:// and a match's TLS against openssl s_server at TLS 1.0)
 client-simple/check.sh
+client-simple-no-tls/check.sh                       # the same check over the no-TLS tree (D-114)
 
 # Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice erase
 TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]
 # Over TLS, where "untrusted" is a scenario too (without TLS=1 it fails: it needs a certificate)
 TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted
-# client-simple's live check before the scenarios (D-111), through FRONT's nginx: https, http or plain (none: straight)
+# client-simple's live check before the scenarios (D-111), through FRONT's nginx: https, http or plain (none: straight);
+# with plain or none, client-simple-no-tls's after it (D-114)
 SIMPLE=1 FRONT=https TMPDIR=<scratchpad> client/headless-drill.sh play
 # The watch on, a webhook receiver of the drill's: the worker killed after the scenarios, TargetDown listed and sent (08)
 WATCH=1 TMPDIR=<scratchpad> client/headless-drill.sh play

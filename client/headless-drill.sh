@@ -59,7 +59,8 @@
 #                                                     whose retention a minute on erases it (D-87): the journal
 #                                                     line, the metric, its key refused at login, the row erased
 #   SIMPLE=1 client/headless-drill.sh play            client-simple's live check before the scenarios (D-111, D-112): the API, the
-#                                                     lobby and a match on Unity 2019's Mono, through FRONT's nginx when set
+#                                                     lobby and a match on Unity 2019's Mono, through FRONT's nginx when set;
+#                                                     client-simple-no-tls's after it where nothing is encrypted (D-114)
 #
 # Needs: the backend release (backend/scripts/make-release.sh; RELEASE= for a copy of one), the
 # headless client built (dotnet build), python3 and the development MySQL (dev-mysql.sh, 127.0.0.1:3314
@@ -338,6 +339,14 @@ if [ "${SIMPLE:-0}" = 1 ]; then
   SIMPLE_RC=$?
   sed 's/^/  /' "$D/simple.log"
   [ "$SIMPLE_RC" = 0 ] || echo "CLIENT-SIMPLE FAILED (exit $SIMPLE_RC): $D/simple.log"
+  # client-simple-no-tls (D-114) where nothing is encrypted: plain through nginx, or straight to the processes.
+  if [ "${TLS:-0}" != 1 ] && { [ -z "${FRONT:-}" ] || [ "$FRONT" = plain ]; }; then
+    echo "--- client-simple-no-tls through $SIMPLE_API and $LOBBY ($(date +%T))"
+    "$B/client-simple-no-tls/check.sh" live "$SIMPLE_API" "$LOBBY" > "$D/simple-no-tls.log" 2>&1
+    NOTLS_RC=$?
+    sed 's/^/  /' "$D/simple-no-tls.log"
+    [ "$NOTLS_RC" = 0 ] || echo "CLIENT-SIMPLE-NO-TLS FAILED (exit $NOTLS_RC): $D/simple-no-tls.log"
+  fi
 fi
 
 # The arena's pid is the second started: stopped mid-scenario, it drains (01 §8.6).
@@ -718,6 +727,7 @@ run_client "$@"
 STATUS=$?
 [ "${NEWMAN_RC:-0}" = 0 ] || STATUS=1
 [ "${SIMPLE_RC:-0}" = 0 ] || STATUS=1
+[ "${NOTLS_RC:-0}" = 0 ] || STATUS=1
 fi
 if [ "$FAILOVER" != 0 ] && [ -z "${UNDER_LOAD:-}" ]; then
   sleep 3                                              # the last results through the spool

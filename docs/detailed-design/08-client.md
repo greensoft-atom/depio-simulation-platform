@@ -628,6 +628,11 @@ lobby's endpoints in turn and a purchase key kept on disk are not in it.
 `JsonUtility` maps; the players' build's rule (D-104) is theirs: `http://`, `ws://` and a grant without TLS are refused
 when `Debug.isDebugBuild` is false.
 
-**A second client to keep in step:** a protocol version, a message or a field changes in both. `headless-drill.sh
+**Without TLS, `client-simple-no-tls/`** ([D-114](../architecture/03-decision-log.md#d-114--a-simple-client-without-tls-client-simple-no-tls-for-a-backend-run-plain)): the same three clients with no
+TLS at all, for a backend run plain (`PLAIN=1`, D-101), the examples in a Development Build alone (D-104, Q-64).
+`ArenaMessages` and `Json` are `client-simple`'s byte for byte; `client-simple/check.sh` checks it too (`NO_TLS=1`, the
+check program's TLS checks left out), and `SIMPLE=1` drills it live in the plain ways.
+
+**A second client to keep in step:** a protocol version, a message or a field changes in both simple clients and the core. `headless-drill.sh
 SIMPLE=1` runs it against the drill's own stack, so a change that breaks it fails there.
 

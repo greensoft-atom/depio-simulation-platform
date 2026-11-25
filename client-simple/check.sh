@@ -13,12 +13,17 @@
 #     and the site's nginx takes 1.2 and 1.3; in the editor and the player, Unity's TLS speaks 1.2 (08 §6). The API
 #     live over http:// alone: .NET 8's HttpClient does not call the app's certificate check, Unity's does (D-112).
 # Not the editor, not Unity's own TLS, not a phone.
+# NO_TLS=1, as client-simple-no-tls/check.sh runs it (D-114): that tree checked the same way, the program compiled with
+# NO_TLS (its TLS checks left out), ArenaMessages.cs and Json.cs compared with client-simple's byte for byte, no TLS
+# type in its Runtime/, and live on Unity's Mono against http:// and ws:// alone.
 #
 #   client-simple/check.sh
 #   client-simple/check.sh live <api-url> <lobby-url> [<ca.pem> [<another root's ca.pem>]]
 set -euo pipefail
-S="$(cd "$(dirname "$0")" && pwd)"
+S="$(cd "$(dirname "$0")" && pwd)"       # client-simple: the check program, and the client checked unless NO_TLS
 B="$(dirname "$S")"
+if [ "${NO_TLS:-0}" = 1 ]; then T=$B/client-simple-no-tls NAME=CLIENT-SIMPLE-NO-TLS DEFINE=-define:NO_TLS
+else T=$S NAME=CLIENT-SIMPLE DEFINE=; fi
 U=${UNITY_DATA:-$B/work/unity/2019.4.28f1/Editor/Data}
 [ -d "$U/Managed/UnityEngine" ] || { echo "no Unity 2019.4.28f1 in $U: client/unity2019-check.sh unpacks it, once"; exit 1; }
 MONO=$U/MonoBleedingEdge/bin/mono
@@ -33,7 +38,7 @@ OUT=$(mktemp -d "$B/work/tmp/client-simple.XXXXXX"); trap 'rm -rf "$OUT"' EXIT
 level_refs() {   # each API level's references, as Unity gives them to a script's compilation
     case $1 in
         netstandard2.0) printf -- '-r:%s ' "$NS/ref/2.0.0/netstandard.dll"; for f in "$NS"/compat/2.0.0/shims/netfx/*.dll; do printf -- '-r:%s ' "$f"; done ;;
-        net4.x) sed "s|^-r:|-r:$FX/|" "$S/csc.rsp" | tr '\n' ' ' ;&      # the references the shipped csc.rsp adds (P-66, D-112)
+        net4.x) sed "s|^-r:|-r:$FX/|" "$T/csc.rsp" | tr '\n' ' ' ;&      # the references the shipped csc.rsp adds (P-66, D-112)
         net4.x-bare) for d in mscorlib System System.Core System.Numerics; do printf -- '-r:%s/%s.dll ' "$FX" "$d"; done
                 for f in "$FX"/Facades/*.dll; do printf -- '-r:%s ' "$f"; done ;;
         net4.5) for d in mscorlib System System.Core System.Net.Http; do printf -- '-r:%s/%s.dll ' "$FX45" "$d"; done ;;
@@ -45,11 +50,11 @@ compile() {      # what, output, then the compiler's arguments
     if "$MONO" "$CSC" -nologo -langversion:7.3 -nostdlib -noconfig -warnaserror -target:library -out:"$out" "$@" > "$OUT/log" 2>&1; then
         [ "${QUIET:-0}" = 1 ] || echo "  ok   $what"
     else
-        grep -E 'error|warning' "$OUT/log" | sed "s|$B/||" | sort -u | head -20; echo "CLIENT-SIMPLE CHECK FAILED: $what"; exit 1
+        grep -E 'error|warning' "$OUT/log" | sed "s|$B/||" | sort -u | head -20; echo "$NAME CHECK FAILED: $what"; exit 1
     fi
 }
-RUNTIME=$(ls "$S"/Runtime/*.cs)
-EXAMPLES=$(ls "$S"/Examples/*.cs 2> /dev/null || true)
+RUNTIME=$(ls "$T"/Runtime/*.cs)
+EXAMPLES=$(ls "$T"/Examples/*.cs 2> /dev/null || true)
 ENGINE=(); for m in "$U"/Managed/UnityEngine/*.dll; do ENGINE+=("-r:$m"); done
 
 if [ "${1:-}" = live ]; then
@@ -72,9 +77,18 @@ else
     # shellcheck disable=SC2046
     if "$MONO" "$CSC" -nologo -langversion:7.3 -nostdlib -noconfig -target:library -out:"$OUT/bare.dll" $(level_refs net4.x-bare) \
             $RUNTIME > "$OUT/log" 2>&1; then
-        echo "CLIENT-SIMPLE CHECK FAILED: Runtime/ compiled at .NET 4.x without System.Net.Http, which the README says it needs"; exit 1
+        echo "$NAME CHECK FAILED: Runtime/ compiled at .NET 4.x without System.Net.Http, which the README says it needs"; exit 1
     fi
     echo "  ok   Runtime/, net4.x without csc.rsp's System.Net.Http: refused ($(grep -o 'error CS[0-9]*' "$OUT/log" | sort -u | tr '\n' ' '))"
+    if [ "${NO_TLS:-0}" = 1 ]; then
+        for f in ArenaMessages.cs Json.cs; do
+            cmp -s "$T/Runtime/$f" "$S/Runtime/$f" || { echo "$NAME CHECK FAILED: Runtime/$f is not client-simple's (D-114: change both)"; exit 1; }
+        done
+        echo "  ok   Runtime/ArenaMessages.cs and Json.cs: client-simple's, byte for byte"
+        tls=$(grep -nE 'System\.Net\.Security|SslStream|TrustRoot|X509|ServicePointManager' "$T"/Runtime/*.cs | sed "s|$B/||" || true)
+        [ -z "$tls" ] || { echo "$tls"; echo "$NAME CHECK FAILED: TLS in Runtime/"; exit 1; }
+        echo "  ok   Runtime/: no System.Net.Security, SslStream, TrustRoot, X509 or ServicePointManager"
+    fi
 fi
 
 # The check program, with the core it compares against, run on Unity's Mono.
@@ -84,16 +98,19 @@ compile "the core, to compare with" "$OUT/run/Backend.Client.Core.dll" $(level_r
 # shellcheck disable=SC2046
 compile "Runtime/, net4.x" "$OUT/run/Backend.Client.Simple.dll" $(level_refs net4.x) $RUNTIME
 # shellcheck disable=SC2046
-compile "the check program" "$OUT/run/check.exe" -target:exe $(level_refs net4.x) -r:"$OUT/run/Backend.Client.Core.dll" \
+compile "the check program" "$OUT/run/check.exe" -target:exe $DEFINE $(level_refs net4.x) -r:"$OUT/run/Backend.Client.Core.dll" \
     -r:"$OUT/run/Backend.Client.Simple.dll" "$S/Check/Program.cs"
 run() { (cd "$OUT/run" && MONO_PATH=$U/MonoBleedingEdge/lib/mono/unityjit timeout 600 "$MONO" check.exe "$@"); }
 
 if [ "${QUIET:-0}" = 1 ]; then
     [ $# -ge 2 ] || { echo "check.sh live <api-url> <lobby-url> [<ca.pem> [<another root's ca.pem>]]"; exit 2; }
     [[ $1 == http://* ]] || { echo "check.sh live: the API at http:// (D-112): its https:// is checked offline, on Unity's Mono"; exit 2; }
+    if [ "${NO_TLS:-0}" = 1 ] && { [ $# -gt 2 ] || [[ $2 != ws://* ]]; }; then
+        echo "client-simple-no-tls/check.sh live <http://api> <ws://lobby>: no TLS, no root (D-114)"; exit 2
+    fi
     if [ $# -le 2 ] && [[ $1 == http://* ]] && [[ $2 == ws://* ]]; then
         on="Unity 2019.4.28f1's Mono"
-        run live "$@" || { echo "CLIENT-SIMPLE CHECK FAILED: live, on $on"; exit 1; }
+        run live "$@" || { echo "$NAME CHECK FAILED: live, on $on"; exit 1; }
     else
         # TLS somewhere (a root given): the same program compiled at C# 7.3 for .NET 8, the core beside it.
         DOTNET=${DOTNET:-/opt/dotnet/dotnet}
@@ -104,21 +121,27 @@ if [ "${QUIET:-0}" = 1 ]; then
         mkdir -p "$OUT/net8"
         "$DOTNET" "$SDK/Roslyn/bincore/csc.dll" -nologo -langversion:7.3 -nostdlib -noconfig -warnaserror -nowarn:SYSLIB0014,SYSLIB0027 -target:exe \
             -out:"$OUT/net8/check.dll" "${REFS[@]}" "$B"/client/Core/*.cs $RUNTIME "$S/Check/Program.cs" > "$OUT/log" 2>&1 \
-            || { grep -E 'error|warning' "$OUT/log" | sed "s|$B/||" | sort -u | head -20; echo "CLIENT-SIMPLE CHECK FAILED: the check on .NET 8"; exit 1; }
+            || { grep -E 'error|warning' "$OUT/log" | sed "s|$B/||" | sort -u | head -20; echo "$NAME CHECK FAILED: the check on .NET 8"; exit 1; }
         printf '{"runtimeOptions":{"tfm":"net8.0","framework":{"name":"Microsoft.NETCore.App","version":"8.0.0"}}}' > "$OUT/net8/check.runtimeconfig.json"
-        (cd "$OUT/net8" && DOTNET_NOLOGO=1 timeout 600 "$DOTNET" check.dll live "$@") || { echo "CLIENT-SIMPLE CHECK FAILED: live, on $on"; exit 1; }
+        (cd "$OUT/net8" && DOTNET_NOLOGO=1 timeout 600 "$DOTNET" check.dll live "$@") || { echo "$NAME CHECK FAILED: live, on $on"; exit 1; }
     fi
-    echo "CLIENT-SIMPLE LIVE CHECK PASSED (on $on, against $1 and $2)"
+    echo "$NAME LIVE CHECK PASSED (on $on, against $1 and $2)"
     exit 0
 fi
 
 # Certificates for the offline check, made by the scripts the site's are; and an EC root, which must be refused.
+if [ "${NO_TLS:-0}" = 1 ]; then
+    echo "--- offline, on Unity's Mono"
+    run offline - || { echo "$NAME CHECK FAILED: offline"; exit 1; }
+    echo "$NAME CHECK PASSED (compiled by Unity 2019.4.28f1's compiler, run on its Mono; not in the editor, not on a phone)"
+    exit 0
+fi
 P=$OUT/pki CA=$B/backend/scripts/private-ca.sh
 { "$CA" root "$P/root" && "$CA" issue "$P/root" "$P/leaf" 127.0.0.1 a1.arena.internal \
   && "$CA" issue "$P/root" "$P/web" 127.0.0.1 site.internal \
   && "$CA" root "$P/other" && "$CA" issue "$P/other" "$P/other-leaf" 127.0.0.1 a1.arena.internal \
   && openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj /CN=ec -keyout "$P/ec.key" -out "$P/ec.pem"; } \
-  > "$OUT/pki.log" 2>&1 || { cat "$OUT/pki.log"; echo "CLIENT-SIMPLE CHECK FAILED: the certificates"; exit 1; }
+  > "$OUT/pki.log" 2>&1 || { cat "$OUT/pki.log"; echo "$NAME CHECK FAILED: the certificates"; exit 1; }
 echo "--- offline, on Unity's Mono"
-run offline "$P" || { echo "CLIENT-SIMPLE CHECK FAILED: offline"; exit 1; }
-echo "CLIENT-SIMPLE CHECK PASSED (compiled by Unity 2019.4.28f1's compiler, run on its Mono; not in the editor, not on a phone)"
+run offline "$P" || { echo "$NAME CHECK FAILED: offline"; exit 1; }
+echo "$NAME CHECK PASSED (compiled by Unity 2019.4.28f1's compiler, run on its Mono; not in the editor, not on a phone)"

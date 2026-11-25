@@ -9,7 +9,8 @@ The diagrams are in [docs/diagrams/06-client.md](../docs/diagrams/06-client.md).
 
 **A smaller client, to read and paste into a project:** [`client-simple/`](../client-simple/README.md) (D-111): the
 API (over `HttpClient`, D-112), the lobby and a match in seven files of C# 7.3 on .NET Framework 4.5's and .NET
-Standard 2.0's APIs, with three example scripts; no prediction, no world, no drawing.
+Standard 2.0's APIs, with three example scripts; no prediction, no world, no drawing. Without TLS, for a backend
+run plain: [`client-simple-no-tls/`](../client-simple-no-tls/README.md) (D-114).
 
 ## Projects
 

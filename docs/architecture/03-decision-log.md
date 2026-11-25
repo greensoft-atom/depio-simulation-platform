@@ -3702,3 +3702,35 @@ alone, at every level.
 - **`Assets/csc.rsp` for the package:** a file for the team to copy, which touches the whole project.
 
 **Cost.** That Unity reads the file is read from its editor's code, not seen in an editor (none here).
+
+### D-114 — A simple client without TLS, `client-simple-no-tls/`, for a backend run plain
+
+**Decided 2026-11-25** (plan item 136; the owner: assume TLS cannot be used, for the API, the lobby and matches; a
+project like `client-simple` without it, for the team's environment).
+
+**Decision.**
+- **`client-simple-no-tls/`, beside `client-simple/`.** `Runtime/` is six files: `BackendHttp` (`HttpClient`,
+  `http://` alone), `LobbyClient` and `WebSocketConnection` (`ws://` alone), `ArenaClient` (plain TCP,
+  `Connect(host, port, ticketId)`), and `ArenaMessages` and `Json`, byte for byte `client-simple`'s. No `TrustRoot`,
+  no `SslStream`, no certificate. The namespace and the names are `client-simple`'s, so a project that later can use
+  TLS swaps the folder and adds the root to three constructors. The same three examples and `csc.rsp`.
+- **What it reaches:** a backend run plain, `PLAIN=1` (D-101): nginx's 80 for the API and the lobby and 9001 for
+  matches, without TLS; or the processes themselves. The site speaks TLS alone (443, and 9001 with TLS, D-82), so
+  this client reaches nothing there.
+- **D-104 stays.** The examples run in a Development Build and the editor alone, and say why in any other build. A
+  grant that asks for TLS is refused, saying to run the backend plain. Whether a players' build may go without TLS
+  is the owner's (Q-64).
+- **Checked by `client-simple`'s own check,** which `client-simple-no-tls/check.sh` runs on this tree: the same
+  compile levels, the check program compiled with `NO_TLS` (its TLS checks left out), the shared files compared byte
+  for byte, no TLS type anywhere in `Runtime/`; offline on Unity's Mono; live in the drill's plain ways, where
+  `SIMPLE=1` runs it after `client-simple`'s (`FRONT=plain`, and straight to the processes).
+
+**Why.** The owner asked. With no TLS code at all there is less to read, and nothing of TLS to fail in their
+environment.
+
+**Not chosen:**
+- **An option in `client-simple`:** one more thing to read and set, and the TLS code still there.
+- **A copy with a check of its own:** two checks to keep in step; one check over both trees fails when they drift.
+
+**Cost.** A third client to keep in step with the protocols. `ArenaMessages` and `Json` are `client-simple`'s, and
+the check fails when they differ; the rest is changed in both by hand, the drill running both.

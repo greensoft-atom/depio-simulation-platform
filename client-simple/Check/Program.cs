@@ -16,7 +16,8 @@ using Core = Backend.Client.Core;
 namespace Backend.Client.Simple.Check
 {
     /// <summary>
-    /// client-simple's own check (D-111), run on Unity's Mono by check.sh. Offline: its pieces against the core's,
+    /// client-simple's own check (D-111), run on Unity's Mono by check.sh; compiled with NO_TLS, client-simple-no-tls's
+    /// (D-114), its TLS checks left out. Offline: its pieces against the core's,
     /// which the server's tests bind, and against certificates made by private-ca.sh. Live: the three clients against a
     /// running stack, driven as a Unity script drives them, Update() every 16 ms on one thread, every callback on it.
     ///
@@ -147,23 +148,28 @@ namespace Backend.Client.Simple.Check
             byte[] big = WebSocketConnection.ClientFrame(1, new byte[70000], mask);
             Check(big.Length == 2 + 8 + 4 + 70000 && big[1] == (0x80 | 127) && big[7] == 1 && big[8] == 0x11 && big[9] == 0x70, "70000 bytes: a 64-bit length");
 
+#if !NO_TLS
             Section("the certificate check, as the core's (D-108)");
             SimpleTrust(pki);
+#endif
 
             Section("the API over HttpClient (D-112)");
             ApiCalls(pki);
 
+#if !NO_TLS
             Section("the lobby and a match over TLS, each connection checked by the root (D-108)");
             LobbyAndMatchOverTls(pki);
+#else
+            Section("no TLS anywhere (D-114)");
+            Check(Throws(() => new BackendHttp("https://127.0.0.1")) && !Throws(() => new BackendHttp("http://127.0.0.1")),
+                "the API: an https:// address refused, an http:// one taken");
+            Check(Throws(() => new LobbyClient("wss://127.0.0.1/lobby")) && !Throws(() => new LobbyClient("ws://127.0.0.1/lobby")),
+                "the lobby: a wss:// address refused, a ws:// one taken");
+#endif
         }
 
         private static void ApiCalls(string pki)
         {
-            string rootPem = File.ReadAllText(Path.Combine(pki, "root/ca.pem"));
-            string otherPem = File.ReadAllText(Path.Combine(pki, "other/ca.pem"));
-            X509Certificate2 web = FirstCertificate(Path.Combine(pki, "web/fullchain.pem"));      // the root's: 127.0.0.1, site.internal
-            X509Certificate2 stranger = FirstCertificate(Path.Combine(pki, "other-leaf/fullchain.pem"));
-
             // A server that takes the connection and never answers.
             var silent = new TcpListener(IPAddress.Loopback, 0);
             silent.Start();
@@ -174,6 +180,11 @@ namespace Backend.Client.Simple.Check
             Check(ended && call.Result.Status == 0 && call.Result.Error == "no answer in 15 s" && clock.ElapsedMilliseconds >= 14000,
                 "no answer: given up after 15 s, Status 0 (" + (ended ? call.Result.Error : "still waiting") + ", " + clock.ElapsedMilliseconds + " ms)");
             silent.Stop();
+#if !NO_TLS
+            string rootPem = File.ReadAllText(Path.Combine(pki, "root/ca.pem"));
+            string otherPem = File.ReadAllText(Path.Combine(pki, "other/ca.pem"));
+            X509Certificate2 web = FirstCertificate(Path.Combine(pki, "web/fullchain.pem"));      // the root's: 127.0.0.1, site.internal
+            X509Certificate2 stranger = FirstCertificate(Path.Combine(pki, "other-leaf/fullchain.pem"));
 
             // The app's certificate check, called as Unity 2019's HttpClient calls it: the request as the sender.
             Func<string, HttpWebRequest> to = host => (HttpWebRequest)WebRequest.Create("https://" + host + "/");
@@ -212,8 +223,10 @@ namespace Backend.Client.Simple.Check
                 server.Kill();
                 ServicePointManager.ServerCertificateValidationCallback = null;
             }
+#endif
         }
 
+#if !NO_TLS
         /// <summary>
         /// The lobby's WebSocket and a match's socket over TLS on Unity's Mono, each checking the certificate on its own
         /// connection (SslStream's callback): the same test server, which answers HTTP, so the lobby's opening is
@@ -294,6 +307,7 @@ namespace Backend.Client.Simple.Check
             try { using (new TcpClient("127.0.0.1", port)) return true; }
             catch (SocketException) { return false; }
         }
+#endif
 
         private static void CompareWelcome(byte[] frame, string what)
         {
@@ -304,6 +318,7 @@ namespace Backend.Client.Simple.Check
                   && s.SelfEntityId == c.SelfEntityId && s.ResumeSecret == c.ResumeSecret && s.MazeSeed == c.MazeSeed, what);
         }
 
+#if !NO_TLS
         private static void SimpleTrust(string pki)
         {
             TrustRoot root = TrustRoot.FromPem(File.ReadAllText(Path.Combine(pki, "root/ca.pem")));
@@ -324,6 +339,7 @@ namespace Backend.Client.Simple.Check
                 "an EC root: refused as not RSA, as Unity 2019 cannot check it");
             Check(Throws(() => TrustRoot.FromPem("nonsense")), "no PEM: refused");
         }
+#endif
 
         // ---------------------------------------------------------------------------------------------------- live
 
@@ -334,7 +350,7 @@ namespace Backend.Client.Simple.Check
             string run = DateTime.UtcNow.Ticks.ToString("x").Substring(6);
 
             Section("the API, " + api);
-            var http = new BackendHttp(api, ca);
+            BackendHttp http = NewHttp(api, ca);
             HttpAnswer a = Wait(http.GetAsync("/v1/health"));
             Check(a.Status == 200 && Json.GetString(a.Body, "status") == "ok", "GET /v1/health: 200 ok (" + a.Status + " " + a.Error + ")");
             string username = "simple_" + run;
@@ -355,7 +371,8 @@ namespace Backend.Client.Simple.Check
             Check(a.Status == 200 && Json.GetString(a.Body, "displayName") == "Simple Two", "PUT a display name: 200 (" + a.Status + " " + a.Error + ")");
             a = Wait(http.GetAsync("/v1/nothing"));
             Check(a.Status == 404 && a.Error == "no_such_route", "a route that is not there: 404 no_such_route (" + a.Status + " " + a.Error + ")");
-            var stranger = new BackendHttp(api, ca) { Token = new string('A', 43) };
+            BackendHttp stranger = NewHttp(api, ca);
+            stranger.Token = new string('A', 43);
             a = Wait(stranger.GetAsync("/v1/inventory"));
             Check(a.Status == 401 && a.Error == "invalid_session", "a token that is no session: 401 invalid_session (" + a.Error + ")");
             a = Wait(stranger.PostAsync("/v1/guests", null));
@@ -365,7 +382,7 @@ namespace Backend.Client.Simple.Check
             Check(a.Status == 200 && Json.GetString(a.Body, "token") != null, "the guest logs in by its key");
 
             Section("the lobby, " + lobbyUrl);
-            var lobby = new LobbyClient(lobbyUrl, ca);
+            LobbyClient lobby = NewLobby(lobbyUrl, ca);
             long authenticated = 0;
             var pushes = new List<LobbyMessage>();
             string lobbyClosed = null;
@@ -391,6 +408,13 @@ namespace Backend.Client.Simple.Check
             bool tls = r.GetBool("tls");
 
             Section("a match: " + host + ":" + port + (tls ? " over TLS, " + (tlsName ?? host) : ", plain"));
+#if NO_TLS
+            if (tls)
+            {
+                Fail("the grant asks for TLS, which this client has not: the backend run plain (PLAIN=1) gives plain grants");
+                return;
+            }
+#else
             if (wrong != null && tls)
             {
                 var fooled = new ArenaClient(wrong);
@@ -402,7 +426,8 @@ namespace Backend.Client.Simple.Check
                 Pump(() => why != null, 20000, fooled.Update);
                 Check(why != null && !welcomed, "trusting another root: closed before a Welcome (" + why + ")");
             }
-            var arena = new ArenaClient(ca);
+#endif
+            ArenaClient arena = NewArena(ca);
             ArenaWelcome welcome = null;
             int welcomes = 0, snapshots = 0, kicked = -1, rtt = -1;
             long lastTick = -1, firstResumed = -1;
@@ -421,7 +446,7 @@ namespace Backend.Client.Simple.Check
             arena.OnPong = ms => { OnMain("OnPong"); rtt = ms; };
             arena.OnKick = reason => { OnMain("OnKick"); kicked = reason; };
             arena.OnClosed = why => { OnMain("the arena's OnClosed"); arenaClosed = why; };
-            arena.Connect(host, port, tls, tlsName, ticket);
+            Join(arena, host, port, tls, tlsName, ticket);
             Pump(() => welcome != null || arenaClosed != null, 20000, arena.Update, lobby.Update);
             Check(welcome != null && welcome.Mode == 0 && welcome.MapWidth > 0 && !string.IsNullOrEmpty(welcome.ResumeSecret),
                 "Join: a Welcome to the public arena, with a resume secret (" + arenaClosed + " " + kicked + ")");
@@ -466,6 +491,7 @@ namespace Backend.Client.Simple.Check
             Pump(() => lobbyClosed != null, (int)Math.Max(0, 125000 - (DateTime.UtcNow - lastRequest).TotalMilliseconds), lobby.Update);
             Check(lobbyClosed == null && lobby.IsAuthenticated,
                 "125 s without a request of ours: still connected, its heartbeat sent (" + lobbyClosed + ")");
+#if !NO_TLS
             if (wrong != null && lobbyUrl.StartsWith("wss://", StringComparison.Ordinal))
             {
                 var fooled = new LobbyClient(lobbyUrl, wrong);
@@ -477,7 +503,8 @@ namespace Backend.Client.Simple.Check
                 Pump(() => why != null, 20000, fooled.Update);
                 Check(why != null && !ok, "trusting another root: closed, never authenticated (" + why + ")");
             }
-            var second = new LobbyClient(lobbyUrl, ca);
+#endif
+            LobbyClient second = NewLobby(lobbyUrl, ca);
             long secondId = 0;
             second.OnAuthenticated = id => secondId = id;
             second.Connect(token);
@@ -497,6 +524,19 @@ namespace Backend.Client.Simple.Check
             a = Wait(http.GetAsync("/v1/inventory"));
             Check(a.Status == 401 && a.Error == "invalid_session", "the token afterwards: 401 invalid_session");
         }
+
+        // Where the two clients differ: client-simple takes the backend's root, client-simple-no-tls has none (D-114).
+#if NO_TLS
+        private static BackendHttp NewHttp(string api, string ca) => new BackendHttp(api);
+        private static LobbyClient NewLobby(string url, string ca) => new LobbyClient(url);
+        private static ArenaClient NewArena(string ca) => new ArenaClient();
+        private static void Join(ArenaClient arena, string host, int port, bool tls, string tlsName, string ticket) => arena.Connect(host, port, ticket);
+#else
+        private static BackendHttp NewHttp(string api, string ca) => new BackendHttp(api, ca);
+        private static LobbyClient NewLobby(string url, string ca) => new LobbyClient(url, ca);
+        private static ArenaClient NewArena(string ca) => new ArenaClient(ca);
+        private static void Join(ArenaClient arena, string host, int port, bool tls, string tlsName, string ticket) => arena.Connect(host, port, tls, tlsName, ticket);
+#endif
 
         /// <summary>Ten inputs a second, as a script's Update sends them, for the given time; the lobby kept too.</summary>
         private static void Drive(ArenaClient arena, int ms, LobbyClient lobby)

@@ -146,6 +146,7 @@ Superseded, kept for history. Where these disagree with anything above, they los
 | [client/](../client/README.md)                                                  | The C# core, its tests, the headless driver and the live drill                                                                  |
 | [client/Unity/com.backend.client](../client/Unity/com.backend.client/README.md) | The Unity package: what was and was not checked, setup, the scripts                                                             |
 | [client-simple](../client-simple/README.md)                                     | The simple client for a UI team: which Unity, what to copy, the three clients, the examples                                     |
+| [client-simple-no-tls](../client-simple-no-tls/README.md)                       | The simple client without TLS: what it reaches (a backend run plain), what to copy, moving to TLS                               |
 | [protocol-spike](../protocol-spike/README.md)                                   | The golden vectors and the spike that wrote them                                                                                |
 | [j-redis-service](../j-redis-service/README.md)                                 | The data store, a project of its own, built and documented: server, client library, CLI, tools, guides and its own decision log |
 
