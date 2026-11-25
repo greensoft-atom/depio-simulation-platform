@@ -324,7 +324,7 @@ network, and against a compromised or buggy client that exhausts resources.
 | Resource limits | `maxclients`, the query buffer, the output buffer and the bulk length: no single client can exhaust the heap |
 | Hash flooding | SipHash-1-2 with a random key ([04 §3.2](04-data-structures.md#32-hashing)) |
 | Pattern denial of service | The glob matcher never takes exponential time ([07 §1.3](07-pubsub-blocking-transactions.md#13-glob-patterns)) |
-| TLS | Not built (2.2.1): `bind` keeps traffic on loopback or the private network. If TLS is ever needed, M8 would add Netty's `SslHandler` with `netty-tcnative`, which is already in the offline bundle. |
+| TLS | Not built (2.2.2): `bind` keeps traffic on loopback or the private network. If TLS is ever needed, M8 would add Netty's `SslHandler` with `netty-tcnative`, which is already in the offline bundle. |
 
 ## 8. Runbook
 

@@ -192,7 +192,7 @@ flowchart LR
     lp["platform/"]
     lw["worker/"]
     lg["gateway/"]
-    jr["jredis/<br/>j-redis 2.2.1: bin/, lib/, conf/j-redis.conf"]
+    jr["jredis/<br/>j-redis 2.2.2: bin/, lib/, conf/j-redis.conf"]
     my["mysql/<br/>MySQL 8.4 LTS, vendor/mysql-8.4"]
     ng["nginx/<br/>nginx 1.30, vendor/nginx-1.30"]
     sd["systemd/<br/>units, timers, drop-in examples"]

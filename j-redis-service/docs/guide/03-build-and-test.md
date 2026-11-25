@@ -28,7 +28,7 @@ Maven finds its libraries in the `java21-offline` bundle through method 1 of
 | `j-redis-examples` | Runnable usage examples (tested in every build) | `j-redis-examples-<v>-all.jar` |
 | `j-redis-tests` | Integration, model-based, persistence, streams, replication, regression and crash tests | none (tests only; Maven does not install it) |
 
-`<v>` is the version in the parent `pom.xml`, now 2.2.1. The `-all.jar` files
+`<v>` is the version in the parent `pom.xml`, now 2.2.2. The `-all.jar` files
 are "fat" jars: each one bundles its dependencies. You can run each of them with
 `java -jar` on any machine with Java 21.
 
@@ -169,7 +169,7 @@ Both scripts create `target/dist/j-redis-<version>/` and an archive.
 command is on the `PATH`. `make-dist.ps1` writes a `.zip`.
 
 ```
-j-redis-2.2.1/
+j-redis-2.2.2/
 ├── bin/        j-redis-server, j-redis-cli, j-redis-tools, j-redis-examples  (+ .cmd for Windows)
 ├── lib/        j-redis-server.jar, j-redis-cli.jar, j-redis-tools.jar, j-redis-examples.jar
 ├── conf/       j-redis.conf (production, Linux), j-redis-dev.conf (workstation)

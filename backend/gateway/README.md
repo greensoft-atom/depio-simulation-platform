@@ -319,7 +319,7 @@ A sender routes a push by the part of the value before `#`
 
 ## Build and test
 
-From `backend/`, with j-redis 2.2.1 installed first (see the
+From `backend/`, with j-redis 2.2.2 installed first (see the
 [backend README](../README.md#commands)):
 
 ```bash
@@ -340,6 +340,7 @@ stands in for `platform`. Both listen on loopback ports that the system chooses.
 | `LobbyHandlerRaceTest` | 3 | Two auth frames cannot make one connection two players; a connection closed during its lookup is never registered (T-2); a connection silent for its idle limit is closed with Close `idle` |
 | `EdgeCertificateTest` | 3 | The earliest expiry in a chain, a renewal seen at the next scrape, and an unreadable file read as 0 |
 | `PlatformClientTest` | 2 | A call timed in seconds, and a failed call timed too |
+| `GatewayMainTest` | 1 | A port argument out of range, its own or the store's, refuses the start (O-101) |
 
 `SlowProxy` is a test helper, not a test.
 

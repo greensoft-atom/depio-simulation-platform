@@ -416,6 +416,10 @@ the replica before the primary. Then follow the order above.
 
 Either half without the other is no worse than 2.2.0, and the files carry over.
 
+**The release on j-redis 2.2.2** (2026-11-25, plan item 139): only `HELLO`'s reply changes, its `role` now `primary` or
+`replica` (D-52), which nothing in the backend reads. The stores upgrade as in any release, with no step of their own,
+and the files carry over.
+
 ## 6. Still to be written
 
 | Item | Blocked by |

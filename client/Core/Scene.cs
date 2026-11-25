@@ -9,7 +9,7 @@ namespace Backend.Client.Core
         public int Handle, Kind;
         /// <summary>Where, in world units, and which way, in radians, at the render tick.</summary>
         public float X, Y, Angle;
-        /// <summary>A bullet's or a unit's radius in world units; a tank's is its class's.</summary>
+        /// <summary>Its radius in world units: a bullet's or a unit's from the wire, a tank's its class's (<see cref="Scene.Classes"/>).</summary>
         public float Radius;
         /// <summary>A tank's class; a shape's or a unit's subtype is <see cref="Subtype"/>.</summary>
         public int ClassId, Subtype, Team, Skin, Level, Flags;
@@ -32,6 +32,9 @@ namespace Backend.Client.Core
 
         public IReadOnlyList<DrawItem> Items => _items;
 
+        /// <summary>The class table a tank is sized by (P-67); until there is one, every tank is the server's 30 units.</summary>
+        public ClassTableInfo Classes { get; set; }
+
         /// <summary>The scene at <paramref name="renderTick"/>, the own tank at its newest sample.</summary>
         public void Build(ClientWorld world, double renderTick) => Build(world, renderTick, false, 0, 0, 0);
 
@@ -49,7 +52,7 @@ namespace Backend.Client.Core
                 DrawItem item = Next();
                 item.Handle = h;
                 item.Kind = e.Kind;
-                item.Radius = e.Radius;
+                item.Radius = e.Kind != Wire.KindTank ? e.Radius : Classes != null ? Classes.TankRadius(e.ClassId) : Wire.TankRadius;
                 item.ClassId = e.Kind == Wire.KindTank ? e.ClassId : 0;
                 item.Subtype = e.Kind == Wire.KindTank ? 0 : e.ClassId;
                 item.Team = e.Team;

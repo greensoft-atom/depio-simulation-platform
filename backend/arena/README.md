@@ -354,7 +354,7 @@ the repository's CLAUDE.md. Measure what a change costs the tick or the payload 
 | `ArenaTlsTest` | 8 | Keystores loaded and refused; certificate names covered; names given as bytes skipped |
 | `WavesTest` | 6 | Co-op's waves, the Guardian, enraging, the tenth wave |
 | `RoomRegistryTest` | 5 | Room placement; a match's room made by its first ticket; the announced capacity; room names; places reserved counted with those taken (D-79) |
-| `ArenaMainTest` | 4 | `BACKEND_ADVERTISE_PORT` and `BACKEND_ADVERTISE_TLS_NAME` read; each of these refuses the start: a port that is not one, a name a handshake cannot carry, and a name set beside the arena's own keystore (D-82) |
+| `ArenaMainTest` | 5 | `BACKEND_ADVERTISE_PORT` and `BACKEND_ADVERTISE_TLS_NAME` read; each of these refuses the start: a port that is not one, a name a handshake cannot carry, and a name set beside the arena's own keystore (D-82); a port argument out of range, its own or the store's (O-101) |
 | `ArenaAnnouncerTest` | 3 | Announcements carry the rooms; operators' commands reach the rooms; a store that is not up at the start does not end it: the operator's channel is made, and the arena announced, once the store is up (O-62); behind the front, the public address, port and TLS name announced, and TLS announced though the arena speaks none (D-82) |
 | `ClientViewTest` | 3 | A handle stands for one incarnation; `inputTicks`; when a motion rule is told |
 | `RoomTallyIntegrationTest` | 3 | Kills and assists from a real room reach the result |

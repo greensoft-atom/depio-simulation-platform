@@ -63,7 +63,7 @@ are drawn in [docs/diagrams/01-system.md](docs/diagrams/01-system.md).
 As of 2026-11-25, [plan](docs/plan.md) items 1 to 137 are done. Item 7 stays open by design: what is left of it
 waits on Q-3's hardware. Item 138, this review of every guide and document, is under way.
 
-- **Tests.** j-redis 2.2.1 passes its 229 tests (2026-10-01). The backend's sources declare 1 150 tests (2026-11-25); the last
+- **Tests.** j-redis 2.2.2 passes its 229 tests (2026-11-25). The backend's sources declare 1 150 tests (2026-11-25); the last
   whole run's count was 1 064 (plan item 86, 2026-10-06). Each module's README holds its own count. The client core's 185 tests pass on .NET 8 and on
   Unity 2019's Mono (plan item 137).
 - **Live.** The live drill has 45 scenarios, and `untrusted` over TLS. At plan item 78, all 44 scenarios of then

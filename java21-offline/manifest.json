@@ -1,10 +1,11 @@
 {
   "bundle": "java21-offline",
-  "generated": "2026-09-22",
+  "generated": "2026-11-25",
+  "inventory_enforcer_checked": "2026-09-22",
   "target_jdk": 21,
-  "verified_with": "Temurin 21.0.12.1 + Maven 3.9.16",
+  "verified_with": "Temurin 21.0.12.1 + Maven 3.9.16 (the inventory's jars); describe.py's class-file read (all)",
   "max_bytecode_major": 65,
-  "jar_count": 244,
+  "jar_count": 300,
   "lib_count": 74,
   "lib_test_count": 27,
   "artifacts": [
@@ -18,7 +19,21 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
+    },
+    {
+      "group": "commons-codec",
+      "artifact": "commons-codec",
+      "version": "1.16.1",
+      "classifier": "",
+      "file": "commons-codec-1.16.1.jar",
+      "size_bytes": 365463,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": true,
+      "category": "Apache Commons",
+      "enforcer_checked": false
     },
     {
       "group": "commons-codec",
@@ -30,7 +45,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "commons-codec",
@@ -42,7 +58,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "commons-codec",
@@ -54,7 +71,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "commons-collections",
@@ -66,7 +84,47 @@
       "bytecode_major": 47,
       "java": "1.3",
       "multi_release": false,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
+    },
+    {
+      "group": "commons-io",
+      "artifact": "commons-io",
+      "version": "2.11.0",
+      "classifier": "",
+      "file": "commons-io-2.11.0.jar",
+      "size_bytes": 327135,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Apache Commons",
+      "enforcer_checked": false
+    },
+    {
+      "group": "commons-io",
+      "artifact": "commons-io",
+      "version": "2.13.0",
+      "classifier": "",
+      "file": "commons-io-2.13.0.jar",
+      "size_bytes": 483954,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Apache Commons",
+      "enforcer_checked": false
+    },
+    {
+      "group": "commons-io",
+      "artifact": "commons-io",
+      "version": "2.15.1",
+      "classifier": "",
+      "file": "commons-io-2.15.1.jar",
+      "size_bytes": 501218,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": true,
+      "category": "Apache Commons",
+      "enforcer_checked": false
     },
     {
       "group": "commons-io",
@@ -78,7 +136,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "commons-io",
@@ -90,7 +149,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "commons-io",
@@ -102,7 +162,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "commons-io",
@@ -114,7 +175,8 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "commons-logging",
@@ -126,7 +188,34 @@
       "bytecode_major": 46,
       "java": "1.2",
       "multi_release": false,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.commons",
+      "artifact": "commons-collections4",
+      "version": "4.4",
+      "classifier": "",
+      "file": "commons-collections4-4.4.jar",
+      "size_bytes": 751914,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Apache Commons",
+      "enforcer_checked": false
+    },
+    {
+      "group": "org.apache.commons",
+      "artifact": "commons-compress",
+      "version": "1.26.1",
+      "classifier": "",
+      "file": "commons-compress-1.26.1.jar",
+      "size_bytes": 1079377,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": true,
+      "category": "Apache Commons",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.commons",
@@ -138,7 +227,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.commons",
@@ -150,7 +240,34 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": false,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.commons",
+      "artifact": "commons-lang3",
+      "version": "3.12.0",
+      "classifier": "",
+      "file": "commons-lang3-3.12.0.jar",
+      "size_bytes": 587402,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Apache Commons",
+      "enforcer_checked": false
+    },
+    {
+      "group": "org.apache.commons",
+      "artifact": "commons-lang3",
+      "version": "3.14.0",
+      "classifier": "",
+      "file": "commons-lang3-3.14.0.jar",
+      "size_bytes": 657952,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": true,
+      "category": "Apache Commons",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.commons",
@@ -162,7 +279,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.commons",
@@ -174,7 +292,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.commons",
@@ -186,7 +305,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": false,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.commons",
@@ -198,7 +318,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Apache Commons"
+      "category": "Apache Commons",
+      "enforcer_checked": true
     },
     {
       "group": "org.jgroups",
@@ -210,7 +331,8 @@
       "bytecode_major": 61,
       "java": "17",
       "multi_release": false,
-      "category": "Cluster membership / coordination"
+      "category": "Cluster membership / coordination",
+      "enforcer_checked": true
     },
     {
       "group": "com.github.ben-manes.caffeine",
@@ -222,7 +344,8 @@
       "bytecode_major": 55,
       "java": "11",
       "multi_release": false,
-      "category": "Collections / caching / concurrency"
+      "category": "Collections / caching / concurrency",
+      "enforcer_checked": true
     },
     {
       "group": "com.lmax",
@@ -234,7 +357,8 @@
       "bytecode_major": 55,
       "java": "11",
       "multi_release": false,
-      "category": "Collections / caching / concurrency"
+      "category": "Collections / caching / concurrency",
+      "enforcer_checked": true
     },
     {
       "group": "it.unimi.dsi",
@@ -246,7 +370,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Collections / caching / concurrency"
+      "category": "Collections / caching / concurrency",
+      "enforcer_checked": true
     },
     {
       "group": "org.agrona",
@@ -258,7 +383,8 @@
       "bytecode_major": 61,
       "java": "17",
       "multi_release": false,
-      "category": "Collections / caching / concurrency"
+      "category": "Collections / caching / concurrency",
+      "enforcer_checked": true
     },
     {
       "group": "org.hdrhistogram",
@@ -270,7 +396,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Collections / caching / concurrency"
+      "category": "Collections / caching / concurrency",
+      "enforcer_checked": true
     },
     {
       "group": "org.jctools",
@@ -282,7 +409,8 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Collections / caching / concurrency"
+      "category": "Collections / caching / concurrency",
+      "enforcer_checked": true
     },
     {
       "group": "org.jctools",
@@ -294,7 +422,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Collections / caching / concurrency"
+      "category": "Collections / caching / concurrency",
+      "enforcer_checked": true
     },
     {
       "group": "com.github.luben",
@@ -306,7 +435,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Compression"
+      "category": "Compression",
+      "enforcer_checked": true
     },
     {
       "group": "com.github.luben",
@@ -318,7 +448,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Compression"
+      "category": "Compression",
+      "enforcer_checked": true
     },
     {
       "group": "com.github.luben",
@@ -330,7 +461,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Compression"
+      "category": "Compression",
+      "enforcer_checked": true
     },
     {
       "group": "org.lz4",
@@ -342,7 +474,8 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Compression"
+      "category": "Compression",
+      "enforcer_checked": true
     },
     {
       "group": "org.tukaani",
@@ -354,7 +487,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Compression"
+      "category": "Compression",
+      "enforcer_checked": true
     },
     {
       "group": "org.tukaani",
@@ -366,7 +500,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Compression"
+      "category": "Compression",
+      "enforcer_checked": true
     },
     {
       "group": "org.tukaani",
@@ -378,7 +513,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Compression"
+      "category": "Compression",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.tukaani",
+      "artifact": "xz",
+      "version": "1.9",
+      "classifier": "",
+      "file": "xz-1.9.jar",
+      "size_bytes": 116013,
+      "bytecode_major": 51,
+      "java": "7",
+      "multi_release": true,
+      "category": "Compression",
+      "enforcer_checked": false
     },
     {
       "group": "org.bouncycastle",
@@ -390,7 +539,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": true,
-      "category": "Crypto"
+      "category": "Crypto",
+      "enforcer_checked": true
     },
     {
       "group": "org.bouncycastle",
@@ -402,7 +552,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Crypto"
+      "category": "Crypto",
+      "enforcer_checked": true
     },
     {
       "group": "org.bouncycastle",
@@ -414,7 +565,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": true,
-      "category": "Crypto"
+      "category": "Crypto",
+      "enforcer_checked": true
     },
     {
       "group": "org.bouncycastle",
@@ -426,7 +578,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Crypto"
+      "category": "Crypto",
+      "enforcer_checked": true
     },
     {
       "group": "org.bouncycastle",
@@ -438,7 +591,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": true,
-      "category": "Crypto"
+      "category": "Crypto",
+      "enforcer_checked": true
     },
     {
       "group": "org.bouncycastle",
@@ -450,7 +604,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": true,
-      "category": "Crypto"
+      "category": "Crypto",
+      "enforcer_checked": true
     },
     {
       "group": "org.bouncycastle",
@@ -462,7 +617,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Crypto"
+      "category": "Crypto",
+      "enforcer_checked": true
     },
     {
       "group": "com.mysql",
@@ -474,7 +630,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Database (MySQL, pool, migrations)"
+      "category": "Database (MySQL, pool, migrations)",
+      "enforcer_checked": true
     },
     {
       "group": "com.zaxxer",
@@ -486,7 +643,8 @@
       "bytecode_major": 55,
       "java": "11",
       "multi_release": false,
-      "category": "Database (MySQL, pool, migrations)"
+      "category": "Database (MySQL, pool, migrations)",
+      "enforcer_checked": true
     },
     {
       "group": "org.flywaydb",
@@ -498,7 +656,8 @@
       "bytecode_major": 61,
       "java": "17",
       "multi_release": false,
-      "category": "Database (MySQL, pool, migrations)"
+      "category": "Database (MySQL, pool, migrations)",
+      "enforcer_checked": true
     },
     {
       "group": "org.flywaydb",
@@ -510,7 +669,8 @@
       "bytecode_major": 61,
       "java": "17",
       "multi_release": false,
-      "category": "Database (MySQL, pool, migrations)"
+      "category": "Database (MySQL, pool, migrations)",
+      "enforcer_checked": true
     },
     {
       "group": "com.fasterxml.jackson.core",
@@ -522,7 +682,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "JSON / serialization"
+      "category": "JSON / serialization",
+      "enforcer_checked": true
     },
     {
       "group": "com.fasterxml.jackson.core",
@@ -534,7 +695,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "JSON / serialization"
+      "category": "JSON / serialization",
+      "enforcer_checked": true
     },
     {
       "group": "com.fasterxml.jackson.core",
@@ -546,7 +708,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "JSON / serialization"
+      "category": "JSON / serialization",
+      "enforcer_checked": true
     },
     {
       "group": "com.fasterxml.jackson.dataformat",
@@ -558,7 +721,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "JSON / serialization"
+      "category": "JSON / serialization",
+      "enforcer_checked": true
     },
     {
       "group": "com.google.code.gson",
@@ -570,7 +734,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "JSON / serialization"
+      "category": "JSON / serialization",
+      "enforcer_checked": true
     },
     {
       "group": "org.yaml",
@@ -582,7 +747,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "JSON / serialization"
+      "category": "JSON / serialization",
+      "enforcer_checked": true
     },
     {
       "group": "ch.qos.logback",
@@ -594,7 +760,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Logging"
+      "category": "Logging",
+      "enforcer_checked": true
     },
     {
       "group": "ch.qos.logback",
@@ -606,7 +773,8 @@
       "bytecode_major": 55,
       "java": "11",
       "multi_release": false,
-      "category": "Logging"
+      "category": "Logging",
+      "enforcer_checked": true
     },
     {
       "group": "ch.qos.logback",
@@ -618,7 +786,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Logging"
+      "category": "Logging",
+      "enforcer_checked": true
     },
     {
       "group": "ch.qos.logback",
@@ -630,7 +799,8 @@
       "bytecode_major": 55,
       "java": "11",
       "multi_release": false,
-      "category": "Logging"
+      "category": "Logging",
+      "enforcer_checked": true
     },
     {
       "group": "org.slf4j",
@@ -642,7 +812,21 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": false,
-      "category": "Logging"
+      "category": "Logging",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.slf4j",
+      "artifact": "slf4j-api",
+      "version": "1.7.32",
+      "classifier": "",
+      "file": "slf4j-api-1.7.32.jar",
+      "size_bytes": 41513,
+      "bytecode_major": 49,
+      "java": "5",
+      "multi_release": false,
+      "category": "Logging",
+      "enforcer_checked": false
     },
     {
       "group": "org.slf4j",
@@ -654,7 +838,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": false,
-      "category": "Logging"
+      "category": "Logging",
+      "enforcer_checked": true
     },
     {
       "group": "org.slf4j",
@@ -666,7 +851,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Logging"
+      "category": "Logging",
+      "enforcer_checked": true
     },
     {
       "group": "org.slf4j",
@@ -678,7 +864,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Logging"
+      "category": "Logging",
+      "enforcer_checked": true
     },
     {
       "group": "org.slf4j",
@@ -690,7 +877,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Logging"
+      "category": "Logging",
+      "enforcer_checked": true
     },
     {
       "group": "javax.inject",
@@ -702,7 +890,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache-extras.beanshell",
@@ -714,7 +903,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven",
@@ -726,7 +916,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven",
@@ -738,7 +929,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven",
@@ -750,7 +942,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.doxia",
@@ -762,7 +955,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.doxia",
@@ -774,7 +968,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.doxia",
@@ -786,7 +981,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.doxia",
@@ -798,7 +994,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.doxia",
@@ -810,7 +1007,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.doxia",
@@ -822,7 +1020,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.doxia",
@@ -834,7 +1033,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.doxia",
@@ -846,7 +1046,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.doxia",
@@ -858,7 +1059,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.enforcer",
@@ -870,7 +1072,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.enforcer",
@@ -882,7 +1085,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.plugins",
@@ -894,7 +1098,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.plugins",
@@ -906,7 +1111,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.plugins",
@@ -918,7 +1124,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.plugins",
+      "artifact": "maven-compiler-plugin",
+      "version": "3.13.0",
+      "classifier": "",
+      "file": "maven-compiler-plugin-3.13.0.jar",
+      "size_bytes": 82525,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.plugins",
@@ -930,7 +1150,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.plugins",
@@ -942,7 +1163,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.plugins",
@@ -954,7 +1176,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.plugins",
@@ -966,7 +1189,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.plugins",
+      "artifact": "maven-install-plugin",
+      "version": "3.1.2",
+      "classifier": "",
+      "file": "maven-install-plugin-3.1.2.jar",
+      "size_bytes": 32377,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.plugins",
@@ -978,7 +1215,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.plugins",
+      "artifact": "maven-jar-plugin",
+      "version": "3.4.1",
+      "classifier": "",
+      "file": "maven-jar-plugin-3.4.1.jar",
+      "size_bytes": 33771,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.plugins",
@@ -990,7 +1241,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.plugins",
+      "artifact": "maven-resources-plugin",
+      "version": "3.3.1",
+      "classifier": "",
+      "file": "maven-resources-plugin-3.3.1.jar",
+      "size_bytes": 30951,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.plugins",
@@ -1002,7 +1267,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.plugins",
@@ -1014,7 +1280,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.plugins",
+      "artifact": "maven-shade-plugin",
+      "version": "3.5.1",
+      "classifier": "",
+      "file": "maven-shade-plugin-3.5.1.jar",
+      "size_bytes": 146816,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.plugins",
@@ -1026,7 +1306,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.plugins",
@@ -1038,7 +1319,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.plugins",
+      "artifact": "maven-surefire-plugin",
+      "version": "3.2.5",
+      "classifier": "",
+      "file": "maven-surefire-plugin-3.2.5.jar",
+      "size_bytes": 44571,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.plugins",
@@ -1050,7 +1345,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.reporting",
@@ -1062,7 +1358,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.reporting",
@@ -1074,7 +1371,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.resolver",
@@ -1086,7 +1384,21 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.resolver",
+      "artifact": "maven-resolver-api",
+      "version": "1.9.18",
+      "classifier": "",
+      "file": "maven-resolver-api-1.9.18.jar",
+      "size_bytes": 157111,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.resolver",
@@ -1098,7 +1410,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.resolver",
@@ -1110,7 +1423,21 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.resolver",
+      "artifact": "maven-resolver-util",
+      "version": "1.9.18",
+      "classifier": "",
+      "file": "maven-resolver-util-1.9.18.jar",
+      "size_bytes": 196023,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.resolver",
@@ -1122,7 +1449,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.resolver",
@@ -1134,7 +1462,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.shared",
+      "artifact": "file-management",
+      "version": "3.1.0",
+      "classifier": "",
+      "file": "file-management-3.1.0.jar",
+      "size_bytes": 36328,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.shared",
@@ -1146,7 +1488,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.shared",
@@ -1158,7 +1501,21 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.shared",
+      "artifact": "maven-common-artifact-filters",
+      "version": "3.1.1",
+      "classifier": "",
+      "file": "maven-common-artifact-filters-3.1.1.jar",
+      "size_bytes": 60844,
+      "bytecode_major": 51,
+      "java": "7",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.shared",
@@ -1170,7 +1527,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.shared",
@@ -1182,7 +1540,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.shared",
+      "artifact": "maven-dependency-tree",
+      "version": "3.2.1",
+      "classifier": "",
+      "file": "maven-dependency-tree-3.2.1.jar",
+      "size_bytes": 42608,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.shared",
@@ -1194,7 +1566,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.shared",
+      "artifact": "maven-filtering",
+      "version": "3.3.1",
+      "classifier": "",
+      "file": "maven-filtering-3.3.1.jar",
+      "size_bytes": 54990,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.shared",
@@ -1206,7 +1592,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.shared",
@@ -1218,7 +1605,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.shared",
@@ -1230,7 +1618,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.shared",
@@ -1242,7 +1631,8 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.maven.shared",
@@ -1254,7 +1644,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.surefire",
+      "artifact": "common-java5",
+      "version": "3.2.5",
+      "classifier": "",
+      "file": "common-java5-3.2.5.jar",
+      "size_bytes": 17555,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.surefire",
@@ -1266,7 +1670,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.surefire",
+      "artifact": "maven-surefire-common",
+      "version": "3.2.5",
+      "classifier": "",
+      "file": "maven-surefire-common-3.2.5.jar",
+      "size_bytes": 307901,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.surefire",
@@ -1278,7 +1696,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.surefire",
+      "artifact": "surefire-api",
+      "version": "3.2.5",
+      "classifier": "",
+      "file": "surefire-api-3.2.5.jar",
+      "size_bytes": 170506,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.surefire",
@@ -1290,7 +1722,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.surefire",
+      "artifact": "surefire-booter",
+      "version": "3.2.5",
+      "classifier": "",
+      "file": "surefire-booter-3.2.5.jar",
+      "size_bytes": 117600,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.surefire",
@@ -1302,7 +1748,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.surefire",
+      "artifact": "surefire-extensions-api",
+      "version": "3.2.5",
+      "classifier": "",
+      "file": "surefire-extensions-api-3.2.5.jar",
+      "size_bytes": 25852,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.surefire",
@@ -1314,7 +1774,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.surefire",
+      "artifact": "surefire-extensions-spi",
+      "version": "3.2.5",
+      "classifier": "",
+      "file": "surefire-extensions-spi-3.2.5.jar",
+      "size_bytes": 8177,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.surefire",
@@ -1326,7 +1800,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.surefire",
+      "artifact": "surefire-junit-platform",
+      "version": "3.2.5",
+      "classifier": "",
+      "file": "surefire-junit-platform-3.2.5.jar",
+      "size_bytes": 27152,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.surefire",
@@ -1338,7 +1826,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.surefire",
+      "artifact": "surefire-logger-api",
+      "version": "3.2.5",
+      "classifier": "",
+      "file": "surefire-logger-api-3.2.5.jar",
+      "size_bytes": 13588,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.surefire",
@@ -1350,7 +1852,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.apache.maven.surefire",
+      "artifact": "surefire-shared-utils",
+      "version": "3.2.5",
+      "classifier": "",
+      "file": "surefire-shared-utils-3.2.5.jar",
+      "size_bytes": 2438463,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": true,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.apache.maven.surefire",
@@ -1362,7 +1878,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.janino",
@@ -1374,7 +1891,8 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.janino",
@@ -1386,7 +1904,8 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.mojo",
@@ -1398,7 +1917,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.plexus",
@@ -1410,7 +1930,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.plexus",
@@ -1422,7 +1943,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.plexus",
@@ -1434,7 +1956,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.codehaus.plexus",
+      "artifact": "plexus-archiver",
+      "version": "4.9.2",
+      "classifier": "",
+      "file": "plexus-archiver-4.9.2.jar",
+      "size_bytes": 224755,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.codehaus.plexus",
@@ -1446,7 +1982,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.plexus",
@@ -1458,7 +1995,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.codehaus.plexus",
+      "artifact": "plexus-compiler-api",
+      "version": "2.15.0",
+      "classifier": "",
+      "file": "plexus-compiler-api-2.15.0.jar",
+      "size_bytes": 29072,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.codehaus.plexus",
@@ -1470,7 +2021,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.codehaus.plexus",
+      "artifact": "plexus-compiler-javac",
+      "version": "2.15.0",
+      "classifier": "",
+      "file": "plexus-compiler-javac-2.15.0.jar",
+      "size_bytes": 25708,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.codehaus.plexus",
@@ -1482,7 +2047,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.codehaus.plexus",
+      "artifact": "plexus-compiler-manager",
+      "version": "2.15.0",
+      "classifier": "",
+      "file": "plexus-compiler-manager-2.15.0.jar",
+      "size_bytes": 5232,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.codehaus.plexus",
@@ -1494,7 +2073,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.plexus",
@@ -1506,7 +2086,8 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.plexus",
@@ -1518,7 +2099,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.codehaus.plexus",
+      "artifact": "plexus-interpolation",
+      "version": "1.26",
+      "classifier": "",
+      "file": "plexus-interpolation-1.26.jar",
+      "size_bytes": 85348,
+      "bytecode_major": 50,
+      "java": "6",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.codehaus.plexus",
@@ -1530,7 +2125,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.plexus",
@@ -1542,7 +2138,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.plexus",
@@ -1554,7 +2151,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.codehaus.plexus",
+      "artifact": "plexus-io",
+      "version": "3.4.2",
+      "classifier": "",
+      "file": "plexus-io-3.4.2.jar",
+      "size_bytes": 78962,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.codehaus.plexus",
@@ -1566,7 +2177,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.codehaus.plexus",
+      "artifact": "plexus-java",
+      "version": "1.2.0",
+      "classifier": "",
+      "file": "plexus-java-1.2.0.jar",
+      "size_bytes": 57542,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": true,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.codehaus.plexus",
@@ -1578,7 +2203,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.codehaus.plexus",
+      "artifact": "plexus-utils",
+      "version": "3.5.1",
+      "classifier": "",
+      "file": "plexus-utils-3.5.1.jar",
+      "size_bytes": 269335,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": true,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.codehaus.plexus",
@@ -1590,7 +2229,34 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.codehaus.plexus",
+      "artifact": "plexus-utils",
+      "version": "4.0.0",
+      "classifier": "",
+      "file": "plexus-utils-4.0.0.jar",
+      "size_bytes": 192368,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": true,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
+    },
+    {
+      "group": "org.codehaus.plexus",
+      "artifact": "plexus-utils",
+      "version": "4.0.1",
+      "classifier": "",
+      "file": "plexus-utils-4.0.1.jar",
+      "size_bytes": 192527,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": true,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.codehaus.plexus",
@@ -1602,7 +2268,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.plexus",
@@ -1614,7 +2281,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.codehaus.plexus",
@@ -1626,7 +2294,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.codehaus.plexus",
+      "artifact": "plexus-xml",
+      "version": "3.0.0",
+      "classifier": "",
+      "file": "plexus-xml-3.0.0.jar",
+      "size_bytes": 93014,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.codehaus.plexus",
@@ -1638,7 +2320,34 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.eclipse.aether",
+      "artifact": "aether-api",
+      "version": "1.0.0.v20140518",
+      "classifier": "",
+      "file": "aether-api-1.0.0.v20140518.jar",
+      "size_bytes": 136299,
+      "bytecode_major": 49,
+      "java": "5",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
+    },
+    {
+      "group": "org.eclipse.aether",
+      "artifact": "aether-util",
+      "version": "1.0.0.v20140518",
+      "classifier": "",
+      "file": "aether-util-1.0.0.v20140518.jar",
+      "size_bytes": 145829,
+      "bytecode_major": 49,
+      "java": "5",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.eclipse.sisu",
@@ -1650,7 +2359,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.eclipse.sisu",
@@ -1662,7 +2372,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.eclipse.sisu",
@@ -1674,7 +2385,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.iq80.snappy",
+      "artifact": "snappy",
+      "version": "0.4",
+      "classifier": "",
+      "file": "snappy-0.4.jar",
+      "size_bytes": 57954,
+      "bytecode_major": 50,
+      "java": "6",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.jdom",
@@ -1686,7 +2411,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.ow2.asm",
@@ -1698,7 +2424,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.ow2.asm",
@@ -1710,7 +2437,34 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.ow2.asm",
+      "artifact": "asm",
+      "version": "9.5",
+      "classifier": "",
+      "file": "asm-9.5.jar",
+      "size_bytes": 121863,
+      "bytecode_major": 53,
+      "java": "9",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
+    },
+    {
+      "group": "org.ow2.asm",
+      "artifact": "asm",
+      "version": "9.6",
+      "classifier": "",
+      "file": "asm-9.6.jar",
+      "size_bytes": 123598,
+      "bytecode_major": 53,
+      "java": "9",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.ow2.asm",
@@ -1722,7 +2476,21 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.ow2.asm",
+      "artifact": "asm-commons",
+      "version": "9.5",
+      "classifier": "",
+      "file": "asm-commons-9.5.jar",
+      "size_bytes": 72209,
+      "bytecode_major": 53,
+      "java": "9",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.ow2.asm",
@@ -1734,7 +2502,21 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.ow2.asm",
+      "artifact": "asm-tree",
+      "version": "9.5",
+      "classifier": "",
+      "file": "asm-tree-9.5.jar",
+      "size_bytes": 51944,
+      "bytecode_major": 53,
+      "java": "9",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "org.ow2.asm",
@@ -1746,7 +2528,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.sonatype.plexus",
@@ -1758,7 +2541,8 @@
       "bytecode_major": 48,
       "java": "1.4",
       "multi_release": false,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.vafer",
@@ -1770,7 +2554,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Maven build plugins and their dependencies"
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.vafer",
+      "artifact": "jdependency",
+      "version": "2.9.0",
+      "classifier": "",
+      "file": "jdependency-2.9.0.jar",
+      "size_bytes": 404307,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": false,
+      "category": "Maven build plugins and their dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "io.micrometer",
@@ -1782,7 +2580,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Metrics"
+      "category": "Metrics",
+      "enforcer_checked": true
     },
     {
       "group": "io.micrometer",
@@ -1794,7 +2593,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Metrics"
+      "category": "Metrics",
+      "enforcer_checked": true
     },
     {
       "group": "io.micrometer",
@@ -1806,7 +2606,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Metrics"
+      "category": "Metrics",
+      "enforcer_checked": true
     },
     {
       "group": "io.micrometer",
@@ -1818,7 +2619,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Metrics"
+      "category": "Metrics",
+      "enforcer_checked": true
     },
     {
       "group": "io.prometheus",
@@ -1830,7 +2632,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Metrics"
+      "category": "Metrics",
+      "enforcer_checked": true
     },
     {
       "group": "io.prometheus",
@@ -1842,7 +2645,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Metrics"
+      "category": "Metrics",
+      "enforcer_checked": true
     },
     {
       "group": "io.prometheus",
@@ -1854,7 +2658,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Metrics"
+      "category": "Metrics",
+      "enforcer_checked": true
     },
     {
       "group": "io.prometheus",
@@ -1866,7 +2671,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Metrics"
+      "category": "Metrics",
+      "enforcer_checked": true
     },
     {
       "group": "io.prometheus",
@@ -1878,7 +2684,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Metrics"
+      "category": "Metrics",
+      "enforcer_checked": true
     },
     {
       "group": "io.prometheus",
@@ -1890,7 +2697,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Metrics"
+      "category": "Metrics",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -1902,7 +2710,8 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -1914,7 +2723,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -1926,7 +2736,8 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -1938,7 +2749,8 @@
       "bytecode_major": null,
       "java": "n/a",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -1950,7 +2762,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -1962,7 +2775,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
+    },
+    {
+      "group": "io.netty",
+      "artifact": "netty-codec-http",
+      "version": "4.2.18.Final",
+      "classifier": "",
+      "file": "netty-codec-http-4.2.18.Final.jar",
+      "size_bytes": 681156,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": true,
+      "category": "Networking (Netty)",
+      "enforcer_checked": false
     },
     {
       "group": "io.netty",
@@ -1974,7 +2801,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -1986,7 +2814,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -1998,7 +2827,8 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2010,7 +2840,8 @@
       "bytecode_major": 55,
       "java": "11",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2022,7 +2853,8 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2034,7 +2866,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2046,7 +2879,8 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2058,7 +2892,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2070,7 +2905,8 @@
       "bytecode_major": null,
       "java": "n/a",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2082,7 +2918,8 @@
       "bytecode_major": null,
       "java": "n/a",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2094,7 +2931,8 @@
       "bytecode_major": null,
       "java": "n/a",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2106,7 +2944,8 @@
       "bytecode_major": null,
       "java": "n/a",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2118,7 +2957,8 @@
       "bytecode_major": null,
       "java": "n/a",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2130,7 +2970,8 @@
       "bytecode_major": null,
       "java": "n/a",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2142,7 +2983,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2154,7 +2996,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2166,7 +3009,8 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2178,7 +3022,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2190,7 +3035,8 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2202,7 +3048,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2214,7 +3061,8 @@
       "bytecode_major": null,
       "java": "n/a",
       "multi_release": false,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2226,7 +3074,8 @@
       "bytecode_major": null,
       "java": "n/a",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2238,7 +3087,8 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "io.netty",
@@ -2250,7 +3100,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Networking (Netty)"
+      "category": "Networking (Netty)",
+      "enforcer_checked": true
     },
     {
       "group": "at.yawk.lz4",
@@ -2262,7 +3113,8 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.aayushatharva.brotli4j",
@@ -2274,7 +3126,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.aayushatharva.brotli4j",
@@ -2286,7 +3139,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.aayushatharva.brotli4j",
@@ -2298,7 +3152,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.aayushatharva.brotli4j",
@@ -2310,7 +3165,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.aayushatharva.brotli4j",
@@ -2322,7 +3178,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.aayushatharva.brotli4j",
@@ -2334,7 +3191,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.aayushatharva.brotli4j",
@@ -2346,7 +3204,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.aayushatharva.brotli4j",
@@ -2358,7 +3217,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.github.cliftonlabs",
@@ -2370,7 +3230,8 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.github.javaparser",
@@ -2382,7 +3243,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.github.jponge",
@@ -2394,7 +3256,8 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.google.errorprone",
@@ -2406,7 +3269,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.google.protobuf",
@@ -2418,7 +3282,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.google.protobuf",
@@ -2430,7 +3295,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.google.protobuf.nano",
@@ -2442,7 +3308,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.jcraft",
@@ -2454,7 +3321,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "com.ning",
@@ -2466,7 +3334,21 @@
       "bytecode_major": 50,
       "java": "6",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
+    },
+    {
+      "group": "com.thoughtworks.qdox",
+      "artifact": "qdox",
+      "version": "2.0.3",
+      "classifier": "",
+      "file": "qdox-2.0.3.jar",
+      "size_bytes": 334163,
+      "bytecode_major": 50,
+      "java": "6",
+      "multi_release": false,
+      "category": "Other transitive dependencies",
+      "enforcer_checked": false
     },
     {
       "group": "eu.maveniverse.maven.domtrip",
@@ -2478,7 +3360,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "eu.maveniverse.maven.domtrip",
@@ -2490,7 +3373,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "io.airlift",
@@ -2502,7 +3386,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "io.projectreactor.tools",
@@ -2514,7 +3399,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "javax.mail",
@@ -2526,7 +3412,8 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.logging.log4j",
@@ -2538,7 +3425,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.logging.log4j",
@@ -2550,7 +3438,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.velocity",
@@ -2562,7 +3451,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.apache.velocity.tools",
@@ -2574,7 +3464,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.conscrypt",
@@ -2586,7 +3477,8 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.jboss.marshalling",
@@ -2598,7 +3490,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.jspecify",
@@ -2610,7 +3503,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "org.jspecify",
@@ -2622,7 +3516,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Other transitive dependencies"
+      "category": "Other transitive dependencies",
+      "enforcer_checked": true
     },
     {
       "group": "net.bytebuddy",
@@ -2634,7 +3529,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": true,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "net.bytebuddy",
@@ -2646,7 +3542,8 @@
       "bytecode_major": 49,
       "java": "5",
       "multi_release": true,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "net.sf.jopt-simple",
@@ -2658,7 +3555,8 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.apiguardian",
@@ -2670,7 +3568,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.assertj",
@@ -2682,7 +3581,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": true,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.awaitility",
@@ -2694,7 +3594,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.hamcrest",
@@ -2706,7 +3607,8 @@
       "bytecode_major": 51,
       "java": "7",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.junit.jupiter",
@@ -2718,7 +3620,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.junit.jupiter",
@@ -2730,7 +3633,8 @@
       "bytecode_major": 61,
       "java": "17",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.junit.jupiter",
@@ -2742,7 +3646,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.junit.jupiter",
@@ -2754,7 +3659,8 @@
       "bytecode_major": 61,
       "java": "17",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.junit.jupiter",
@@ -2766,7 +3672,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.junit.jupiter",
@@ -2778,7 +3685,8 @@
       "bytecode_major": 61,
       "java": "17",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.junit.jupiter",
@@ -2790,7 +3698,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.junit.jupiter",
@@ -2802,7 +3711,8 @@
       "bytecode_major": 61,
       "java": "17",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.junit.platform",
@@ -2814,7 +3724,21 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": true,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.junit.platform",
+      "artifact": "junit-platform-commons",
+      "version": "1.9.3",
+      "classifier": "",
+      "file": "junit-platform-commons-1.9.3.jar",
+      "size_bytes": 102989,
+      "bytecode_major": 53,
+      "java": "9",
+      "multi_release": true,
+      "category": "Testing / benchmarking",
+      "enforcer_checked": false
     },
     {
       "group": "org.junit.platform",
@@ -2826,7 +3750,8 @@
       "bytecode_major": 61,
       "java": "17",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.junit.platform",
@@ -2838,7 +3763,21 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.junit.platform",
+      "artifact": "junit-platform-engine",
+      "version": "1.9.3",
+      "classifier": "",
+      "file": "junit-platform-engine-1.9.3.jar",
+      "size_bytes": 189226,
+      "bytecode_major": 53,
+      "java": "9",
+      "multi_release": false,
+      "category": "Testing / benchmarking",
+      "enforcer_checked": false
     },
     {
       "group": "org.junit.platform",
@@ -2850,7 +3789,8 @@
       "bytecode_major": 61,
       "java": "17",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.junit.platform",
@@ -2862,7 +3802,21 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.junit.platform",
+      "artifact": "junit-platform-launcher",
+      "version": "1.9.3",
+      "classifier": "",
+      "file": "junit-platform-launcher-1.9.3.jar",
+      "size_bytes": 169237,
+      "bytecode_major": 53,
+      "java": "9",
+      "multi_release": false,
+      "category": "Testing / benchmarking",
+      "enforcer_checked": false
     },
     {
       "group": "org.junit.platform",
@@ -2874,7 +3828,8 @@
       "bytecode_major": 61,
       "java": "17",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.mockito",
@@ -2886,7 +3841,8 @@
       "bytecode_major": 55,
       "java": "11",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.objenesis",
@@ -2898,7 +3854,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.openjdk.jmh",
@@ -2910,7 +3867,8 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     },
     {
       "group": "org.openjdk.jmh",
@@ -2922,7 +3880,21 @@
       "bytecode_major": 52,
       "java": "8",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
+    },
+    {
+      "group": "org.opentest4j",
+      "artifact": "opentest4j",
+      "version": "1.2.0",
+      "classifier": "",
+      "file": "opentest4j-1.2.0.jar",
+      "size_bytes": 7653,
+      "bytecode_major": 53,
+      "java": "9",
+      "multi_release": false,
+      "category": "Testing / benchmarking",
+      "enforcer_checked": false
     },
     {
       "group": "org.opentest4j",
@@ -2934,7 +3906,8 @@
       "bytecode_major": 53,
       "java": "9",
       "multi_release": false,
-      "category": "Testing / benchmarking"
+      "category": "Testing / benchmarking",
+      "enforcer_checked": true
     }
   ]
 }

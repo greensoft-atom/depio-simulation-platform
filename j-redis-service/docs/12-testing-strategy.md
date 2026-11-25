@@ -199,7 +199,7 @@ checked on Windows yet; see the README.)
 
 ## 12. What is implemented (2026-09-21)
 
-This table lists the test classes as they are in 2.2.1 (2026-10-01). The
+This table lists the test classes as they are in 2.2.2 (2026-11-25). The
 section's title keeps its first date so that links to it keep working. In all,
 229 tests pass with `-Pfull`: 21 in `j-redis-common`, 35 in `j-redis-server`,
 1 in `j-redis-client`, 5 in `j-redis-examples` and 167 in `j-redis-tests`.

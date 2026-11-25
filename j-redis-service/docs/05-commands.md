@@ -41,7 +41,7 @@ under [Streams](#streams) below.
 | `ECHO msg` | 1 | — | |
 | `QUIT` | 1 | — | Replies `+OK`, then closes the connection |
 | `RESET` | 5 | — | Leaves `MULTI`, unwatches all keys, unsubscribes from everything, clears the client's name |
-| `HELLO [2 [AUTH u p] [SETNAME n]]` | 1 | — | `HELLO 3` replies `NOPROTO`: j-redis speaks only RESP2 |
+| `HELLO [2 [AUTH u p] [SETNAME n]]` | 1 | — | `HELLO 3` replies `NOPROTO`: j-redis speaks only RESP2. The `role` field is `primary` or `replica`, as `ROLE` says, where Redis says `master` (2.2.2) |
 | `AUTH [user] password` | 1 | — | The password comparison takes constant time. If a user is given, it must be `default` |
 | `SELECT index` | 1 | — | Only `0` is accepted; any other index replies `-ERR DB index is out of range` |
 | `CLIENT ID\|SETNAME\|GETNAME\|SETINFO` | 1 | — | `SETINFO` is accepted and stored; the j-redis client uses it for its library name and version |

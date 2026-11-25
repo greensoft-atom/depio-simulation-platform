@@ -110,6 +110,8 @@ namespace Backend.Client.Core
 
         /// <summary>Positions are world units times this.</summary>
         public const float PosScale = 4f;
+        /// <summary>A tank's radius in world units at a body size of 1, the server's (Room.TANK_RADIUS); a class's is this times its bodySize (P-67).</summary>
+        public const float TankRadius = 30f;
 
         public const int MaxHandles = 256;
         /// <summary>The handle of the client's own tank, always.</summary>

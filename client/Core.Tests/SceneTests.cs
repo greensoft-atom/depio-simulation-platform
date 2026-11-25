@@ -110,5 +110,29 @@ namespace Backend.Client.Core.Tests
             clock.Frame(103, 9_010);
             Assert.That(clock.RenderTick(9_010), Is.GreaterThanOrEqualTo(102.0), "never back in time when a frame comes");
         }
+
+        [Test]
+        public void ATankIsDrawnAtItsClassSizeAsTheServerSizesIt()
+        {
+            // P-67: 30 units times the class's bodySize (the server's Room.TANK_RADIUS), not one size for every class.
+            var w = new ClientWorld();
+            w.Apply(new FrameBuilder(10).Tank(7, 0, 0, "Bob").Tank(8, 400, 0, "Cy").Bullet(9, 0, 0, 0, 20, 50, 0, 8).Build());
+            w.Apply(new FrameBuilder(1).Everything(7, 0, 255, 30, 3, 0, 0).Everything(8, 0, 255, 30, 5, 0, 0).Build());
+            var scene = new Scene();
+            scene.Build(w, 11.0);
+            Assert.That((Item(scene, 7).Radius, Item(scene, 8).Radius), Is.EqualTo((30f, 30f)), "before there is a table: the server's 30");
+            Assert.That(Item(scene, 9).Radius, Is.EqualTo(8f), "a bullet's as the wire gives it");
+
+            var table = new ClassTableInfo();
+            table.Classes.Add(new ClassInfo { Id = 0, BodySize = 1f });
+            table.Classes.Add(new ClassInfo { Id = 3, BodySize = 1.5f });
+            scene.Classes = table;
+            scene.Build(w, 11.0);
+            Assert.That(Item(scene, 7).Radius, Is.EqualTo(45f), "its class's body");
+            Assert.That(Item(scene, 8).Radius, Is.EqualTo(30f), "a class the table does not have: 30");
+            Assert.That(Item(scene, 9).Radius, Is.EqualTo(8f));
+            Assert.That((table.TankRadius(3), table.TankRadius(0), table.TankRadius(99)), Is.EqualTo((45f, 30f, 30f)));
+            Assert.That(Wire.TankRadius, Is.EqualTo(30f));
+        }
     }
 }

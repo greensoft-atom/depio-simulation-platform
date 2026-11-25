@@ -11,7 +11,7 @@ defined in the [glossary](../docs/glossary.md).
 **What it is built with.** The build is offline. Temurin 21 and Maven 3.9 are committed in
 [`../vendor/`](../vendor/VERSIONS.md), and [`../dev-env.sh`](../dev-env.sh) puts them on the `PATH`. Every library
 comes from [`java21-offline`](../java21-offline/README.md), whose `repository/` has the shape of `~/.m2/repository`.
-The one exception is j-redis 2.2.1, the store: it is built from [`../j-redis-service`](../j-redis-service/README.md)
+The one exception is j-redis 2.2.2, the store: it is built from [`../j-redis-service`](../j-redis-service/README.md)
 and installed into the local repository first. [`../build-offline.sh`](../build-offline.sh) builds all of it, the
 release included, from the repository alone ([09](../docs/detailed-design/09-release-and-packaging.md)).
 
@@ -85,7 +85,7 @@ development [MySQL](#mysql) below:
 # one module and what it needs:  mvn -pl platform -am install
 ```
 
-`com.jredis:*:2.2.1` is not in the offline bundle. Run `cd ../j-redis-service && mvn install -DskipTests` once, first
+`com.jredis:*:2.2.2` is not in the offline bundle. Run `cd ../j-redis-service && mvn install -DskipTests` once, first
 (`make-release.sh`, `build-offline.sh` and `dev-jredis.sh build` do it themselves).
 
 **Or everything from the repository alone**, with no network and nothing installed but bash, coreutils, findutils,
@@ -242,7 +242,7 @@ in this order, `dev-mysql.sh` (3314), `dev-jredis.sh` (6380), `dev-backend.sh` (
 **By hand**, on one machine, with no nginx in front:
 
 ```bash
-java -jar j-redis-server-2.2.1-all.jar --port 6380
+java -jar j-redis-server-2.2.2-all.jar --port 6380
 
 # platform: bind host, port, store host, store port
 java -cp '<release>/lib/platform/*' com.backend.platform.PlatformMain 127.0.0.1 8080 127.0.0.1 6380

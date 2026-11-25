@@ -72,14 +72,15 @@ public final class ArenaMain {
         }
     }
 
-    private static void run(String[] args) throws Exception {
-        int port = Arguments.integer(args, 0, "port", 9001);
+    /** The process, its settings read first: a test reaches the refusals through this (O-101). */
+    static void run(String[] args) throws Exception {
+        int port = Arguments.port(args, 0, "port", 9001);
         float map = Arguments.decimal(args, 1, "map size", 5700f);
         int maxPlayers = Arguments.integer(args, 2, "max players", 150);
         int shapes = Arguments.integer(args, 3, "shapes", 1500);
         int maxRooms = Arguments.integer(args, 4, "max rooms", 4);
         String storeHost = Arguments.text(args, 5, "store host", "127.0.0.1");
-        int storePort = Arguments.integer(args, 6, "store port", 6379);
+        int storePort = Arguments.port(args, 6, "store port", 6379);
         String name = Arguments.text(args, 7, "arena name", "arena-" + port);
         // 0 means the public arena's continuous lifecycle (D-15); a positive value runs the public
         // rooms as timed matches, as a drill or a load run may. Queued and tournament matches are

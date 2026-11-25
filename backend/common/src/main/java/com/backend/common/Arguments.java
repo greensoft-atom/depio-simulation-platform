@@ -25,6 +25,15 @@ public final class Arguments {
         }
     }
 
+    /** A port at {@code index}, 0 to 65535, or {@code absent}: any other number was a stack trace and exit 1 (O-101). */
+    public static int port(String[] args, int index, String name, int absent) {
+        int port = integer(args, index, name, absent);
+        if (port < 0 || port > 65535) {
+            throw new RefusedConfiguration(name + " must be a port, 0 to 65535, not '" + args[index].trim() + "'");
+        }
+        return port;
+    }
+
     /**
      * The text at {@code index}, trimmed, or {@code absent} if there are fewer arguments; present and empty, refused: an
      * empty host was bound as loopback, announced as "", or dialled and refused with exit 1 (the arena review, 2026-10-04).

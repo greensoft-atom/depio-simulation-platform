@@ -23,7 +23,7 @@ documents one level up ([../](../)) explain *why* j-redis works the way it does.
 4. Assemble the distribution from the jars just built: `scripts/make-dist.sh --skip-build`.
 5. Start the server from the distribution's directory, because the
    configuration's path and its `dir data` are relative to the current
-   directory: `cd target/dist/j-redis-2.2.1`, then
+   directory: `cd target/dist/j-redis-2.2.2`, then
    `bin/j-redis-server conf/j-redis-dev.conf`.
 
 **Inside the backend's repository**, steps 1 and 2 are already done: source

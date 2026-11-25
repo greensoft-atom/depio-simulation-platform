@@ -14,6 +14,8 @@ from collections import OrderedDict
 
 BUNDLE = os.environ.get("JAVA21_OFFLINE", os.path.dirname(os.path.abspath(__file__)))
 REPO = os.path.join(BUNDLE, "repository")
+# The jars the enforcer checked in the 2026-09-22 build; any other is marked "later" (DOC-57).
+INVENTORY = os.path.join(BUNDLE, "inventory-2026-09-22.txt")
 
 MAJOR_TO_JAVA = {45: "1.1", 46: "1.2", 47: "1.3", 48: "1.4", 49: "5", 50: "6",
                  51: "7", 52: "8", 53: "9", 54: "10", 55: "11", 56: "12",
@@ -77,7 +79,13 @@ def bytecode_level(path: str):
         return None, False
 
 
+def inventory() -> set:
+    with open(INVENTORY) as f:
+        return {line.strip() for line in f if line.strip() and not line.startswith("#")}
+
+
 def main() -> int:
+    checked = inventory()
     rows = []
     for dirpath, _dirs, files in os.walk(REPO):
         for fn in files:
@@ -103,6 +111,7 @@ def main() -> int:
                 java=MAJOR_TO_JAVA.get(major, "n/a" if major is None else str(major)),
                 multi_release=multi,
                 category=categorise(group),
+                enforcer_checked=f"{group}:{artifact}:{version}:{classifier}" in checked,
             ))
 
     rows.sort(key=lambda r: (r["category"], r["group"], r["artifact"], r["version"]))
@@ -112,10 +121,12 @@ def main() -> int:
     libtest = set(os.listdir(os.path.join(BUNDLE, "lib-test")))
 
     with open(os.path.join(BUNDLE, "ARTIFACTS.txt"), "w") as f:
-        f.write("Every jar below was verified to contain only Java 21 or older bytecode\n")
-        f.write("(class-file major <= 65), checked by maven-enforcer + extra-enforcer-rules\n")
-        f.write("during a real build on Temurin 21, and re-checked directly here.\n\n")
-        f.write(f"{len(rows)} jars.  'rt' = also in lib/ (runtime), 'test' = also in lib-test/.\n")
+        later = sum(1 for r in rows if not r["enforcer_checked"])
+        f.write("Every jar below holds only Java 21 or older bytecode (class-file major <= 65), read from its\n")
+        f.write("class files by describe.py. The jars of the inventory of 2026-09-22 also passed maven-enforcer\n")
+        f.write("+ extra-enforcer-rules during a real build on Temurin 21; the jars added after it, marked\n")
+        f.write("'later', were checked here alone (inventory-2026-09-22.txt).\n\n")
+        f.write(f"{len(rows)} jars, {later} of them later.  'rt' = also in lib/ (runtime), 'test' = also in lib-test/.\n")
         f.write("'mr' = multi-release jar (has JDK-specific overlays).\n\n")
         current = None
         for r in rows:
@@ -133,15 +144,18 @@ def main() -> int:
                 tags.append("test")
             if r["multi_release"]:
                 tags.append("mr")
+            if not r["enforcer_checked"]:
+                tags.append("later")
             f.write("  %-56s %-22s %-8s %7d KB  %s\n" % (
                 coord[:56], r["version"][:22], "Java " + r["java"],
                 r["size_bytes"] // 1024, " ".join(tags)))
 
     manifest = OrderedDict(
         bundle="java21-offline",
-        generated="2026-09-22",
+        generated=os.environ.get("DESCRIBE_DATE", "2026-11-25"),
+        inventory_enforcer_checked="2026-09-22",
         target_jdk=21,
-        verified_with="Temurin 21.0.12.1 + Maven 3.9.16",
+        verified_with="Temurin 21.0.12.1 + Maven 3.9.16 (the inventory's jars); describe.py's class-file read (all)",
         max_bytecode_major=65,
         jar_count=len(rows),
         lib_count=len(lib), lib_test_count=len(libtest),
@@ -150,7 +164,10 @@ def main() -> int:
     with open(os.path.join(BUNDLE, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
 
-    print(f"jars: {len(rows)}   lib/: {len(lib)}   lib-test/: {len(libtest)}")
+    print(f"jars: {len(rows)}   lib/: {len(lib)}   lib-test/: {len(libtest)}   later: {sum(1 for r in rows if not r['enforcer_checked'])}")
+    missing = checked - {f"{r['group']}:{r['artifact']}:{r['version']}:{r['classifier']}" for r in rows}
+    if missing:
+        print(f"in the inventory and not in repository/: {len(missing)}")
     print(f"bytecode above Java 21: {len(over)}")
     for r in over:
         print("  OVER:", r["group"], r["artifact"], r["version"], r["bytecode_major"])

@@ -656,6 +656,15 @@ class AdminServerTest {
         assertThatThrownBy(() -> AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", "0.0.0.0:0",
                 "BACKEND_ADMIN_TOKEN", SECRET), null, null, null, null, null, null, null, null, null))
                 .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("loopback");
+        assertThatThrownBy(() -> AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", "127.0.0.1:0"),
+                null, null, null, null, null, null, null, null, null))
+                .as("its secret's two forms named").hasMessageContaining("BACKEND_ADMIN_TOKEN or BACKEND_ADMIN_TOKEN_FILE");
+        for (String bad : new String[] {"127.0.0.1:65536", "127.0.0.1:70000", "127.0.0.1:-1"}) {
+            assertThatThrownBy(() -> AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", bad,
+                    "BACKEND_ADMIN_TOKEN", SECRET), null, null, null, null, null, null, null, null, null))
+                    .as(bad + ": a port that is not one, refused, not a stack trace (O-101)")
+                    .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("BACKEND_ADMIN_ADDR");
+        }
     }
 
     @Test

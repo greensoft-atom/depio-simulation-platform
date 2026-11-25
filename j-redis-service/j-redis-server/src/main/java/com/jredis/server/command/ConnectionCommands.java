@@ -160,7 +160,7 @@ final class ConnectionCommands {
         ctx.bulk("mode");
         ctx.bulk("standalone");
         ctx.bulk("role");
-        ctx.bulk("master");
+        ctx.bulk(ctx.engine().replication().isReplica() ? "replica" : "primary");     // ROLE's and INFO's words (D-52)
         ctx.bulk("modules");
         ctx.emptyArray();
     }

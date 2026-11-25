@@ -127,7 +127,7 @@ flowchart BT
     gateway["gateway"]
     tools["tools<br/>benchmarks, bots, soak judge"]
     cx["crypto-examples<br/>never in the release"]
-    jredis["j-redis-client 2.2.1"]
+    jredis["j-redis-client 2.2.2"]
     netty["Netty 4.2"]
     mysqllibs["mysql-connector-j<br/>HikariCP, Flyway"]
     bc["Bouncy Castle<br/>bcprov, bcpkix"]

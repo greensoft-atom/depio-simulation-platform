@@ -137,7 +137,7 @@ arena).
 
 | Type | What it is for |
 |---|---|
-| `Scene` | The list a frame draws, reused: `Build(world, renderTick)`, or with the own tank where its prediction puts it; `Items` |
+| `Scene` | The list a frame draws, reused: `Build(world, renderTick)`, or with the own tank where its prediction puts it; `Items`. `Classes`, the class table a tank is sized by: 30 times its class's `bodySize` (`ClassTableInfo.TankRadius`), 30 before there is one (P-67) |
 | `DrawItem` | One thing to draw: handle, kind, position in world units (y grows down), angle in radians, radius, class or subtype, team, skin, level, flags, health from 0 to 1, name, and whether it is the player's own |
 | `RenderClock` | The render tick: the newest frame's tick, plus the time since that frame came, less twice the frames' averaged tick delta; never past the newest frame and never back. `Frame(tick, now)`, `RenderTick(now)` |
 | `TouchSticks` | A stick's offset (a fraction of its reach, y up) to the move mask, in eight sectors past a dead zone of 0.2, and to the wire's aim; fire past 0.5 of the reach. Also keys to a mask, and a mouse's aim at a world point |

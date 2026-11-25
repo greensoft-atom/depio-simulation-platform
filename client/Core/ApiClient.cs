@@ -129,6 +129,14 @@ namespace Backend.Client.Core
     {
         public long Version;
         public List<ClassInfo> Classes = new List<ClassInfo>();
+
+        /// <summary>A tank of this class's radius, as the server sizes it: 30 units times its bodySize; 30 for a class not here (P-67).</summary>
+        public float TankRadius(int classId)
+        {
+            for (int i = 0; i < Classes.Count; i++)
+                if (Classes[i].Id == classId) return Wire.TankRadius * Classes[i].BodySize;
+            return Wire.TankRadius;
+        }
     }
 
     /// <summary>

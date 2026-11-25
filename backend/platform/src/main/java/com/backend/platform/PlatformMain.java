@@ -62,7 +62,8 @@ public final class PlatformMain {
         }
     }
 
-    private static void run(String[] args) throws Exception {
+    /** The process, its settings read first: a test reaches the refusals through this (O-101). */
+    static void run(String[] args) throws Exception {
         if (args.length > 4) {
             // The old shape, which ended with the password. Refused rather than read, so a
             // launch line nobody updated fails here instead of running with its password
@@ -71,9 +72,9 @@ public final class PlatformMain {
             System.exit(2);
         }
         String bindHost = Arguments.text(args, 0, "bind address", "127.0.0.1");
-        int port = Arguments.integer(args, 1, "port", 8080);
+        int port = Arguments.port(args, 1, "port", 8080);
         String storeHost = Arguments.text(args, 2, "store host", "127.0.0.1");
-        int storePort = Arguments.integer(args, 3, "store port", 6379);
+        int storePort = Arguments.port(args, 3, "store port", 6379);
         DatabaseSettings database = DatabaseSettings.fromEnvironment();
         // Before anything connects: a setting that is not IP addresses refuses the start (exit 2).
         com.backend.common.TrustedProxies proxies = com.backend.common.TrustedProxies.fromEnvironment(System.getenv());

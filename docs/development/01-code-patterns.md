@@ -71,8 +71,8 @@ checked to be Java 21 bytecode or older. The parent `pom.xml` pins the versions.
 | io.netty (buffer, codec, common, handler, transport) | 4.2.18.Final | arena, gateway, tools |
 | io.netty:netty-codec-http | 4.2.18.Final | gateway (WebSocket) |
 | io.netty:netty-transport-classes-epoll, and netty-transport-native-epoll classifier `linux-x86_64` | 4.2.18.Final | arena (the classifier jar carries the `.so`) |
-| com.jredis:j-redis-client, j-redis-common | 2.2.1 | handoff, platform, worker, tools; arena and gateway through handoff |
-| com.jredis:j-redis-embedded | 2.2.1 | tests |
+| com.jredis:j-redis-client, j-redis-common | 2.2.2 | handoff, platform, worker, tools; arena and gateway through handoff |
+| com.jredis:j-redis-embedded | 2.2.2 | tests |
 | com.mysql:mysql-connector-j | 26.7.0 | persistence |
 | com.zaxxer:HikariCP | 7.1.0 | persistence |
 | org.flywaydb:flyway-core, flyway-mysql | 13.7.0 | persistence |
@@ -309,7 +309,7 @@ hash of each tick matches the recorded one.
 |---|---|
 | sim | unit tests for physics, collision pairs, the experience and level math, and each mode's win condition; a property test: N random ticks never give NaN or a position out of bounds |
 | protocol | a round trip of encode and decode for every message; the decoder fuzzed with random bytes (it must never throw past the handler) |
-| j-redis | covered by its own suite, 229 tests at 2.2.1; see [j-redis docs/12](../../j-redis-service/docs/12-testing-strategy.md) |
+| j-redis | covered by its own suite, 229 tests at 2.2.2; see [j-redis docs/12](../../j-redis-service/docs/12-testing-strategy.md) |
 | arena | integration: an arena and an embedded j-redis started, 50 bot clients connected; the test asserts that snapshots arrive and that the tick stays within its budget |
 | platform | module tests with an embedded j-redis and a local MySQL migrated by Flyway; result idempotency (a result applied twice gives one reward) |
 | end-to-end | the live drill (`client/headless-drill.sh`): the C# headless client against the whole stack from a release, every scenario (44 at plan item 78; 45 today, and `untrusted` over TLS), in clear and over TLS; and the soak, two hours of bots |

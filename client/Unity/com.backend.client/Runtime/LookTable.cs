@@ -21,8 +21,6 @@ namespace Backend.Client.Unity
         [SerializeField] private Sprite[] units = new Sprite[0];
         [Tooltip("By team: 0 none, 1 and 2 a made match's sides")]
         [SerializeField] private Color[] teams = { Color.white, new Color(0.2f, 0.5f, 1f), new Color(1f, 0.3f, 0.3f) };
-        [Tooltip("A tank's radius in world units: its class's body, which the class table has (GET /v1/content/classes)")]
-        [SerializeField] private float tankRadius = 25f;
 
         public Sprite SpriteFor(DrawItem d)
         {
@@ -41,8 +39,6 @@ namespace Backend.Client.Unity
         }
 
         public Color ColourFor(DrawItem d) => d.Team >= 0 && d.Team < teams.Length ? teams[d.Team] : Color.white;
-
-        public float TankRadius(int classId) => tankRadius;
 
         private static Sprite Pick(Sprite[] sprites, int index)
         {

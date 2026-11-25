@@ -32,7 +32,7 @@ namespace Backend.Client.Headless
         /// <summary>The scenarios that open a lobby connection: without --lobby they are skipped, not run to time out.</summary>
         private static readonly HashSet<string> NeedsLobby = new HashSet<string>
         {
-            "lobby", "replaced", "badsession", "duel", "walkover", "party", "decline", "rffa", "coop", "banned", "removed",
+            "lobby", "replaced", "badsession", "duel", "walkover", "party", "decline", "rffa", "coop", "banned",
             "tournament", "teammatch", "teamcup", "team", "social", "rename", "apply", "roundrobin", "milestone", "season",
             "achievements", "goals", "pass", "domination", "tag", "maze", "sandbox", "notice", "erase",
         };
@@ -56,7 +56,13 @@ namespace Backend.Client.Headless
             // --trust is the backend's root, trusted alone for the API, the lobby and matches, as the app does (D-82).
             Api = new ApiClient(new[] { _platform }, _trust == null ? null : new TrustRoot(_trust).HttpHandler());
             if (scenarios.Count == 0) scenarios.AddRange(new[] { "play", "resume", "badticket", "lifecycle" });
-            if (_lobby == null) scenarios.RemoveAll(NeedsLobby.Contains);
+            if (_lobby == null)
+            {
+                // Said, so a run that dropped a scenario is not read as having passed it (T-69).
+                List<string> skipped = scenarios.FindAll(NeedsLobby.Contains);
+                if (skipped.Count > 0) Console.WriteLine("--- skipped, no --lobby: " + string.Join(" ", skipped));
+                scenarios.RemoveAll(NeedsLobby.Contains);
+            }
             foreach (string s in scenarios)
             {
                 Console.WriteLine($"--- {s}");

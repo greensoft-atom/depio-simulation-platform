@@ -2,14 +2,14 @@
 
 What is built, what is next, and in what order. Updated 2026-11-25.
 
-**Where it stands (2026-11-25).** Plan items 1 to 138 are done, but for item 7, which stays open by design: what is
+**Where it stands (2026-11-25).** Plan items 1 to 139 are done, but for item 7, which stays open by design: what is
 left of it waits on Q-3's hardware.
 
 - **The site.** It launches on one machine, every role on it, for up to about 5 000 players (D-93); three machines stay
   the design for 50 000, and a second machine can join as the first one's standby, with arenas of its own (D-96,
   D-97). It has one public address with three ports (D-82, D-115): nginx ends TLS on 443 (the API and the lobby) and
   on 9001 (matches), and serves all three in clear on 80, a match there by `/match/<the arena's name>`.
-- **The components**, each built and tested: `j-redis-service` 2.2.1 (229 tests); the backend's eleven modules (their
+- **The components**, each built and tested: `j-redis-service` 2.2.2 (229 tests); the backend's eleven modules (their
   sources declare 1 150 tests); the client's engine-free core with its headless driver (185 tests, on .NET 8 and on
   Unity 2019's Mono). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
   `UnityEngine`; there is no Unity editor here, so it has not been opened in one (Q-54). Beside the full client,
@@ -57,8 +57,8 @@ and fixed-phrase chat
 
 | Component | State |
 |---|---|
-| **j-redis-service** | **2.2.1 shipped** (2026-10-01): a subscriber follows the primary as every other connection does (plan item 50). 2.2.0 (2026-09-29) added replication, a primary and its replicas with promotion guarded by epochs; 2.1.0 (the same day) streams, on 2.0.0's Java 21 base. 229 tests, crash-tested with and without a replica, offline build, documented. See its [README](../j-redis-service/README.md). |
-| `java21-offline` bundle | Built and verified: 244 jars, 0 above Java 21, offline build proven from an empty repository. It holds 300 jars today: 56 were added on 2026-09-23, after that check, and its manifest does not list them yet ([its README](../java21-offline/README.md)). |
+| **j-redis-service** | **2.2.2 shipped** (2026-11-25): `HELLO` reports the server's role (D-52, plan item 139). 2.2.1 (2026-10-01): a subscriber follows the primary as every other connection does (plan item 50). 2.2.0 (2026-09-29) added replication, a primary and its replicas with promotion guarded by epochs; 2.1.0 (the same day) streams, on 2.0.0's Java 21 base. 229 tests, crash-tested with and without a replica, offline build, documented. See its [README](../j-redis-service/README.md). |
+| `java21-offline` bundle | Built and verified: 244 jars, 0 above Java 21, offline build proven from an empty repository. It holds 300 jars today: 56 were added on 2026-09-23, after that check, listed since 2026-11-25 and marked `later` ([its README](../java21-offline/README.md), DOC-57). |
 | Requirements | [Written](requirements/01-scope-and-nfrs.md), with 64 questions recorded. Four wait on the owner's machines or players: Q-1 uplink, Q-2 in-battle ratio, Q-3 production measurements, Q-4 how players cluster. Six wait on the owner's choices: Q-52, a real payment provider (the flow is built, its provider simulated); Q-53, where the backups' copies off the site go; Q-58, a day of results past 20 000 players; Q-59, the app's updates; Q-60, where alerts go; Q-62, the launch's machine. The owner held Q-53, Q-58, Q-59, Q-60 and Q-62 on 2026-11-01. The rest are answered, or built on their recommendations unless the owner decides otherwise. |
 | Architecture | [Topology](architecture/01-system-topology.md), [availability](architecture/02-availability.md) and the [decision log](architecture/03-decision-log.md), D-1 to D-115, written. At launch, every role on one machine (D-93, topology §2). |
 | `arena` design | [Current](detailed-design/01-arena.md), with what is not built marked in place: replays, the in-room events beyond the kill feed, and co-op's tiers. The modes, the maze's walls, the whole tank tree and the kill feed are built. |
@@ -4539,8 +4539,8 @@ everywhere (DOC-49), nor `backend-arenas.conf` (DOC-50), nor D-102's plain varia
 behind (DOC-52, this plan's opening among them); designs written as built (DOC-53); statements about the code
 (DOC-54) and operations' facts (DOC-55) the code contradicts; pages that did not render (DOC-56); the PROXY line's
 example, which nginx was run to see (DOC-48); and `ReadmeTestListsTest` itself, which counted a test written with
-its package as none (DOC-47). DOC-57, the bundle's manifest, stays open. In the code it found four small defects,
-left for item 139: O-101, P-67, T-69, D-52.
+its package as none (DOC-47). DOC-57, the bundle's manifest, was left open, and in the code it found four small
+defects, O-101, P-67, T-69 and D-52: all five fixed by item 139.
 
 The code was touched where it documents itself: comments in Java, C#, the units, the scripts and an env example
 (DOC-48, DOC-50, DOC-54, DOC-55); the help text of the worker's ledger metric; two refusals that named a secret's
@@ -4560,7 +4560,7 @@ samples were checked by reading the signatures, not compiled; the Unity package'
 written from Unity's naming rules, with no editor to see them (Q-54); the measured numbers are kept as dated, not
 measured again; `ArenaMain`'s keystore refusal is in `main`, where no test reaches it.
 
-#### 139. What item 138's review found in the code: O-101, P-67, T-69, D-52
+#### 139. ~~What item 138's review found in the code: O-101, P-67, T-69, D-52; and DOC-57 (the owner, 2026-11-25).~~ — **done 2026-11-25**
 
 Four small defects, each test first, each read in the code and none met in a run:
 
@@ -4570,6 +4570,28 @@ Four small defects, each test first, each read in the code and none met in a run
   radius from the class table, as `LookTable`'s tooltip says.
 - **T-69.** The headless driver drops `removed` without `--lobby`, which it does not need.
 - **D-52.** j-redis's `HELLO` answers `role master` on a replica: the server's role.
+
+The owner: fix what is still open. So DOC-57 too, the bundle's list.
+
+**Done.** Each test first, each rule's mutants caught; the evidence is in each defect's entry.
+
+- **O-101**: `Arguments.port` (0 to 65535, or refused, exit 2) for every port a process takes as an argument, and a
+  range check in `BACKEND_METRICS_ADDR` and `BACKEND_ADMIN_ADDR`: the fix found the same gap in all of them. The admin
+  API's refusal for its secret names both forms. 14 mutants caught. From the release, each process given a port out
+  of range exits 2 with its line, and no stack trace.
+- **P-67**: the core's scene sizes a tank by its class (30 times `bodySize`), from the class table `BackendClient`
+  fetches when a Welcome names one it does not hold; `LookTable`'s 25 is gone. Five mutants caught; the core's 186
+  tests pass on .NET 8 and on Unity 2019's Mono; the package compiles with stubs, with Unity 2019.4's compiler and
+  with Visual Studio 2019's. Not drawn in an editor.
+- **T-69**: `removed` off the lobby list, and the driver says what it skips.
+- **D-52**: `HELLO`'s role is `ROLE`'s; j-redis 2.2.2, a PATCH release, its 229 tests passing with `-Pfull`; the
+  backend's pin and the drill's jars follow it.
+- **DOC-57**: `inventory-2026-09-22.txt` names the jars the enforcer checked; `describe.py` lists all 300 and marks
+  the 56 later ones.
+
+The backend's whole build passed with every test, and the release (`dev-backend.sh build`; its counts are not kept,
+since the release's own build cleans the reports). The live drill from that release, `play resume lobby removed`, on
+j-redis 2.2.2: all passed.
 
 ---
 

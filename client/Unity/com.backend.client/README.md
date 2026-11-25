@@ -78,7 +78,8 @@ in again (`client/unity-package.sh`) whenever the core changes.
 5. **Fill in the LookTable.** Give it sprites by class (the first is Basic, which stands in for any class missing), by
    skin, for the bullet, by shape subtype and by unit subtype (1 trap, 2 drone), and colours by team (0 none, 1 and 2
    a made match's sides). Sprites are drawn one Unity unit across at a scale of 1: draw them 100 pixels across, at
-   100 pixels to the unit.
+   100 pixels to the unit. A tank's size is not set here: it is its class's, as the server sizes it, from the class
+   table the client fetches when a match begins (P-67).
 6. **Set the platform.** Android: set the minimum API level to 23, for the keystore's keys
    (`Plugins/Android/SecureStore.java`). iOS: nothing to set; Xcode builds `Plugins/iOS/BackendKeychain.mm` with the
    app.

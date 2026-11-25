@@ -46,16 +46,17 @@ public final class GatewayMain {
         }
     }
 
-    private static void run(String[] args) throws Exception {
+    /** The process, its settings read first: a test reaches the refusals through this (O-101). */
+    static void run(String[] args) throws Exception {
         String bindHost = Arguments.text(args, 0, "bind address", "127.0.0.1");
-        int port = Arguments.integer(args, 1, "port", 8081);
+        int port = Arguments.port(args, 1, "port", 8081);
         String platformUrl = Arguments.text(args, 2, "platform url", "http://127.0.0.1:8080");
         if (!platformUrl.startsWith("http://") && !platformUrl.startsWith("https://")) {
             // Without a scheme every lobby request failed inside the handler, closing its connection without a word.
             throw new RefusedConfiguration("platform url must start with http:// or https://, not '" + platformUrl + "'");
         }
         String storeHost = Arguments.text(args, 3, "store host", "127.0.0.1");
-        int storePort = Arguments.integer(args, 4, "store port", 6379);
+        int storePort = Arguments.port(args, 4, "store port", 6379);
         String gatewayId = Arguments.text(args, 5, "gateway id", "gateway-" + port);
         // Before anything connects: a setting that is not IP addresses refuses the start (exit 2).
         com.backend.common.TrustedProxies proxies = com.backend.common.TrustedProxies.fromEnvironment(System.getenv());

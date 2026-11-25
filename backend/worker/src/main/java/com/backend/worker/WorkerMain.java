@@ -60,7 +60,8 @@ public final class WorkerMain {
         }
     }
 
-    private static void run(String[] args) throws Exception {
+    /** The process, its settings read first: a test reaches the refusals through this (O-101). */
+    static void run(String[] args) throws Exception {
         if (args.length > 3 || (args.length == 3 && args[2].startsWith("jdbc:"))) {
             // The old shape: URL, user and password came before the worker id. Refused rather
             // than shifted, because shifting would make an old line's password the worker id
@@ -69,7 +70,7 @@ public final class WorkerMain {
             System.exit(2);
         }
         String storeHost = Arguments.text(args, 0, "store host", "127.0.0.1");
-        int storePort = Arguments.integer(args, 1, "store port", 6379);
+        int storePort = Arguments.port(args, 1, "store port", 6379);
         String workerId = Arguments.text(args, 2, "worker id", MatchResultQueue.DEFAULT_WORKER_ID);
         DatabaseSettings database = DatabaseSettings.fromEnvironment();
         if (database.usesDevelopmentPassword()) {

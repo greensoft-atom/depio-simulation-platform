@@ -37,4 +37,20 @@ class ArgumentsTest {
         assertThatThrownBy(() -> Arguments.text(new String[] {"a", "  "}, 1, "store host", "127.0.0.1"))
                 .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("store host");
     }
+
+    @Test
+    @DisplayName("a port is 0 to 65535: any other number refuses the start, naming it, before a socket is made of it (O-101)")
+    void portsOutOfRangeAreRefused() {
+        assertThat(Arguments.port(new String[] {"8080"}, 0, "port", 9)).isEqualTo(8080);
+        assertThat(Arguments.port(new String[] {}, 0, "store port", 6379)).isEqualTo(6379);
+        assertThat(Arguments.port(new String[] {"0"}, 0, "port", 9)).as("any free port").isZero();
+        assertThat(Arguments.port(new String[] {"65535"}, 0, "port", 9)).isEqualTo(65535);
+        for (String bad : new String[] {"65536", "70000", "-1"}) {
+            assertThatThrownBy(() -> Arguments.port(new String[] {bad}, 0, "store port", 6379))
+                    .as(bad).isInstanceOf(RefusedConfiguration.class)
+                    .hasMessageContaining("store port").hasMessageContaining("'" + bad + "'");
+        }
+        assertThatThrownBy(() -> Arguments.port(new String[] {"80x"}, 0, "port", 8080))
+                .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("'80x'");
+    }
 }

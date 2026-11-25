@@ -111,7 +111,7 @@ public final class LeaderboardRebuild {
     public static void main(String[] args) {
         try {
             String storeHost = args.length > 0 ? args[0] : "127.0.0.1";
-            int storePort = Arguments.integer(args, 1, "store port", 6379);
+            int storePort = Arguments.port(args, 1, "store port", 6379);
             DatabaseSettings settings = DatabaseSettings.fromEnvironment();
             JRedisClient store = StoreClients.open(storeHost, storePort, "leaderboard-rebuild");
             try (Database db = new Database(settings.url(), settings.user(), settings.password(), settings.poolSizeOr(2))) {

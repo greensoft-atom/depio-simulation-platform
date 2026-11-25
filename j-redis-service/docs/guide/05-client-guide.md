@@ -21,14 +21,14 @@ build runs them all on every test run, so they are known to work
 <dependency>
   <groupId>com.jredis</groupId>
   <artifactId>j-redis-client</artifactId>
-  <version>2.2.1</version>
+  <version>2.2.2</version>
 </dependency>
 
 <!-- for tests: the real server, in-process -->
 <dependency>
   <groupId>com.jredis</groupId>
   <artifactId>j-redis-embedded</artifactId>
-  <version>2.2.1</version>
+  <version>2.2.2</version>
   <scope>test</scope>
 </dependency>
 ```
@@ -43,8 +43,8 @@ for all its modules, j-redis's included, in `backend/pom.xml`.
 
 **Without Maven**, put these jars on the classpath. All are in
 `java21-offline/repository`, except the two j-redis jars, which are in their
-modules' `target/` directories: `j-redis-client-2.2.1.jar`,
-`j-redis-common-2.2.1.jar`, `netty-common`, `netty-buffer`, `netty-resolver`,
+modules' `target/` directories: `j-redis-client-2.2.2.jar`,
+`j-redis-common-2.2.2.jar`, `netty-common`, `netty-buffer`, `netty-resolver`,
 `netty-transport`, `netty-codec` (all `4.1.122.Final`), `slf4j-api-2.0.17.jar`
 and `HdrHistogram-2.2.2.jar`.
 
@@ -513,7 +513,7 @@ The complete class is `EmbeddedTestingExampleTest` in
 | `errors` | `ErrorHandling` | server errors, timeouts, connection loss, safe retries |
 
 Run them from the distribution, or with
-`java -jar j-redis-examples/target/j-redis-examples-2.2.1-all.jar`:
+`java -jar j-redis-examples/target/j-redis-examples-2.2.2-all.jar`:
 
 ```bash
 bin/j-redis-examples --list                  # names and summaries

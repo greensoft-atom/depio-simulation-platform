@@ -39,18 +39,19 @@ local repository: see [How this was verified](#8-how-this-was-verified).
 | `repository/` | 300 jar files and every POM, in Maven's layout (see below) | **The normal case**: building with Maven or Gradle |
 | `lib/` | 74 jars in one flat folder, for runtime only | Compiling by hand with `javac` and running with `java -cp` |
 | `lib-test/` | 27 jars in one flat folder, for tests and benchmarks only | Added to the classpath only when you run tests |
-| `ARTIFACTS.txt` | The inventory: every jar, grouped by purpose, with its verified bytecode level | Checking what is there, and at which version |
-| `manifest.json` | The same inventory, in a form a program can read | Scripts |
+| `ARTIFACTS.txt` | The inventory: every jar, grouped by purpose, with its bytecode level, read from its class files; a jar added after 2026-09-22 is marked `later` | Checking what is there, and at which version |
+| `manifest.json` | The same inventory, in a form a program can read; each jar's `enforcer_checked` says whether it was in the 2026-09-22 build's check | Scripts |
 | `describe.py` | Writes `ARTIFACTS.txt` and `manifest.json` from `repository/` | After adding a library (§7) |
+| `inventory-2026-09-22.txt` | The 244 jars the 2026-09-22 build checked with the enforcer (§8); `describe.py` marks any other `later` | Read by `describe.py` |
 | `settings-offline.xml` | Maven settings that use the bundle as a read-only mirror | Method 1 (§3) |
 
-**What `repository/` holds.** The 300 jar files are:
-- the 244 jars of the inventory made on 2026-09-22, which `manifest.json` lists;
-- `netty-codec-http` 4.2.18.Final, added on 2026-09-23 for the gateway's lobby connection. `ARTIFACTS.txt` lists it
-  (so it counts 245 jars), and `manifest.json` does not;
-- 55 jars added on 2026-09-23 for j-redis's own build: the Maven plugins at the versions j-redis pins (for example
-  `maven-compiler-plugin` 3.13.0 and `maven-surefire-plugin` 3.2.5) and the libraries those plugins need. Neither
-  inventory lists them. A read of their class files on 2026-11-25 found nothing above Java 9.
+**What `repository/` holds.** The 300 jar files, all listed in `ARTIFACTS.txt` and `manifest.json` (written again on
+2026-11-25, DOC-57), are:
+- the 244 jars of the inventory made on 2026-09-22 (`inventory-2026-09-22.txt`);
+- `netty-codec-http` 4.2.18.Final, added on 2026-09-23 for the gateway's lobby connection, marked `later`;
+- 55 jars added on 2026-09-23 for j-redis's own build, marked `later`: the Maven plugins at the versions j-redis pins
+  (for example `maven-compiler-plugin` 3.13.0 and `maven-surefire-plugin` 3.2.5) and the libraries those plugins
+  need. `describe.py`'s read of their class files on 2026-11-25 found nothing above Java 9.
 
 The whole bundle holds about 250 MB of files (measured on 2026-11-25): `repository/` 167 MB, `lib/` 65 MB and
 `lib-test/` 18 MB. `repository/` has exactly the shape of `~/.m2/repository`, so Maven can read it directly.
@@ -321,7 +322,8 @@ properties that build extensions supply. `dependency:get` reads those properties
 like `Could not find artifact ... :jar:${os.detected.classifier}`. A real `mvn install` of a module that declares the
 dependency resolves it correctly. That is also how this bundle was built.
 
-After adding anything, run the verification of §8 again. A bundle that has not been tested offline does not work
+After adding anything, run the verification of §8 again. `describe.py` marks a new jar `later` until it has passed
+that build's enforcer check and its line is added to `inventory-2026-09-22.txt`. A bundle that has not been tested offline does not work
 offline.
 
 ---
@@ -338,12 +340,14 @@ These checks ran on 2026-09-22, on the 244 jars of the inventory:
 | Bytecode level | `maven-enforcer-plugin` with `extra-enforcer-rules` and `maxJdkVersion 21` passed on both probes. All 244 jars were then checked again directly, by reading their class-file headers. **0 jars above Java 21.** |
 | Really offline | Both probes were rebuilt from an **empty** local repository, with the bundle as the only mirror: `BUILD SUCCESS`, 5 tests passed, and **0 downloads from anywhere but the bundle**. |
 
-The bytecode levels of the 244 jars (from `manifest.json`): 148 are Java 8, 22 Java 9, 17 Java 5, 14 Java 7,
+The bytecode levels of the 244 jars (from the manifest of 2026-09-22): 148 are Java 8, 22 Java 9, 17 Java 5, 14 Java 7,
 13 Java 6, 11 Java 17, 7 Java 11, and one each Java 1.2, 1.3 and 1.4. 9 contain no classes at all: they are
 native-library jars and aggregator jars.
 
-The 56 jars added on 2026-09-23 (§1) were not part of these checks. Since then, the backend's and j-redis's
-builds have used the bundle as their only repository.
+The 56 jars added on 2026-09-23 (§1), marked `later`, were not part of these checks: only `describe.py`'s read of
+their class files (2026-11-25: none above Java 21; all 300 together are 188 Java 8, 30 Java 9, 20 Java 5, 16 each
+Java 6 and 7, 11 Java 17, 7 Java 11, one each Java 1.2, 1.3 and 1.4, and 9 with no classes). Since 2026-09-23 the
+backend's and j-redis's builds have used the bundle as their only repository.
 
 ---
 

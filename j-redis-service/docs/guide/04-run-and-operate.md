@@ -3,7 +3,7 @@
 This guide shows how to start, configure, secure, deploy, back up, monitor and
 repair a j-redis server, and how to run a replica and promote it. It is for
 operators and for developers who run j-redis on their own machine. It starts
-from a built distribution, `target/dist/j-redis-2.2.1/` (see
+from a built distribution, `target/dist/j-redis-2.2.2/` (see
 [guide 3 §3.5](03-build-and-test.md#35-package-the-distribution)). Paths such
 as `bin/…` are relative to that directory. The reference tables for every
 configuration directive, `INFO` field and runbook entry are in
@@ -39,7 +39,7 @@ rem Windows
 bin\j-redis-server.cmd conf\j-redis-dev.conf
 ```
 
-The server logs `j-redis 2.2.1 ready (0 keys)` and listens on `127.0.0.1:6379`.
+The server logs `j-redis 2.2.2 ready (0 keys)` and listens on `127.0.0.1:6379`.
 Then, in a second terminal:
 
 ```bash
@@ -64,7 +64,7 @@ production configuration.
 **Without the distribution**, the jar runs on its own:
 
 ```bash
-java -Xms1g -Xmx1g -XX:+UseZGC -XX:+ZGenerational --add-opens java.base/java.nio=ALL-UNNAMED -jar j-redis-server-2.2.1-all.jar --port 6379 --dir ./data
+java -Xms1g -Xmx1g -XX:+UseZGC -XX:+ZGenerational --add-opens java.base/java.nio=ALL-UNNAMED -jar j-redis-server-2.2.2-all.jar --port 6379 --dir ./data
 ```
 
 The build makes this jar in `j-redis-server/target/`. The launcher
@@ -78,7 +78,7 @@ direct buffers.
 |---|---|
 | `config-file` | A configuration file ([§4.2](#42-configuration)). It must come first. |
 | `--directive value` | Sets any directive, for example `--port 6380 --appendonly no`. It overrides the file. |
-| `--version`, `-v` | Prints `j-redis-server 2.2.1` and exits |
+| `--version`, `-v` | Prints `j-redis-server 2.2.2` and exits |
 | `--help`, `-h` | Prints the usage and exits |
 
 | Exit code | Meaning |
@@ -175,8 +175,8 @@ in `/opt`, the configuration in `/etc/j-redis`, and the service unit:
 ```bash
 # 1. a user and the program
 sudo useradd --system --home /var/lib/j-redis --shell /usr/sbin/nologin jredis
-sudo tar -xzf j-redis-2.2.1.tar.gz -C /opt
-sudo ln -sfn /opt/j-redis-2.2.1 /opt/j-redis          # upgrades swap this link (guide 7)
+sudo tar -xzf j-redis-2.2.2.tar.gz -C /opt
+sudo ln -sfn /opt/j-redis-2.2.2 /opt/j-redis          # upgrades swap this link (guide 7)
 
 # 2. the configuration (set requirepass!)
 sudo mkdir -p /etc/j-redis
@@ -195,7 +195,7 @@ journalctl -u j-redis -f                                # the log
 /opt/j-redis/bin/j-redis-cli -a "$SECRET" info server
 ```
 
-`make-dist.sh` writes `j-redis-2.2.1.tar.gz` beside the directory, in
+`make-dist.sh` writes `j-redis-2.2.2.tar.gz` beside the directory, in
 `target/dist/`. The unit needs Java 21 or newer. Its `ExecStart` runs
 `/usr/lib/jvm/java-21-openjdk/bin/java`; on RHEL 9, `dnf install
 java-21-openjdk-devel` installs that JDK. To find your JDK's path, run

@@ -99,7 +99,7 @@ public final class AdminServer implements AutoCloseable {
         }
         Secrets.Secret token = Secrets.read(env, "BACKEND_ADMIN_TOKEN");
         if (token == null || token.value().isBlank()) {
-            throw new RefusedConfiguration("BACKEND_ADMIN_ADDR is named but BACKEND_ADMIN_TOKEN_FILE is not:"
+            throw new RefusedConfiguration("BACKEND_ADMIN_ADDR is named but neither BACKEND_ADMIN_TOKEN or BACKEND_ADMIN_TOKEN_FILE is:"
                     + " the admin API does not start without its secret");
         }
         int colon = addr.lastIndexOf(':');
@@ -110,6 +110,9 @@ public final class AdminServer implements AutoCloseable {
             host = InetAddress.getByName(addr.substring(0, colon));
         } catch (RuntimeException | IOException e) {
             throw new RefusedConfiguration("BACKEND_ADMIN_ADDR must be host:port, not " + addr);
+        }
+        if (port < 0 || port > 65535) {
+            throw new RefusedConfiguration("BACKEND_ADMIN_ADDR's port must be 0 to 65535, not " + addr);   // O-101
         }
         if (!host.isLoopbackAddress()) {
             throw new RefusedConfiguration("BACKEND_ADMIN_ADDR must be a loopback address, reached over SSH,"

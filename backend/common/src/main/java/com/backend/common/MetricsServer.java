@@ -43,6 +43,10 @@ public final class MetricsServer implements AutoCloseable {
         } catch (NumberFormatException e) {
             throw new RefusedConfiguration("BACKEND_METRICS_ADDR must be host:port, not " + addr);
         }
+        if (port < 0 || port > 65535) {
+            // InetSocketAddress throws IllegalArgumentException, which only IOException's catch below would have refused (O-101).
+            throw new RefusedConfiguration("BACKEND_METRICS_ADDR's port must be 0 to 65535, not " + addr);
+        }
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(host, port), 16);
             server.setExecutor(Executors.newSingleThreadExecutor(r -> {

@@ -44,7 +44,7 @@ namespace Backend.Client.Unity
                     Transform t = r.transform;
                     t.localPosition = new Vector3(d.X * scale, -d.Y * scale, 0f);
                     t.localRotation = Quaternion.Euler(0f, 0f, -d.Angle * Mathf.Rad2Deg);
-                    float across = (d.Kind == Wire.KindTank ? looks.TankRadius(d.ClassId) : d.Radius) * 2f * scale;
+                    float across = d.Radius * 2f * scale;          // a tank's its class's, from the scene (P-67)
                     t.localScale = new Vector3(across, across, 1f);
                 }
             }

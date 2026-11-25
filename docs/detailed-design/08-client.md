@@ -541,7 +541,10 @@ layer would otherwise work out for itself. **Built 2026-10-04**: `Scene`, `Rende
     and two. The render tick never passes the newest tick, and never goes back.
   - `Scene` is the list that a frame draws. It is reused, and allocates nothing. For each live entity it has: its
     kind and handle; its position in world units and its angle in radians, at the render tick; its radius, class,
-    team and skin; its health as a fraction; its flags and name; and whether it is the player's own. A tank or a unit
+    team and skin; its health as a fraction; its flags and name; and whether it is the player's own. A bullet's or a
+    unit's radius comes on the wire; a tank's is its class's, as the server sizes it: 30 units times the class's
+    `bodySize`, from the class table the scene is given (`Scene.Classes`, `ClassTableInfo.TankRadius`), and 30 for a
+    class the table does not have or before there is a table (P-67). A tank or a unit
     is placed between its two samples, turning the shorter way round for the angle. A bullet is extrapolated by
     `PredictedAt`. A shape is where it is. The own tank comes from `OwnTank` while it predicts, in the present.
 - **Two sticks to an input.** `TouchSticks` turns a stick's offset, as a fraction of its reach, into the move mask:
@@ -562,8 +565,8 @@ which Unity does not reference by default at the .NET 4.x API level (D-113):
 
 | Script | Does |
 |---|---|
-| `BackendClient` | the one object that owns the core's objects. Its `Update` completes the sign-in, pumps the lobby and the match, takes a grant (`TakeGrant`) and joins it, and builds the scene. A sign-in that fails, or a session that ends (`InvalidSession`), is reported (`Problem`) and signs the player out, so the screen offers to sign in again. `OnApplicationPause` is the lifecycle (02 §10) |
-| `WorldView` | draws `Scene`: a pooled `SpriteRenderer` for each handle, its sprite chosen by kind, class and skin from a `LookTable` asset |
+| `BackendClient` | the one object that owns the core's objects. Its `Update` completes the sign-in, pumps the lobby and the match, takes a grant (`TakeGrant`) and joins it, fetches the class table when a match's Welcome names one it does not hold (the scene's tank sizes, P-67), and builds the scene. A sign-in that fails, or a session that ends (`InvalidSession`), is reported (`Problem`) and signs the player out, so the screen offers to sign in again. `OnApplicationPause` is the lifecycle (02 §10) |
+| `WorldView` | draws `Scene`: a pooled `SpriteRenderer` for each handle, sized by the item's radius, its sprite chosen by kind, class and skin from a `LookTable` asset |
 | `TouchControls` | two sticks where the thumbs land (keys and the mouse in the editor), fed into `TouchSticks`, then `SetInput` |
 | `FollowCamera` | follows the own tank, with the view's size as the arena's |
 | `LobbyScreen`, `Hud` | the least screens to play. The lobby screen: play now, a duel's queue and its state, a match found to accept, and the account deleted after a second ask (D-84). The HUD: level and experience, the kill feed, respawn and leave |

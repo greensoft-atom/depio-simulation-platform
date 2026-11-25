@@ -6,7 +6,7 @@
 
   <groupId>com.jredis</groupId>
   <artifactId>j-redis-parent</artifactId>
-  <version>2.2.1</version>
+  <version>2.2.2</version>
   <packaging>pom</packaging>
   <name>j-redis-service</name>
   <description>Self-hosted, Redis-compatible in-memory data store for the platform backend (Java 21, RESP2)</description>

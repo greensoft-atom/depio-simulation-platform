@@ -32,9 +32,10 @@ dotnet Headless/bin/Debug/net8.0/Backend.Client.Headless.dll <platform-url> [--l
 | `scenario ...` | The scenarios to run, in the order given. With none named, it runs `play resume badticket lifecycle`. An unknown name is a failed check |
 
 **Without `--lobby`**, the driver drops from its list the scenarios that need the lobby, as `Program.NeedsLobby`
-names them: `lobby replaced badsession duel walkover party decline rffa coop banned removed tournament
-teammatch teamcup team social rename apply roundrobin milestone season achievements goals pass domination tag maze
-sandbox notice erase`. `headless-drill.sh` always passes `--lobby`.
+names them, and says which (`--- skipped, no --lobby: …`): `lobby replaced badsession duel walkover party decline rffa
+coop banned tournament teammatch teamcup team social rename apply roundrobin milestone season achievements goals pass
+domination tag maze sandbox notice erase`. `removed` needs only the admin API (T-69). `headless-drill.sh` always passes
+`--lobby`.
 
 **Exit status:**
 

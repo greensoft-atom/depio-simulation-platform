@@ -38,6 +38,8 @@ namespace Backend.Client.Unity
         private ISecureStore _store;
         private Task<ApiResult<Session>> _signingIn;
         private Task<ApiResult<bool>> _deleting;
+        private Task<ApiResult<ClassTableInfo>> _classes;
+        private long _classesAskedFor = -1;
         private ClientWorld _world;
         private RenderClock _render = new RenderClock();
         private long _applied = -1;
@@ -141,6 +143,20 @@ namespace Backend.Client.Unity
             if (Match == null) return;
 
             Match.Poll();
+            // The class table the tanks are sized by (P-67): asked for once for each version a Welcome names that is
+            // not the one held; until it comes, or if it does not, every tank is the server's 30 units.
+            long version = Match.State == MatchState.InMatch ? Match.Welcome.ContentVersion : -1;   // a Welcome came
+            if (version >= 0 && _classes == null && version != _classesAskedFor && Scene.Classes?.Version != version)
+            {
+                _classesAskedFor = version;
+                _classes = Api.Classes();
+            }
+            if (_classes != null && _classes.IsCompleted)
+            {
+                Task<ApiResult<ClassTableInfo>> done = _classes;
+                _classes = null;
+                if (done.Status == TaskStatus.RanToCompletion && done.Result.Ok) Scene.Classes = done.Result.Value;
+            }
             if (!ReferenceEquals(Match.World, _world))
             {
                 _world = Match.World;           // a join or a resume: a world of its own, and its clock

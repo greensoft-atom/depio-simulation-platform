@@ -8,6 +8,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import com.backend.common.RefusedConfiguration;
 
@@ -59,5 +60,15 @@ class ArenaMainTest {
                 .as("behind the front nginx ends TLS, and speaks plaintext to the arena")
                 .isInstanceOf(RefusedConfiguration.class)
                 .hasMessageContaining("BACKEND_ARENA_TLS_KEYSTORE");
+    }
+
+    @Test
+    @Timeout(20)
+    @DisplayName("a port argument that is not one, its own or the store's, refuses the start before anything is made of it (O-101)")
+    void aPortArgumentOutOfRangeIsRefused() {
+        assertThatThrownBy(() -> ArenaMain.run(new String[] {"70000"}))
+                .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("port").hasMessageContaining("'70000'");
+        assertThatThrownBy(() -> ArenaMain.run(new String[] {"9011", "5700", "150", "1500", "4", "127.0.0.1", "65536"}))
+                .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("store port");
     }
 }

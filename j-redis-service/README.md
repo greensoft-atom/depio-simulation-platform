@@ -11,12 +11,13 @@ to build and run it in a few minutes, where each guide and design document is,
 how the source tree is laid out, and what has been tested. j-redis comes with
 its own Java client library, a command-line client, tools and runnable examples.
 
-**Version 2.2.1** (2026-10-01). This release makes every connection of a client
-follow the primary after a handover, subscribers and idle connections included.
+**Version 2.2.2** (2026-11-25). This release makes `HELLO` report the server's role,
+`primary` or `replica`, as `ROLE` and `INFO` do; it said `master` on every server.
 The releases before it:
 
 | Version | Date | What it added |
 |---|---|---|
+| 2.2.2 | 2026-11-25 | `HELLO` reports the server's role (backend defect D-52) |
 | 2.2.1 | 2026-10-01 | Every connection of a client follows the new primary, subscribers and idle ones included |
 | 2.2.0 | 2026-09-29 | Replication: a primary and its replicas, with promotion guarded by epochs ([docs/16](docs/16-replication.md)) |
 | 2.1.0 | 2026-09-29 | Streams ([docs/15](docs/15-streams.md)) |
@@ -59,7 +60,7 @@ mvn clean install                      # about 3 minutes, tests included
 scripts/make-dist.sh --skip-build      # Windows: powershell -ExecutionPolicy Bypass -File scripts\make-dist.ps1 -SkipBuild
 ```
 
-**2. Run** the server from the distribution in `target/dist/j-redis-2.2.1/`:
+**2. Run** the server from the distribution in `target/dist/j-redis-2.2.2/`:
 
 ```bash
 bin/j-redis-server conf/j-redis-dev.conf          # Windows: bin\j-redis-server.cmd conf\j-redis-dev.conf
@@ -186,7 +187,7 @@ are from the 2.2.1 build unless a row says otherwise.
 
 | Check | Result |
 |---|---|
-| Tests | **229 tests pass** with `mvn clean install -Pfull` on Temurin 21.0.12.1 (2.2.1, 2026-10-01). They are 21 codec and number tests, 35 server unit tests, 1 client test, 5 example tests and 167 integration tests. The integration tests cover the commands, the protocol over TCP, persistence, the client library (embedded and over TCP), streams, replication between real servers over TCP, every connection of a client following a promotion and a demotion, the model-based test, the review regressions, and two `kill -9` crash tests. Without `-Pfull`, the build skips the two crash tests (they are tagged `slow`) and runs 227. The compiler gives zero warnings. Earlier totals: 138 in 2.0.0, 171 in 2.1.0, 223 in 2.2.0. |
+| Tests | **229 tests pass** with `mvn clean install -Pfull` on Temurin 21.0.12.1 (2.2.2, 2026-11-25). They are 21 codec and number tests, 35 server unit tests, 1 client test, 5 example tests and 167 integration tests. The integration tests cover the commands, the protocol over TCP, persistence, the client library (embedded and over TCP), streams, replication between real servers over TCP, every connection of a client following a promotion and a demotion, the model-based test, the review regressions, and two `kill -9` crash tests. Without `-Pfull`, the build skips the two crash tests (they are tagged `slow`) and runs 227. The compiler gives zero warnings. Earlier totals: 138 in 2.0.0, 171 in 2.1.0, 223 in 2.2.0. |
 | Review | Six independent reviews (protocol, data structures, commands, persistence, engine, client) found more than 60 defects, mostly in failure paths and edge cases. All were fixed, each with a regression test. See [CHANGELOG.md](CHANGELOG.md) and decisions D-26 to D-30. |
 | Model-based test | 300,000 random commands, over 3 seeds, give the same reply, one by one, as a simple reference model. The test compares the whole keyspace every 500 commands. |
 | Snapshot consistency | The server writes a base file in slow slices while writes continue. The file equals the state at the moment the rewrite started. |

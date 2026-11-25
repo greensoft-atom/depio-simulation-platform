@@ -1,6 +1,7 @@
 package com.backend.common;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -104,6 +105,16 @@ class MetricsTest {
             assertThat(r.body()).contains("backend_up 1");
             assertThat(http.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + s.port() + "/other")).build(),
                     HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(404);
+        }
+    }
+
+    @Test
+    @DisplayName("an address whose port is not one refuses the start, as a wrong address does, not a stack trace (O-101)")
+    void aPortOutOfRangeIsRefused() {
+        Metrics m = new Metrics();
+        for (String bad : new String[] {"127.0.0.1:65536", "127.0.0.1:70000", "127.0.0.1:-1", ":9101", "127.0.0.1"}) {
+            assertThatThrownBy(() -> MetricsServer.startIfConfigured(m, Map.of("BACKEND_METRICS_ADDR", bad)))
+                    .as(bad).isInstanceOf(RefusedConfiguration.class).hasMessageContaining("BACKEND_METRICS_ADDR");
         }
     }
 }

@@ -170,7 +170,7 @@ symbolic link (D-106). It carries everything the machines run except the operati
 |---|---|
 | `runtime/` | the Java 21 runtime that every Java process runs on, the stores too: made by `jlink` from `vendor/jdk-21`, 63 MB, its modules named ([09 §4.1](../../docs/detailed-design/09-release-and-packaging.md#41-the-runtime)) |
 | `lib/arena/`, `lib/platform/`, `lib/worker/`, `lib/gateway/` | each process's own jar and its runtime dependencies; one directory per process, so the MySQL driver stays off the arena and the gateway |
-| `jredis/` | j-redis 2.2.1: `bin/` (the server's, the client's and the tools' launchers, which run on `$JAVA_HOME`), `lib/` (`j-redis-server.jar`, `j-redis-cli.jar`, `j-redis-tools.jar`), `conf/j-redis.conf` (the template of `/etc/backend/store-<name>.conf`) |
+| `jredis/` | j-redis 2.2.2: `bin/` (the server's, the client's and the tools' launchers, which run on `$JAVA_HOME`), `lib/` (`j-redis-server.jar`, `j-redis-cli.jar`, `j-redis-tools.jar`), `conf/j-redis.conf` (the template of `/etc/backend/store-<name>.conf`) |
 | `mysql/` | MySQL 8.4.11 LTS, `vendor/mysql-8.4/` as committed: `mysqld`, the client and the tools |
 | `nginx/` | nginx 1.30.5 built on Rocky 8 for glibc 2.28 (D-100), `vendor/nginx-1.30/` as committed: `sbin/nginx`, `conf/mime.types` |
 | `systemd/` | every unit and timer above. No drop-in is shipped: the operator makes the `CPUAffinity=` ones with `systemctl edit` |

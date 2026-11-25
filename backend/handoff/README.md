@@ -278,7 +278,7 @@ match is claimed
 
 ## Build and test
 
-From `backend/`, with j-redis 2.2.1 installed first (see the
+From `backend/`, with j-redis 2.2.2 installed first (see the
 [backend README](../README.md#commands)):
 
 ```bash

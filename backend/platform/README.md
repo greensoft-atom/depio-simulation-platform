@@ -676,7 +676,7 @@ this module through the real stack.
 |---|---|---|
 | `net/PlatformHttpServerTest` | 89 | Every route over HTTP, against a real MySQL and j-redis: answers, codes, the body limit; exact paths (a route answers its own path alone, and a path no route has gets a JSON 404, D-107); the API's health under `/v1/`; addresses behind nginx, and the forwarded addresses believed from the front's nginx (D-82); a grant's TLS name; the store failing; an account deleted, a guest's too, one finished after a store failure, and its password guesses counted as logins (D-84) |
 | `MatchmakerTest` | 43 | Lining up every mode's sides, every path of the confirm step, races between matchers (T-16, T-32 to T-34), tournament calls, the lease, the metrics; a made match's grant and push carrying the arena's TLS name (D-82) |
-| `net/AdminServerTest` | 24 | Every admin call, its audit and its refusals; the listener starts only when named, with a secret, on loopback; alerts listed from the store with their silences; a silence made, listed and lifted, each audited, and its refusals (04 §12); what each machine's watch last saw, listed (item 102) |
+| `net/AdminServerTest` | 24 | Every admin call, its audit and its refusals; the listener starts only when named, with a secret, on loopback; alerts listed from the store with their silences; a silence made, listed and lifted, each audited, and its refusals (04 §12); what each machine's watch last saw, listed (item 102); an address whose port is not one is refused (O-101) |
 | `watch/RulesTest` | 15 | The runbook's §5 as rules: each fires at its threshold and after its wait, fed rounds 15 s apart, and not before; resolution; every rule named and documented |
 | `watch/WatchTest` | 7 | The watch against scripted targets and a real j-redis: a round read, a rule fired with its labels, the alert stored, sent and resolved; a target down and a peer unreachable, raised by two machines and sent once; silences and the repeat; a dead webhook tried again; no webhook, and the machine's own samples; each machine's view written for a minute and listed newest first; four slow targets read in parallel (item 102) |
 | `watch/WatchSettingsTest` | 4 | Every setting read, the defaults, the webhook from a file, and each refusal |
@@ -690,6 +690,7 @@ this module through the real stack.
 | `LoginThrottleTest` | 5 | Both limits, IPv6 per /64, keys that expire, the store failing (the attempt is refused) |
 | `PacksTest` | 4 | `packs.json`'s rules and the release's packs |
 | `AskThrottleTest`, `PassServiceTest`, `PaymentServiceTest` | 2, 1, 1 | The hourly limits (twenty asks an hour for each kind, sixty party invitations); every item the pass names exists; the provider's setting |
+| `PlatformMainTest` | 1 | A port argument out of range, its own or the store's, refuses the start (O-101) |
 
 ## Where the design is
 

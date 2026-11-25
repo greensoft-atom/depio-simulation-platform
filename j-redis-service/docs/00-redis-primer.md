@@ -351,7 +351,7 @@ Redis 7.2 commands as its reference. See
 ## 15. What we copy, simplify, and leave out
 
 The first column is the Redis concept, the second what j-redis-service
-(version 2.2.1) does with it, the third where the design explains it.
+(version 2.2.2) does with it, the third where the design explains it.
 
 | Redis concept | j-redis-service | Where |
 |---|---|---|

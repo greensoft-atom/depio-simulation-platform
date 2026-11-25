@@ -82,8 +82,8 @@ R=${RELEASE:-$B/backend/target/release/backend-0.1.0-SNAPSHOT}
 if [ -d "$R/jredis" ]; then
   JREDIS=${JREDIS_JAR:-$R/jredis/lib/j-redis-server.jar}; JREDIS_CLI=${JREDIS_CLI_JAR:-$R/jredis/lib/j-redis-cli.jar}
 else
-  JREDIS=${JREDIS_JAR:-$B/j-redis-service/j-redis-server/target/j-redis-server-2.2.1-all.jar}
-  JREDIS_CLI=${JREDIS_CLI_JAR:-$B/j-redis-service/j-redis-cli/target/j-redis-cli-2.2.1-all.jar}
+  JREDIS=${JREDIS_JAR:-$B/j-redis-service/j-redis-server/target/j-redis-server-2.2.2-all.jar}
+  JREDIS_CLI=${JREDIS_CLI_JAR:-$B/j-redis-service/j-redis-cli/target/j-redis-cli-2.2.2-all.jar}
 fi
 if [ -x "$R/runtime/bin/java" ]; then J=${JAVA:-$R/runtime/bin/java}; else J=${JAVA:-/opt/jdk21/bin/java}; fi
 if [ -x "$R/mysql/bin/mysqld" ]; then MYSQLD_BIN=${MYSQLD_BIN:-$R/mysql/bin/mysqld}; PATH="$R/mysql/bin:$PATH"

@@ -28,7 +28,7 @@ upgrade can break:
 
 Every release is listed in [../../CHANGELOG.md](../../CHANGELOG.md). The
 CHANGELOG always marks a changed file format with **Format**. The current
-version is 2.2.1.
+version is 2.2.2.
 
 To see the running version, use one of these:
 
@@ -49,6 +49,7 @@ change the way back. This table sums up the CHANGELOG:
 | 2.1.0 (2026-09-29) | MINOR: streams | **Format**: the base file moves to version 2 | to 2.0 only from the backup taken before the upgrade (§7.3) | none; 2.0 clients keep working |
 | 2.2.0 (2026-09-29) | MINOR: replication | one new file, `replication` | to 2.1 with no backup; first remove the 2.2 directives (§7.3) | to use replication: 2.2 on the primary and the replica (§7.2) |
 | 2.2.1 (2026-10-01) | PATCH: every connection of a client follows the primary | unchanged | swap the link back | none; the client gains `pubsubPingMillis` (5 s by default, 0 turns the pings off) |
+| 2.2.2 (2026-11-25) | PATCH: `HELLO` reports the server's role | unchanged | swap the link back | none |
 
 ## 7.1b Upgrading 1.0.0 → 2.0.0 (the Java 21 move)
 

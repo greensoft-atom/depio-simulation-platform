@@ -365,6 +365,7 @@ store to install.
 | `IdleGuestsTest` | The idle guests erased as a deletion erases: off the boards, the team handed over, the key gone, recent guests and registered players kept; a batch at a time; the store first, so a store that fails erases nothing (D-87) |
 | `ReplicaWatchTest` | The heartbeat stamped through the pool every second; a replica that cannot be read reported so; the stores' replicas counted (D-58) |
 | `EloRatingTest`, `AccountLevelsTest`, `BackupWatchTest` | The rules, and the backup metrics, without a database |
+| `WorkerMainTest` | The store's port argument out of range refuses the start (O-101) |
 
 ## Operational notes
 

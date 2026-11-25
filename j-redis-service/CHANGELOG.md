@@ -4,6 +4,19 @@ All notable changes. Versions follow `MAJOR.MINOR.PATCH`
 ([docs/guide/07-upgrade-guide.md](docs/guide/07-upgrade-guide.md#71-versions)).
 A change to a data format is always marked **Format**.
 
+## 2.2.2 — 2026-11-25
+
+A PATCH release: `HELLO` reports the server's role. Nothing changes in a data
+format; one reply changes.
+
+### Fixed
+
+- `HELLO` answered `role master` on every server, a replica too, so a client
+  that read the role from it would take a replica for the primary. It now
+  answers `primary` or `replica`, the words `ROLE` and `INFO replication` use
+  (backend defect D-52). Nothing in the backend read it: its client library
+  sends no `HELLO`, and `promote-store.sh` asks `ROLE`.
+
 ## 2.2.1 — 2026-10-01
 
 A PATCH release: every connection of a client now follows the primary: a

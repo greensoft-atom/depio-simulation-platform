@@ -128,6 +128,11 @@ class ReplicationTest {
         assertThat(call(rc, "XPENDING st g")).startsWith("[:7,");
         assertThat(call(rc, "ROLE")).startsWith("[replica, 127.0.0.1, :" + p.port() + ", connected,");
         assertThat(call(pc, "ROLE")).startsWith("[primary,");
+        // HELLO's role is ROLE's: it said master on every server, a replica too (D-52).
+        try (RawClient rr = r.connect(); RawClient pr = p.connect()) {
+            assertThat(rr.call("HELLO")).contains("role, replica").doesNotContain("master");
+            assertThat(pr.call("HELLO")).contains("role, primary").doesNotContain("master");
+        }
     }
 
     @Test
