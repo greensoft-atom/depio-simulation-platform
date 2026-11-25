@@ -26,8 +26,9 @@ class ReadmeTestListsTest {
 
     /** The backend's modules, beside this one: Maven runs the tests in the module's directory. */
     private static final Path BACKEND = Path.of("..").toAbsolutePath().normalize();
+    /** A test's annotation, or the same written with its package, {@code @org.junit.jupiter.api.Test} (DOC-47). */
     private static final Pattern A_TEST = Pattern.compile(
-            "^\\s*@(Test|ParameterizedTest|RepeatedTest|TestFactory)\\b", Pattern.MULTILINE);
+            "^\\s*@(?:[\\w.]+\\.)?(Test|ParameterizedTest|RepeatedTest|TestFactory)\\b", Pattern.MULTILINE);
     /** A class named in a row: {@code `ArenaServerTest`}, or with its package, {@code `net/AdminServerTest`}. */
     private static final Pattern NAMED = Pattern.compile("`(?:\\w+/)*(\\w+Test)`");
 

@@ -1,16 +1,27 @@
 # Diagrams: platform
 
-The flows of [04 — Platform services](../detailed-design/04-platform-services.md), drawn from the
-code in `backend/platform` (and, where a flow continues there, `handoff`, `persistence` and
-`worker`). Every route, answer and refusal named here is listed in the
+This file draws the flows of [04 — Platform services](../detailed-design/04-platform-services.md):
+accounts, the queue, parties, teams, tournaments, payments, the shop and the admin API. It is for
+engineers working on `platform`, or on a client that calls it. The diagrams are drawn from the code
+in `backend/platform`, and in `handoff`, `persistence` and `worker` where a flow continues there.
+Every route, answer and refusal named here is listed in the
 [platform README](../../backend/platform/README.md).
+
+A client calls the API through the front's nginx: over HTTPS on 443, or in clear on 80 (D-115).
+nginx passes both to a platform the same way, so the diagrams draw one nginx. Where a diagram has no
+nginx, the client's calls still pass it.
 
 ## Register and log in
 
-`PlatformHttpServer.register` and `login`, `PasswordHasher.admit`, `LoginThrottle.attempt`,
-`AuthService.register` and `login`, `handoff/SessionStore.open`. Every check that can refuse runs
-before Argon2, so a refusal costs no hash; a refusal for load is answered before anything is
-counted.
+The classes: `PlatformHttpServer.register` and `login`, `PasswordHasher.admit`,
+`LoginThrottle.attempt`, `AuthService.register` and `login`, and `handoff/SessionStore.open`.
+
+- Every check that can refuse runs before Argon2, the slow password hash, so a refusal costs no
+  hash.
+- A refusal for load (503 `busy`) is answered before anything is counted.
+- Before the platform, nginx limits these routes to 2 requests a second for each address, with a
+  burst of 30 (429). That is only a cheap outer guard; the platform's own limits are the precise
+  ones.
 
 ```mermaid
 sequenceDiagram
@@ -54,9 +65,10 @@ sequenceDiagram
 
 ## Guests and the upgrade
 
-`AuthService.createGuest`, `loginGuest` and `upgrade`; `persistence/AccountRepository.createGuest`,
-`findGuest`, `upgradable` and `upgrade`. A guest's key is never stored, only its SHA-256, and its
-login hashes nothing slow.
+A guest is an account made with nothing asked, which the device logs in to with a secret key. The
+classes: `AuthService.createGuest`, `loginGuest` and `upgrade`, and
+`persistence/AccountRepository.createGuest`, `findGuest`, `upgradable` and `upgrade`. A guest's key
+is never stored, only its SHA-256, so a guest's login needs no slow hash.
 
 ```mermaid
 sequenceDiagram
@@ -97,9 +109,12 @@ sequenceDiagram
 
 ## A seat in the public arena
 
-`JoinService.requestJoin`, `EquipmentService.bonusOf` and `skinOf`, `handoff/ArenaDirectory.pick` and `promiseSeat`
-and `TicketStore`; the arena claims the ticket in `MatchFrameHandler`. The ticket carries
-everything the arena needs, so the arena never reads MySQL.
+"Play now" in the public arena, the room every arena runs without end. The classes:
+`JoinService.requestJoin`, `EquipmentService.bonusOf` and `skinOf`, `handoff/ArenaDirectory.pick`
+and `promiseSeat`, and `TicketStore`. The arena claims the ticket in `MatchFrameHandler`. The ticket
+carries everything the arena needs, so the arena never reads MySQL. The client reaches the arena
+through the front: 9001 over TLS, or 80 in clear with `GET /match/<tlsName>` (D-115,
+[02](02-arena-and-wire.md#join-with-the-ticket-claim-and-the-welcome)).
 
 ```mermaid
 sequenceDiagram
@@ -118,7 +133,7 @@ sequenceDiagram
         P->>S: the seat promised to the player, 60 s
         P->>S: MULTI, HSET ticket with player, name, team 0, bonus, skin, EXPIRE 60, EXEC
         P-->>C: 200 arenaHost, arenaPort, ticketId, tls, tlsName
-        C->>A: TLS to the front's 9001 as tlsName, nginx passing it on, then Join with the ticket
+        C->>A: through the front's nginx by tlsName, 9001 over TLS or 80 in clear, then Join with the ticket
         A->>S: MULTI, HGETALL ticket, DEL ticket, EXEC
         A-->>C: Welcome, or Kick with a reason
     end
@@ -126,9 +141,9 @@ sequenceDiagram
 
 ## The queue and the confirm step: a player's record
 
-`MatchQueue`'s record of a player, `mmp:{playerId}`, which decides whether they are queued, asked
-or matched; each move is one watched transaction (D-55). The record expires, which returns a
-player stuck by a crash to none.
+`MatchQueue` keeps one record for each player, `mmp:{playerId}`. It says whether the player is
+queued, asked to confirm, or matched. Each move between states is one watched transaction (D-55).
+The record expires, so a player stuck by a crash returns to `none` by themselves.
 
 ```mermaid
 stateDiagram-v2
@@ -146,10 +161,10 @@ stateDiagram-v2
 
 ## The queue and the confirm step: a round
 
-`QueueService.join` and `answer`, `Matchmaker.round`, `settle`, `match`, `lineups`, `make` and
-`callOff`, and `MatchQueue.join`, `ask`, `answer`, `make` and `end`. Only the platform holding
-`mm:leader` runs the round; a step overtaken by another writes nothing, and the next round reads
-again.
+The classes: `QueueService.join` and `answer`; `Matchmaker.round`, `settle`, `match`, `lineups`,
+`make` and `callOff`; and `MatchQueue.join`, `ask`, `answer`, `make` and `end`. Only the platform
+that holds the lease `mm:leader` runs the round. A step that another write has overtaken writes
+nothing, and the next round reads again.
 
 ```mermaid
 sequenceDiagram
@@ -188,10 +203,13 @@ sequenceDiagram
 
 ## A party, its versions
 
-`PartyService` and `Parties`; the client keeps the newest state by `PartyState` (D-74). Each change
-reads what it depends on under a watch and writes in one transaction, its version one more; an
-answer and a push may arrive in either order, and the client applies only another party or a
-higher version.
+A party is up to three players who queue together. The classes are `PartyService` and `Parties`;
+the client keeps the newest state with `PartyState` (D-74).
+
+- Each change reads what it depends on under a watch, and writes in one transaction, which raises
+  the party's version by one.
+- An answer and a push can arrive in either order. The client applies a state only if it names
+  another party, or has a higher version.
 
 ```mermaid
 sequenceDiagram
@@ -219,9 +237,9 @@ sequenceDiagram
 
 ## A team action
 
-`TeamService` and `persistence/TeamRepository`. Each action is one MySQL transaction that locks the
-team first, then the players it changes (D-39); the pushes follow the commit, and a refusal tells
-nobody.
+A team is a lasting group of players, kept in MySQL. The classes are `TeamService` and
+`persistence/TeamRepository`. Each action is one MySQL transaction, which locks the team first and
+then the players it changes (D-39). The pushes are sent after the commit. A refusal tells nobody.
 
 ```mermaid
 flowchart TD
@@ -247,9 +265,10 @@ flowchart TD
 
 ## A tournament
 
-`persistence/TournamentRepository` holds the state; `worker/TournamentScheduler` moves it every
-5 s, each move a conditional update on the state and version, so two workers cannot move it twice.
-`POST /admin/tournaments` creates it; players enter while it registers.
+`persistence/TournamentRepository` holds a tournament's state, and `worker/TournamentScheduler`
+moves it on every 5 s. Each move is a conditional update on the state and the version, so two
+workers cannot make the same move twice. An operator creates a tournament with
+`POST /admin/tournaments`, and players enter while it is in `registration`.
 
 ```mermaid
 stateDiagram-v2
@@ -265,9 +284,9 @@ stateDiagram-v2
 
 ## A tournament match
 
-A match of the bracket, in `TournamentScheduler.make` and `settle`. A match nobody came to is
-decided 270 s after its tickets; one somebody came to waits for its result up to 30 minutes
-(`marr:{matchUid}`).
+One match of the bracket, in `TournamentScheduler.make` and `settle`. A match nobody came to is
+decided 270 s after its tickets. A match somebody came to waits for its result for up to 30
+minutes; the arena marks the first arrival in `marr:{matchUid}`.
 
 ```mermaid
 stateDiagram-v2
@@ -281,8 +300,9 @@ stateDiagram-v2
 
 ## The scheduler's round
 
-`TournamentScheduler.tick`, `step`, `run`, `make`, `settle` and `over`. The grant is kept for the
-ticket's 60 s (`tgrant:`), and the player called (`tcall:`), which the queue reads as a match.
+The methods: `TournamentScheduler.tick`, `step`, `run`, `make`, `settle` and `over`. A player's grant
+is kept for the ticket's 60 s (`tgrant:`), and the player is marked as called (`tcall:`), which the
+queue treats as being in a match.
 
 ```mermaid
 flowchart TD
@@ -317,8 +337,9 @@ flowchart TD
 
 ## A simulated payment order: its states
 
-`persistence/PaymentRepository`: an order moves only forward, each step under its row's lock.
-`worker`'s retention expires what waited a day.
+An order is a player's request to buy a pack of gems; the payment provider is simulated (D-68). In
+`persistence/PaymentRepository` an order moves only forward, each step under its row's lock.
+`worker`'s retention marks an order expired once it has waited a day.
 
 ```mermaid
 stateDiagram-v2
@@ -367,9 +388,10 @@ sequenceDiagram
 
 ## The season pass crossing tiers
 
-`persistence/SeasonPassRepository.earn`, `pay` and `buyPremium`, the table in `SeasonPass`. Points
-are earned in `worker`'s result transaction; premium is bought through `platform`. A track's mark
-moves with what it paid, so each tier pays once.
+The classes: `persistence/SeasonPassRepository.earn`, `pay` and `buyPremium`, and the table in
+`SeasonPass`. Points are earned in `worker`'s result transaction; premium is bought through
+`platform`. Each track (free and premium) has a mark, the last tier it paid. The mark moves with
+what it paid, so each tier pays once.
 
 ```mermaid
 flowchart TD
@@ -398,10 +420,10 @@ flowchart TD
 
 ## Buying, wearing and boosting
 
-`ShopService.buy`, `EquipmentService.wear` and `bonusOf`, `BoostService.activate`, with
-`persistence/EconomyRepository`, `EquipmentRepository` and `BoostRepository`. Each key is the
-client's, made once a tap and sent with every retry, so a retry is answered as the first attempt
-was.
+The classes: `ShopService.buy`, `EquipmentService.wear` and `bonusOf`, and `BoostService.activate`,
+with `persistence/EconomyRepository`, `EquipmentRepository` and `BoostRepository`. Each key is made
+by the client, once for each tap, and sent again with every retry of that tap. So a retry gets the
+same answer as the first attempt.
 
 ```mermaid
 flowchart TD
@@ -438,9 +460,10 @@ flowchart TD
 
 ## An operator's ban, kick and notice
 
-`net/AdminServer.player`, `kickEverywhere` and `notice`; `persistence/AdminRepository`;
+The admin API listens on loopback; an operator reaches it over SSH. The classes:
+`net/AdminServer.player`, `kickEverywhere` and `notice`; `persistence/AdminRepository`; and
 `handoff/SessionStore.revokeAll`, `LobbyPush` and `ArenaDirectory.command`. Every call is checked
-against the secret and audited, refusals included.
+against the secret token and audited, refusals included.
 
 ```mermaid
 sequenceDiagram

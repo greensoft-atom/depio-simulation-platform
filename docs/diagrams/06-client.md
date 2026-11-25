@@ -1,22 +1,28 @@
 # 06 — Client diagrams
 
-The client's core and its Unity layer, drawn from the code in
-[`client/`](../../client/README.md). The design is
-[08-client](../detailed-design/08-client.md); the protocol the core speaks is
-[02-networking](../detailed-design/02-networking.md), the lobby's
+This file draws the full client: its engine-free core and its Unity layer, from the code in
+[`client/`](../../client/README.md). Its last section also places the two simple clients,
+[`client-simple/`](../../client-simple/README.md) and
+[`client-simple-no-tls/`](../../client-simple-no-tls/README.md). It is for engineers who work on a
+client, or who need to know what the client expects of the backend.
+
+The client is written for Unity 2019.4 and Visual Studio 2019 first: the core is C# 7.3 on
+.NET Standard 2.0, and it checks the backend's certificate itself, against the backend's own RSA
+root (D-108, D-109). The design is [08-client](../detailed-design/08-client.md). The protocol the core
+speaks to an arena is [02-networking](../detailed-design/02-networking.md); the lobby's is
 [03-gateway §3](../detailed-design/03-gateway.md#3-lobby-protocol).
 
 ## 1. The core's structure
 
-The core's public types, in four groups; every one is in `Backend.Client.Core`
-([client/Core/README.md](../../client/Core/README.md)). Only the members that
-explain the shape are shown.
+The core's public types, in four groups. Every one is in the namespace `Backend.Client.Core`
+([client/Core/README.md](../../client/Core/README.md)). Only the members that explain the shape are
+shown.
 
 ### 1.1 The wire and the world
 
-`Wire.cs`, `WireReader.cs`, `Snapshot.cs`, `Messages.cs`, `ClientWorld.cs` and
-`Maze.cs`. The decoder streams a frame into a sink; `ClientWorld` is the sink
-the connection uses, and keeps the 256 handles between frames.
+`Wire.cs`, `WireReader.cs`, `Snapshot.cs`, `Messages.cs`, `ClientWorld.cs` and `Maze.cs`. The
+decoder streams a frame into a sink. `ClientWorld` is the sink the connection uses, and keeps the
+256 handles (one-byte aliases for entities) from one frame to the next.
 
 ```mermaid
 classDiagram
@@ -117,9 +123,10 @@ classDiagram
 
 ### 1.2 The match connection and the own tank
 
-`MatchConnection.cs`, `OwnTank.cs` and `TankMotion.cs`. A connection makes a
-new `ClientWorld` with every `Welcome` and keeps one `OwnTank`, stepped by the
-room's own rule.
+`MatchConnection.cs`, `OwnTank.cs` and `TankMotion.cs`. A connection makes a new `ClientWorld` with
+every `Welcome`, and keeps one `OwnTank`, stepped by the room's own movement rule. `MatchSettings`
+says where to dial and how: the grant's host, port, `Tls` and `TlsName`, and the `TrustRoot` that
+the arena's certificate must chain to (1.3).
 
 ```mermaid
 classDiagram
@@ -144,6 +151,7 @@ classDiagram
         +int Port
         +bool Tls
         +string TlsName
+        +TrustRoot Trust
         +int Profile
     }
     class MatchState {
@@ -192,6 +200,7 @@ classDiagram
         +PushOut(state, radius)
     }
     MatchConnection --> MatchSettings : dials by
+    MatchSettings --> TrustRoot : the arena's certificate checked by
     MatchConnection --> IClock : timed by
     SystemClock ..|> IClock
     MatchConnection *-- ClientWorld : a new one each Welcome
@@ -207,13 +216,21 @@ classDiagram
 
 ### 1.3 The lobby, the API and the account
 
-`LobbyClient.cs`, `PartyState.cs`, `ApiClient.cs`, `AccountKeeper.cs` and
-`Json.cs`. The lobby keeps what it was told; the API answers each call with an
-`ApiResult`; the account keeper signs in by the key a secure store keeps.
+`LobbyClient.cs`, `PartyState.cs`, `ApiClient.cs`, `AccountKeeper.cs`, `Json.cs` and `TrustRoot.cs`.
+
+- The lobby client keeps what the lobby told it.
+- The API client answers each call with an `ApiResult`.
+- The account keeper signs in with the guest key that a secure store keeps.
+- `TrustRoot` is the backend's root certificate, which the app ships. It accepts a server's
+  certificate when the root issued it and it names the host dialled, and checks this itself on
+  every runtime (D-108). It gives the API client its HTTP handler (`HttpHandler`, over
+  `HttpWebRequest`), and the lobby's WebSocket and the match connection their check (`CheckFor`).
+  Without a `TrustRoot`, the runtime's own check is used.
 
 ```mermaid
 classDiagram
     class LobbyClient {
+        +LobbyClient(lobby, clock, trust)
         +LobbyState State
         +long PlayerId
         +MatchGrant Grant
@@ -245,6 +262,7 @@ classDiagram
         +Apply(state) bool
     }
     class ApiClient {
+        +ApiClient(endpoints, handler)
         +string Current
         +Login(username, password)
         +CreateGuest()
@@ -287,7 +305,15 @@ classDiagram
         +bool Tls
         +string TlsName
     }
+    class TrustRoot {
+        +FromPem(pem) TrustRoot
+        +Accepts(certificate, host) bool
+        +CheckFor(host)
+        +HttpHandler()
+    }
     LobbyClient *-- PartyState
+    LobbyClient --> TrustRoot : wss checked by
+    TrustRoot ..> ApiClient : HttpHandler for
     LobbyClient --> LobbyState
     LobbyClient ..> JsonValue : messages
     LobbyClient --> MatchGrant : Grant
@@ -396,9 +422,13 @@ stateDiagram-v2
 ## 4. Join and resume, from the client's side
 
 `MatchConnection` and its receive thread against an arena
-([02 §10](../detailed-design/02-networking.md#10-session-reconnect-and-app-lifecycle)):
-a join, the frames and inputs of a match, a lost connection resumed, and a
-`Leave` that waits for the arena to close first.
+([02 §10](../detailed-design/02-networking.md#10-session-reconnect-and-app-lifecycle)): a join, the
+frames and inputs of a match, a lost connection resumed, and a `Leave` that waits for the arena to
+close the connection first. On the site the grant asks for TLS, so the full client dials the
+front's 9001, sends the grant's `TlsName` in its handshake, and checks the certificate with its
+`TrustRoot`. A grant without TLS, from a backend run plain on a development machine (D-101), is
+dialled in clear. The front's nginx, and the arena's side of the join, are drawn in
+[02](02-arena-and-wire.md#join-with-the-ticket-claim-and-the-welcome).
 
 ```mermaid
 sequenceDiagram
@@ -408,7 +438,7 @@ sequenceDiagram
     participant A as arena, through the front's nginx
     L->>M: Join with the grant's ticket
     M->>T: a new attempt dials
-    T->>A: TCP connect, then TLS when the grant says, as its TlsName
+    T->>A: TCP connect, then TLS when the grant says, as its TlsName, checked by the TrustRoot
     L->>M: Poll, once a frame
     M->>A: Join, version 4 first, the ticket, the profile
     A-->>T: Welcome with the resume secret and the maze seed
@@ -534,10 +564,18 @@ flowchart TD
 
 ## 9. The Unity layer's wiring
 
-The package's scripts over the core
-([client/Unity/com.backend.client](../../client/Unity/com.backend.client/README.md)):
-`BackendClient` owns the core's objects and pumps them in `Update`; the
-others read what it built or feed it.
+The Unity package's scripts over the core
+([client/Unity/com.backend.client](../../client/Unity/com.backend.client/README.md)).
+`BackendClient` owns the core's objects and pumps them in `Update`; the other scripts read what it
+built, or feed it.
+
+- **Its settings**: the API's endpoints, the lobby's URL, and the backend's root certificate
+  (`trustedRoot`, the `ca.pem` that `scripts/private-ca.sh` makes). It dials what the settings give:
+  `https://` and `wss://` with a root for TLS, or `http://` and `ws://` in clear. No build refuses a
+  way in clear since D-115.
+- **Where the guest key is kept**: the Android keystore on a phone; `PlayerPrefs` in the editor and
+  other builds. The iOS keychain plugin stays in the package, unused, since iOS is not a target
+  (C-10).
 
 ```mermaid
 flowchart LR
@@ -556,17 +594,22 @@ flowchart LR
         API["ApiClient"]
         LC["LobbyClient"]
         MC["MatchConnection"]
+        TR["TrustRoot"]
         RC["RenderClock"]
         SC["Scene"]
         TS["TouchSticks"]
     end
     subgraph K["Where the key is kept"]
-        KC["iOS keychain: BackendKeychain.mm"]
+        KC["iOS keychain: BackendKeychain.mm<br/>unused, iOS not a target"]
         KS["Android keystore: SecureStore.java"]
         PP["PlayerPrefs: the editor and other builds"]
     end
     LS -->|"SignIn, PlayNow, Queue"| BC
     LS -->|"AcceptMatch, DeclineMatch, LeaveQueue"| LC
+    BC -->|"Awake: FromPem of trustedRoot"| TR
+    TR -->|"HttpHandler"| API
+    TR -->|"CheckFor, the lobby's wss and the match's TLS"| LC
+    TR --> MC
     BC -->|"SignIn"| AK
     AK --> API
     AK --> SS
@@ -584,4 +627,50 @@ flowchart LR
     WV -->|"LateUpdate: Items"| SC
     WV --> LT
     FC -->|"LateUpdate: the own tank"| SC
+```
+
+## 10. The three client trees and their ways in
+
+The repository has three clients, and one protocol: a change to the protocol is made in all three
+(D-111 to D-115).
+
+- **`client/`**, the full client: the core above and its Unity layer, with prediction, the world and
+  drawing.
+- **[`client-simple/`](../../client-simple/README.md)**, for the UI team, in small files they can
+  read and copy (D-111, D-112). It has three parts. The API is `BackendHttp`, over `HttpClient`; it
+  sets the backend's root as the app's certificate check, through `ServicePointManager`. The lobby
+  is `LobbyClient`, over a WebSocket of its own. A match is `ArenaClient`.
+- **[`client-simple-no-tls/`](../../client-simple-no-tls/README.md)**, the same without TLS and without
+  a certificate (D-114). On the site its grant asks for TLS and names the arena, so it reaches the
+  arena through 80 by that name: `ArenaClient.ConnectThroughSite` sends `GET /match/<tlsName>` with
+  `Upgrade: backend-match`, and the match's frames follow the `101` (D-115). A grant without TLS, from
+  a backend run plain, it dials straight (`Connect`).
+
+The diagram shows which of the front's ports each client uses on the site. For the full client and
+`client-simple`, a solid arrow is the way over TLS, and a dotted arrow is the way in clear, taken
+when their settings give `http://` and `ws://`. Both keep 9001 for matches either way.
+`client-simple-no-tls` has only the ways in clear, all on 80.
+
+```mermaid
+flowchart LR
+    subgraph full["client/, the full client"]
+        unity["Backend.Client.Unity<br/>BackendClient and the scripts"]
+        core["Backend.Client.Core<br/>ApiClient, LobbyClient, MatchConnection, TrustRoot"]
+    end
+    simple["client-simple/<br/>BackendHttp, LobbyClient, ArenaClient, TrustRoot"]
+    plain["client-simple-no-tls/<br/>BackendHttp, LobbyClient, ArenaClient<br/>no certificate"]
+    subgraph front["nginx on the front"]
+        p443["443, TLS<br/>/v1/ and /lobby"]
+        p9001["9001, TLS<br/>matches, by the TLS name"]
+        p80["80, in clear<br/>/v1/, /lobby and /match/name"]
+    end
+    unity --> core
+    core -->|"https:// and wss://"| p443
+    core -.->|"http:// and ws://"| p80
+    core -->|"a match, TLS with the grant's tlsName"| p9001
+    simple -->|"https:// and wss://"| p443
+    simple -.->|"http:// and ws://"| p80
+    simple -->|"a match, TLS with the grant's tlsName"| p9001
+    plain -->|"http:// and ws://"| p80
+    plain -->|"a match, GET /match/tlsName, then 101"| p80
 ```

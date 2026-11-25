@@ -1,18 +1,26 @@
 # 06 — Persistence: MySQL
 
-The system of record. Everything a player would file a support ticket about
-lives here: accounts, progression, currency, inventory, teams, tournaments and
-match history.
+MySQL is the system of record. Everything a player would file a support ticket about lives here: accounts,
+progression, currency, inventory, teams, tournaments and match history. This page is for engineers who change the
+schema, write a repository class, or operate the database. It covers what lives in MySQL and what does not (§1), the
+conventions (§2), every table (§3), the three transactions where money and progression are at stake (§4),
+idempotency (§5), concurrency (§6), the connection pool and its time limits (§7), migrations (§8), growth and
+retention (§9), backups, the replica and its promotion (§10), read replicas (§11) and the metrics (§12). Where the
+code differs from the design, the text says **as built**. Terms such as *ledger*, *idempotency key*, *open match*,
+*timed match*, *baseline*, *epoch* and *fence* are in the [glossary](../glossary.md).
 
-Replaces the MongoDB design
-([D-3](../architecture/03-decision-log.md#d-3--mysql-is-the-system-of-record-mongodb-is-cancelled)),
+This design replaces the MongoDB design
+([D-3](../architecture/03-decision-log.md#d-3--mysql-is-the-system-of-record-mongodb-is-cancelled)), which is
 archived at [archive/persistence-mongodb.md](../archive/persistence-mongodb.md).
 
-**Implemented** in [`backend/persistence`](../../backend/persistence/README.md): the
-schema as one baseline, `V1__schema.sql` with its first rows in `V2__seed.sql` (§8),
-every table shown in [§3](#3-schema) with what it serves; the pool; and all three
-transactions in [§4](#4-the-three-transactions-that-matter) (a match result, a purchase,
-a reward), with tests that run against a real MySQL 8.4, the development MySQL (`dev-mysql.sh`, D-80).
+**Implemented** in [`backend/persistence`](../../backend/persistence/README.md):
+
+- the schema as one baseline: `V1__schema.sql`, with its first rows in `V2__seed.sql` (§8);
+- every table shown in [§3](#3-schema), with what it serves;
+- the connection pool (§7);
+- all three transactions in [§4](#4-the-three-transactions-that-matter): a match result, a purchase, a reward.
+
+The tests run against a real MySQL 8.4: the development MySQL (`dev-mysql.sh`, D-80).
 
 ## 1. Boundaries
 
@@ -25,20 +33,17 @@ a reward), with tests that run against a real MySQL 8.4, the development MySQL (
 | Teams, tournaments | Presence | |
 | Match history | Event streams | |
 
-Two rules that follow from the architecture and are worth restating because
-violating either is how a realtime system acquires a database-shaped stall:
+Two rules follow from the architecture. They are worth stating again, because breaking either one is how a
+realtime system gets a stall caused by its database:
 
-**The arena never opens a database connection.** Everything it needs at join
-time is pre-resolved into the join ticket; everything it produces goes to an
-event stream. A room thread that can block on a query is a room thread that
-will, at the worst possible moment.
+**The arena never opens a database connection.** Everything it needs when a player joins is resolved beforehand,
+into the join ticket. Everything it produces goes to an event stream. A room thread that can block on a query will
+block on one, at the worst possible moment.
 
-**Live leaderboards are not in MySQL.** They are j-redis sorted sets, because
-"rank among 50 000" is a data-structure problem, not a query. MySQL holds what
-the boards are made of (`player_stat.best_score`, `matches` and `match_player`),
-so they can be rebuilt after a store loss
-([05 §8](05-worker-and-events.md#8-rebuilding-after-a-store-loss)), and that is its
-only involvement.
+**Live leaderboards are not in MySQL.** They are j-redis sorted sets, because "rank among 50 000" is a
+data-structure problem, not a query. MySQL holds what the boards are made of (`player_stat.best_score`, `matches`
+and `match_player`), so the boards can be rebuilt after a store loss
+([05 §8](05-worker-and-events.md#8-rebuilding-after-a-store-loss)). That is MySQL's only part in them.
 
 ### Write-through or cache-aside
 
@@ -53,31 +58,38 @@ only involvement.
 | Concern | Choice | Reason |
 |---|---|---|
 | Engine | InnoDB | Transactions, row locks, crash recovery |
-| Charset | `utf8mb4` / `utf8mb4_0900_ai_ci`, named on every table | Real Unicode, including names outside the BMP; and a name unique whatever its case or accents, whatever the server's own default |
-| Primary keys | `BIGINT UNSIGNED AUTO_INCREMENT` | Sequential inserts into a clustered index; UUIDs fragment it |
+| Charset | `utf8mb4` / `utf8mb4_0900_ai_ci`, named on every table | Real Unicode, including characters outside Unicode's Basic Multilingual Plane; and a name that is unique whatever its case or accents, whatever the server's own default |
+| Primary keys | `BIGINT UNSIGNED AUTO_INCREMENT` (a `player` takes its account's id; a payment order is a `CHAR(36)` UUID; the link tables have composite keys) | Sequential inserts into a clustered index; UUIDs fragment it |
 | Player-visible ids | separate opaque `CHAR(12)` code | Never expose a row count to players |
 | Money and currency | `BIGINT`, integer minor units | Floating point in a ledger is a bug waiting for an audit |
-| Time | `DATETIME(3)`, always UTC; a day is a `DATE`, UTC; `ha_heartbeat.at` is `DATETIME(6)` | `TIMESTAMP` carries the 2038 limit and a timezone surprise. Enforced since 2026-09-26 by the pool, for what the driver writes and, forced onto the session, for what MySQL stamps itself (`CURRENT_TIMESTAMP` defaults), and by the server's `default-time-zone`. Before, the driver wrote each process's local time (defect [D-19](../defects.md#3-data-and-the-result-pipeline)), and a server left on local time stamped ledger rows two hours off |
+| Time | `DATETIME(3)`, always UTC; a day is a `DATE`, UTC; `ha_heartbeat.at` is `DATETIME(6)` | `TIMESTAMP` carries the 2038 limit and a time-zone surprise. UTC is enforced since 2026-09-26 in three places: the pool sets the driver's zone to `+00:00` for what the driver writes; it forces that zone onto the session too, for what MySQL stamps itself (the `CURRENT_TIMESTAMP` defaults); and the server's `default-time-zone` is `'+00:00'`. Before, the driver wrote each process's local time (defect [D-19](../defects.md#3-data-and-the-result-pipeline)), and a server left on local time stamped ledger rows two hours off |
 | Booleans | `BOOLEAN`, which MySQL stores as `TINYINT(1)` | MySQL has no native boolean |
 | Enumerations | `TINYINT UNSIGNED` + a constant in code | `ENUM` columns make migrations painful |
 
-Rows that record an event (`account`, `player`, `ledger`) carry
-`created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)`; `inventory_item`
-has `acquired_at`, and the match and stat tables carry their own times. Only
-`player` carries `updated_at`; elsewhere a change is told by a time of its own
-(`confirmed_at`, `refunded_at`, `renamed_at`, `read_at`, the season's steps). A
-`version INT UNSIGNED` is checked by every change of a `tournament`'s state;
-`player.version` is there and unused (§4).
+**Times on rows.** Rows that record an event (`account`, `player`, `ledger`) carry
+`created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)`. `inventory_item` has `acquired_at`, and the match
+and stat tables carry their own times. Only `player` carries `updated_at`. Elsewhere, a change is shown by a time
+of its own: `confirmed_at`, `refunded_at`, `renamed_at`, `read_at`, and the season's steps.
+
+**Versions.** Every change of a `tournament`'s state checks its `version INT UNSIGNED`. `player.version` exists and
+is not used (§4).
 
 ## 3. Schema
 
-The schema is the baseline's `V1__schema.sql` (§8), and every table below is shown as
-it makes it, column for column, key for key; `V2__seed.sql` writes the rows a first
-launch needs: the failover epoch (§10), the replica heartbeat (§10) and season 1. The
-`V`-numbers in the notes are the steps each table grew by, kept in git to commit
-ce30aa7 of the previous repository ([working here](../development/02-working-here.md), [D-75](../architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)).
-The [persistence README](../../backend/persistence/README.md) lists which class writes
-and reads each table, and [diagrams/05](../diagrams/05-data-and-worker.md) draws them.
+**The schema is the baseline's `V1__schema.sql`** (§8). Every table below is shown as V1 makes it, column for
+column and key for key. The comments in the blocks are V1's, with small differences in two tables (`season_place`,
+`inbox`).
+`V2__seed.sql` writes the three rows a first launch needs: the failover epoch (§10), the replica heartbeat (§10)
+and season 1.
+
+The `V`-numbers in the notes below (V3, V16, V34…) name the migration steps by which each table grew before the
+squash. Those steps are kept in git, up to commit ce30aa7 of the previous repository
+([working here](../development/02-working-here.md),
+[D-75](../architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)).
+They are history: a database made today runs V1 and V2 only.
+
+The [persistence README](../../backend/persistence/README.md) lists which class writes and reads each table, and
+[diagrams/05](../diagrams/05-data-and-worker.md) draws them.
 
 Thirty-six tables, by domain:
 
@@ -92,12 +104,13 @@ Thirty-six tables, by domain:
 | Social | `friend`, `friend_request`, `block`, `inbox` |
 | Operations | `admin_audit`, `ha_epoch`, `ha_heartbeat`, `backup_run` |
 
-Every table names its engine and character set, InnoDB and `utf8mb4` with
-`utf8mb4_0900_ai_ci`, so a server's own default cannot change what a unique name
-means. InnoDB gives a foreign key whose columns lead no index of its table an index of
-its own, named after the constraint: `friend (friend_id)`, `tournament_entry
-(player_id)`, `tournament_roster (player_id)` and `season_team_payee (player_id)` each
-have one that no `KEY` line names.
+**Every table names its engine and character set**: InnoDB, and `utf8mb4` with `utf8mb4_0900_ai_ci`. So a
+server's own default cannot change what a unique name means.
+
+**Four indexes are not written in the DDL.** When a foreign key's columns do not lead any index of its table,
+InnoDB makes an index of its own for it, named after the constraint. `friend (friend_id)`,
+`tournament_entry (player_id)`, `tournament_roster (player_id)` and `season_team_payee (player_id)` each have one
+that no `KEY` line names.
 
 ### Identity and profile
 
@@ -119,13 +132,21 @@ CREATE TABLE account (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-`status` 1 is suspended until `banned_until`, or until lifted when that is null; 2 is
-banned for good; 3 is an account its player erased (D-84, 04 §1), whose `username` is
-`~deleted~` and its id, its hash empty and its guest key gone, and which no status changes
-again; any other value is read as banned (`AccountRepository.Status`), since operators write
-the column. V1's comment on the column predates 3, and an applied migration is not edited. A guest's `username` is `~` and a ULID, and its
-`password_hash` empty until it is upgraded (V15); the username rules refuse `~`, so no
-login by name reaches it. `ix_account_created` (V34) serves the funnel's window of days.
+**`account.status`**, as `AccountRepository.Status` reads it:
+
+| Value | Meaning |
+|---|---|
+| 0 | active |
+| 1 | suspended until `banned_until`, or until lifted when `banned_until` is null |
+| 2 | banned for good |
+| 3 | erased by its player (D-84, 04 §1): `username` is `~deleted~` and the id, the hash is empty, the guest key is gone, and no status change applies to it again |
+| any other | read as banned, since operators write the column |
+
+V1's comment on the column was written before value 3 existed, and an applied migration is not edited.
+
+**Guests.** A guest's `username` is `~` followed by a ULID, and its `password_hash` is empty until it is upgraded
+(V15). The username rules refuse `~`, so no login by name reaches a guest. `ix_account_created` (V34) serves the
+funnel's window of days (05 §11).
 
 ```sql
 -- The player an account plays as: profile, progress, balances and ratings. Its id is the account's.
@@ -167,21 +188,18 @@ CREATE TABLE player (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-The `CHECK` constraint is the last line of defence, not the first. Balance
-changes go through one code path that refuses to overdraw; the constraint
-exists so that a bug becomes a failed transaction rather than a negative
-balance nobody notices.
+**The `CHECK` constraint is the last line of defence, not the first.** Balance changes go through one code path
+that refuses to overdraw. The constraint exists so that a bug becomes a failed transaction, not a negative balance
+that nobody notices.
 
-The columns grew in steps: the rated counts and the other two ratings (V4 to V6),
-`team_left_at` (V10), `first_played_on` (V16), the listed ratings and their indexes
-(V20, D-57) and `name_changed_at` (V23). V17's three indexes over the raw ratings,
-which V20's replaced and which no query read, are not in the baseline
-([defect D-41](../defects.md#3-data-and-the-result-pipeline)). `player.version` is 0
-on every row: nothing edits a player optimistically yet (§4).
+The columns grew in steps: the rated counts and the other two ratings (V4 to V6), `team_left_at` (V10),
+`first_played_on` (V16), the listed ratings and their indexes (V20, decision D-57), and `name_changed_at` (V23).
+V17 had made three indexes over the raw ratings. V20's indexes replaced them, no query read them, and they are not
+in the baseline ([defect D-41](../defects.md#3-data-and-the-result-pipeline)). `player.version` is 0 on every row:
+nothing edits a player optimistically yet (§4).
 
-Aggregate statistics are a separate table from `player`, because they are
-written after every match while the profile is nearly static — keeping them
-apart avoids contending on the row that logins read.
+**Aggregate statistics are in a table apart from `player`.** They are written after every match, while the profile
+hardly changes. Keeping them apart avoids contention on the row that logins read.
 
 ```sql
 -- Lifetime totals, written by every result; apart from player so results do not contend with logins.
@@ -198,11 +216,10 @@ CREATE TABLE player_stat (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-A player's row here is made with the player, in the transaction that makes the
-account, so a result's locking read of it always finds a row: a read that found none
-would lock the gap where it would go, and two first results inserting into that gap
-would deadlock. `assists` came with V25. The achievements (04 §8, D-64) are thresholds
-on these columns.
+**A player's `player_stat` row is made with the player**, in the transaction that makes the account. So a result's
+locking read of it always finds a row. A locking read that found none would lock the gap where the row would go,
+and two first results inserting into that gap would deadlock. `assists` came with V25. The achievements (04 §8,
+D-64) are thresholds on these columns.
 
 ```sql
 -- Activity: a row a player a day a match of theirs ended, written by the result's transaction (D-47).
@@ -213,11 +230,10 @@ CREATE TABLE player_day (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-No foreign key on `player_day`: it is written only for players the result's
-transaction has locked, and every insert is spared the check. A result too short to be
-paid writes no row (05 §11). V16 filled this table and `player.first_played_on` from
-the match history there was; the baseline starts on an empty database, with nothing to
-fill, and a backfill is a task, not a migration (§8).
+**`player_day` has no foreign key.** It is written only for players that the result's transaction has already
+locked, so every insert is spared the check. A result too short to be paid writes no row (05 §11). V16 filled this
+table and `player.first_played_on` from the match history there was. The baseline starts on an empty database,
+with nothing to fill; and a backfill is a task, not a migration (§8).
 
 ### Economy
 
@@ -243,13 +259,13 @@ CREATE TABLE ledger (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-**The ledger is append-only and is the audit trail.** `player.coins` and
-`player.gems` are denormalised running totals, maintained in the same transaction as
-the ledger row. A daily job (05 §9) re-derives `SUM(delta)` per player in each
-currency and alerts on any mismatch — a divergence means a code path has updated a
-balance without writing a ledger row, which is exactly the bug that is impossible to
-find after the fact. Reason 2, a refund, is defined and written by nothing yet: a
-payment's refund is reason 10. Every key the ledger is written under is in §5.
+**The ledger is append-only, and it is the audit trail.** `player.coins` and `player.gems` are denormalised running
+totals, kept in the same transaction as the ledger row. A daily job (05 §9) re-derives `SUM(delta)` per player in
+each currency, and alerts on any mismatch. A mismatch means that some code path changed a balance without writing a
+ledger row. That is exactly the bug that cannot be found after the fact.
+
+Reason 2, a refund, is defined, and nothing writes it yet: a payment's refund is reason 10. Every key the ledger is
+written under is in §5.
 
 ### Inventory and equipment
 
@@ -276,15 +292,16 @@ CREATE TABLE equipment (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-The composite primary key `(player_id, item_id)` is deliberate: it clusters a
-player's whole inventory together on disk, so loading it is one sequential
-read, and it makes "grant one of item X" an `INSERT … ON DUPLICATE KEY UPDATE`
-rather than a read-modify-write. A row whose `qty` falls to 0 stays, with its level.
+**The composite primary key `(player_id, item_id)` is deliberate.** It clusters a player's whole inventory together
+on disk, so loading it is one sequential read. And it makes "grant one of item X" an
+`INSERT … ON DUPLICATE KEY UPDATE` instead of a read-modify-write. A row whose `qty` falls to 0 stays, with its
+level.
 
-`equipment.slot` 4 is the skin (plan item 75 (c), D-70), after the four that
-give a bonus: a value of the column, so nothing new in the schema.
+`equipment.slot` 4 is the skin (plan item 75 (c), D-70), after the four slots that give a bonus. It is only a new
+value of the column, so the schema did not change for it.
 
-**Boosts** (V9, V22; plan item 16, 04 §8): a row a boost's run, and a row a key used.
+**Boosts** (V9, V22; plan item 16, 04 §8): `boost` has a row for each run of a boost, and `boost_activation` a row
+for each key used.
 
 ```sql
 -- A boost's run, kept after it ends so a result applied late still finds the boost its match ended
@@ -311,20 +328,21 @@ CREATE TABLE boost_activation (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-A boost running is the row of its kind whose `ends_at` is still ahead; the
-same item activated again moves that row's `ends_at` on; one activated after it
-ended is a new row. Rows are kept once ended: a result applied late, after a
-worker's outage, must still find the boost its match ended in, and a replaced
-row would have lost it (found writing the test). Activation takes the item,
-writes the key and the boost in one transaction, the player locked, so two taps
-at once take one item and a retry none. An ended row is kept 31 days, a day
-longer than a result may be late, and a key 30 days, where a retry comes within
-seconds, each deleted by its index (V22; §9, plan item 60 (b)).
+How the boost rows behave:
 
-Items are referenced by their content key, not a foreign key to an item table,
-because the catalogue is JSON loaded at boot
-([01-arena](01-arena.md)). The database stores what a player owns; the content
-tables define what it does.
+- **A running boost** is the row of its kind whose `ends_at` is still ahead.
+- **The same item activated again** moves that row's `ends_at` on. One activated after the boost ended is a new
+  row.
+- **Rows are kept once ended.** A result applied late, after a worker's outage, must still find the boost its match
+  ended in. A replaced row would have lost it (found while writing the test).
+- **Activation is one transaction**, with the player locked: it takes the item, and writes the key and the boost.
+  So two taps at once take one item, and a retry takes none.
+- **Retention:** an ended row is kept 31 days, a day longer than a result may be late. A key is kept 30 days,
+  although a retry comes within seconds. Each is deleted by its index (V22; §9, plan item 60 (b)).
+
+**Items are referenced by their content key**, not by a foreign key to an item table, because the catalogue is
+JSON loaded at boot ([01-arena](01-arena.md)). The database stores what a player owns; the content tables define
+what it does.
 
 ### Payments (V30, designed 2026-10-04, plan item 75 (a))
 
@@ -352,15 +370,20 @@ CREATE TABLE payment_order (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-An order moves only forward, each step under its row's lock
+**An order moves only forward**, each step under its row's lock
 ([D-68](../architecture/03-decision-log.md#d-68--a-purchase-is-an-order-its-provider-confirms-granted-once-and-a-refund-is-taken-back)):
-pending to paid or declined (confirm), paid to refunded, pending to expired.
-Its gems are granted by the ledger keyed `payment:{orderId}`, a first order's
-bonus keyed `payment:first:{player}`; ledger reasons 9 a payment, 10 its
-refund. A refund, and an operator clearing a debt, are each written with their
-`admin_audit` row in one transaction (D-30). A player's debt is the sum of
-their orders' `debt`, read by the unique key's first column. Retention expires an
-order pending longer than a day by `ix_order_state`; the row is kept.
+
+| From | To | By |
+|---|---|---|
+| pending (0) | paid (1) or declined (2) | the provider's confirmation |
+| paid (1) | refunded (3) | a refund |
+| pending (0) | expired (4) | retention, once pending longer than a day (by `ix_order_state`; the row is kept) |
+
+The order's gems are granted through the ledger, keyed `payment:{orderId}`, and a first order's bonus is keyed
+`payment:first:{player}`. Ledger reason 9 is a payment, and 10 its refund. A refund, and an operator clearing a
+debt, are each written with their `admin_audit` row in one transaction (D-30). A player's debt is the sum of their
+orders' `debt`, read by the first column of the unique key. Payments are simulated: there is no third-party
+provider until the owner chooses one (Q-52).
 
 ### Matches
 
@@ -384,25 +407,25 @@ CREATE TABLE matches (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-**The table is `matches`, not `match`.** `MATCH` is reserved in MySQL
-(`MATCH … AGAINST`), so `match` would need backticks in every query forever —
-a permanent footgun for one word of elegance.
+**The table is `matches`, not `match`.** `MATCH` is reserved in MySQL (`MATCH … AGAINST`), so a table named
+`match` would need backticks in every query for ever: a permanent trap, for one word of elegance.
 
 **A row is either an open match or a timed match, and `kind` says which**
 ([D-15](../architecture/03-decision-log.md#d-15--the-public-arena-runs-continuously-structured-modes-are-timed-matches)).
-An open match is one player's stay in the public arena: one `match_player` row,
-`placement = 0`, no winner. A timed match has a roster and real placements.
-Both belong here — they are the same shape of record and share the same
-idempotency key — but a query meaning "my ranked matches" must filter on a
-stated fact rather than infer one from the placement. `kind` came with V2,
-`ix_match_ended` with V3, and `cut_short` with V18: a match an operator closed or
-a room that failed is recorded with its placements as they stood, not a finish, and
-a tournament decides it by the higher seed (Q-45). Mode 9, the sandbox, publishes
-no result and so has no rows.
 
-Note the consequence for `player_stat.matches`: it counts **both kinds**, but only
-results long enough to be paid. Splitting it needs a second counter; the ranked modes keep their
-own: `player.rated_duels`, `rated_tvts` and `rated_rffas`, and `team.rated_matches`.
+- An *open match* is one player's stay in the public arena: one `match_player` row, `placement = 0`, no winner.
+- A *timed match* has a roster and real placements.
+
+Both belong in this table: they are the same shape of record, and they share the same idempotency key. But a query
+that means "my ranked matches" must filter on a stated fact, not infer one from the placement.
+
+The columns' history: `kind` came with V2, `ix_match_ended` with V3, and `cut_short` with V18. A match that an
+operator closed, or whose room failed, is recorded with its placements as they stood, not as a finish; a tournament
+decides such a match by the higher seed (Q-45). Mode 9, the sandbox, publishes no result, so it has no rows.
+
+**The consequence for `player_stat.matches`:** it counts **both kinds**, but only results long enough to be paid.
+Splitting it would need a second counter. The ranked modes keep their own counts: `player.rated_duels`,
+`rated_tvts` and `rated_rffas`, and `team.rated_matches`.
 
 ```sql
 -- Each player's part of a match.
@@ -426,26 +449,24 @@ CREATE TABLE match_player (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-**`PRIMARY KEY (match_id, player_id)` is the idempotency mechanism**
-([§5](#5-idempotency)). The MongoDB design carried a separate
-`match_results_applied` collection to dedupe; a unique constraint does the same
-job with no extra table, no extra write, and no window in which the dedupe
-record and the effect disagree.
+**`PRIMARY KEY (match_id, player_id)` is the idempotency mechanism** ([§5](#5-idempotency)). The MongoDB design
+kept a separate `match_results_applied` collection to deduplicate. A unique constraint does the same job with no
+extra table, no extra write, and no window in which the dedupe record and the effect disagree.
 
-`match_player.assists` and `player_stat.assists` (V25, plan item 65, 01 §7) sit
-beside `kills`; a result without the field, from an arena not yet upgraded, counts
-none. `matches.tournament_id` and its index are written and read by nothing: a
-tournament's match is found by `tournament_match.match_uid` (below).
+`match_player.assists` and `player_stat.assists` (V25, plan item 65, 01 §7) sit beside `kills`. A result without
+the field, from an arena not yet upgraded, counts no assists. `matches.tournament_id` and its index are written and
+read by nothing: a tournament's match is found by `tournament_match.match_uid` (below).
 
 ### Teams and tournaments
 
-Detailed with the modules that own them in
-[04-platform-services](04-platform-services.md). `team_member` is **the source of
-truth for membership**, with `player.team_id` a denormalised pointer kept in step in
-the same transactions (04 §2); a team's contribution, tags and settings wait for what
-uses them. The `leaderboard_snapshot` table an earlier draft had was never built: the
-boards are rebuilt from `player_stat` and `matches`
-([05 §8](05-worker-and-events.md#8-rebuilding-after-a-store-loss)).
+The modules that own these tables describe them in detail, in
+[04-platform-services](04-platform-services.md).
+
+- **`team_member` is the source of truth for membership.** `player.team_id` is a denormalised pointer, kept in step
+  in the same transactions (04 §2).
+- A team's contribution, tags and settings are not in the schema: they wait until something uses them.
+- The `leaderboard_snapshot` table of an earlier draft was never built. The boards are rebuilt from `player_stat`
+  and `matches` instead ([05 §8](05-worker-and-events.md#8-rebuilding-after-a-store-loss)).
 
 **Teams** (V10, plan item 17; rating and record V12; `renamed_at` V23; the listed
 rating V28):
@@ -516,15 +537,16 @@ CREATE TABLE match_team (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-A team's `name` is unique by the table's collation, which ignores case and accents:
-two names differing only so are the same name. `team_invite` (V10, its expiry index
-V19) and `team_application` (V24, plan item 64, Q-49) are deleted by retention once
-lapsed; reading deletes neither.
+**A team's `name` is unique by the table's collation**, which ignores case and accents: two names that differ only
+in case or accents are the same name.
 
-`match_team` is a team's `match_player` (V12,
-[D-43](../architecture/03-decision-log.md#d-43--a-team-matchs-sides-are-known-by-their-players-teams-when-the-result-is-applied)):
-its primary key is the duplicate check for the team's part of a result, and retention
-deletes it with the match's other rows.
+**Invitations and applications lapse.** Retention deletes `team_invite` rows (V10; their expiry index V19) and
+`team_application` rows (V24, plan item 64, Q-49) once they have lapsed. Reading them deletes neither.
+
+**`match_team` is a team's `match_player`** (V12,
+[D-43](../architecture/03-decision-log.md#d-43--a-team-matchs-sides-are-known-by-their-players-teams-when-the-result-is-applied)).
+Its primary key is the duplicate check for the team's part of a result, and retention deletes it with the match's
+other rows.
 
 **Tournaments** (V11, plan item 18; `mode` and the teams' tables V13, D-44; `format`
 V26):
@@ -597,16 +619,19 @@ CREATE TABLE tournament_roster (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-A match's winner is filled into the next round's slot `slot / 2`, as `player_a`
-or `player_b` by which half it came from. A teams' tournament's `tournament_match`
-holds teams' ids in `player_a`, `player_b` and `winner` (D-44). A round robin's
-matches are all written at seeding; a draw is a match `DONE` whose `winner` is NULL.
-Two things in the schema go unused: no query reads `tournament_match` by
-`ix_tmatch_uid`, a round's matches being read by its key and their results by
-`matches.match_uid`; and nothing writes `matches.tournament_id`. Both are small, and
-stay until a contract migration has another reason to run (DOC-17). A finished or
-cancelled tournament is deleted 90 days after it was to start, with its entries,
-rosters and bracket (§9).
+How the bracket is stored:
+
+- A match's winner is filled into the next round's slot, `slot / 2`: as `player_a` or `player_b`, by which half it
+  came from.
+- In a teams' tournament, `tournament_match` holds teams' ids in `player_a`, `player_b` and `winner` (D-44).
+- A round robin's matches are all written at seeding. A draw is a match in state 2 (done) whose `winner` is NULL.
+
+**Two things in the schema are not used.** No query reads `tournament_match` by `ix_tmatch_uid`: a round's matches
+are read by the table's key, and their results by `matches.match_uid`. And nothing writes `matches.tournament_id`.
+Both are small. They stay until a contract migration has another reason to run (DOC-17).
+
+A finished or cancelled tournament is deleted 90 days after it was to start, with its entries, rosters and bracket
+(§9).
 
 ### Seasons and boards
 
@@ -646,21 +671,22 @@ CREATE TABLE season_place (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-`V2__seed.sql` makes season 1, from when it runs to the end of the two calendar
-months it falls in (04 §7). A season's progress is in its row
-([D-63](../architecture/03-decision-log.md#d-63--a-season-ends-in-three-steps-each-safe-to-repeat-its-places-its-gems-then-its-reset)):
-each step's condition is the column before it — `placed_at`, then `paid_at`, then
-`reset_at` and `team_reset_at` — and the reset's batches move `reset_through` in the
-transaction that resets them. A place's own row is its proof: `uq_season_board_player`
-keeps a player to one place a board, and the gems it records are the ones its ledger
-row paid. `season_place.rated` is `INT UNSIGNED`, as wide as the rated counts it
-copies; V27 had it `SMALLINT UNSIGNED`, which a count past 65 535 would have overflowed
-and so stopped the season's close
-([defect D-42](../defects.md#3-data-and-the-result-pipeline)). Seasons and their
-places are kept for good: a past season's board is a player's record.
+**Season 1 comes from the seed.** `V2__seed.sql` makes it, from the moment the seed runs to the end of the two
+calendar months it falls in (04 §7).
 
-**A board of teams and its seasons** (V28, designed 2026-10-04, plan item 73): the
-listed rating on `team` and its index are in the team's table above.
+**A season's progress is in its row**
+([D-63](../architecture/03-decision-log.md#d-63--a-season-ends-in-three-steps-each-safe-to-repeat-its-places-its-gems-then-its-reset)).
+Each step's condition is the column before it: `placed_at`, then `paid_at`, then `reset_at` and `team_reset_at`.
+The reset runs in batches, and each batch moves `reset_through` in the transaction that resets it.
+
+**A place's own row is its proof.** `uq_season_board_player` keeps a player to one place a board, and the gems the
+row records are the ones its ledger row paid. `season_place.rated` is `INT UNSIGNED`, as wide as the rated counts
+it copies. V27 had it as `SMALLINT UNSIGNED`, which a count past 65 535 would have overflowed, and that would have
+stopped the season's close ([defect D-42](../defects.md#3-data-and-the-result-pipeline)). Seasons and their places
+are kept for good: a past season's board is a player's record.
+
+**A board of teams and its seasons** (V28, designed 2026-10-04, plan item 73): the listed rating on `team`, and its
+index, are in the team's table above.
 
 ```sql
 -- A past season's places on the board of teams (D-65).
@@ -688,14 +714,16 @@ CREATE TABLE season_team_payee (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-Both are written in the season's first step, with the players' places
-([D-65](../architecture/03-decision-log.md#d-65--a-teams-season-place-pays-each-member-who-played-for-it-that-season)):
-a payee is read as a member of a listed team, in `team_member` at the end, with a
-row in `match_player` for one of the team's rated team matches (`match_team` by
-`ix_match_team_team`, `matches` timed, mode 5, not cut short) ended within the
-season. One player, one team at a time (`uq_member_player`), so one payee row a
-season. `team_id` keys neither to `team`: a team disbanded since keeps its place,
-under the name it had then.
+**Both tables are written in the season's first step**, with the players' places
+([D-65](../architecture/03-decision-log.md#d-65--a-teams-season-place-pays-each-member-who-played-for-it-that-season)).
+A payee is a player who, at the season's end:
+
+- is a member of a listed team, in `team_member`; and
+- has a row in `match_player` for one of that team's rated team matches that ended within the season. Such a match
+  is found by `match_team` through `ix_match_team_team`, and is in `matches` as timed, mode 5, not cut short.
+
+A player is in one team at a time (`uq_member_player`), so there is one payee row a season. In neither table does
+`team_id` refer to `team` by a foreign key: a team disbanded since then keeps its place, under the name it had.
 
 **The season pass** (V31, designed 2026-10-04, plan item 75 (b)):
 
@@ -714,17 +742,20 @@ CREATE TABLE season_pass (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-A row is made by a player's first result in a season, whatever its points (0 for one too short to
-count), or by premium, under the
-player's row lock, and only ever raised
+**A row is made by a player's first result in a season**, whatever its points (0 for a result too short to count),
+or by buying premium. Both happen under the player's row lock. After that the row is only ever raised
 ([D-69](../architecture/03-decision-log.md#d-69--a-season-pass-pays-each-tier-as-its-points-cross-it-each-track-to-its-own-mark-and-its-premium-never-pays-coins)):
-points, premium from false to true, each mark to the tier paid. A tier's coins
-and gems are ledger reason 11, keyed `pass:{season}:{free|premium}:{tier}:{player}`;
-its boost is an `inventory_item` added in the same transaction, made once by
-the mark. Premium is reason 1, a purchase, keyed `pass:{season}:{player}`. The
-season being played, the newest not yet placed, must exist: without one a result
-cannot be applied, and the error says so. Retention keeps the season being played
-and the five before it (`ix_pass_season`).
+the points go up, `premium` goes from false to true, and each mark (`free_paid`, `premium_paid`) goes up to the
+tier paid.
+
+| What | How it is paid |
+|---|---|
+| A tier's coins and gems | ledger reason 11, keyed `pass:{season}:{free\|premium}:{tier}:{player}` |
+| A tier's boost | an `inventory_item` added in the same transaction; the mark makes it happen once |
+| Premium | reason 1, a purchase of 500 gems, keyed `pass:{season}:{player}` |
+
+**The season being played must exist**: the newest season not yet placed. Without one, a result cannot be applied,
+and the error says so. Retention keeps the season being played and the five before it (`ix_pass_season`).
 
 ### Daily goals
 
@@ -743,18 +774,19 @@ CREATE TABLE daily_goal (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-Written only in the result's transaction, under the player's lock
-([D-66](../architecture/03-decision-log.md#d-66--a-days-goals-are-drawn-not-stored-and-paid-as-results-meet-them));
-which goals a day has is drawn, not stored. A result's count is added to each goal's
-progress by the statement that writes it, and the sum read back under the row's lock,
-so two results of one player add up whatever their order. A goal of rated matches
-counts a rated match played against someone: a ranked mode whose ratings moved, or
-a team match both teams' players were in; never a walkover (defect
-[D-51](../defects.md#3-data-and-the-result-pipeline)). A result under five seconds
-counts toward no goal at all (defect D-45). Ledger
-reason 8 is a daily goal's, keyed `daily:{player}:{day}:{goal}`, and the day's three
-together `daily:{player}:{day}:set`. Retention deletes days more than a week old
-(`ix_daily_goal_day`).
+**`daily_goal` is written only in the result's transaction**, under the player's lock
+([D-66](../architecture/03-decision-log.md#d-66--a-days-goals-are-drawn-not-stored-and-paid-as-results-meet-them)).
+Which goals a day has is drawn, not stored.
+
+- A result's count is added to each goal's progress by the statement that writes it, and the sum is read back under
+  the row's lock. So two results of one player add up correctly, whatever their order.
+- A goal of rated matches counts a rated match played against someone: a ranked mode whose ratings moved, or a team
+  match that both teams' players were in. It never counts a walkover
+  (defect [D-51](../defects.md#3-data-and-the-result-pipeline)).
+- A result under five seconds counts toward no goal at all (defect D-45).
+- Ledger reason 8 is a daily goal's, keyed `daily:{player}:{day}:{goal}`; the day's three goals together are keyed
+  `daily:{player}:{day}:set`.
+- Retention deletes days more than a week old (`ix_daily_goal_day`).
 
 ### Social
 
@@ -806,10 +838,9 @@ CREATE TABLE inbox (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-A friend request lapses after seven days and is deleted by retention once it has
-(`ix_request_expiry`, V19); friendships and blocks are kept. An inbox item is one a
-player, kind and reference (`uq_inbox_item`), so an item written again by a retry is
-the same item; items are kept 30 days, read or not (`ix_inbox_created`).
+A friend request lapses after seven days, and retention deletes it once it has (`ix_request_expiry`, V19).
+Friendships and blocks are kept. There is one inbox item for each player, kind and reference (`uq_inbox_item`), so
+an item written again by a retry is the same item. Items are kept 30 days, read or not (`ix_inbox_created`).
 
 ### Operations
 
@@ -858,24 +889,24 @@ CREATE TABLE backup_run (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 
-`admin_audit` (V7) is the admin API's record, an `admin_audit` row written with the
-change it describes or alone for a refusal or a listing, its request cut to 1 024
-characters; it is kept for good. `ha_epoch` (V8) and `ha_heartbeat` (V21) are one row
-each, held so by their `CHECK`s and written by the seed: the epoch a promotion raises,
-and the stamp every worker writes on the primary each second, which a replica's lag is
-measured by (§10). `backup_run` (V32, `seconds` V33) is written by the backup scripts
-as the `backup` account, which may insert into it and do nothing else there (§10).
+| Table | What it is |
+|---|---|
+| `admin_audit` (V7) | The admin API's record. A row is written with the change it describes, or alone for a refusal or a listing. Its request is cut to 1 024 characters. Kept for good. |
+| `ha_epoch` (V8) | One row, kept so by its `CHECK` and written by the seed: the epoch that a promotion raises (§10). |
+| `ha_heartbeat` (V21) | One row, kept so by its `CHECK` and written by the seed: the stamp every worker writes on the primary each second, by which a replica's lag is measured (§10). |
+| `backup_run` (V32; `seconds` V33) | Written by the backup scripts as the `backup` account, which may insert into it and do nothing else there (§10). |
 
 ## 4. The three transactions that matter
 
-Everything else is CRUD. These three are where money and progression are at
+Everything else is plain reads and writes (CRUD). These three transactions are where money and progression are at
 stake.
 
 ### Applying a match result
 
-Consumed from the event stream by `worker`, which may deliver the same result
-more than once
-([NFR-7](../requirements/01-scope-and-nfrs.md#4-non-functional-requirements)).
+`worker` reads the result from the event stream, and may deliver the same result more than once
+([NFR-7](../requirements/01-scope-and-nfrs.md#4-non-functional-requirements)). The transaction below follows
+`MatchResultRepository` step by step. The SQL is shortened where a statement repeats per player or per currency;
+the parts done in Java are comments.
 
 ```sql
 -- 0. Before any transaction: every value is checked against its column width in Java, and a
@@ -887,7 +918,7 @@ START TRANSACTION;
 
 -- 0b. A team match only (D-43): the teams of the players it names, read, then locked
 --     before the players, the order every team action takes (D-39).
-SELECT team_id FROM team_member WHERE player_id IN (?, ?, ...);
+SELECT player_id, team_id FROM team_member WHERE player_id IN (?, ?, ...);
 SELECT id, rating, rated_matches FROM team WHERE id IN (?, ?) ORDER BY id FOR UPDATE;
 
 -- 1. Lock every player the result names, lowest id first, with their totals' rows. Exclusive,
@@ -984,14 +1015,12 @@ UPDATE team SET rating = GREATEST(0, CAST(rating AS SIGNED) + ?), rated_matches 
 COMMIT;
 ```
 
-The shape to notice: **step 4 is both the write and the duplicate check.** No
-separate "have I seen this?" query, so there is no window between checking and
-acting. Every payment in the transaction is keyed in the ledger as well (§5), so
-even a step that ran twice would pay once.
+The shape to notice: **step 4 is both the write and the duplicate check.** There is no separate "have I seen
+this?" query, so there is no window between checking and acting. Every payment in the transaction is keyed in the
+ledger as well (§5), so even a step that ran twice would pay once.
 
-**Why not `INSERT IGNORE`.** This document specified it, and the code used it
-until 2026-09-25. `IGNORE` downgrades *every* error on the statement to a
-warning and zero rows, not only the duplicate key it was there for. Measured
+**Why not `INSERT IGNORE`.** This document specified it, and the code used it until 2026-09-25. But `IGNORE` turns
+*every* error on the statement into a warning and zero rows, not only the duplicate key it was there for. Measured
 against MySQL 8.0.46:
 
 | What was inserted | With `IGNORE` | What the code concluded |
@@ -1000,50 +1029,50 @@ against MySQL 8.0.46:
 | `kills = 70 000` into `SMALLINT UNSIGNED` | row **inserted** with 65 535 | the balances were then updated with 70 000, so row and balance disagreed for good |
 | `score = -5` into `INT UNSIGNED` | row inserted with 0 | the same |
 
-The ledger still reconciled in the second and third cases, because it was wrong
-the same way — which is why nothing would have caught it.
+The ledger still reconciled in the second and third cases, because it was wrong in the same way as the row. That is
+why nothing would have caught it.
 
-**Why lock first.** Sorting the player loop by id was meant to prevent deadlock
-and did not. The insert's foreign-key check takes a *shared* lock on the player
-row; the balance update then wants an *exclusive* one. Two transactions each
-holding the shared lock wait on each other. Measured: 24 concurrent matches
-sharing two players failed on three runs out of three, several exhausting every
-retry. Taking the exclusive lock at the start removes the upgrade, and puts this
+**Why lock first.** Sorting the player loop by id was meant to prevent deadlock, and it did not:
+
+1. The insert's foreign-key check takes a *shared* lock on the player row.
+2. The balance update then wants an *exclusive* lock on the same row.
+3. Two transactions that each hold the shared lock wait on each other.
+
+Measured: 24 concurrent matches sharing two players failed on three runs out of three, several of them exhausting
+every retry. Taking the exclusive lock at the start removes the upgrade from shared to exclusive. It also puts this
 path in the same lock order as a purchase, which also locks `player` first.
-Under REPEATABLE READ a locking read of an id that does not exist takes a gap
-lock; it lasts the few milliseconds of this transaction, and a missing player is
-rare. The players' `player_stat` rows are locked with them, since step 6 writes them
-and the achievements are judged from them. Each is made with its player (§3), so the
-read finds a row and locks no gap: one that found none would lock the gap where the
-row would go, and two first results inserting into that gap would deadlock.
 
-**Nothing read plainly is written back.** Under REPEATABLE READ a plain read sees the
-snapshot of the transaction's first plain read, and in a team match that is step 0b's,
-taken before the players were locked: another result of the same player, committed
-while this one waited for the lock, is not in it. So whatever a result adds to — the
-totals, a goal's progress, the pass's points — is added by the statement that writes
-it, and what the rule needs is read back under the row's lock. The ledger's key check
-is a plain read too; its unique index is the backstop (§4, a purchase).
+Under REPEATABLE READ, a locking read of an id that does not exist takes a gap lock. It lasts the few milliseconds
+of this transaction, and a missing player is rare. The players' `player_stat` rows are locked with them, because
+step 6 writes them and the achievements are judged from them. Each is made with its player (§3), so the read finds
+a row and locks no gap. A read that found none would lock the gap where the row would go, and two first results
+inserting into that gap would deadlock.
 
-**`player.level` is the account level, written with the xp.** It is a different
-thing from a tank's level, which lives for one life inside a match. It is a
-function of lifetime xp, defined in `worker/AccountLevels` beside the other
-balance rules: `3 000 × (L − 1)^p` to a cap of 100 at 6 000 000. It is computed
-from the xp read under this transaction's lock and written as
-`GREATEST(level, new)`, so a rebalance never takes a level away. Rows from
-before it existed are corrected at the player's next match
-(defect [D-12](../defects.md#3-data-and-the-result-pipeline)). `player.version` stays
-0: it is for optimistic locking where a person edits a row, and nothing does
-yet.
+**Nothing read plainly is written back.** Under REPEATABLE READ, a plain read sees the snapshot of the
+transaction's first plain read. In a team match that is step 0b's read, taken before the players were locked. So
+another result of the same player, committed while this one waited for the lock, is not in that snapshot. For that
+reason, whatever a result adds to (the totals, a goal's progress, the pass's points) is added by the statement that
+writes it, and what the rule needs is read back under the row's lock. The ledger's key check is a plain read too;
+its unique index is the backstop (§4, a purchase).
 
-Leaderboards are updated *after* the commit, with **`ZADD … GT`** against
-j-redis — not `ZINCRBY`, which
-[05 §7](05-worker-and-events.md#7-the-one-place-exactly-once-nearly-leaked)
-records as the rejected option because an increment double-counts under the
-redelivery this pipeline is built to expect. The board write is a maximum and
-therefore idempotent, so the entry is acknowledged **whether or not it lands**:
-this path pays players, and holding a payment because an index is unwell would
-be the wrong way round. A miss is counted as `unranked`.
+**`player.level` is the account level, written with the xp.** It is a different thing from a tank's level, which
+lives for one life inside a match.
+
+- It is a function of lifetime xp, defined in `worker/AccountLevels` beside the other balance rules:
+  `3 000 × (L − 1)^p`, up to a cap of level 100 at 6 000 000 xp.
+- It is computed from the xp read under this transaction's lock, and written as `GREATEST(level, new)`, so a
+  rebalance never takes a level away.
+- Rows from before levels existed are corrected at the player's next match
+  (defect [D-12](../defects.md#3-data-and-the-result-pipeline)).
+
+`player.version` stays 0: it is for optimistic locking where a person edits a row, and nothing does yet.
+
+**Leaderboards are updated *after* the commit, with `ZADD … GT`** against j-redis. Not with `ZINCRBY`:
+[05 §7](05-worker-and-events.md#7-the-one-place-exactly-once-nearly-leaked) records it as the rejected option,
+because an increment counts twice under the redelivery that this pipeline is built to expect. The board write is a
+maximum and therefore idempotent, so the entry is acknowledged **whether or not the write lands**. This path pays
+players, and holding a payment because an index is unwell would be the wrong way round. A miss is counted as
+`unranked` (`backend_worker_unranked_total`).
 
 ### A purchase
 
@@ -1065,49 +1094,44 @@ ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty);
 COMMIT;
 ```
 
-The `idem_key` is derived from the client's transaction id, so a player who
-taps Buy twice, or whose connection drops mid-request and retries, is charged
-once. The unique violation on retry is the *expected* path, not an error:
-catch it, and report the original purchase as successful. Three details, each a
-bug before 2026-09-26:
+**The `idem_key` is derived from the client's transaction id.** So a player who taps Buy twice, or whose connection
+drops in the middle of a request and retries, is charged once. The unique violation on a retry is the *expected*
+path, not an error: catch it, and report the original purchase as successful. Three details were each a bug before
+2026-09-26:
 
-- **The key check comes before the funds check.** The other way round, a retry
-  whose first attempt had spent the balance below the price was answered
-  `INSUFFICIENT_FUNDS`: charged once, as promised, and told it had failed. The
-  check is a plain read, not `FOR UPDATE`. A locking read of an absent key takes
-  a gap lock, and gap-lock-then-insert on nearby keys deadlocks. The player row
-  lock already serialises every writer of that player's ledger rows.
-- **The stored key is `buy:{playerId}:{clientKey}`.** The ledger's unique index
-  is global, and a client's key is unique only to that client: two players
-  sending `txn-1` collided, and the second got nothing.
-- **Only 1062 means "used already".** `SQLIntegrityConstraintViolationException`
-  also covers a foreign-key failure, which is an error, not a duplicate.
+- **The key check comes before the funds check.** The other way round, a retry whose first attempt had spent the
+  balance below the price was answered `INSUFFICIENT_FUNDS`: the player was charged once, as promised, and told
+  that the purchase had failed. The key check is a plain read, not `FOR UPDATE`. A locking read of an absent key
+  takes a gap lock, and a gap lock followed by an insert on nearby keys deadlocks. The lock on the player's row
+  already serialises every writer of that player's ledger rows.
+- **The stored key is `buy:{playerId}:{clientKey}`.** The ledger's unique index is global, and a client's key is
+  unique only to that client: two players who both sent `txn-1` collided, and the second got nothing. A client's
+  key may be at most 48 characters, so the stored key fits the 80 of `idem_key`
+  (`EconomyRepository.MAX_PURCHASE_KEY`).
+- **Only error 1062 means "used already".** `SQLIntegrityConstraintViolationException` also covers a foreign-key
+  failure, which is an error, not a duplicate.
 
-This is `EconomyRepository.move` (`moveCoins` is the same in coins), and it is
-**the only code that moves a balance**, in either currency: a match's reward is paid
-through it too, inside the result transaction, and so is every gem a milestone, an
-achievement, a goal, a pass tier, a season's place, a tournament's place or a paid
-order brings. Until D-13 the match path had its own copy, and reconciliation
-held because the two happened to agree.
+**This is `EconomyRepository.move`, and it is the only code that moves a balance**, in either currency (`moveCoins`
+is the same, in coins). A match's reward is paid through it too, inside the result transaction. So is every gem
+that a milestone, an achievement, a goal, a pass tier, a season's place, a tournament's place or a paid order
+brings. Until defect D-13 was fixed, the match path had its own copy, and reconciliation held only because the two
+copies happened to agree.
 
-**Not built: limited stock.** The design takes a `DECR stock:{sku}` in j-redis before this
-transaction and `INCR`s it back if the transaction fails: the store is the right place for a hot
-counter, the database for the consequence. A catalogue that sets `stock` is refused at start
-(`platform/Catalogue`, 04 §8), since after a store loss the counter would have to be rebuilt from
-the ledger.
+**Not built: limited stock.** The design takes a `DECR stock:{sku}` in j-redis before this transaction, and
+`INCR`s it back if the transaction fails: the store is the right place for a hot counter, and the database for the
+consequence. As built, a catalogue that sets `stock` is refused at start (`platform/Catalogue`, 04 §8), because
+after a store loss the counter would have to be rebuilt from the ledger.
 
 ### Granting a reward
 
-Same shape as a purchase with the sign reversed, and the `idem_key` derived
-from the source: `tourney:{id}:{place}:{playerId}`,
-`daily:{playerId}:{yyyy-mm-dd}:{goalId}`; every form is in §5.
-**A reward without a natural idempotency key is a bug**, because every delivery
-path retries eventually.
+A reward has the same shape as a purchase, with the sign reversed. Its `idem_key` is derived from its source, for
+example `tourney:{id}:{place}:{playerId}` or `daily:{playerId}:{yyyy-mm-dd}:{goalId}`; every form is in §5. **A
+reward without a natural idempotency key is a bug**, because every delivery path retries in the end.
 
 ## 5. Idempotency
 
-The rule: **every write that can be retried has a unique key that makes the
-second attempt a no-op.** Three forms, in order of preference.
+The rule: **every write that can be retried has a unique key that makes the second attempt change nothing.** The
+key takes one of three forms, in order of preference:
 
 | Form | Example | When |
 |---|---|---|
@@ -1132,151 +1156,145 @@ Every key the ledger is written under, `ledger.idem_key` (80 characters at most)
 | `refund:{orderId}` | a refund's gems taken back, reason 10 | `PaymentRepository.refund` (through `AdminRepository.refund`) |
 | `pass:{season}:{track}:{tier}:{player}`, track `free` or `premium` | a tier's coins or gems, reason 11 | `SeasonPassRepository` |
 
-Beside the ledger, the natural keys: `matches.uq_match_uid`, `match_player` and
-`match_team`'s primary keys, `player_day`'s, `inbox.uq_inbox_item`,
-`payment_order.uq_order_client_key`, the tournament tables' entries, and
-`boost_activation.idem_key` (`act:{player}:{clientKey}`).
+Beside the ledger, these natural keys make a retry change nothing:
 
-There is deliberately **no generic `idempotency` table**. A shared table
-becomes a write hotspot, adds a second row to every transaction, and — worst —
-lets the dedupe record and the effect diverge if a migration or a cleanup job
-touches one and not the other.
+- `matches.uq_match_uid`;
+- the primary keys of `match_player`, `match_team` and `player_day`;
+- `inbox.uq_inbox_item`;
+- `payment_order.uq_order_client_key`;
+- the tournament tables' entries;
+- `boost_activation.idem_key` (`act:{player}:{clientKey}`).
+
+There is deliberately **no generic `idempotency` table**. A shared table becomes a write hotspot, and it adds a
+second row to every transaction. Worst of all, it lets the dedupe record and the effect diverge, if a migration or
+a cleanup job touches one and not the other.
 
 ## 6. Concurrency
 
-Contention here is low: a player's rows are touched by that player's requests,
-and a match result touches each player once. The failure mode to design against
-is not throughput, it is **deadlock**.
+**Contention here is low**: a player's rows are touched by that player's requests, and a match result touches
+each player once. The failure to design against is not a lack of throughput, it is **deadlock**.
 
-- **Lock in a consistent order**, always ascending by primary key. A match
-  result touching twelve players sorts the ids before it starts. Two results
-  sharing players then queue instead of deadlocking. A foreign key's check is a
-  lock too, shared, on the row it names: a team's tournament roster is inserted
-  in ascending player id, and wearing an item locks the player's row first, as a
-  purchase does, then reads what it holds (D-37, plan item 60 (b)).
-- **`SELECT … FOR UPDATE` before reading anything you will write.** Reading
-  first and locking later is a lost update.
-- **Keep transactions short and free of I/O.** No HTTP call, no j-redis
-  round trip, no logging to disk between `START` and `COMMIT`.
-- **Retry on error 1213 (deadlock) and 1205 (lock wait timeout)**, three
-  attempts in all, with jittered backoff. The whole transaction is rolled back
-  before each retry — by `Tx` itself, since InnoDB rolls back all of it only on
-  a deadlock and just the statement on a lock wait timeout — so a retry is safe
-  by construction, and idempotency makes it safe even so.
-- Optimistic `version` columns: `tournament.version`, checked by every change of a tournament's
-  state, the worker's tick included (D-41). `player.version` is unused, and `team` has none:
-  nothing edits a team's settings yet.
+- **Lock in a consistent order**, always ascending by primary key. A match result that touches twelve players sorts
+  their ids before it starts, so two results that share players queue instead of deadlocking. A foreign key's check
+  is a lock too: a shared lock on the row it names. So a team's tournament roster is inserted in ascending player
+  id, and wearing an item locks the player's row first, as a purchase does, and then reads what the player holds
+  (D-37, plan item 60 (b)).
+- **`SELECT … FOR UPDATE` before reading anything you will write.** Reading first and locking later loses an
+  update.
+- **Keep transactions short and free of I/O.** No HTTP call, no j-redis round trip and no logging to disk between
+  `START` and `COMMIT`.
+- **Retry on error 1213 (deadlock) and 1205 (lock wait timeout)**: three attempts in all, with a jittered backoff
+  (`Tx`: 10 ms, then 20 ms, each plus up to 9 ms at random). `Tx` itself rolls back the whole transaction before
+  each retry, because InnoDB rolls back all of it only on a deadlock, and just the statement on a lock wait
+  timeout. So a retry is safe by construction, and idempotency makes it safe even so.
+- **Optimistic `version` columns:** `tournament.version` is checked by every change of a tournament's state, the
+  worker's tick included (D-41). `player.version` is unused. `team` has none, because nothing edits a team's
+  settings yet.
 
 ## 7. Connection pooling
 
-HikariCP, one pool per process.
+**HikariCP, one pool per process** (`persistence/Database`).
 
-**Size the pool for the database, not for the application.** The pool's job is
-to bound concurrent work reaching MySQL; making it large does not make MySQL
-faster, it makes it thrash. A reasonable starting point is
-`cores × 2` on the database host — around **12–16 per process**, giving
-5 processes × 16 = 80 connections against a default `max_connections` of 151.
+**Size the pool for the database, not for the application.** The pool's job is to bound the concurrent work that
+reaches MySQL. Making it large does not make MySQL faster; it makes it thrash. A reasonable starting point is
+`cores × 2` on the database host: around **12–16 per process**. The design's arithmetic was 5 processes × 16 = 80
+connections, against MySQL's default `max_connections` of 151.
 
-This is worth stating explicitly because Java 21 invites the opposite mistake:
-**virtual threads do not change how many queries a database can run at once.**
-A `platform` service can happily have 10 000 virtual threads waiting on a pool
-of 16, and that is the correct arrangement — the queue is visible and bounded,
-rather than pushed into MySQL where it turns into lock contention.
+**As built**, the platform's pool is 16 and a worker's 8. On the three machines (three platforms, two workers) that
+is 3 × 16 + 2 × 8 = 64 connections; on the launch's one machine (one platform, two workers, D-93), 32. The
+leaderboard rebuild adds 2 while it runs. `backend.cnf` keeps `max_connections` at 151, which leaves room for the
+backups and for whoever is investigating.
 
-```
-maximumPoolSize     16 platform, 8 worker, 2 the leaderboard rebuild; BACKEND_DB_POOL_SIZE sets it
-minimumIdle         4 (or the pool's size, if smaller)
-connectionTimeout   3000 ms     fail fast; the caller can retry
-maxLifetime         1700000 ms  under MySQL's wait_timeout
-```
+This is worth stating plainly, because Java 21 invites the opposite mistake: **virtual threads do not change how
+many queries a database can run at once.** A `platform` process can have 10 000 virtual threads waiting on a pool
+of 16, and that is the correct arrangement. The queue is visible and bounded, instead of pushed into MySQL, where
+it turns into lock contention.
 
-**Every call has a time limit** (designed 2026-10-02, plan item 53, defect O-9).
-The pool's own wait above was the only one; the driver waited on a socket for as
-long as TCP did, so a primary whose machine vanished, or was fenced off by the
-runbook's `DROP` rule, held each statement in flight for about two hours:
-`worker`'s one consumer, the tournament's one tick, then every request once
-`platform`'s sixteen connections were all waiting.
+| Pool setting | Value | Why |
+|---|---|---|
+| `maximumPoolSize` | 16 for the platform, 8 for a worker, 2 for the leaderboard rebuild | `BACKEND_DB_POOL_SIZE` overrides it: a whole number from 1 to 100; any other value refuses the start |
+| `minimumIdle` | 4, or the pool's size if that is smaller | |
+| `connectionTimeout` | 3000 ms | fail fast; the caller can retry |
+| `maxLifetime` | 1700000 ms | under MySQL's `wait_timeout` |
 
-```
-connectTimeout                 2000 ms   TCP to a host that does not answer
-the login, on one host         3 s       the greeting, TLS and the account: the driver's login timeout,
-                                         which the pool sets for the JVM from its wait (3000 + 500 ms, in
-                                         whole seconds); the migrations' pool sets its 30 s when it opens,
-                                         and with two hosts nothing sets it: the socket's limit holds
-socketTimeout                  30000 ms  a statement that has had no reply for that long
-innodb_lock_wait_timeout       20 s      the session's: a lock wait is told as 1205, which Tx
-                                         retries, before the socket gives up on it
-the primary's probe            2000 ms   connect and socket both: two point reads (§10)
-migrations                     none      their own connection: one may run for minutes
-```
+The pool also turns on server-side prepared statements (`useServerPrepStmts`, a cache of 256), and sets the
+driver's time zone to UTC (§2).
 
-- **30 s is above any statement that works**: the slowest in a request or a job
-  are the admin's figures and a rating board's own place (defect D-35), seconds at
-  most; retention deletes in batches, and the daily ledger check reads the ledger
-  a range of players at a time, each range its own statement, since one statement
-  over a ledger kept for good would outgrow any limit (05 §9). A statement cut is a
-  `SQLException`: a
-  request answers 503, the worker's consumer leaves the result to be delivered
-  again, the tournament's tick counts a failure and tries at the next.
-- **The probe is the short one**, since it runs for every new connection: a
-  frozen server still accepts TCP, the kernel answering for it, and then sends
-  no greeting, so a connect limit alone would leave each new connection waiting
-  on the socket's. With the probe at 2 s a dead host costs each new connection
-  that much while it is listed.
-- **Migrations are not cut**: Flyway is given a connection of its own without a
-  socket limit, opened for `migrate()` and closed after it.
+**Every call has a time limit** (designed 2026-10-02, plan item 53, defect O-9). Before, the pool's own wait above
+was the only limit. The driver waited on a socket for as long as TCP did. So a primary whose machine vanished, or
+was fenced off by the runbook's `DROP` rule, held each statement in flight for about two hours: first `worker`'s
+one consumer and the tournament's one tick, then every request, once all sixteen of `platform`'s connections were
+waiting. Now:
+
+| Limit | Value | What it bounds |
+|---|---|---|
+| `connectTimeout` | 2000 ms | TCP to a host that does not answer |
+| the login, on one host | 3 s | the greeting, TLS and the account. This is the driver's login timeout, which the pool sets for the JVM from its own wait (3000 + 500 ms, in whole seconds). The migrations' pool sets 30 s when it opens. With two hosts, nothing sets it, and the socket's limit holds. |
+| `socketTimeout` | 30000 ms | a statement that has had no reply for that long |
+| `innodb_lock_wait_timeout` | 20 s | set on the session: a lock wait is reported as error 1205, which `Tx` retries, before the socket gives up on it |
+| the primary's probe | 2000 ms | connect and socket both, for the two point reads that choose the primary (§10) |
+| migrations | none | they use their own connection: one may run for minutes |
+
+- **30 s is above any statement that works.** The slowest statements in a request or a job are the admin's figures
+  and a rating board's own place (defect D-35): seconds at most. Retention deletes in batches. The daily ledger
+  check reads the ledger one range of players at a time, each range its own statement, because one statement over
+  a ledger kept for good would outgrow any limit (05 §9). A statement that is cut is a `SQLException`. A request
+  then answers 503; the worker's consumer leaves the result to be delivered again; the tournament's tick counts a
+  failure and tries again at the next tick.
+- **The probe is the short limit**, because it runs for every new connection. A frozen server still accepts TCP
+  (the kernel answers for it) and then sends no greeting. So a connect limit alone would leave each new connection
+  waiting for the socket's limit. With the probe at 2 s, a dead host costs each new connection that much, for as
+  long as the host is listed.
+- **Migrations are not cut.** Flyway gets a connection of its own, without a socket limit. It is opened for
+  `migrate()` and closed after it.
 - **A start waits for its database** (designed 2026-11-01, plan item 114,
   [D-94](../architecture/03-decision-log.md#d-94--a-start-waits-for-its-database-in-the-same-process-for-up-to-a-minute),
-  defect O-61): the pool's first connection, which HikariCP tries once as the
-  pool is made, is tried again a second after each failure, in the same process,
-  for up to a minute, each failure a warning with its cause; past it the start
-  fails, exit 1. Every attempt keeps the limits above. A cold JVM's first login on
-  a starved machine can take longer than 3 s, and a restart, a cold JVM again,
-  repeated it: the platform restarted 19 times in five minutes and never served.
+  defect O-61). HikariCP tries the pool's first connection once, as the pool is made, and reports a failure after
+  about a second. The start then tries again, in the same process, for up to a minute, and logs each failure as a
+  warning with its cause. After a minute the start fails, with exit code 1. Every attempt keeps the limits above.
+  The reason: a cold JVM's first login on a starved machine can take longer than 3 s, and a restart, which is a
+  cold JVM again, repeated the problem. The platform restarted 19 times in five minutes and never served.
 
 ## 8. Migrations
 
-Flyway, versioned SQL under `src/main/resources/db/migration`.
+**Flyway runs versioned SQL files** from `persistence/src/main/resources/db/migration`. Today there are two:
+`V1__schema.sql` and `V2__seed.sql`.
 
 - **The baseline** (squashed 2026-10-04,
-  [D-75](../architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)):
-  `V1__schema.sql` makes every table as §3 shows it, and `V2__seed.sql` writes
-  the rows a first launch needs: the failover epoch (§10), the replica
-  heartbeat and season 1 (§3, seasons). They replaced V1 to V34, the steps by
-  which the schema grew, before any database that matters held them; those
-  steps are in git, to commit ce30aa7 of the previous repository
-  ([working here](../development/02-working-here.md)). The `V`-numbers the sections below name
-  are those steps', kept as the history of each table.
-- **Forward-only.** An applied migration is never edited; a mistake is fixed by
-  a new migration, from V3 on. Flyway's checksum will refuse the edit anyway,
-  which is the point.
-- **Expand and contract** for anything breaking: add the new column, backfill,
-  switch the code, drop the old column in a later release. Three deployments,
-  no downtime, and every intermediate state is one the running code understands.
-- **A backfill is never one statement over a populated table** (designed
-  2026-10-02, plan item 60 (c),
-  defect [D-39](../defects.md#3-data-and-the-result-pipeline)). V16 filled
-  `player_day` with one `INSERT … SELECT` over every match a player played and
-  one `UPDATE … JOIN` over all of them: under REPEATABLE READ an `INSERT …
-  SELECT` holds a shared lock on every row it reads, so on a populated primary
-  every result would wait for the whole of it. A backfill goes in batches of a
-  thousand rows by primary key, each its own transaction, written so a batch
-  run twice changes nothing; and it runs once every process that writes the
-  table writes the new column too, or a process not yet upgraded leaves rows
-  the backfill has already passed. A migration only adds the column or table;
-  the backfill is a `worker` task or a tool, after the deploy.
+  [D-75](../architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)).
+  `V1__schema.sql` makes every table as §3 shows it. `V2__seed.sql` writes the rows a first launch needs: the
+  failover epoch (§10), the replica heartbeat, and season 1 (§3, seasons). Together they replaced V1 to V34, the
+  steps by which the schema grew, before any database that matters held them. Those steps are in git, up to commit
+  ce30aa7 of the previous repository ([working here](../development/02-working-here.md)). The `V`-numbers that the
+  sections of this page name are those steps', kept as the history of each table. V1 was proved the same as the
+  34 steps, table by table, except for two changes made on purpose: V17's board indexes are not made (defect
+  D-41), and `season_place.rated` is as wide as the counts it copies (defect D-42).
+- **Forward-only.** An applied migration is never edited. From V3 on, a mistake is fixed by a new migration.
+  Flyway's checksum refuses an edit anyway, which is the point.
+- **Expand and contract** for anything that breaks compatibility: add the new column, backfill it, switch the code,
+  and drop the old column in a later release. That is three deployments with no downtime, and every state in
+  between is one the running code understands.
+- **A backfill is never one statement over a populated table** (designed 2026-10-02, plan item 60 (c),
+  defect [D-39](../defects.md#3-data-and-the-result-pipeline)). V16 filled `player_day` with one `INSERT … SELECT`
+  over every match a player played, and one `UPDATE … JOIN` over all of them. Under REPEATABLE READ, an
+  `INSERT … SELECT` holds a shared lock on every row it reads, so on a populated primary every result would wait for
+  the whole statement. The rules for a backfill:
+  - it goes in batches of a thousand rows by primary key, each batch its own transaction;
+  - it is written so that a batch run twice changes nothing;
+  - it runs only once every process that writes the table also writes the new column. Otherwise a process not yet
+    upgraded leaves rows behind that the backfill has already passed;
+  - a migration only adds the column or the table. The backfill is a `worker` task or a tool, run after the deploy.
 - **Migrations run at every `platform` and `worker` start**
-  ([operations/01 §9](../operations/01-deploy.md#9-mysql)), so a release needs no
-  separate step; starts that race are serialised by Flyway's own lock in the
-  database. An applied migration whose checksum no longer matches stops the start.
-- Large `ALTER`s on a big table use `ALGORITHM=INPLACE, LOCK=NONE` where MySQL
-  supports it, and are rehearsed on a copy first. The tables that will hurt are
-  in [§9](#9-growth-and-retention).
+  ([operations/01 §9](../operations/01-deploy.md#9-mysql)), so a release needs no separate step. Flyway's own lock
+  in the database serialises starts that race. An applied migration whose checksum no longer matches stops the
+  start.
+- **Large `ALTER`s on a big table** use `ALGORITHM=INPLACE, LOCK=NONE` where MySQL supports it, and are rehearsed
+  on a copy first. The tables that will hurt are in [§9](#9-growth-and-retention).
 
 ## 9. Growth and retention
 
-`match_player` is the only table that grows dangerously. At 5 minutes per match
-it gains roughly one row per player per five minutes:
+**`match_player` is the table that grows dangerously**, of those retention can delete (the ledger grows as fast and
+is never deleted, below). With 5 minutes per match, it gains roughly one row per player every five minutes:
 
 | Concurrent players | Rows/day | Storage/day |
 |---|---|---|
@@ -1284,310 +1302,321 @@ it gains roughly one row per player per five minutes:
 | 10 000 (launch) | 2.9 M | ~290 MB |
 | 50 000 (design target) | 14.4 M | ~1.4 GB |
 
-At launch scale that is about **100 GB a year** from one table, so retention is
-a design decision rather than an afterthought. **Built 2026-09-26**
-(defect [D-14](../defects.md#3-data-and-the-result-pipeline)):
+At launch scale that is about **100 GB a year** from one table, so retention is a design decision, not an
+afterthought. **Built 2026-09-26** (defect [D-14](../defects.md#3-data-and-the-result-pipeline)).
 
-- **Keep 90 days of detail.** Everything a player sees beyond that — total
-  kills, best score, matches played — is already in `player_stat`, which is
-  updated at write time. Each worker runs `Retention` daily: matches older than
-  90 days, with their `match_player` and `match_team` rows, deleted oldest first in
-  batches of 1 000 (`ix_match_ended`, V3). Player totals, stats and the ledger are never
-  touched. The same run deletes the inbox's items past 30 days, players' days
-  past 90, and, from plan item 57, friend requests and team invitations past
-  their seven days (`ix_request_expiry`, `ix_invite_expiry`, V19), and from
-  plan item 64 team applications past theirs (`ix_application_expiry`, V24), which nothing
-  deleted before (defect [D-40](../defects.md#3-data-and-the-result-pipeline)).
-- **The other tables that grow, each with its limit** (plan item 60 (b),
-  defect [D-38](../defects.md#3-data-and-the-result-pipeline)). `boost` gains a row a
-  boost run and `boost_activation` a row a key used, together no faster than
-  the ledger's purchases: an ended boost is deleted 31 days after its end, a
-  day longer than a result may be late, so a late result still finds the boost
-  its match ended in, and a key 30 days after its use, by indexes on `ends_at`
-  and `at` (V22). A tournament is at most a few hundred rows across its five
-  tables, made by an operator: a finished or cancelled one is deleted 90 days
-  after it was to start, as a match's detail is, with its entries, rosters and
-  bracket, one tournament a transaction; nothing changes a tournament once it
-  is either, so nothing is locked first
-  ([Q-47](../requirements/01-scope-and-nfrs.md#7-open-questions)). Its prizes
-  stay in the ledger. One still running is kept: that is an operator's matter.
-- **The rest of the daily run:** daily goals' progress more than a week old
-  (`ix_daily_goal_day`); orders pending longer than a day, expired, their rows kept
-  (`ix_order_state`); season passes older than the six seasons kept
-  (`ix_pass_season`); `backup_run` rows past 90 days, but never a kind's newest
-  success, so the last time a step worked is not lost to age (§10); and, last, the
-  guests nobody has played for 180 days, erased as a player's own deletion erases
-  them ([D-87](../architecture/03-decision-log.md#d-87--a-guest-nobody-plays-for-180-days-is-erased-by-retention-a-deletion-is-at-once)):
-  off the boards and out of their team first, then `AccountRepository.erase`, a
-  transaction a guest; the candidates by one pass over `account` and one over the
-  days `player_day` keeps, 1 000 at a time, nothing indexed for it. Each step stands
-  on its own: one that fails is logged and the next still runs, and the run's time
-  is reported either way. The order is in the
-  [worker README](../../backend/worker/README.md#retention).
-- **A result more than 30 days late is refused**, and dead-lettered as
-  evidence. This is the other half of retention and not optional. A result is
-  recognised as a redelivery by its `match_player` rows; once those are deleted
-  it would be applied again. The ledger's key would still stop double coins,
-  but not double xp, level or stats. So acceptance must close well before
-  deletion: 30 days against 90. The purge refuses any cutoff inside the
-  acceptance window, so a configuration change cannot break this.
-- **The ledger is never deleted, and it is not small.** An earlier draft said
-  it held only purchases and rewards, "not matches". But every match pays
-  coins, so the ledger gains a row per player per match, as fast as
-  `match_player`, and keeps them for good. It is the audit trail: losing it
-  means being unable to answer "where did my gems go". At the design target
-  that is about 5 billion rows a year, which makes it the table that forces the
-  next step.
-- **No partitioning: measured, the purge does not need it, and the tables could
-  not have it** (plan item 76 (b),
-  [D-72](../architecture/03-decision-log.md#d-72--the-tables-growth-is-watched-against-measured-triggers-and-a-restore-not-the-purge-is-what-binds)).
-  The plan written here before was impossible
-  ([DOC-20](../defects.md#7-documentation)): MySQL refuses foreign keys on a
-  partitioned InnoDB table, `match_player` has no auto-increment id, and every
-  unique key must include the partition column, which would end
-  `uq_ledger_idem` and `uq_match_uid` as guarantees. **Measured instead**
-  (`tools/PurgeBenchmark`, the worker's own batches over 200 000 matches past
-  their days, on the development VM): a result of one player, the public
-  arena's stay, is deleted at **11 600 rows a second**; one of four at 5 900
-  matches and 24 000 players' rows a second, two runs within 2 %. At the design
-  target's 14.5 M rows a day, the worst case, one player each, is **21 minutes
-  a day**; at launch's 2.9 M, 4 minutes. Both are under the trigger, which
-  stays: `match_player` past 500 M rows, or a day's retention run past 30
-  minutes, both now reported by every worker (below).
-- **What binds is a restore, not the purge.** The ledger is never deleted, and a
-  logical restore reads every row back: the weekly proof restored 237 000 rows
-  in about 10 s, **24 000 rows a second** on this VM. At that rate a year at
-  launch, about 1.3 billion rows, is 15 hours; at the design target, days. A
-  last-resort restore, both database machines lost or the data itself wrong, is
-  meant to take **at most 4 hours** (D-72). So the weekly proof's restore time
-  is reported, and at **2 hours** the next step is taken: physical backups,
-  the clone plugin the replica's rebuild already uses copying the primary's
-  files to the backup machine at disk speed, the binlog copies replayed from
-  where the clone ends (06 §10). On this VM the 2 hours would come within about
-  60 days of launch; on the production disks, which `restore-proof` measures
-  every week, it is expected later, and is not known (Q-3).
-- **Watched, by every worker:** `backend_mysql_table_rows{table}`, InnoDB's
-  estimate for the tables that grow (`ledger`, `match_player`, `matches`,
-  `player_day`, `inbox`) and for `player`; `backend_worker_retention_seconds`, how
-  long the last retention run took; and `backend_backup_restore_seconds`, how long the last
-  proof's restore and replay took (V33's `backup_run.seconds`).
+**Keep 90 days of detail.** Everything a player sees beyond that (total kills, best score, matches played) is
+already in `player_stat`, which is updated as each result is written. Each worker runs `Retention` daily
+(`worker/Retention`, a minute after its start and then every 24 hours, in batches of 1 000). Player totals, stats
+and the ledger are never touched. The run's steps, in order:
+
+| Step | What is deleted, or changed | By | Since |
+|---|---|---|---|
+| Matches | matches ended more than 90 days ago, with their `match_player` and `match_team` rows, oldest first | `ix_match_ended` (V3) | 2026-09-26, defect D-14 |
+| Inbox | items older than 30 days, read or not | `ix_inbox_created` | |
+| Players' days | `player_day` rows older than 90 days | its primary key | |
+| Friend requests | requests past their seven days | `ix_request_expiry` (V19) | plan item 57; defect [D-40](../defects.md#3-data-and-the-result-pipeline): nothing deleted them before |
+| Team invitations | invitations past their seven days | `ix_invite_expiry` (V19) | plan item 57, defect D-40 |
+| Team applications | applications past their expiry | `ix_application_expiry` (V24) | plan item 64 |
+| Boosts and keys | boosts ended more than 31 days ago; activation keys used more than 30 days ago | `ix_boost_ends`, `ix_activation_at` (V22) | plan item 60 (b), defect D-38 |
+| Tournaments | finished or cancelled tournaments that were to start more than 90 days ago, with their entries, rosters and bracket | | plan item 60 (b), Q-47 |
+| Daily goals | progress more than a week old | `ix_daily_goal_day` | D-66 |
+| Orders | orders pending longer than a day: set to expired, the row kept | `ix_order_state` | D-68 |
+| Season passes | passes older than the six seasons kept (the season being played and the five before it) | `ix_pass_season` | D-69 |
+| Backup runs | `backup_run` rows older than 90 days, except each kind's newest success, so the last time a step worked is not lost to age (§10) | | D-71 |
+| Idle guests | guests nobody has played for 180 days, erased | none (below) | D-87 |
+
+**Each step stands on its own.** A step that fails is logged, the next step still runs, and the run's time is
+reported either way. The order is also in the [worker README](../../backend/worker/README.md#retention).
+
+**The other tables that grow, each with its limit** (plan item 60 (b),
+defect [D-38](../defects.md#3-data-and-the-result-pipeline)):
+
+- `boost` gains a row for each run of a boost, and `boost_activation` a row for each key used. Together they grow no
+  faster than the ledger's purchases. An ended boost is deleted 31 days after its end, a day longer than a result
+  may be late, so a late result still finds the boost its match ended in. A key is deleted 30 days after its use.
+  Both go by indexes on `ends_at` and `at` (V22).
+- A tournament is at most a few hundred rows across its five tables, and an operator makes it. A finished or
+  cancelled one is deleted 90 days after it was to start, as a match's detail is, with its entries, rosters and
+  bracket, one tournament a transaction. Nothing changes a tournament once it is finished or cancelled, so nothing
+  is locked first ([Q-47](../requirements/01-scope-and-nfrs.md#7-open-questions)). Its prizes stay in the ledger.
+  A tournament still running is kept: that is an operator's matter.
+
+**The idle guests, last**
+([D-87](../architecture/03-decision-log.md#d-87--a-guest-nobody-plays-for-180-days-is-erased-by-retention-a-deletion-is-at-once)).
+They are erased as a player's own deletion erases them: first off the boards and out of their team, then
+`AccountRepository.erase`, one transaction a guest. The candidates are found by one pass over `account` and one
+over the days `player_day` keeps, 1 000 at a time. No index serves this.
+
+**A result more than 30 days late is refused**, and dead-lettered as evidence. This is the other half of retention,
+and it is not optional. A result is recognised as a redelivery by its `match_player` rows. Once those are deleted,
+it would be applied again. The ledger's key would still stop double coins, but not double xp, level or stats. So
+acceptance must close well before deletion: 30 days, against 90. The purge refuses any cutoff inside the
+acceptance window (`MatchResultRepository.RESULT_ACCEPT_WINDOW_MILLIS`), so a configuration change cannot break
+this.
+
+**The ledger is never deleted, and it is not small.** An earlier draft said it held only purchases and rewards,
+"not matches". But every match pays coins, so the ledger gains a row per player per match, as fast as
+`match_player`, and keeps them for good. It is the audit trail: without it, nobody can answer "where did my gems
+go". At the design target that is about 5 billion rows a year, which makes it the table that forces the next step.
+
+**No partitioning: measured, the purge does not need it, and the tables could not have it** (plan item 76 (b),
+[D-72](../architecture/03-decision-log.md#d-72--the-tables-growth-is-watched-against-measured-triggers-and-a-restore-not-the-purge-is-what-binds)).
+The plan written here before was impossible ([DOC-20](../defects.md#7-documentation)):
+
+- MySQL refuses foreign keys on a partitioned InnoDB table;
+- `match_player` has no auto-increment id;
+- every unique key must include the partition column, which would end `uq_ledger_idem` and `uq_match_uid` as
+  guarantees.
+
+**Measured instead** with `tools/PurgeBenchmark`: the worker's own batches, over 200 000 matches past their days,
+on the development VM. Two runs agreed within 2 %:
+
+| Result shape | Deleted at |
+|---|---|
+| one player (the public arena's stay) | **11 600 rows a second** |
+| four players | 5 900 matches and 24 000 players' rows a second |
+
+At the design target's 14.5 M rows a day, the worst case (one player each) is **21 minutes a day**. At launch's
+2.9 M, it is 4 minutes. Both are under the trigger, which stays: `match_player` past 500 M rows, or a day's
+retention run past 30 minutes. Every worker now reports both (below).
+
+**What binds is a restore, not the purge.** The ledger is never deleted, and a logical restore reads every row back.
+The weekly proof restored 237 000 rows in about 10 s: **24 000 rows a second** on this VM. At that rate, a year at
+launch (about 1.3 billion rows) takes 15 hours to restore; at the design target, days. A last-resort restore (both
+database machines lost, or the data itself wrong) is meant to take **at most 4 hours** (D-72). So the weekly proof's
+restore time is reported, and at **2 hours** the next step is taken: physical backups. The clone plugin, which the
+replica's rebuild already uses, copies the primary's files to the backup machine at disk speed, and the binlog
+copies are replayed from where the clone ends (§10). On this VM, the 2 hours would come within about 60 days of
+launch. On the production disks, which `restore-proof` measures every week, it is expected later, and it is not
+known (Q-3).
+
+**Watched, by every worker:**
+
+| Metric | What | Alert |
+|---|---|---|
+| `backend_mysql_table_rows{table}` | InnoDB's estimate of the rows of the tables that grow (`ledger`, `match_player`, `matches`, `player_day`, `inbox`) and of `player` | `match_player` past 500 million |
+| `backend_worker_retention_seconds` | how long this worker's last retention run took | past 1 800 s |
+| `backend_backup_restore_seconds` | how long the last proof's restore and replay took (V33's `backup_run.seconds`) | past 7 200 s, half the 4-hour objective |
 
 ## 10. Backup and recovery
 
 | What | How | Target |
 |---|---|---|
-| Nightly full | `mysqldump --single-transaction`, taken from the backup machine (a physical copy: designed, not built, below) | Proved weekly (`restore-proof`), drilled by hand monthly |
-| Point-in-time | binlog shipping, `binlog_format=ROW`, retained 7 days | RPO ≈ 1 minute |
+| Nightly full | `mysqldump --single-transaction`, taken from the backup machine at 03:30 UTC (`backend-mysql-backup.timer`), 8 days kept (a physical copy: designed, not built, below) | Proved weekly (`restore-proof`), drilled by hand monthly |
+| Point-in-time | binlog shipping, `binlog_format=ROW`, retained 7 days (`binlog_expire_logs_seconds = 604800`) | RPO (the most recent data a restore can lose) ≈ 1 minute |
 | Replica | asynchronous with GTIDs, on machine C, read-only | Promotion is a script an operator runs ([D-8](../architecture/03-decision-log.md#d-8--failover-is-scripted-not-automatic)), below |
 
-**Binlog shipping is built** (2026-09-26): the binlogs are streamed to the backup
-machine as they are written, 17 ms behind the primary when measured, and the
-nightly dump is taken from there too, over TLS. A restore onto another server
-from those copies alone was rehearsed and matched the primary table for table
+**On the launch's one machine** (D-93) there is no replica. The backups run on that machine, as the user
+`backend-backup`, whose copies the `backend` processes cannot read. The copies belong on a disk of their own
+(`/var/lib/backend`). They cover a mistake (a table dropped, a migration gone wrong) and a lost database disk, not a
+lost machine. Until the copy off the site has a target (Q-53, held by the owner), nothing outlives the machine. A
+second machine as the first one's standby, with the replicas, is [operations/10](../operations/10-two-machines.md)
+(D-96).
+
+**Binlog shipping is built** (2026-09-26). The binlogs are streamed to the backup machine as they are written: 17 ms
+behind the primary when measured. The nightly dump is taken from there too, over TLS. A restore onto another server
+from those copies alone was rehearsed, and it matched the primary table for table
 ([operations/01 §10](../operations/01-deploy.md#10-copies-off-the-databases-machine)).
 
-**A backup that has never been restored is not a backup.** The monthly restore
-drill is in the [runbook](../operations/02-runbook.md#the-restore-drill), and it
-is the only way to discover that a dump has been silently failing for six
-weeks. It was built and run on 2026-09-26, and its first three attempts failed
-in exactly that silent way: a replay that applied nothing, a restore that wrote
-itself into the binlog, and a position the script could not read. All three
-are fixed, and a point-in-time restore now comes back row for row. The store has
-its drill too, beside it: the all-time leaderboard exists only there.
+**A backup that has never been restored is not a backup.** The monthly restore drill is in the
+[runbook](../operations/02-runbook.md#the-restore-drill). It is the only way to discover that a dump has been
+failing silently for six weeks. It was built and run on 2026-09-26, and its first three attempts failed in exactly
+that silent way: a replay that applied nothing, a restore that wrote itself into the binlog, and a position the
+script could not read. All three are fixed, and a point-in-time restore now comes back row for row. The store has
+its own drill beside it, because the all-time leaderboard exists only there.
 
 ### Proved, kept away and watched (designed 2026-10-04, plan item 76 (a))
 
-On the owner's question (Q-51), "we should have also backup approaches?":
+This answers the owner's question (Q-51), "we should have also backup approaches?", with
 [D-71](../architecture/03-decision-log.md#d-71--backups-are-proved-by-restoring-them-every-week-under-live-writes-copied-off-the-site-encrypted-and-watched-through-mysql).
-What was built kept the copies off the primary's machine and restored them by
-hand once a month. Four things are added.
+What was built before kept the copies off the primary's machine and restored them by hand once a month. Four
+things were added:
 
-- **Recovery to a moment.** `restore-drill.sh` takes `STOP_AT`, a UTC time:
-  the replay stops at the last transaction before it (`mysqlbinlog
-  --stop-datetime`, read in UTC). That is the recovery from a mistake: an
-  operator's wrong statement at 14:03 is undone by restoring to 14:02:59 and
-  taking from the copy what the mistake removed (runbook, "Recovering to a
-  moment"). Without it, the replay runs to the newest write, as before.
-- **Proved weekly, automatically, under writes.** `backend-restore-proof.timer`
-  on the backup machine, Sundays at 04:00 UTC, runs `restore-proof.sh`: the
-  newest dump and the binlog copies onto the backup machine's scratch server, a
-  MySQL server of its own (port 3309) that holds nothing else. Exact row counts
-  hold only if nothing writes, so the proof checks what holds while the primary
-  keeps writing:
-  1. every table the source has is restored, and the newest migration is the
-     source's (`flyway_schema_history`);
-  2. nothing committed before the capture is missing: the source's highest
-     `ledger` and `matches` ids, read before its binlog position, are in the
-     copy;
-  3. the ledger reconciles with every balance, **coins and gems** (the drill
-     reconciled coins only, [O-13](../defects.md#6-operations));
-  4. the recovery point, how far the copies were behind, and the restore's
-     time are recorded.
+- **Recovery to a moment.** `restore-drill.sh` takes `STOP_AT`, a UTC time. The replay then stops at the last
+  transaction before that time (`mysqlbinlog --stop-datetime`, read in UTC). This is how to recover from a mistake:
+  an operator's wrong statement at 14:03 is undone by restoring to 14:02:59, and then taking from the copy what the
+  mistake removed (runbook, "Recovering to a moment"). Without `STOP_AT`, the replay runs to the newest write, as
+  before.
+- **Proved weekly, automatically, under writes.** `backend-restore-proof.timer`, on the backup machine, runs
+  `restore-proof.sh` on Sundays at 04:00 UTC. It restores the newest dump and the binlog copies onto the backup
+  machine's scratch server: a MySQL server of its own (port 3309) that holds nothing else. Exact row counts hold
+  only if nothing writes, so the proof checks what holds while the primary keeps writing:
+  1. every table the source has is restored, and the newest migration is the source's (`flyway_schema_history`);
+  2. nothing committed before the capture is missing: the source's highest `ledger` and `matches` ids, read before
+     its binlog position, are in the copy;
+  3. the ledger reconciles with every balance, in **coins and gems** (the drill reconciled coins only,
+     [O-13](../defects.md#6-operations));
+  4. the recovery point, how far the copies were behind, and the restore's time are recorded.
 
-  The monthly drill by hand stays, with its exact row counts, from the copy off
-  the site when there is one.
-- **Kept off the site.** `backup-offsite.sh`, hourly (`backend-backup-offsite.timer`). It flushes
-  the primary's binary logs first, so only closed binlogs leave, then the newest dump and every
-  closed binlog copy since the oldest dump kept, each encrypted
-  (`openssl enc -aes-256-cbc -pbkdf2`, a key in
-  `/etc/backend/backup/offsite.key` that is also kept away from the
-  machines) into a local mirror. The mirror is pushed by `rsync --delete` over
-  SSH to `OFFSITE_TARGET`, so the host off the site holds what the backup
-  machine does: 8 days of dumps, and every binlog since the oldest. Unset, the
-  copy is off and records nothing (Q-53). `fetch-offsite.sh` brings a copy back
-  and decrypts it for a restore. The drill by hand restores from it, and
-  `backend-restore-proof-offsite.timer` (the first Sunday of each month, 05:00 UTC) runs the proof
-  from it by itself, into `backend_proof_offsite`, recorded as a proof.
-- **Watched.** Each step records its outcome in `backup_run` (V32, `seconds` V33;
-  its DDL in [§3](#operations)), through `scripts/record-backup.sh`: its kind (1
-  dump, 2 proof, 3 off the site), when it started and finished, whether it worked,
-  a line of `detail` (sizes, the recovery point, the restore's time, or why it
-  failed), and for a proof the seconds its restore and replay took.
+  The monthly drill by hand stays, with its exact row counts, and restores from the copy off the site when there is
+  one.
+- **Kept off the site.** `backup-offsite.sh` runs hourly (`backend-backup-offsite.timer`):
+  1. it flushes the primary's binary logs first, so only closed binlogs leave;
+  2. it encrypts the newest dump and every closed binlog copy since the oldest dump kept
+     (`openssl enc -aes-256-cbc -pbkdf2 -iter 200000`, with the key `/etc/backend/backup/offsite.key`, which is
+     also kept away from the machines) into a local mirror;
+  3. it pushes the mirror by `rsync --delete` over SSH to `OFFSITE_TARGET`. So the host off the site holds what the
+     backup machine holds: 8 days of dumps, and every binlog since the oldest.
 
-  The `backup` account may insert into it and nothing more. Every worker reports,
-  as the ledger check's time is reported,
-  `backend_backup_succeeded_timestamp_seconds{kind}`, when a run of the kind
-  (`dump`, `proof`, `offsite`) last succeeded, and `backend_backup_failed{kind}`,
-  1 when the last run of it failed. The alerts: no dump for 26 hours; no proof
-  for 8 days, or the last failed; once a target is named, nothing copied off the
-  site for 26 hours. Rows are kept 90 days, except each kind's newest success,
-  which is kept whatever its age: a step failing for longer still shows when it
-  last worked, rather than nothing.
+  With `OFFSITE_TARGET` unset, the copy is off and records nothing (Q-53, held by the owner). `fetch-offsite.sh`
+  brings a copy back and decrypts it for a restore. The drill by hand restores from it, and
+  `backend-restore-proof-offsite.timer` (the first Sunday of each month, 05:00 UTC) runs the proof from it by
+  itself, into the database `backend_proof_offsite`, recorded as a proof.
+- **Watched.** Each step records its outcome in `backup_run` (V32, `seconds` V33; its DDL is in
+  [§3](#operations)), through `scripts/record-backup.sh`: its kind (1 dump, 2 proof, 3 off the site), when it
+  started and finished, whether it worked, a line of `detail` (sizes, the recovery point, the restore's time, or
+  why it failed), and, for a proof, the seconds its restore and replay took. The `backup` account may insert into
+  the table and do nothing more.
 
-The store is as it was (D-31): replicated, its boards rebuilt from MySQL, and
-what only its disk holds copied out when it alerts.
+  Every worker reports the backups' state, as it reports the ledger check's time:
 
-**Physical copies, at the trigger** (designed 2026-10-04, plan item 76 (b),
-D-72; **not built**: built when the weekly proof's restore passes 2 hours). A
-logical dump is read back row by row, 24 000 a second on the development VM;
-the ledger is never deleted, so a restore grows slower with every week. The
-step after it copies files instead:
+  | Metric | What | Alert |
+  |---|---|---|
+  | `backend_backup_succeeded_timestamp_seconds{kind}` | when a run of the kind (`dump`, `proof`, `offsite`) last succeeded; NaN for never | no dump for 26 hours; no proof for 8 days; once a target is named, nothing copied off the site for 26 hours |
+  | `backend_backup_failed{kind}` | 1 when the last run of the kind failed | 1, for any kind (the proof's last run failed, for one) |
 
-- **Nightly**, the backup machine's scratch server clones the primary
-  (`CLONE INSTANCE FROM`, the plugin and the `clone` account the replica's
-  rebuild uses, 06 §10 above, over TLS), at disk and network speed; it is then
-  stopped, and its data directory archived, compressed and encrypted, beside
-  where the dumps are now, kept as they are, 8 days.
-- **The position:** `performance_schema.clone_status` names the binlog file and
-  position the copy ends at; a restore starts the archived directory and
-  replays the binlog copies from there, as a dump's restore does from its
-  header (`--skip-gtids`, unlogged).
-- **The proof** unpacks the newest archive onto the scratch server and replays:
-  its time is the copy's size at disk speed, not the rows' count.
-- **Off the site**, the archives go as the dumps do. The dumps stop once the
-  first physical proof passes; until then both are taken.
+  Rows are kept 90 days, except each kind's newest success, which is kept whatever its age. So a step that has been
+  failing for longer still shows when it last worked, rather than nothing.
+
+The store is as it was (D-31): it is replicated, its boards are rebuilt from MySQL, and what only its disk holds is
+copied out when it alerts.
+
+**Physical copies, at the trigger** (designed 2026-10-04, plan item 76 (b), D-72; **not built**: they are built
+when the weekly proof's restore passes 2 hours). A logical dump is read back row by row: 24 000 rows a second on
+the development VM. The ledger is never deleted, so a restore grows slower every week. The step after the dump
+copies files instead:
+
+- **Nightly**, the backup machine's scratch server clones the primary, at disk and network speed, over TLS
+  (`CLONE INSTANCE FROM`, with the plugin and the `clone` account that the replica's rebuild uses, below). The
+  scratch server is then stopped, and its data folder is archived, compressed and encrypted. The archives are kept
+  beside the dumps, as the dumps are: 8 days.
+- **The position:** `performance_schema.clone_status` names the binlog file and position where the copy ends. A
+  restore starts the archived folder and replays the binlog copies from there, as a dump's restore does from the
+  position in its header (`--skip-gtids`, unlogged).
+- **The proof** unpacks the newest archive onto the scratch server and replays. Its time is the copy's size at disk
+  speed, not the number of rows.
+- **Off the site**, the archives go as the dumps do. The dumps stop once the first physical proof passes; until
+  then, both are taken.
 
 ### The replica and its promotion (built and drilled 2026-09-29, plan item 13)
 
-The replica is on machine C, fed by MySQL's own asynchronous replication with
-GTIDs (`gtid_mode=ON`, `enforce_gtid_consistency=ON`), and runs with
-`super_read_only=ON`, so nothing but replication writes to it
+**The replica is on machine C.** MySQL's own asynchronous replication feeds it, with GTIDs (global transaction
+identifiers: `gtid_mode=ON`, `enforce_gtid_consistency=ON`). It runs with `super_read_only=ON`, so nothing but
+replication writes to it
 ([D-35](../architecture/03-decision-log.md#d-35--mysql-fails-over-as-the-stores-do-by-an-epoch-the-clients-follow)).
+On the launch's one machine there is no replica (D-93).
 
-**An epoch, as the stores have** (j-redis D-37). A one-row table, `ha_epoch`,
-holds a number that only a promotion raises, on the new primary, after it is
-writable; replication carries it everywhere else. A backend process given both
-hosts (`BACKEND_DB_URL` naming two, `jdbc:mysql://A:3306,C:3306/…`) opens each
-new connection through a source that asks every host `SELECT @@global.read_only`
-(on whenever `super_read_only` is) and `SELECT epoch FROM ha_epoch`, and connects
-to the writable one with the highest epoch, never below the highest it has seen
-on any host, a read-only one included. After a promotion the pool drops its
-broken connections and the new ones reach the new primary; an old primary that
-comes back writable, with the older epoch, is passed over by every process that
-saw the promotion. With one host, the pool connects as before.
+**An epoch, as the stores have** (j-redis D-37). A one-row table, `ha_epoch`, holds a number that only a promotion
+raises: on the new primary, after it is writable. Replication carries the number everywhere else.
+
+- A backend process given both hosts (`BACKEND_DB_URL` naming two, `jdbc:mysql://A:3306,C:3306/…`) opens each new
+  connection through a data source of its own (`persistence/PrimaryDataSource`).
+- That source asks every host `SELECT @@global.read_only` (which is on whenever `super_read_only` is) and
+  `SELECT epoch FROM ha_epoch`, with the probe's limits (§7).
+- It connects to the writable host with the highest epoch, and never to one below the highest epoch it has seen on
+  any host, a read-only host included.
+- After a promotion, the pool drops its broken connections, and the new connections reach the new primary. An old
+  primary that comes back writable, with the older epoch, is passed over by every process that saw the promotion.
+- With one host, the pool connects as before.
 
 **Its lag, measured** (plan item 59,
 [D-58](../architecture/03-decision-log.md#d-58--a-replica-is-measured-by-what-it-has-applied-a-heartbeat-for-mysql-the-primarys-own-account-for-the-stores),
-[architecture/02 §7](../architecture/02-availability.md#7-a-replicas-health-measured-designed-2026-10-02-plan-item-59)). A second one-row table,
-`ha_heartbeat` (§3), holds a time: every worker stamps it on the primary once a
-second (`UPDATE ha_heartbeat SET at = NOW(6)`, through its pool), and replication
-carries it. Every 5 s, on a thread of its own, each worker reads every listed host's
-`@@global.read_only` and its row with the probe's limits; the newest stamp on a
-writable host is the primary's, and each other host's lag is that less its own, both
-written by the primary's clock. Reported as `backend_mysql_replica_lag_seconds{host}`
-and `backend_mysql_replica_up{host}`, NaN and 0 for a host not read; with one host
-there is nothing to report. `promote-mysql.sh` reads the same row to say what a
-promotion would lose.
+[architecture/02 §7](../architecture/02-availability.md#7-a-replicas-health-measured-designed-2026-10-02-plan-item-59)).
+A second one-row table, `ha_heartbeat` (§3), holds a time.
 
-**Fencing the old primary drops the processes' connections to it.** The pool
-drops only broken connections, and a server made read-only breaks none: after a
-planned handover each process would have kept its connections to the old primary
-for their lifetime, about half an hour, every write refused and every read stale
-(defect [D-29](../defects.md), found by the drill). So the fence is two settings, not
-one: `super_read_only`, persisted, which stops every write, the administrator's
-included, restart or not; and `offline_mode`, which closes every connection but
-an administrator's and refuses new ones. A busy connection's statement fails as
-in a crash; an idle one fails the pool's check when next borrowed and is
-replaced without a failed request; and a new one, refused, is chosen elsewhere.
-`offline_mode` is set for as long as the server runs, not persisted: after a
-restart no connection is left to close, a read-only server is never chosen, and
-a persisted one would survive the server's rebuild (below) and close the next
-primary it became. And it is set last (O-64, D-95): it closes the replica's own
-link too, its dump thread, and refuses it again, so set with `super_read_only`
-it lost whatever the link had not carried yet; between the two the replica
-applies every transaction the old primary executed.
+- Every worker stamps it on the primary once a second (`UPDATE ha_heartbeat SET at = NOW(6)`, through its pool),
+  and replication carries it.
+- Every 5 s, on a thread of its own, each worker reads every listed host's `@@global.read_only` and its row, with
+  the probe's limits.
+- The newest stamp on a writable host is the primary's. Each other host's lag is that stamp minus its own. Both
+  stamps were written by the primary's clock, so the two machines' clocks do not matter.
+- It is reported as `backend_mysql_replica_lag_seconds{host}` and `backend_mysql_replica_up{host}`: NaN and 0 for a
+  host not read. With one host there is nothing to report.
+- `promote-mysql.sh` reads the same row, to say what a promotion would lose.
 
-**The promotion**, `promote-mysql.sh` on the replica's machine: told the old
-primary is down, it refuses if the old one answers at all, refusing the account
-or its TLS included, since a server that refuses is up (O-63, D-95); told to
-demote it, it refuses one it cannot reach, which may still serve the processes on
-its side, and fences one it can: `super_read_only` persisted, so a restart keeps
-it read-only; the replica's wait for every transaction the old primary executed;
-`offline_mode`. Told it is down, it waits until the replica has applied every
-transaction it had received (`WAIT_FOR_EXECUTED_GTID_SET`). Then it stops
-replicating and forgets its source
-(`RESET REPLICA ALL`); makes itself writable with `SET PERSIST`, which outranks
-the configuration file's `super_read_only`, so a restart keeps it so; and raises
-the epoch.
+**Fencing the old primary drops the processes' connections to it.** The pool drops only broken connections, and a
+server made read-only breaks none. So after a planned handover, each process would have kept its connections to
+the old primary for their lifetime, about half an hour, with every write refused and every read stale (defect
+[D-29](../defects.md), found by the drill). So the fence is two settings, not one:
 
-**The old primary never comes back as it was.** It may hold transactions that
-never reached the replica, which GTIDs call errant and which would stop it
-replicating, or worse, be replicated back. It returns as a new replica, rebuilt
-from a copy of the new primary by MySQL's clone plugin: `CLONE INSTANCE`
-replaces its data, its accounts and its GTID history with the new primary's,
-errant transactions included in what is thrown away, and it then follows the
-new primary by GTIDs from where the copy ends. Its own persisted settings stay,
-the donor's do not travel: a fenced old primary comes back read-only, as a
-replica should. Setting up the replica the first time is the same, onto an empty
-server. It is started read-only from its configuration before anything else, so
-that even before the copy it takes no writes. After a planned handover, handing
-back is the same script the other way.
+| Setting | What it does | How it is set |
+|---|---|---|
+| `super_read_only` | stops every write, the administrator's included, restart or not | persisted |
+| `offline_mode` | closes every connection except an administrator's, and refuses new ones | for as long as the server runs, not persisted; set last |
 
-**The backups with GTIDs on** (defect [D-31](../defects.md)). The replica needs GTIDs on
-the primary, and a binlog written with them names each transaction's GTID. A
-point-in-time restore replays those binlogs onto a scratch server or a new one,
-and with the GTIDs kept, the replay depends on where it lands: onto the source's
-own server, every transaction is already executed there and is skipped without a
-word; onto a server with GTIDs off, the replay is refused. So the replay drops
-them (`mysqlbinlog --skip-gtids`): a restore is new writes on its target, logged
-nowhere (`sql_log_bin = 0`), not the source's transactions. A server restored
-this way starts a history of its own; a replica is made from it afresh, never
-attached by GTIDs to what it was restored from. The dump already leaves them out
-(`--set-gtid-purged=OFF`), and the binlog stream copies files whatever they hold.
+With `offline_mode`, a busy connection's statement fails as it would in a crash. An idle connection fails the
+pool's check when it is next borrowed, and is replaced without a failed request. A new connection is refused, and
+the source chooses another host.
 
-**Where the copies are taken after a promotion.** The binlog stream and the
-nightly dump run on the replica's machine, C, off the primary's (operations/01
-§10). Once C holds the primary they are on the disk they protect, so they move
-to the machine that holds the replica: A once it is rebuilt, B until then. The
-new primary's binlogs are a series of their own, so they go into a directory of
-their own, and a dump is taken from the new primary at once: it is the earliest
-point the new series can restore to. A point before the promotion restores from
-the old series, which stays where it was.
+`offline_mode` is not persisted, for two reasons. After a restart there is no connection left to close, and a
+read-only server is never chosen anyway. And a persisted value would survive the server's rebuild (below), and
+close the next primary it became.
 
-Recovery ordering matters: MySQL first, then j-redis, then the services.
-Sessions and tickets in j-redis are disposable — players re-authenticate — but
-a service that starts before the database is ready will fail its first requests
-and may be restarted by systemd before it ever succeeds.
+`offline_mode` is set last (O-64, D-95). It closes the replica's own link too (its dump thread) and refuses it
+again. When it was set together with `super_read_only`, the replica lost whatever the link had not carried yet.
+Between the two settings, the replica now applies every transaction the old primary executed.
+
+**The promotion** is `promote-mysql.sh`, run on the replica's machine. It works in one of two ways:
+
+- **Told that the old primary is down**, it refuses if the old primary answers at all, even by refusing the account
+  or its TLS: a server that refuses is up (O-63, D-95). It waits until the replica has applied every transaction it
+  had received (`WAIT_FOR_EXECUTED_GTID_SET`).
+- **Told to demote the old primary**, it refuses an old primary it cannot reach, because that server may still
+  serve the processes on its side. One it can reach, it fences: first `super_read_only`, persisted, so a restart
+  keeps it read-only; then the replica's wait for every transaction the old primary executed; then
+  `offline_mode`.
+
+Then, in both cases, it stops replicating and forgets its source (`RESET REPLICA ALL`). It makes itself writable
+with `SET PERSIST`, which outranks the configuration file's `super_read_only`, so a restart keeps it writable. And
+it raises the epoch.
+
+**The old primary never comes back as it was.** It may hold transactions that never reached the replica. GTIDs call
+these *errant*: they would stop it replicating, or worse, be replicated back. So it returns as a new replica,
+rebuilt from a copy of the new primary by MySQL's clone plugin:
+
+- `CLONE INSTANCE` replaces its data, its accounts and its GTID history with the new primary's; the errant
+  transactions are part of what is thrown away;
+- it then follows the new primary by GTIDs, from where the copy ends;
+- its own persisted settings stay, and the donor's do not travel. So a fenced old primary comes back read-only, as a
+  replica should.
+
+Setting up the replica the first time is the same, onto an empty server. The server is started read-only from its
+configuration before anything else, so it takes no writes even before the copy. After a planned handover, handing
+back is the same script, the other way.
+
+**The backups with GTIDs on** (defect [D-31](../defects.md)). The replica needs GTIDs on the primary, and a binlog
+written with them names each transaction's GTID. A point-in-time restore replays those binlogs onto a scratch
+server or a new one. With the GTIDs kept, the result of the replay depends on where it lands:
+
+- onto the source's own server, every transaction is already executed there, and is skipped without a word;
+- onto a server with GTIDs off, the replay is refused.
+
+So the replay drops them (`mysqlbinlog --skip-gtids`). A restore is new writes on its target, logged nowhere
+(`sql_log_bin = 0`), not the source's transactions. A server restored this way starts a history of its own. A
+replica is made from it afresh, and is never attached by GTIDs to the server it was restored from. The dump already
+leaves GTIDs out (`--set-gtid-purged=OFF`), and the binlog stream copies files, whatever they hold.
+
+**Where the copies are taken after a promotion.** The binlog stream and the nightly dump run on the replica's
+machine, C, away from the primary's (operations/01 §10). Once C holds the primary, the copies are on the disk they
+protect. So they move to the machine that holds the replica: A once it is rebuilt, B until then. The new primary's
+binlogs are a series of their own, so they go into a folder of their own. A dump is taken from the new primary at
+once: it is the earliest point the new series can restore to. A point before the promotion is restored from the old
+series, which stays where it was.
+
+**Recovery order matters: MySQL first, then j-redis, then the services.** Sessions and tickets in j-redis are
+disposable (players log in again). But a service that starts before the database is ready fails its first
+requests, and systemd may restart it before it ever succeeds. (Since D-94, a start also waits up to a minute for
+its database, §7.)
 
 ## 11. Read replicas (Phase 4)
 
-Not needed at launch scale: the write rate is modest and the read rate is
-absorbed by MySQL itself; a j-redis cache-aside layer (not built) is the step before replicas. When it becomes necessary:
+**Read replicas are not needed at launch scale.** The write rate is modest, and MySQL itself absorbs the read
+rate. A j-redis cache-aside layer (not built) is the step before replicas. When replicas become necessary:
 
-- Route **only** queries that tolerate staleness — profile views, match
-  history, leaderboard snapshots.
-- **Never** route a read that a write depends on. Reading a balance from a
-  replica and writing the result to the primary is how money is created.
+- Route **only** queries that tolerate staleness: profile views, match history, leaderboard snapshots.
+- **Never** route a read that a write depends on. Reading a balance from a replica and writing the result to the
+  primary is how money is created.
 - Replication lag is a metric with an alert, not a footnote.
 
 ## 12. What to measure
@@ -1600,3 +1629,4 @@ absorbed by MySQL itself; a j-redis cache-aside layer (not built) is the step be
 | Ledger reconciliation mismatches | Must be exactly zero. Anything else is a correctness bug. | `backend_worker_ledger_mismatches`, and `backend_worker_ledger_checked_timestamp_seconds` for when (05 §9) |
 | Row counts of the tables that grow, and the retention run's time | Retention is working, or it is not; there are no partitions (§9) | `backend_mysql_table_rows{table}`, `backend_worker_retention_seconds` |
 | Replication lag | Bounds how much a promotion loses, and how stale a replica read would be | `backend_mysql_replica_lag_seconds{host}`, `backend_mysql_replica_up{host}` (§10) |
+| The backups | A copy not taken, or not proved, is found only by a restore | `backend_backup_succeeded_timestamp_seconds{kind}`, `backend_backup_failed{kind}`, `backend_backup_restore_seconds` (§9, §10) |

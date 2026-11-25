@@ -90,8 +90,9 @@ public final class LobbyClient implements AutoCloseable {
     /**
      * Tells platform this client's address the way nginx does, as {@code X-Forwarded-For}.
      *
-     * Platform believes the header only from a peer on its own machine, so this works for a
-     * local load run and nowhere else. There it makes a hundred bots a hundred clients,
+     * Platform believes the header only from a peer on its own machine or one named in
+     * {@code BACKEND_TRUSTED_PROXIES} (the front's nginx, D-82), so this works for a local load
+     * run and nowhere else. There it makes a hundred bots a hundred clients,
      * rather than one address the login throttle stops at thirty attempts a minute.
      */
     public LobbyClient forwardedFor(String address) {

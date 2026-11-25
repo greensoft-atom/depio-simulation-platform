@@ -1,17 +1,28 @@
 # Diagrams — the lobby and the store
 
-The flows of the lobby connection and of what the processes hand each other through the store
-(j-redis), as built. The design is [03 — Gateway](../detailed-design/03-gateway.md) and
+This file shows two things, as built: the flows of the lobby connection, and what the processes
+hand each other through the store (j-redis, the backend's own Redis-compatible store). It is for
+engineers working on the gateway, the platform or the store's keys. The design is
+[03 — Gateway](../detailed-design/03-gateway.md) and
 [04 — Platform services](../detailed-design/04-platform-services.md). The references are the
 READMEs of [gateway](../../backend/gateway/README.md), [handoff](../../backend/handoff/README.md)
 and [common](../../backend/common/README.md).
 
+The *lobby connection* is the WebSocket a client keeps open between matches, on `/lobby`, through
+the front's nginx to a gateway. The *session store* and the *events store* are the two j-redis
+instances ([glossary](../glossary.md#1-processes-and-places)).
+
 ## Lobby connect and auth
 
-`LobbyHandler` takes the handshake and the `auth` message, `SessionStore.playerIdOf` reads the
-session, and `ConnectionRegistry` writes the registration that pushes are routed by
-([03 §4](../detailed-design/03-gateway.md#4-connection-lifecycle)). `auth.ok` waits for that
-write, so a push sent the moment it arrives finds the player.
+Three classes take part ([03 §4](../detailed-design/03-gateway.md#4-connection-lifecycle)):
+
+- `LobbyHandler` takes the WebSocket handshake and the `auth` message;
+- `SessionStore.playerIdOf` reads the session;
+- `ConnectionRegistry` writes the registration that pushes are routed by.
+
+`auth.ok` waits for that write, so a push sent the moment `auth.ok` arrives still finds the player.
+The client reaches nginx over TLS on 443 (`wss://`), or in clear on 80 (`ws://`, D-115); nginx
+passes both to a gateway the same way.
 
 ```mermaid
 sequenceDiagram
@@ -20,7 +31,7 @@ sequenceDiagram
     participant L as gateway LobbyHandler
     participant R as ConnectionRegistry
     participant S as session store
-    C->>N: wss upgrade to /lobby
+    C->>N: WebSocket upgrade to /lobby, wss on 443 or ws on 80
     N->>L: WebSocket upgrade, plain, over the private network to a gateway's 8090, least_conn
     L-->>C: handshake complete
     Note over L: auth deadline starts, 5 s
@@ -35,7 +46,7 @@ sequenceDiagram
         else a player
             L->>R: register playerId and channel
             Note over R: an older connection here is sent evt.session.replaced and closed
-            R->>S: MULTI GETSET conn:{playerId} gatewayId#nonce-n, EXPIRE 60, EXEC
+            R->>S: MULTI GETSET conn:{playerId} gatewayId-nonce-n, EXPIRE 60, EXEC
             S-->>R: OK
             R-->>L: written
             L-->>C: auth.ok with playerId
@@ -49,15 +60,19 @@ sequenceDiagram
     R->>S: WATCH, GET, compare, MULTI DEL EXEC, on the registry thread
 ```
 
-The value written is `{gatewayId}#{nonce}-{n}`; the diagram writes the `#` as a dash, since a
-diagram label cannot carry it.
+The value written is `{gatewayId}#{nonce}-{n}`. The diagram writes the `#` as a dash, because a
+Mermaid label cannot carry it.
 
 ## Push routing across gateways
 
-`LobbyPush.send` looks up the registration and publishes on the channel of the gateway named
-before its `#`. The gateway's subscription (`GatewayServer.listenForPushes`) hands the message to
-`ConnectionRegistry.deliver`, which passes it to the connection's `Pushes` on that connection's
-event loop ([03 §5](../detailed-design/03-gateway.md#5-push-routing)).
+A push is a message the backend sends to a player's lobby connection without being asked
+([03 §5](../detailed-design/03-gateway.md#5-push-routing)):
+
+1. `LobbyPush.send` looks up the player's registration, and publishes on the channel of the gateway
+   named before its `#`.
+2. That gateway's subscription (`GatewayServer.listenForPushes`) hands the message to
+   `ConnectionRegistry.deliver`.
+3. `deliver` passes it to the connection's `Pushes`, on that connection's event loop.
 
 ```mermaid
 sequenceDiagram
@@ -91,10 +106,16 @@ sequenceDiagram
 
 ## Ticket issue and claim
 
-`platform`'s `JoinService` picks an arena from `ArenaDirectory` and issues the ticket with
-`TicketStore.issue`. The arena's `MatchFrameHandler` claims it with `TicketStore.claim`, off its
-event loop ([04 §3](../detailed-design/04-platform-services.md#the-join-ticket)). A made match's
-tickets are issued the same way, after a room is reserved (next diagram).
+A ticket is a single-use key, valid 60 s, that lets one player into one arena
+([04 §3](../detailed-design/04-platform-services.md#the-join-ticket)):
+
+- `platform`'s `JoinService` picks an arena from `ArenaDirectory` and issues the ticket with
+  `TicketStore.issue`.
+- The arena's `MatchFrameHandler` claims it with `TicketStore.claim`, off its event loop.
+- A made match's tickets are issued the same way, after a room is reserved (next diagram).
+
+The client dials the front's 9001 over TLS, or its 80 in clear with `GET /match/<tlsName>` (D-115,
+[02](02-arena-and-wire.md#join-with-the-ticket-claim-and-the-welcome)); the ticket is the same.
 
 ```mermaid
 sequenceDiagram
@@ -108,24 +129,25 @@ sequenceDiagram
     P->>S: MULTI ZREMRANGEBYSCORE seats:promised:{name} -inf now, ZADD now+60s playerId, PEXPIRE 60 s, EXEC
     P->>S: MULTI HSET ticket:{id} playerId name team bonus skin, EXPIRE 60, EXEC
     P-->>C: arenaHost, arenaPort, ticketId, tls, tlsName
-    C->>A: TLS to the front's 9001 as tlsName, nginx passing it on, then Join with ticketId
+    C->>A: through the front's nginx by tlsName, 9001 over TLS or 80 in clear, then Join with ticketId
     A->>S: MULTI HGETALL ticket:{id}, DEL ticket:{id}, EXEC
     alt fields came back
         S-->>A: the fields, and the ticket is gone
         A-->>C: Welcome
-        Note over A: the player noted; the next announcement counts them and ZREMs seats:promised:{name} playerId in the same MULTI
+        Note over A: the player noted, and the next announcement counts them and ZREMs seats:promised:{name} playerId in the same MULTI
     else nothing, or malformed
         S-->>A: empty
-        A-->>C: Kick, bad ticket
+        A-->>C: Kick 1, bad ticket
     end
 ```
 
 ## Room reservation for a made match
 
-`ArenaDirectory.reserveForMatch` is called by `platform`'s matcher (`Matchmaker.make`) and sandbox
-opener (`QueueService`), and by `worker`'s `TournamentScheduler`. The promise keeps matches chosen
-between two announcements from all going to an arena's last room
-([D-42](../architecture/03-decision-log.md#d-42--a-matchs-room-is-promised-in-the-store-when-its-arena-is-chosen)).
+`ArenaDirectory.reserveForMatch` promises a room in an arena to a made match. Three callers use it:
+`platform`'s matcher (`Matchmaker.make`), `platform`'s sandbox opener (`QueueService`), and
+`worker`'s `TournamentScheduler`. An arena announces its rooms only every 3 s. The promise
+stops several matches, chosen between two announcements, from all going to an arena's last free
+room ([D-42](../architecture/03-decision-log.md#d-42--a-matchs-room-is-promised-in-the-store-when-its-arena-is-chosen)).
 
 ```mermaid
 flowchart TD
@@ -151,11 +173,15 @@ flowchart TD
 
 ## Store failover, the subscriber following the primary
 
-`StoreClients.open` gives the gateway a j-redis client that knows both addresses of the session
-store. `GatewayServer.listenForPushes` subscribes to both channels and registers the reconnect
-hook, which tells every connection to resynchronise through `ConnectionRegistry.resync`
+What a gateway does when the session store's primary changes, so that pushes keep reaching it
 ([03 §5](../detailed-design/03-gateway.md#when-the-subscription-is-lost-designed-2026-10-01-plan-item-50),
-[runbook §2](../operations/02-runbook.md#a-j-redis-store-built-2026-09-29-d-34)).
+[runbook §2](../operations/02-runbook.md#a-j-redis-store-built-2026-09-29-d-34)):
+
+- `StoreClients.open` gives the gateway a j-redis client that knows both addresses of the session
+  store, the primary's and the replica's.
+- `GatewayServer.listenForPushes` subscribes to both channels, and registers a reconnect hook.
+- After a reconnect the hook tells every connection to resynchronise, through
+  `ConnectionRegistry.resync`: the client then fetches the truth again.
 
 ```mermaid
 sequenceDiagram
@@ -188,10 +214,10 @@ sequenceDiagram
 
 ## Slow-client backpressure
 
-Each connection's `Pushes` holds pushes while Netty reports the connection unwritable (more than
-64 KiB waiting to go out), and closes it after 30 s
-([03 §8](../detailed-design/03-gateway.md#8-backpressure-and-slow-clients)). Replies to the
-client's own requests do not pass through the ring.
+Each connection's `Pushes` holds pushes while Netty reports the connection unwritable, meaning more
+than 64 KiB is waiting to go out. After 30 s unwritable, it closes the connection
+([03 §8](../detailed-design/03-gateway.md#8-backpressure-and-slow-clients)). Pushes are held in a
+ring of 16. Replies to the client's own requests do not pass through the ring.
 
 ```mermaid
 stateDiagram-v2
@@ -218,14 +244,15 @@ Each spell from unwritable to writable or closed is timed into
 
 ## Who writes and reads each key family
 
-In both diagrams below, a solid arrow writes or publishes and a dotted arrow reads or subscribes.
-The full table, with types and lifetimes, is in
+A *key family* is a set of store keys with one name pattern, such as `ticket:{id}`. In both
+diagrams below, a solid arrow writes or publishes, and a dotted arrow reads or subscribes. The full
+table, with each key's type and lifetime, is in
 [handoff's README](../../backend/handoff/README.md#store-key-families).
 
 ### Sessions, the lobby and the operator's channels
 
-`SessionStore`, `LobbyPush`, the gateway's `ConnectionRegistry`, and `ArenaDirectory`'s operator
-channel. All of them are on the session store.
+The keys of `SessionStore`, `LobbyPush`, the gateway's `ConnectionRegistry`, and
+`ArenaDirectory`'s operator channel. All of them are on the session store.
 
 ```mermaid
 flowchart LR
@@ -252,9 +279,9 @@ flowchart LR
 
 ### Matches and their results
 
-`TicketStore`, `ArenaDirectory`, `SandboxHolds`, `TournamentGrants`, `MatchArrivals` and
-`LeaderboardStore` are on the session store. `MatchResultStream` and `MatchResultQueue` are on the
-events store.
+The keys of `TicketStore`, `ArenaDirectory`, `SandboxHolds`, `TournamentGrants`, `MatchArrivals`
+and `LeaderboardStore` are on the session store. Those of `MatchResultStream` and
+`MatchResultQueue` are on the events store.
 
 ```mermaid
 flowchart LR
@@ -303,6 +330,7 @@ flowchart LR
 ```
 
 Two arrows need a word:
+
 - **`rooms:promised:{arena}`, `seats:promised:{arena}`:** the arena only removes promises, in its
-  announcement; only `platform` promises seats.
+  announcement. Only `platform` promises seats.
 - **`s:match-result`:** a worker writes to it only when it moves the old list inbox into it.

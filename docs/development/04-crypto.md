@@ -1,23 +1,32 @@
 # Cryptography: what the backend has, what to add, and examples
 
-Asked by the owner on 2026-10-05: can the backend sign, verify, encrypt, decrypt and hash, with
-RSA, ECDSA and X.509, and what would it need for the rest? The answer:
+This page is for a developer who needs to sign, verify, encrypt, decrypt or hash something in the backend. It says
+what Java 21 and the BouncyCastle library already give, which rules to follow, and where the tested examples are.
+It covers what is available (§1), the examples (§2), how to use one in a process (§3), the rules and the traps the
+tests found (§4), how to run the examples (§5), and where the backend uses cryptography today (§6).
+
+**The question it answers.** On 2026-10-05 the owner asked: can the backend sign, verify, encrypt, decrypt and hash,
+with RSA, ECDSA and X.509, and what would it need for the rest? The answer:
+
 - **Java 21 does almost all of it with nothing added**, on the release's own runtime too.
-- **BouncyCastle's `bcprov`**, already in the platform, covers what Java lacks among the
-  algorithms.
-- **Its `bcpkix`** covers making certificates and requests, and PEM in every form.
+- **BouncyCastle's `bcprov`** (the provider library), already in the platform, covers the algorithms Java lacks.
+- **BouncyCastle's `bcpkix`** covers making certificates and certificate requests, and PEM in every form.
 
-[`backend/crypto-examples`](../../backend/crypto-examples/README.md) shows each scenario in a
-small class meant to be copied, and its tests prove each one:
-- **Behaviour:** the round trip, the refusal of anything changed, of another key or another
+**The examples.** [`backend/crypto-examples`](../../backend/crypto-examples/README.md) shows each scenario in a
+small class meant to be copied. Its tests prove each one in three ways:
+
+- **Behaviour:** the round trip works, and anything changed is refused: a changed byte, another key, another
   context.
-- **Published test vectors:** FIPS 180-4, RFC 4231, RFC 5869.
-- **Interoperability with the `openssl` command line, both ways:** OpenSSL's keys, signatures and
-  ciphertexts are read here, and OpenSSL checks what is written here.
+- **Published test vectors:** FIPS 180-4, RFC 4231 and RFC 5869.
+- **Interoperability with the `openssl` command line, both ways:** the tests read OpenSSL's keys, signatures and
+  ciphertexts, and OpenSSL checks what the tests write.
 
-The module is built and tested with the rest of the backend, and is never in the release.
+The module is built and tested with the rest of the backend. It is never in the release.
 
 ## 1. What is there
+
+The table says which library gives each need. "Java 25 on" and "Java 24 on" mean the JDK gives it only from that
+version; the backend runs on Java 21.
 
 | Need | Java 21 (and the release's runtime) | BouncyCastle `bcprov` 1.86 (in the release, with `platform`) | `bcpkix` 1.86 (only in `crypto-examples` so far) |
 |---|---|---|---|
@@ -40,33 +49,32 @@ The module is built and tested with the rest of the backend, and is never in the
 | PKCS#12 key stores | yes | | |
 | Keys in a hardware module (PKCS#11) | the `jdk.crypto.cryptoki` module, **not in the release's runtime** (§4) | | |
 
-"Yes" in the Java column was proved on the release's runtime as well as on the JDK
-(`RuntimeProbe`, §5).
+Every "yes" in the Java column was proved on the release's runtime as well as on the JDK, by `RuntimeProbe` (§5).
 
 ## 2. The examples
 
-All in `com.backend.examples.crypto`. The "uses" column names where in this backend the
-scenario fits.
+All the classes are in the package `com.backend.examples.crypto`. The "Uses" column names where the scenario fits
+in this backend.
 
 | Scenario | Class | Uses |
 |---|---|---|
-| A fingerprint of bytes or of a whole file; comparing secrets in constant time | `Hashes` | a release's checksum; a guest's key kept as its SHA-256 (`AuthService`) |
-| A message from someone holding the same key, unchanged | `Hmacs` | a payment provider's callback, when there is one (Q-52) |
+| A fingerprint of bytes or of a whole file; comparing secrets in constant time | `Hashes` | a release's checksum; a guest's key, kept as its SHA-256 (`AuthService`) |
+| A message from someone who holds the same key, unchanged | `Hmacs` | a payment provider's callback, when there is one (Q-52) |
 | A token the server checks without a lookup, with an expiry | `SignedTokens` | a download link, an invitation |
-| Values nobody can guess | `RandomTokens` | session tokens and tickets (`SessionStore`, `Ticket` do this) |
+| Values nobody can guess | `RandomTokens` | session tokens and tickets (`SessionStore` and `Ticket` do this) |
 | Encrypting data at rest or between services, bound to its row | `Aead` | a sensitive column, a backup's key |
 | Signing and verifying: RSA, RSA-PSS, ECDSA (DER and raw), Ed25519 | `Signatures` | a signed release or manifest, a partner's signed message |
 | Encrypting to an RSA public key; anything larger by a wrapped AES key | `RsaEncryption` | a partner that only takes RSA |
 | Two parties reaching one key; encrypting to an X25519 public key (KEM) | `SharedSecrets` | data for a key kept offline |
 | Keys as PEM, with Java alone | `Pem` | a public key handed to a partner |
 | Every PEM form OpenSSL writes; an encrypted private key | `AnyPem` | a key made with `openssl`; a CA's key at rest |
-| Reading certificates, their names and fingerprint; validating a chain | `Certificates` | the gateway's `EdgeCertificate` reads nginx's certificate so, for its expiry |
+| Reading certificates, their names and fingerprint; validating a chain | `Certificates` | the gateway's `EdgeCertificate` reads nginx's certificate this way, for its expiry |
 | A private CA: a root, a server's request, the certificate issued for it | `CertificateAuthority` | MySQL's private CA (operations/01 §9, made with `openssl` there); mutual TLS |
 | A key and its chain in one file; a trust store | `KeyStores` | the arena's keystore (`ArenaTls`) |
-| A TLS server and a client that trusts only our root and checks the name | `Tls` | a service of ours calling another |
+| A TLS server, and a client that trusts only our root and checks the name | `Tls` | a service of ours calling another |
 | What the runtime it runs on can do | `RuntimeProbe` | before a process relies on an algorithm (§5) |
 
-What using them looks like (each line is what the tests do):
+What using them looks like. Each line is what the tests do:
 
 ```java
 // Encrypt a column, bound to its row: the ciphertext moved to another row will not decrypt.
@@ -96,100 +104,101 @@ SSLContext client = Tls.client(KeyStores.trustStore(List.of(ca.certificate())));
 
 ## 3. Using one in a process
 
-- **Copy the class, or the part needed, into the module that needs it.** The examples
-  module is not a library: no module depends on it, and the release does not carry it.
-- **Dependencies:**
-  - **Java alone:** nothing to add.
-  - **BouncyCastle:** `bcprov-jdk18on` or `bcpkix-jdk18on` in the module's `pom.xml`, without a
-    version (the parent pins 1.86). Both are in `java21-offline/`, so the offline build reaches them.
-    `make-release.sh` copies a process's runtime dependencies itself.
-  - **On this development machine**, whose `~/.m2` the commands in `CLAUDE.md` read offline: a
-    library new to the backend is copied into `~/.m2/repository` from `java21-offline/repository`
-    first (02, the traps).
-- **Keys and secrets never in the code or the repository.** They are in the process's own
-  settings file on the machine, root's alone (D-102, operations/01 §2), read with `common`'s
-  `Secrets` (`NAME`, or `NAME_FILE` for a file holding one).
-  The keys under `crypto-examples/src/test/resources/openssl/` were made for the tests, and are
-  public.
-- **Test it as the examples do:**
-  - the round trip;
-  - each change refused: a byte, the key, the context;
-  - a published vector, or a file from the other side's tool;
-  - then a mutation check: break the rule on purpose and see a test fail. For crypto, the
-    mutation that survives is usually a parameter both sides of the test share, which only another
-    tool's file catches (§4, PSS).
-- **Run `RuntimeProbe` on the release's runtime** with the new algorithm added to it (§5).
+1. **Copy the class, or the part you need, into the module that needs it.** The examples module is not a library:
+   no module depends on it, and the release does not carry it.
+2. **Add the dependency, if any.**
+   - **Java alone:** nothing to add.
+   - **BouncyCastle:** add `bcprov-jdk18on` or `bcpkix-jdk18on` to the module's `pom.xml`, without a version (the
+     parent `pom.xml` pins 1.86). Both are in `java21-offline/`, so the offline build finds them. `make-release.sh`
+     copies each process's runtime dependencies into the release by itself.
+   - **No copying by hand.** Since D-80 every build reads the bundle through `dev-env.sh`'s settings, with
+     `work/m2` as Maven's local repository, so a library new to the backend is taken from the bundle the first
+     time a build needs it. (Before D-80, the development VM's offline commands read `~/.m2`, and a new library
+     had to be copied there from `java21-offline/repository` first:
+     [02 §4](02-working-here.md#4-traps-each-met-at-least-once).)
+3. **Keep keys and secrets out of the code and out of the repository.** Each process reads its own from its
+   settings file on the machine, `/etc/backend/<process>.env`, readable by root alone (D-102,
+   [operations/01 §2](../operations/01-deploy.md#secrets)). In the code, read one with `common`'s `Secrets`: the
+   variable `NAME` holds the secret, or `NAME_FILE` names a file that holds it. The keys under
+   `crypto-examples/src/test/resources/openssl/` were made for the tests, and are public.
+4. **Test it as the examples do:**
+   - the round trip;
+   - each change refused: a byte, the key, the context;
+   - a published vector, or a file made by the other side's tool;
+   - then a mutation check: break the rule on purpose and see a test fail. In cryptography, the mutation that
+     survives is usually a parameter that both sides of the test share. Only a file made by another tool catches it
+     (§4, PSS).
+5. **Run `RuntimeProbe` on the release's runtime**, with the new algorithm added to the probe (§5).
 
 ## 4. Rules, and the traps the tests show
 
-- **Encryption is AEAD:** AES-256-GCM or ChaCha20-Poly1305.
+- **Encryption is AEAD** (authenticated encryption with associated data): AES-256-GCM or ChaCha20-Poly1305.
   - Never ECB, and never CBC or CTR without a MAC: they do not notice a change.
-  - A fresh random 12-byte nonce every time, never reused with a key (GCM then gives the key away).
-  - At most about 2^32 encryptions per key with random nonces.
-  - What the ciphertext belongs to (a row's ID) goes in the associated data.
-- **RSA-OAEP names both digests.** Java's `"RSA/ECB/OAEPWithSHA-256AndMGF1Padding"` keeps MGF1 on
-  SHA-1; OpenSSL, WebCrypto and most others use SHA-256 for both. The tests decrypt OpenSSL's
-  ciphertext with both settings: only the named one works. Never `PKCS1Padding` for encryption
-  (padding-oracle attacks).
-- **RSA-PSS's parameters are not in the key.** Both sides must name the same: SHA-256, MGF1 on
-  SHA-256, a 32-byte salt. A wrong setting survived the mutation check while both sides of the
-  test shared it, and was caught only once an OpenSSL signature was added.
-- **ECDSA has two encodings.**
+  - Use a fresh random 12-byte nonce every time, and never reuse one with the same key: GCM then gives the key away.
+  - Encrypt at most about 2^32 times with one key when nonces are random.
+  - Put what the ciphertext belongs to (a row's ID) in the associated data.
+- **RSA-OAEP must name both digests.** Java's `"RSA/ECB/OAEPWithSHA-256AndMGF1Padding"` keeps MGF1 on SHA-1;
+  OpenSSL, WebCrypto and most others use SHA-256 for both. The tests decrypt OpenSSL's ciphertext with both
+  settings, and only the one that names both digests works. Never use `PKCS1Padding` for encryption: it is open to
+  padding-oracle attacks.
+- **RSA-PSS's parameters are not in the key.** Both sides must name the same ones: SHA-256, MGF1 on SHA-256, a
+  32-byte salt. A wrong setting survived the mutation check while both sides of the test shared it. It was caught
+  only once an OpenSSL signature was added to the tests.
+- **ECDSA has two encodings, and neither verifies as the other.**
   - DER (`SHA256withECDSA`, about 70 to 72 bytes) is what OpenSSL, X.509 and TLS use.
   - Raw r‖s (`SHA256withECDSAinP1363Format`, 64 bytes) is what JWT (ES256) and WebCrypto use.
-  - Neither verifies as the other.
-- **Comparing secrets** (tags, tokens) with `MessageDigest.isEqual`, not `Arrays.equals`. No
-  functional test can see the difference, which is timing: the mutation survives by nature, and
-  review is what catches it.
-- **A shared secret is not a key.** It goes through HKDF, with an `info` naming the purpose, one key
+- **Compare secrets (tags, tokens) with `MessageDigest.isEqual`, not `Arrays.equals`.** The difference is timing,
+  which no functional test can see. So this mutation survives by nature, and review is what catches it.
+- **A shared secret is not a key.** Pass it through HKDF, with an `info` that names the purpose, and make one key
   per purpose.
 - **Randomness:**
-  - One `SecureRandom`, shared.
-  - Not `getInstanceStrong()`: it may block a server on `/dev/random`.
-  - Never `java.util.Random` for anything secret.
-- **Passwords:** Argon2id (`PasswordHasher`), never a digest. A high-entropy value (a device key, a
-  token) may be stored as its SHA-256: nobody can guess it to try.
-- **Ed25519 holds the whole message in memory**, since it reads it twice. To sign a large file,
-  sign its SHA-256.
-- **BouncyCastle's provider is passed, not registered.** Its PKCS#8 encryption asks for
-  `AES/CBC/PKCS7Padding`, which Java's providers lack: found by the tests, and fixed by giving that
-  call `new BouncyCastleProvider()`. `Security.addProvider` would change what every lookup in the
-  process finds.
+  - Use one `SecureRandom`, shared.
+  - Do not use `getInstanceStrong()`: it may block a server on `/dev/random`.
+  - Never use `java.util.Random` for anything secret.
+- **Passwords:** Argon2id (`PasswordHasher`), never a plain digest. A high-entropy value (a device key, a token)
+  may be stored as its SHA-256: nobody can guess it to try.
+- **Ed25519 holds the whole message in memory**, because it reads the message twice. To sign a large file, sign
+  its SHA-256.
+- **Pass BouncyCastle's provider to the call; do not register it.** Its PKCS#8 encryption asks for
+  `AES/CBC/PKCS7Padding`, which Java's providers lack. The tests found this, and the fix gives that one call
+  `new BouncyCastleProvider()`. `Security.addProvider` would change what every lookup in the process finds.
 - **Certificates:**
-  - A host is matched against the subject alternative names, not the CN.
-  - The name is checked by TLS's endpoint identification (`Tls.connect`), not by chain validation.
-  - Revocation is off in a plain PKIX validation and needs the network when on.
+  - A host is matched against the subject alternative names, not the CN (common name).
+  - TLS's endpoint identification checks the name (`Tls.connect`); chain validation does not.
+  - Revocation is off in a plain PKIX validation, and needs the network when it is on.
   - Serial numbers are random.
-  - A private CA's root key is the whole CA: kept offline and encrypted.
+  - A private CA's root key is the whole CA: keep it offline and encrypted.
 - **Sizes:** RSA at 3072 bits for new keys (2048 where a partner needs it); P-256 or Ed25519.
-- **Never:** MD5, or SHA-1 in a signature; DES, 3DES, RC4; ECB.
-- **PKCS#11** (keys in a hardware module) needs `jdk.crypto.cryptoki` added to `make-release.sh`'s
-  `modules`. The probe shows it missing from the release's runtime today. The tests pass on the
-  full JDK either way, which is why the probe exists.
+- **Never:** MD5, or SHA-1 in a signature; DES, 3DES or RC4; ECB.
+- **PKCS#11** (keys in a hardware module) needs `jdk.crypto.cryptoki` added to the `modules` list in
+  `make-release.sh`. The probe shows it missing from the release's runtime today. The tests pass on the full JDK
+  either way, which is why the probe exists.
 
 ## 5. Running them
 
-From `backend/`, with the JDK and Maven of [03 §2](03-build-and-run.md#2-build):
+1. **The tests.** From `backend/`, in a shell that sourced `dev-env.sh`, with the JDK and Maven of
+   [03 §2](03-build-and-run.md#2-build):
 
-```bash
-mvn -o -q -pl crypto-examples test          # 35 tests; the ones calling openssl are skipped without it
-```
+   ```bash
+   mvn -q -pl crypto-examples test          # 35 tests; the ones calling openssl are skipped without it
+   ```
 
-`RuntimeProbe` on the release's runtime, from the repository's root, after a build:
+   No `-o`: Maven's offline flag refuses the bundle, which is a `file://` repository (03 §2).
+2. **`RuntimeProbe` on the release's runtime**, from the repository's root, after a build:
 
-```bash
-backend/target/release/backend-*/runtime/bin/java -cp backend/crypto-examples/target/classes \
-    com.backend.examples.crypto.RuntimeProbe
-```
+   ```bash
+   backend/target/release/backend-*/runtime/bin/java -cp backend/crypto-examples/target/classes \
+       com.backend.examples.crypto.RuntimeProbe
+   ```
 
-On 2026-10-05 it printed `ok` for each of the 12 checks, `lacks PKCS#11`, and `0 failed`. To
-make the OpenSSL files again: `crypto-examples/src/test/resources/openssl/make.sh`. The keys and
-signatures then change, and the tests read whatever is there.
+   On 2026-10-05 it printed `ok` for each of the 12 checks, then `lacks PKCS#11`, then `0 failed`.
+3. **To make the OpenSSL files again**, run `crypto-examples/src/test/resources/openssl/make.sh`. The keys and
+   signatures then change, and the tests read whatever is there.
 
-**Verified 2026-10-05:**
-- 35 tests, none skipped (`openssl` 3.0.13 installed here).
-- A mutation check over 14 broken rules: every one caught, except the constant-time comparison
-  (§4). The PSS mutant was caught only after the OpenSSL signature was added for it.
+**Verified on 2026-10-05:**
+- 35 tests, none skipped (`openssl` 3.0.13 is installed on the development machine).
+- A mutation check over 14 broken rules: every one caught, except the constant-time comparison (§4). The PSS
+  mutant was caught only after the OpenSSL signature was added for it.
 - The probe on the release's runtime.
 
 **Not verified:** a hardware module, CMS, OCSP, and anything against a partner's real system.
@@ -198,11 +207,16 @@ signatures then change, and the tests read whatever is there.
 
 | What | How | Where |
 |---|---|---|
-| Passwords | Argon2id, 19 MiB, t=2 | `platform`'s `PasswordHasher` (`bcprov`) |
+| Passwords | Argon2id, 19 MiB of memory, t=2 (two passes) | `platform`'s `PasswordHasher` (`bcprov`) |
 | Session tokens, tickets, IDs | `SecureRandom` | `handoff`'s `SessionStore`, `Ticket`, `Ulid` |
 | A guest's key (random, the device's to keep) | kept as its SHA-256 | `platform`'s `AuthService` |
-| The players' TLS: logins, purchases, the lobby | nginx with OpenSSL 3.5 compiled in | [09 §5](../detailed-design/09-release-and-packaging.md) |
-| The players' TLS: matches | Java's TLS from a PKCS#12 store | `arena`'s `ArenaTls` |
+| The players' TLS for logins, purchases and the lobby | nginx, with OpenSSL 3.5 compiled in, ends TLS on 443 | [09 §5](../detailed-design/09-release-and-packaging.md) |
+| The players' TLS for matches | on the site, nginx ends it on 9001 and passes the match to the arena in clear over the private network (D-82); an arena given a keystore of its own (`BACKEND_ARENA_TLS_KEYSTORE`, as in a drill with `TLS=1`) speaks Java's TLS from a PKCS#12 store | nginx's `backend-stream.conf`; `arena`'s `ArenaTls` |
+| The site's certificate | a CA of the backend's own: an RSA root of 3072 bits, a certificate of 2048, SHA-256 signatures (D-82, D-108), made with `openssl` | `backend/scripts/private-ca.sh`, [operations/06](../operations/06-certificates.md) |
 | MySQL's TLS | a private CA made with `openssl` | [operations/01 §9](../operations/01-deploy.md) |
 | nginx's certificate's expiry, as a metric | read as X.509 | `gateway`'s `EdgeCertificate` |
 | The vendored downloads | SHA-256 checked before use | `vendor/update.sh` |
+
+Without TLS, nothing is encrypted: a players' build may connect in clear through the site's 80 since D-115, and a
+development run may be plain (`PLAIN=1`, D-101). Passwords, session tokens and join tickets then cross the network
+readable.

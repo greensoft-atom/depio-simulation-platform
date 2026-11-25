@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rotates nginx's logs (docs/operations/01-deploy.md §7, D-85, O-45): each log in LOG_DIR that holds anything is
+# Rotates nginx's logs (docs/operations/01-deploy.md §4, D-85, O-45): each log in LOG_DIR that holds anything is
 # renamed with a UTC stamp, nginx is told to reopen its logs (USR1 to the master PID_FILE names) when it runs, the
 # renamed files are compressed, and rotated files older than KEEP_DAYS are deleted. Run nightly by
 # backend-nginx-logs.timer on every machine; by hand:

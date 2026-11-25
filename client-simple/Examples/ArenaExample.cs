@@ -70,7 +70,7 @@ namespace Backend.Client.Simple.Examples
         private void OnSnapshot(byte[] snapshot, long serverTick)
         {
             // The world's changes since the last snapshot (02-networking §4): decode it here to draw the match;
-            // client/Core's SnapshotReader and ClientWorld do it in full.
+            // client/Core's SnapshotDecoder and ClientWorld do it in full.
             _snapshots++;
             if (Time.unscaledTime >= _logAt)
             {

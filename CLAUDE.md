@@ -181,7 +181,8 @@ for the backend, its docs and its client.
   replica, `FAILOVER=1`), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 (platform's
   metrics), 9196 (platform's admin API), 9197, 9198 and 9199 (the arena's, the gateway's and
   the worker's metrics), 9193 and 9194 (a second worker's metrics with `IDLEGUEST=1`, the
-  alerts' receiver with `WATCH=1`), and MySQL servers of their own on 3307 (a primary), 3308 (its
+  alerts' receiver with `WATCH=1`), 8095, 8096 and 9095 (the release's nginx in 80's, 443's and
+  9001's places with `FRONT=`), and MySQL servers of their own on 3307 (a primary), 3308 (its
   replica, `MYSQL_FAILOVER=1`) and 3309 (the backup drill's scratch server).
 - **Everything a build, a test or a run by hand writes goes in `work/`**, inside the checkout
   (D-80, owner 2026-10-17): the scripts source `dev-env.sh` (`vendor/`'s JDK and Maven, the bundle
@@ -249,7 +250,7 @@ TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]
 # Over TLS, where "untrusted" is a scenario too (without TLS=1 it fails: it needs a certificate)
 TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted
 # client-simple's live check before the scenarios (D-111), through FRONT's nginx: https, http or plain (none: straight);
-# client-simple-no-tls's after it, through nginx's 80 or straight, its match by /match/ in the TLS ways (D-114, D-115)
+# client-simple-no-tls's after it unless TLS=1, through nginx's 80 or straight, its match by /match/ in the TLS ways (D-114, D-115)
 SIMPLE=1 FRONT=https TMPDIR=<scratchpad> client/headless-drill.sh play
 # The watch on, a webhook receiver of the drill's: the worker killed after the scenarios, TargetDown listed and sent (08)
 WATCH=1 TMPDIR=<scratchpad> client/headless-drill.sh play

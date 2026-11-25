@@ -1,36 +1,48 @@
 # Requirements and scope
 
-What the backend must do, how well it must do it, and what is deliberately out
-of scope. Everything here is a *requirement* — the reasoning behind how it is
-met belongs in [architecture](../architecture/01-system-topology.md) and the
+This page says what the backend must do, how well it must do it, and what is deliberately out of
+scope. It is for anyone who needs to know what the system is held to: engineers, operators and the
+owner. Everything here is a *requirement*. How each one is met, and why, belongs in the
+[architecture](../architecture/01-system-topology.md) and the
 [decision log](../architecture/03-decision-log.md).
 
-**Status:** revised 2026-09-22 for the current target (Unity mobile client,
-50 000 concurrent players, three machines, Java 21, MySQL); NFR-1 split into 1a
-and 1b and measured 2026-09-23, NFR-2 measured 2026-09-26 and per connection
-2026-10-01. Launch scoped on 2026-09-23 to 5 000–10 000 players on two machines
-(§5); real-money purchases brought into scope by the owner on 2026-10-04 (§6,
-Q-51). Questions Q-1 to Q-61 recorded to 2026-10-24 (§7). The previous revision
-assumed one machine, a browser client and MongoDB.
+The page has seven parts: the product's scope (§1), the functional requirements (§2), the fixed
+constraints (§3), the non-functional requirements with their targets (§4), the capacity targets
+(§5), what is out of scope (§6), and the questions asked of the owner, with their answers (§7).
+Words such as *front*, *stay* and *grant* are defined in the [glossary](../glossary.md).
+
+**Status.**
+
+- Revised on 2026-09-22 for the current target: a Unity mobile client, 50 000 concurrent players,
+  three machines, Java 21 and MySQL. The revision before it assumed one machine, a browser client
+  and MongoDB.
+- NFR-1 was split into 1a and 1b and measured on 2026-09-23. NFR-2 was measured on 2026-09-26, and
+  per connection on 2026-10-01.
+- The launch was scoped on 2026-09-23 to 5 000–10 000 players on two machines. On 2026-11-01 the
+  owner replaced that with one machine, for up to about 5 000 players (C-11, §5).
+- Real-money purchases were brought into scope by the owner on 2026-10-04 (§6, Q-51).
+- Questions Q-1 to Q-64 are recorded, up to 2026-11-25 (§7).
 
 ## 1. Product scope
 
-A backend for a diep.io-style realtime multiplayer arena:
+A backend for a realtime multiplayer arena in the style of diep.io:
 
-- **In battle:** rooms of up to 150 tanks with bullets and destructible shapes,
-  server-authoritative simulation, and ten match modes: the public arena (FFA),
-  the ranked duel, team-vs-team, ranked free-for-all, co-op waves, team matches
-  between lasting teams, domination, tag, maze and a private sandbox.
-- **Around the battle:** accounts, guests and sessions, teams, parties and
-  matchmaking, tournaments, leaderboards with seasons, a shop and two
-  currencies, inventory, equipment and item levels, boosts, skins, achievements,
-  daily goals, a season pass, gems bought for money (§6), friends and an inbox,
-  and communication using a fixed phrase list.
+- **In battle:** rooms of up to 150 tanks, with bullets and destructible shapes. The server is
+  authoritative for the simulation. There are ten match modes: the public arena (FFA), the ranked
+  duel, team-vs-team, ranked free-for-all, co-op waves, team matches between lasting teams,
+  domination, tag, maze and a private sandbox.
+- **Around the battle:** accounts, guests and sessions; teams, parties and matchmaking;
+  tournaments; leaderboards with seasons; a shop and two currencies; inventory, equipment and item
+  levels; boosts, skins, achievements, daily goals and a season pass; gems bought for money (§6);
+  friends and an inbox; and communication through a fixed list of phrases.
 
-**Client:** Unity, native Android, installed from the owner's own copy of the app, not from Google
-Play or Apple's App Store ([C-10](#3-constraints), 2026-10-24). No browser build ([C-5](#3-constraints)).
+**Client:** Unity, native Android. Players install it from the owner's own copy of the app, not
+from Google Play or Apple's App Store ([C-10](#3-constraints), 2026-10-24). There is no browser
+build ([C-5](#3-constraints)).
 
 ## 2. Functional requirements
+
+What the backend must let players and operators do:
 
 | # | Requirement |
 |---|---|
@@ -48,37 +60,39 @@ Play or Apple's App Store ([C-10](#3-constraints), 2026-10-24). No browser build
 
 ## 3. Constraints
 
-Fixed inputs, not choices. Anything derived from them is architecture.
+Fixed inputs, not choices. Anything derived from them is architecture. The rows are in the order
+of their numbers; each keeps the date it was set and who set it.
 
 | # | Constraint | Consequence |
 |---|---|---|
-| C-1 | 3 machines, 24 cores / 64 GB each, RHEL 9.x | ~72 cores, 192 GB total. Capacity budget in [§5](#5-capacity-targets). |
-| C-2 | Java 21 only, on the release's own runtime made by `jlink` from `vendor/jdk-21`, not the OS's packages (Q-56, D-77) | Generational ZGC, virtual threads, current library versions. |
-| C-3 | MySQL 8.4 LTS, the release's own (Q-56, D-77), is the system of record | Real transactions for wallet, inventory and ledger. MongoDB is cancelled. |
-| C-4 | nginx at the edge | HTTPS, the lobby and the API; and since [D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name), match traffic: TLS ended on the front, the connection passed to the arena its handshake names. The allocator still decides. |
-| C-5 | Unity native mobile client, no WebGL | Raw TCP for match traffic; UDP remains possible later. |
-| C-6 | Self-hosted; no third-party daemons or services beyond MySQL and nginx, installed or bundled (the owner, 2026-10-24, when Prometheus and its kind were proposed for monitoring) | Embedded Java libraries are fine. No Kafka, RabbitMQ, Consul, etcd or Redis; no Prometheus, Grafana or exporters: monitoring is the backend's own (plan item 100). |
-| C-7 | Own data store: [j-redis-service](../../j-redis-service/README.md) | Sessions, tickets, queues, leaderboards, pub/sub, event streams. |
+| C-1 | 3 machines, 24 cores and 64 GB each, RHEL 9.x | ~72 cores and 192 GB in total. The capacity budget is in [§5](#5-capacity-targets). At launch the site is one machine (C-11). |
+| C-2 | Java 21 only, on the release's own runtime, made by `jlink` from `vendor/jdk-21`, not the operating system's packages (Q-56, D-77) | Generational ZGC, virtual threads, current library versions. |
+| C-3 | MySQL 8.4 LTS, the release's own (Q-56, D-77), is the system of record | Real transactions for the wallet, the inventory and the ledger. MongoDB is cancelled. |
+| C-4 | nginx at the edge | nginx serves HTTPS: the lobby and the API. Since [D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name) it also carries match traffic: it ends TLS on the front and passes each connection to the arena that the handshake names. The allocator still decides which arena that is. Since [D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included) (2026-11-25) it also serves the API, the lobby and matches without TLS on 80. |
+| C-5 | A native Unity client for mobile, no WebGL | Raw TCP for match traffic; UDP remains possible later. |
+| C-6 | Self-hosted. No third-party daemons or services beyond MySQL and nginx, whether installed or bundled (the owner, 2026-10-24, when Prometheus and similar tools were proposed for monitoring) | Embedded Java libraries are fine. No Kafka, RabbitMQ, Consul, etcd or Redis. No Prometheus, Grafana or exporters: monitoring is the backend's own code (plan item 100, D-86). |
+| C-7 | The backend's own data store: [j-redis-service](../../j-redis-service/README.md) | Sessions, tickets, queues, leaderboards, pub/sub and event streams. |
 | C-8 | One developer | Operational complexity is a first-class cost, not an afterthought. |
-| C-10 | The app is for Android alone, installed on players' phones from the owner's own distribution, not from Google Play or Apple's App Store (the owner, 2026-10-24) | No store's rules apply: not its review, not its billing for digital goods (Q-52), not its rule that an account can be deleted; a player's right to have their data erased comes from privacy law instead ([D-84](../architecture/03-decision-log.md#d-84--a-player-deletes-their-own-account-erased-in-place-what-others-history-needs-kept-under-a-bare-id)). iOS is not a target: its secure-store plugin stays in the Unity package, unused. Nothing updates the app but the owner's own channel, so an app too old for the backend has no way forward of its own (Q-59). |
-| C-11 | The site launches on one machine, for up to about 5 000 players (the owner, 2026-11-01) | Every role on it, the three machines' names and ports on loopback, the backups beside the database ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)). Nothing fails over until a second machine (NFR-4), and only a copy off the site outlives the machine (Q-53). Three machines stay the design for 50 000. |
-| C-9 | The site's public ports on one address, an IP with no domain: 80, 443 and 9001, forwarded to one machine; the others reachable on the private network alone; operators' SSH from the internal network alone (the owner, 2026-10-19) | nginx in front on the machine the provider forwards to, ending TLS with a certificate from the backend's own CA, which the app trusts; 443 and 9001 used, 80 closed ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)). |
+| C-9 | The site's public ports are on one address, an IP with no domain: 80, 443 and 9001, forwarded to one machine. The other machines are reachable on the private network alone. Operators reach the machines by SSH from the internal network alone (the owner, 2026-10-19) | nginx runs in front, on the machine the provider forwards to. It ends TLS with a certificate from the backend's own CA, which the app trusts. As decided then, 443 and 9001 were used and 80 was closed ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)). **Since 2026-11-25, 80 is open** and serves the API, the lobby and matches in clear ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included), Q-64). |
+| C-10 | The app is for Android alone. Players install it on their phones from the owner's own distribution, not from Google Play or Apple's App Store (the owner, 2026-10-24) | No store's rules apply: not its review, not its billing for digital goods (Q-52), and not its rule that an account can be deleted. A player's right to have their data erased comes from privacy law instead ([D-84](../architecture/03-decision-log.md#d-84--a-player-deletes-their-own-account-erased-in-place-what-others-history-needs-kept-under-a-bare-id)). iOS is not a target: its secure-store plugin stays in the Unity package, unused. Nothing updates the app but the owner's own channel, so an app too old for the backend has no way forward of its own (Q-59). |
+| C-11 | The site launches on one machine, for up to about 5 000 players (the owner, 2026-11-01) | Every role is on that machine, with the three machines' names and ports on loopback, and the backups beside the database ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)). Nothing fails over until there is a second machine (NFR-4), and only a copy off the site outlives the machine (Q-53). Three machines stay the design for 50 000. |
 
 ## 4. Non-functional requirements
 
-Each is stated so that it can be measured and failed.
+Each is stated so that it can be measured, and so that a measurement can fail it. "p50" and "p99"
+are the 50th and 99th percentiles of the measured values.
 
 | # | Requirement | Target | How it is checked |
 |---|---|---|---|
 | NFR-1a | Simulation tick cost | ≤ 2 ms p99 at 150 tanks, 1 500 bullets, 1 500 shapes | Per-phase histogram. **Measured 2026-10-06** at the design density (map 5 700): **0.71 ms p50, 1.26 ms p99** in a new room; **1.72 ms p50, 3.11 ms p99 in a room grown to level 45, over the target** (Q-3). Earlier figures (0.22 ms p50) are from before the class tree and T-53 ([operations/04 §4.2](../operations/04-scaling-and-performance.md#42-a-rooms-cpu-without-the-network-tickbenchmark-2026-10-06)). |
 | NFR-1b | Snapshot tick cost (simulation + encoding all clients) | ≤ 15 ms p99, inside the 40 ms deadline at 25 Hz | **Measured 2026-10-06**: in the mature room, simulation 3.11 ms p99 and encoding a round of 150 7.92 ms p99, CPU only. In a running arena the whole tick's p99 is the VM's: 18.8–19.6 ms at load 12 in the latest soak (2026-10-04); this VM cannot judge it ([operations/04 §4.3](../operations/04-scaling-and-performance.md#43-a-tick-in-a-running-arena-wall-clock)). |
-| NFR-2 | Mobile data per player | ≤ 15 MB/hour, down and up combined, while in battle | `snapshot_bytes_total{profile}` over `clients{profile}`, and per connection `connection_bytes_per_second{profile}`, whose p50 and p95 a scrape gives (plan item 42; with 150 bots, payload down p50 ~1.25 KB/s, p95 ~1.48 KB/s, about 10.4 MB an hour at p95 with overhead and input). **Measured ~11 MB/hour** at design density (150 bots, map 5 700): 2.24 KB/s down on the wire, plus input at 10 packets a second ([plan](../plan.md#1-status)) |
-| NFR-3 | Concurrent players | 50 000, ~333 rooms, across 3 machines | Load test with simulated clients. Under D-82, seven arenas carry 12 600 in battle as set (12 rooms of 150 each) |
+| NFR-2 | Mobile data per player | ≤ 15 MB/hour, down and up combined, while in battle | `snapshot_bytes_total{profile}` over `clients{profile}`; and, per connection, `connection_bytes_per_second{profile}`, whose p50 and p95 every scrape gives (plan item 42; with 150 bots, payload down p50 ~1.25 KB/s, p95 ~1.48 KB/s, about 10.4 MB an hour at p95 with overhead and input). **Measured ~11 MB/hour** at design density (150 bots, map 5 700): 2.24 KB/s down on the wire, plus input at 10 packets a second ([plan](../plan.md#1-status)) |
+| NFR-3 | Concurrent players | 50 000, ~333 rooms, across 3 machines | Load test with simulated clients. Under D-82, seven arenas carry 12 600 in battle as set (12 rooms of 150 each). At launch, one machine's three arenas carry 5 400 (C-11, D-93) |
 | NFR-4 | Machine failure | Any one machine may fail without total outage. **Not at launch**: one machine (C-11) is the site, until a second | Availability model in [architecture/02](../architecture/02-availability.md) |
 | NFR-5 | Capacity after a machine failure | ≥ 30 000 concurrent players (N−1) | Derived in [architecture/01 §3](../architecture/01-system-topology.md#3-capacity-model). Under D-82 a lost front also needs the provider to forward to another machine |
 | NFR-6 | Progression durability | No confirmed purchase, reward or progression write is ever lost | MySQL transactions; idempotency keys on every write |
 | NFR-7 | Match result delivery | Exactly-once effect, at-least-once delivery | Event stream with consumer acknowledgement and dedupe |
-| NFR-8 | Blast radius | One crashed process loses only its own rooms | Several arena processes per machine: seven again since D-82, after D-81's one a machine |
+| NFR-8 | Blast radius | One crashed process loses only its own rooms | Several arena processes on each machine: seven in all again since D-82, after D-81's one a machine; three on the launch's one machine (D-93) |
 | NFR-9 | Recovery of a crashed room | Players returned to the lobby with a clear result, never stuck | Room watchdog |
 | NFR-10 | Restart to serving | A restarted process rejoins and serves within 60 s | Measured during a rolling deploy |
 
@@ -92,7 +106,7 @@ derived core and bandwidth budget is in
 
 | Quantity | Target |
 |---|---|
-| Concurrent players | 50 000 on three machines, what the architecture is sized for. **Launch:** up to about 5 000 on one machine (C-11, [D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)), where the scope decision of 2026-09-23 had 5 000–10 000 on two machines with replication |
+| Concurrent players | 50 000 on three machines: what the architecture is sized for. **Launch:** up to about 5 000 on one machine (C-11, [D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)). This replaces the scope decision of 2026-09-23, which had 5 000–10 000 on two machines with replication |
 | Players per room | 150 |
 | Rooms | ~333 |
 | Simulation rate | 25 Hz |
@@ -101,18 +115,18 @@ derived core and bandwidth budget is in
 | Aggregate egress at full occupancy | ~1.1 Gbit/s |
 | Network provisioning | 10 GbE |
 
-**The in-battle ratio is the main unknown.** Lobby players cost almost nothing
-(one idle connection and a ping at least every 30 s, [03 §3](../detailed-design/03-gateway.md#3-lobby-protocol)), so the capacity that matters
-is the fraction actually fighting. Design for 100 % and treat anything less as
-headroom.
+**The in-battle ratio is the main unknown.** A player in the lobby costs almost nothing: one idle
+connection and a ping at least every 30 s
+([03 §3](../detailed-design/03-gateway.md#3-lobby-protocol)). So the capacity that matters is the
+share of players actually fighting. Design for 100 % in battle, and treat anything less as headroom.
 
 ## 6. Out of scope for v1
 
-Named so that they are not designed for by accident:
+These are named so that nobody designs for them by accident:
 
-- Multi-region deployment.
-- Automatic failover of stateful roles (promotion is scripted and
-  human-triggered — see [architecture/02](../architecture/02-availability.md)).
+- Deployment in more than one region.
+- Automatic failover of the stateful roles. Promotion is scripted and started by a person: see
+  [architecture/02](../architecture/02-availability.md).
 - Hot-migrating a running room between processes.
 - A room spanning more than one machine.
 - A browser (WebGL) client.
@@ -120,6 +134,24 @@ Named so that they are not designed for by accident:
   (Q-51): an economy with a revenue stream, plan item 75.
 
 ## 7. Open questions
+
+Every question asked of the owner, in the order it was asked, with its answer. The table is a
+record: a row keeps what was asked, the recommendation made, and what happened, with its date.
+
+- **Question** says what was asked, and often the recommendation made with it.
+- **Blocks** says what waits on the answer, or how the question ended.
+- The status words are used the same way in every row:
+  - **Built on the recommendation**: the owner had not answered, and the recommendation was built,
+    to be changed if the owner decides otherwise.
+  - **Answered by the owner** or **The owner, date**: the owner decided.
+  - **Open, for the owner**: still waiting for the owner.
+  - **Held by the owner**: the owner asked that it not be raised again until they bring it back
+    (2026-11-01: Q-53, Q-58, Q-59, Q-60 and Q-62).
+
+The questions still open, or held, are Q-1 to Q-4 (they wait on the owner's machines), the
+payment provider and the other choices Q-52 leaves to the owner, and Q-53, Q-58, Q-59, Q-60, Q-62
+and Q-63. The Unity editor's check (from Q-54) and an admin panel (Q-55) were put off by the owner
+on 2026-10-05.
 
 | # | Question | Blocks |
 |---|---|---|

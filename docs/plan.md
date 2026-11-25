@@ -1,30 +1,36 @@
 # Plan and status
 
-What is built, what is next, and in what order. Updated 2026-10-19.
+What is built, what is next, and in what order. Updated 2026-11-25.
 
-**Where it stands (2026-10-19).** Plan items 1 to 90 are done, but for item 7,
-which stays open by design: what is left of it waits on Q-3's hardware. Since
-item 90 the site has one public address, and the front's nginx ends TLS for
-everything players reach (D-82). Every component is built and tested: `j-redis-service`
-2.2.1 (229 tests), the backend's ten modules (1 020 tests at item 79) and the
-client's engine-free core with its headless driver (169 tests). The Unity layer
-is written as a package of scripts, compiled against stubs of the Unity API and
-not yet run in Unity. A player can register or play as a guest, hold a lobby
-connection, play the public arena, queue for any of eight queued modes or open a
-sandbox, and have the result reach MySQL, the boards and their wallet, told back
-through the gateway. Item 78 drove all of it from one release: 44 live drill
-scenarios, plaintext and TLS, a two-hour soak of 300 bots, and the backup drill;
-item 79 reviewed all of it, fixed what the review found, and drove every scenario
-and drill again.
+**Where it stands (2026-11-25).** Plan items 1 to 138 are done, but for item 7, which stays open by design: what is
+left of it waits on Q-3's hardware.
+
+- **The site.** It launches on one machine, every role on it, for up to about 5 000 players (D-93); three machines stay
+  the design for 50 000, and a second machine can join as the first one's standby, with arenas of its own (D-96,
+  D-97). It has one public address with three ports (D-82, D-115): nginx ends TLS on 443 (the API and the lobby) and
+  on 9001 (matches), and serves all three in clear on 80, a match there by `/match/<the arena's name>`.
+- **The components**, each built and tested: `j-redis-service` 2.2.1 (229 tests); the backend's eleven modules (their
+  sources declare 1 150 tests); the client's engine-free core with its headless driver (185 tests, on .NET 8 and on
+  Unity 2019's Mono). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
+  `UnityEngine`; there is no Unity editor here, so it has not been opened in one (Q-54). Beside the full client,
+  `client-simple/` and `client-simple-no-tls/` are small clients for the UI team (D-111, D-114).
+- **The release** carries its own Java runtime, MySQL 8.4 and nginx, built for glibc 2.28 and checked on RHEL 8 and 9
+  (D-100, D-110). The install guide installs the one machine as written, and its check proves it.
+- **What it does.** A player can register or play as a guest, hold a lobby connection, play the public arena, queue
+  for any of eight queued modes or open a sandbox, and have the result reach MySQL, the boards and their wallet, told
+  back through the gateway. Item 78 drove all of it from one release: 44 live drill scenarios, plaintext and TLS, a
+  two-hour soak of 300 bots, and the backup drill; item 79 reviewed all of it, fixed what the review found, and drove
+  every scenario and drill again. The drill has 45 scenarios now.
+
 Nothing has run on the production hardware, and nothing has launched.
 
-**What is open is the owner's** ([Q-54](requirements/01-scope-and-nfrs.md#7-open-questions)):
-opening the Unity package in the editor, which the owner put off on 2026-10-05; where the backups' copy off the site
-goes (Q-53); a real payment provider (Q-52); and what waits on the owner's
-machines and players (Q-1 to Q-4: the uplink, the share of players in battle,
-measurements on the production hardware, how players cluster); and whether an
-admin panel is wanted, and how (Q-55, put off by the owner on 2026-10-05). The certificate is settled
-(2026-10-19, D-82): no domain, a CA of the backend's own, TLS ended at the front's nginx.
+**What is open is the owner's** ([§7 of the requirements](requirements/01-scope-and-nfrs.md#7-open-questions)):
+what waits on the owner's machines and players (Q-1 to Q-4: the uplink, the share of players in battle, measurements
+on the production hardware, how players cluster) and a real payment provider (Q-52). Held by the owner on 2026-11-01:
+where the backups' copy off the site goes (Q-53), a day of results past 20 000 players (Q-58), the app's updates
+(Q-59), where alerts go (Q-60) and the launch's machine (Q-62). Put off by the owner on 2026-10-05: opening the Unity
+package in the editor (Q-54) and an admin panel (Q-55). The certificate is settled (2026-10-19, D-82): no domain, a
+CA of the backend's own, TLS ended at the front's nginx.
 
 **How the list came to be ordered.** The audit of 2026-09-23 found that the
 contract between the components had never been executed end to end: nothing
@@ -52,9 +58,9 @@ and fixed-phrase chat
 | Component | State |
 |---|---|
 | **j-redis-service** | **2.2.1 shipped** (2026-10-01): a subscriber follows the primary as every other connection does (plan item 50). 2.2.0 (2026-09-29) added replication, a primary and its replicas with promotion guarded by epochs; 2.1.0 (the same day) streams, on 2.0.0's Java 21 base. 229 tests, crash-tested with and without a replica, offline build, documented. See its [README](../j-redis-service/README.md). |
-| `java21-offline` bundle | Built and verified: 244 jars, 0 above Java 21, offline build proven from an empty repository. |
-| Requirements | [Written](requirements/01-scope-and-nfrs.md), with 62 questions recorded. Four wait on the owner's machines or players: Q-1 uplink, Q-2 in-battle ratio, Q-3 production measurements, Q-4 how players cluster. Six wait on the owner's choices: Q-52, a real payment provider (the flow is built, its provider simulated); Q-53, where the backups' copies off the site go; Q-58, a day of results past 20 000 players; Q-59, the app's updates; Q-60, where alerts go; Q-62, the launch's machine. The owner held Q-53, Q-58, Q-59, Q-60 and Q-62 on 2026-11-01. The rest are answered, or built on their recommendations unless the owner decides otherwise. |
-| Architecture | [Topology](architecture/01-system-topology.md), [availability](architecture/02-availability.md) and the [decision log](architecture/03-decision-log.md), D-1 to D-75, written. At launch, every role on one machine (D-93, topology §2). |
+| `java21-offline` bundle | Built and verified: 244 jars, 0 above Java 21, offline build proven from an empty repository. It holds 300 jars today: 56 were added on 2026-09-23, after that check, and its manifest does not list them yet ([its README](../java21-offline/README.md)). |
+| Requirements | [Written](requirements/01-scope-and-nfrs.md), with 64 questions recorded. Four wait on the owner's machines or players: Q-1 uplink, Q-2 in-battle ratio, Q-3 production measurements, Q-4 how players cluster. Six wait on the owner's choices: Q-52, a real payment provider (the flow is built, its provider simulated); Q-53, where the backups' copies off the site go; Q-58, a day of results past 20 000 players; Q-59, the app's updates; Q-60, where alerts go; Q-62, the launch's machine. The owner held Q-53, Q-58, Q-59, Q-60 and Q-62 on 2026-11-01. The rest are answered, or built on their recommendations unless the owner decides otherwise. |
+| Architecture | [Topology](architecture/01-system-topology.md), [availability](architecture/02-availability.md) and the [decision log](architecture/03-decision-log.md), D-1 to D-115, written. At launch, every role on one machine (D-93, topology §2). |
 | `arena` design | [Current](detailed-design/01-arena.md), with what is not built marked in place: replays, the in-room events beyond the kill feed, and co-op's tiers. The modes, the maze's walls, the whole tank tree and the kill feed are built. |
 | `networking` design | **[Written](detailed-design/02-networking.md)** — transport, wire format, snapshot protocol, client-side simulation contract, traffic profiles, the own tank's prediction. |
 | `gateway` design | **[Written](detailed-design/03-gateway.md)** — lobby connection, auth handshake, push routing, rate limiting. |
@@ -62,8 +68,8 @@ and fixed-phrase chat
 | `worker` / events design | **[Written](detailed-design/05-worker-and-events.md)** — streams, consumer loop, dead-lettering, result pipeline, scheduled jobs, analytics and the funnel. The worker reads the result stream (item 10). |
 | MySQL persistence design | **[Written](detailed-design/06-persistence-mysql.md)** — schema, transaction patterns, idempotency via natural keys, pooling, retention and growth, backups proved weekly. The schema is one baseline since 2026-10-04, `V1__schema.sql` and `V2__seed.sql` (D-75). |
 | Operations docs | [Mostly written](operations/01-deploy.md) — install, TLS, MySQL, backups and the certificate run for real; the stores' promotion scripted and drilled ([runbook §2](operations/02-runbook.md#2-stateful-primary-failure)), MySQL's too (2026-09-29, rehearsed under load 2026-09-30); backups proved by a weekly restore (item 76); every port and each machine's firewall, run as written ([05](operations/05-ports-and-firewall.md), item 88); the site behind one public address, the front's nginx ending TLS, and the backend's own CA, run as written with the C# client through it ([05](operations/05-ports-and-firewall.md), [06](operations/06-certificates.md), item 90). What is left is the alert thresholds, which wait on Q-3's hardware ([runbook](operations/02-runbook.md)). |
-| Application code | **[backend/](../backend/README.md)**: `common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`, `crypto-examples`. 1 064 tests, 0 compiler warnings (item 86, 2026-10-06). Multi-room arena, largest clean run 1 200 bots, every one sent every snapshot (item 14), and 600 through a failover (item 23); MySQL transactions tested for idempotency and double-spend under concurrency; single-use join tickets; Argon2id login and sessions; register → login → lobby → ticket → play → result persisted → **leaderboard updated**, verified end to end across four processes against real MySQL and real j-redis. |
-| Unity client | **Claude writes it** ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer), 2026-09-27): the engine-free core and a headless driver in [client/](../client/README.md), 178 tests (2026-10-24), their list in its README checked by one of them (DOC-31), driven against the real stack by the live drills. The Unity layer is written as scripts over the core, compiled against stubs and not yet run in Unity (item 77, the owner's Q-51); own-tank prediction, deferred with it on 2026-09-27, was brought back on 2026-10-03 and built (item 70). |
+| Application code | **[backend/](../backend/README.md)**: `common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`, `crypto-examples`. Their sources declare 1 150 tests (2026-11-25); the last whole run counted 1 064, with 0 compiler warnings (item 86, 2026-10-06). Multi-room arena, largest clean run 1 200 bots, every one sent every snapshot (item 14), and 600 through a failover (item 23); MySQL transactions tested for idempotency and double-spend under concurrency; single-use join tickets; Argon2id login and sessions; register → login → lobby → ticket → play → result persisted → **leaderboard updated**, verified end to end across four processes against real MySQL and real j-redis. |
+| Unity client | **Claude writes it** ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer), 2026-09-27): the engine-free core and a headless driver in [client/](../client/README.md), 185 tests (2026-11-25), their list in its README checked by one of them (DOC-31), driven against the real stack by the live drills. The Unity layer is written as scripts over the core (item 77, the owner's Q-51), compiled against stubs and by Unity 2019.4's own compiler against its `UnityEngine`, and not opened in the editor (Q-54, D-108); own-tank prediction, deferred with it on 2026-09-27, was brought back on 2026-10-03 and built (item 70). |
 
 ### Build checklist
 
@@ -4447,7 +4453,7 @@ The owner: for the WebSocket, the socket, and maybe HTTP too, assume TLS cannot 
 Docs: D-114, Q-64, the client-simple-no-tls README, 08 §9, the front page and the docs index, the glossary, the
 client's and the API's READMEs, 03 §9, 07 §5, working-here, CLAUDE.md.
 
-#### 137. A players' build without TLS, and the site serving it on 80 (the owner, 2026-11-25, Q-64, D-115)
+#### 137. ~~A players' build without TLS, and the site serving it on 80 (the owner, 2026-11-25, Q-64, D-115).~~ — **done 2026-11-25**
 
 The owner answered Q-64: yes, a players' build may connect without TLS; the site serves it on 80, matches through it
 too, by an HTTP request naming the arena; and the full client may go without TLS as well. In two parts, each
@@ -4501,6 +4507,69 @@ committed on its own:
     mutant.
   - **Not checked**: the editor or a phone, Android's rules for sockets in clear among them; nginx's HTTP tunnel's
     cost against the stream's, not measured (the frames and the tick unchanged; one round trip more at a join).
+
+
+#### 138. ~~Every guide and document read again: current, plain, detailed and clear (the owner, 2026-11-25).~~ — **done 2026-11-25**
+
+The owner: review all the guides and documents again, and make them up to date, easy to read, detailed and clear.
+
+**What is read**: every guide and design document a person uses: `docs/` (operations, development, the API, the
+detailed design, the architecture's topology and availability, the requirements, the diagrams, the glossary, the
+index), the front page, every module's README in `backend/`, the clients' READMEs, `java21-offline`'s, and
+j-redis's README, design pages and guides. **Not rewritten**: the records, which say what was decided and found
+when (`plan.md`, the decision logs, `defects.md`, j-redis's implementation plan and changelog), and the research
+and archive folders, kept as they were.
+
+**How**: each page against the code and scripts it describes, as of D-115: a fact that disagrees is corrected to the
+code, and gets a DOC number. Plain words and short sentences for a reader new to the project, each page saying first
+what it is for, steps numbered, terms defined or linked to the glossary; no fact, command or number dropped. What
+the checks read stays as it is: every command block, `<!-- -->` marker and heading of the guides run as written
+(03, 05, 10, the runbook), and the README test tables' names and counts (DOC-29, DOC-31). Headings keep their text,
+so every link to them still resolves (DOC-33).
+
+**Checked by**: `DocsLinksTest` and `ReadmeTestListsTest`, the client's `ReadmeTestListTests`; the guides run as
+written again where their files changed (`check-install-guide-el9.sh`, `check-ports-el9.sh`,
+`check-two-machines-el9.sh`); the word check.
+
+**Done.** 95 pages rewritten: each opens with what it is for and whom, long sentences split, steps numbered, settings
+and options in tables, and every fact, command, number and link kept. Read against the code, they held some 300
+statements, by the reviewers' own lists, that the code or the scripts contradict, registered by kind as DOC-47 to
+DOC-58: j-redis's (DOC-58); D-115's port 80 not followed
+everywhere (DOC-49), nor `backend-arenas.conf` (DOC-50), nor D-102's plain variables (DOC-51); counts and states
+behind (DOC-52, this plan's opening among them); designs written as built (DOC-53); statements about the code
+(DOC-54) and operations' facts (DOC-55) the code contradicts; pages that did not render (DOC-56); the PROXY line's
+example, which nginx was run to see (DOC-48); and `ReadmeTestListsTest` itself, which counted a test written with
+its package as none (DOC-47). DOC-57, the bundle's manifest, stays open. In the code it found four small defects,
+left for item 139: O-101, P-67, T-69, D-52.
+
+The code was touched where it documents itself: comments in Java, C#, the units, the scripts and an env example
+(DOC-48, DOC-50, DOC-54, DOC-55); the help text of the worker's ledger metric; two refusals that named a secret's
+file alone (DOC-51); and the README check's pattern (DOC-47).
+
+**Checked:** `DocsLinksTest` and `ReadmeTestListsTest` pass; DOC-47 test first (the rows set to 3 and 9, the check
+failed on those two alone; the pattern fixed, it passes; the old pattern fails both rows), and DOC-51's store
+refusal too (`StoreClientsTest`, its two refusals asked for both names: failed, then 13 of 13). The modules touched
+compile without a warning. The client's 185 tests pass, `ReadmeTestListTests` among them; `client-simple/check.sh`
+and `client-simple-no-tls/check.sh` pass. The guides run as written were not run again: what their checks take from
+03, 05, 10 and the runbook, by the checks' own `awk` run on HEAD's pages and the new ones, is byte for byte the same
+(49 files), and a line changed in each page's blocks shows. Every heading kept but item 137's and three empty ones
+(DOC-56). The word check.
+
+**Not checked:** the Mermaid diagrams were not rendered (no renderer here without the network); the READMEs' C#
+samples were checked by reading the signatures, not compiled; the Unity package's inspector labels and menu paths are
+written from Unity's naming rules, with no editor to see them (Q-54); the measured numbers are kept as dated, not
+measured again; `ArenaMain`'s keystore refusal is in `main`, where no test reaches it.
+
+#### 139. What item 138's review found in the code: O-101, P-67, T-69, D-52
+
+Four small defects, each test first, each read in the code and none met in a run:
+
+- **O-101.** `BACKEND_METRICS_ADDR` with a port past 65535 ends the process with exit 1 and a stack trace: the refusal
+  (exit 2) for it, in `MetricsServer.startIfConfigured`.
+- **P-67.** The Unity layer draws a tank at 25 world units where the server's is 30, and one size for every class: the
+  radius from the class table, as `LookTable`'s tooltip says.
+- **T-69.** The headless driver drops `removed` without `--lobby`, which it does not need.
+- **D-52.** j-redis's `HELLO` answers `role master` on a replica: the server's role.
 
 ---
 

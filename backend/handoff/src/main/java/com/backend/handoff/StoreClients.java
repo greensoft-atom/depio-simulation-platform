@@ -152,7 +152,7 @@ public final class StoreClients {
             if (message.startsWith("NOAUTH")) {
                 client.close();
                 throw new RefusedConfiguration("the store at " + where
-                        + " requires a password: set " + setting + "_FILE");
+                        + " requires a password: set " + setting + " or " + setting + "_FILE");
             }
             // Anything else is the store not being there yet, which is survivable.
         } catch (java.util.concurrent.TimeoutException e) {

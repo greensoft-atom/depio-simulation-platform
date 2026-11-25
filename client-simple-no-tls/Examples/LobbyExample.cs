@@ -10,7 +10,7 @@ namespace Backend.Client.Simple.Examples
     /// </summary>
     public class LobbyExample : MonoBehaviour
     {
-        [Tooltip("http://<address>: a backend run plain (PLAIN=1); this client has no TLS")]
+        [Tooltip("http://<address>: the site's 80, or a backend run plain (PLAIN=1); this client has no TLS")]
         public string apiUrl = "http://127.0.0.1";
 
         [Tooltip("ws://<address>/lobby: the same backend")]

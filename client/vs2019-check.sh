@@ -4,8 +4,8 @@
 # warnings as errors: the core's project (.NET Standard 2.0); its sources in a .NET Framework 4.7.1 library at C# 7.3,
 # against Microsoft's 4.7.1 reference assemblies; a 4.7.1 app referencing the core's project; Unity 2019.4's
 # project as VS 2019 compiles it (4.7.1, C# 7.3, Unity's UnityEngine assemblies, the package's scripts, each
-# platform branch); and Backend.Client.sln, the client's one solution, VS 2019's (the core and UnityCheck; the tests
-# and the headless driver are .NET 8, outside it, built by their paths). Needs docker, the network once (the images, the reference assemblies' package) and
+# platform branch); and Backend.Client.sln, the client's one solution, VS 2019's (all four projects, D-109: the core,
+# UnityCheck, the tests and the headless driver, the last two .NET Framework 4.7.1 under VS 2019). Needs docker, the network once (the images, the reference assemblies' package) and
 # Unity 2019.4.28f1's editor in work/unity (unity2019-check.sh fetches it). Nothing run on .NET Framework itself.
 #
 #   client/vs2019-check.sh

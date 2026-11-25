@@ -1,80 +1,109 @@
 # client
 
-The Unity app a player installs on Android, from the owner's own copy, not a store (C-10). Designed in
-[docs/detailed-design/08-client.md](../docs/detailed-design/08-client.md): an
-engine-free core that speaks to the server, built and tested here against the
-real server, and a thin Unity layer that draws it
-([D-19](../docs/architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer)).
-The diagrams are in [docs/diagrams/06-client.md](../docs/diagrams/06-client.md).
+This folder holds the full C# client of the backend: the code that the Android app, built in Unity, uses to talk to
+the servers. It is for client developers who change that code or build the app from it. This page lists the
+projects, says how to build, test and check them, how to run them against the real backend, what is built so far,
+and what the live drills found.
 
-**A smaller client, to read and paste into a project:** [`client-simple/`](../client-simple/README.md) (D-111): the
-API (over `HttpClient`, D-112), the lobby and a match in seven files of C# 7.3 on .NET Framework 4.5's and .NET
-Standard 2.0's APIs, with three example scripts; no prediction, no world, no drawing. Without TLS, for the site's 80
-and a backend run plain: [`client-simple-no-tls/`](../client-simple-no-tls/README.md) (D-114, D-115).
+A player installs the app on Android from the owner's own copy, not from a store (C-10). The design is in
+[docs/detailed-design/08-client.md](../docs/detailed-design/08-client.md), and its diagrams are in
+[docs/diagrams/06-client.md](../docs/diagrams/06-client.md). The client has two layers
+([D-19](../docs/architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer)):
+
+- the **core**, `Backend.Client.Core`: a library with no engine in it, which does all the talking to the servers.
+  It is built and tested on this machine against the real servers;
+- the **Unity layer**: thin scripts that connect the core to Unity and draw what it holds.
+
+Two words used on every page: **TLS** (Transport Layer Security) is the encryption that `https://` and `wss://` use;
+the **API** (application programming interface) is the platform's HTTP routes, `/v1/...`. Every other term is in
+the [glossary](../docs/glossary.md).
+
+## Which client to use
+
+There are three clients. They speak the same protocol; a protocol change is made in all three.
+
+| Folder | What it is | Who it is for |
+|---|---|---|
+| `client/`, this folder | The full client: the core (with prediction of the player's own tank, the world and what a frame draws), the Unity package, the tests and the headless driver | client developers, and the app |
+| [`client-simple/`](../client-simple/README.md) (D-111) | A smaller client: the API (over `HttpClient`, D-112), the lobby and a match, in seven files of C# 7.3 that use only what .NET Framework 4.5 and .NET Standard 2.0 both have; three example scripts. No prediction, no world, no drawing | a UI team that reads the code and pastes it into its own Unity project |
+| [`client-simple-no-tls/`](../client-simple-no-tls/README.md) (D-114, D-115) | `client-simple` without TLS, in six files: for the site's port 80, and for a backend run plain | the same team, where TLS cannot be used |
 
 ## Projects
 
 | Project | What it is | Target | Depends on | Its README |
 |---|---|---|---|---|
-| `Core/` | `Backend.Client.Core`: everything that speaks to the server, and what a frame draws, with no engine in it: the wire, the world, the match connection, the own tank's prediction, the API, the lobby, the scene and its clock, the sticks, the account kept, JSON | .NET Standard 2.0, C# 7.3 (Unity 2019.4 and later, .NET Framework 4.7.1; D-108) | nothing | [Core/README.md](Core/README.md) |
-| `Core.Tests/` | NUnit tests of the core, which Unity 2022.3's test runner and later also run (not Unity 2019's: C# 9; `unity2019-check.sh` runs the core on its Mono instead): the server's golden vectors, a scripted arena on a local socket, scripted HTTP answers | .NET Framework 4.7.1 and .NET 8, C# 7.3 (D-109) | Core; NUnit 3.14.0, NUnit3TestAdapter 4.6.0, Microsoft.NET.Test.Sdk 17.11.1 | [Core.Tests/README.md](Core.Tests/README.md) |
-| `Headless/` | The core driven without Unity against a running stack, a player's path scenario by scenario; what the live drills run | .NET Framework 4.7.1 and .NET 8, C# 7.3 (D-109) | Core | [Headless/README.md](Headless/README.md) |
-| `Unity/com.backend.client/` | The Unity layer: a UPM package of thin scripts over the core, and its iOS and Android plugins for the secure store | Unity 2019.4 LTS and later | the core, as the library `unity-package.sh` copies in | [Unity/com.backend.client/README.md](Unity/com.backend.client/README.md) |
-| `UnityCheck/` | Compiles the package's scripts against stubs of the Unity API, in each platform branch, and its Android plugin against stubs of Android's; nothing is run | .NET Standard 2.0, C# 7.3 | Core | [UnityCheck/README.md](UnityCheck/README.md) |
-| `UnityRuntimeCheck/` | The core on Unity 2019.4's own Mono: certificates of `private-ca.sh` checked, JSON under a decimal comma, the API, the lobby and a match each through TLS; and `RunTests.cs`, NUnitLite running Core.Tests there, compiled by Unity's compiler (D-109); built and run by `unity2019-check.sh` alone | .NET 4.x, C# 7.3, Unity 2019.4.28f1's compiler | Core | this table, and [08 §6](../docs/detailed-design/08-client.md#6-testing) |
+| `Core/` | `Backend.Client.Core`: everything that speaks to the server, and what a frame draws, with no engine in it. It holds the wire format, the world, the match connection, the prediction of the player's own tank, the API, the lobby, the scene and its clock, the touch sticks, the account kept on the device, and JSON | .NET Standard 2.0, C# 7.3 (for Unity 2019.4 and later, and .NET Framework 4.7.1; D-108) | nothing | [Core/README.md](Core/README.md) |
+| `Core.Tests/` | NUnit tests of the core: the server's golden vectors, a scripted arena on a local socket, scripted HTTP answers. They are C# 7.3, so Unity 2019.4's compiler builds them too: `unity2019-check.sh` compiles them with it and runs them on Unity's Mono by NUnitLite. NUnit is what Unity's Test Runner uses, but no Unity editor has run them here | .NET Framework 4.7.1 and .NET 8, C# 7.3 (D-109) | Core; NUnit 3.14.0, NUnit3TestAdapter 4.6.0, Microsoft.NET.Test.Sdk 17.11.1, Microsoft.NETFramework.ReferenceAssemblies 1.0.3 | [Core.Tests/README.md](Core.Tests/README.md) |
+| `Headless/` | The core driven without Unity against a running backend, scenario by scenario, as a player would use it. The live drills run it | .NET Framework 4.7.1 and .NET 8, C# 7.3 (D-109) | Core; Microsoft.NETFramework.ReferenceAssemblies 1.0.3 | [Headless/README.md](Headless/README.md) |
+| `Unity/com.backend.client/` | The Unity layer: a UPM (Unity Package Manager) package of thin scripts over the core, and its iOS and Android plugins for the secure store | Unity 2019.4 LTS and later | the core, as the library that `unity-package.sh` copies in | [Unity/com.backend.client/README.md](Unity/com.backend.client/README.md) |
+| `UnityCheck/` | Compiles the package's scripts against stubs of the Unity API, once for each platform branch, and its Android plugin against stubs of Android's API. Nothing is run | .NET Standard 2.0, C# 7.3 | Core | [UnityCheck/README.md](UnityCheck/README.md) |
+| `UnityRuntimeCheck/` | The core on Unity 2019.4's own Mono: certificates made by `private-ca.sh` checked, JSON read and written under a locale that writes a decimal comma, and the API, the lobby and a match each through TLS. Also `RunTests.cs`, which runs Core.Tests there by NUnitLite, compiled by Unity's compiler (D-109). Only `unity2019-check.sh` builds and runs it | .NET 4.x, C# 7.3, Unity 2019.4.28f1's compiler | Core | this table, and [08 §6](../docs/detailed-design/08-client.md#6-testing) |
 
-`Backend.Client.sln` is the client's one solution, **Visual Studio 2019's** (D-108, D-109), all four projects at C#
-7.3: Core and UnityCheck on .NET Standard 2.0, Core.Tests and Headless below. VS 2019 builds it with a .NET SDK of 5.0 or older (VS 2019 16.11 installs 5.0; a 6 or later
-asks for MSBuild 17); a .NET Framework 4.7.1 project or later references the core, or takes its sources, as it is
-(`vs2019-check.sh`). Core.Tests and Headless are in it too, C# 7.3 on .NET Framework 4.7.1, which VS 2019 builds and
-runs (Test Explorer), and on .NET 8 where MSBuild is 17 or later, which this machine runs (`dotnet test Core.Tests -f
-net8.0`; the drills' `Headless/bin/Debug/net8.0`): D-109. Every
-project builds with warnings as errors and nullable reference types off.
+**The solution.** `Backend.Client.sln` is the client's one solution. It is a **Visual Studio 2019** solution (D-108,
+D-109), and it holds all four projects (Core, Core.Tests, Headless, UnityCheck), each at C# 7.3:
+
+| Project | Target frameworks |
+|---|---|
+| Core, UnityCheck | .NET Standard 2.0 |
+| Core.Tests, Headless | .NET Framework 4.7.1; and also .NET 8 where MSBuild is 17 or later |
+
+- Visual Studio 2019 builds the solution with a .NET SDK of 5.0 or older. VS 2019 16.11 installs the 5.0 SDK; an SDK
+  of 6 or later asks for MSBuild 17.
+- VS 2019 sees only the .NET Framework 4.7.1 target of Core.Tests and Headless. It builds them, and it runs the tests
+  in its Test Explorer.
+- This machine has MSBuild 17 (the .NET 8 SDK), so it also builds the .NET 8 target. Its tests run with
+  `dotnet test Core.Tests -f net8.0`, and the drills run the driver in `Headless/bin/Debug/net8.0`.
+- A .NET Framework 4.7.1 project, or a later one, can reference the core's project, or take its source files as they
+  are. `vs2019-check.sh` checks both.
+- Every project builds with warnings as errors and with nullable reference types off.
 
 ```
 client/
+├── Backend.Client.sln          Visual Studio 2019's solution: the four projects below
 ├── Core/                       Backend.Client.Core: no dependencies
 │   ├── Wire.cs                 the protocol's numbers, mirroring com.backend.protocol
 │   ├── WireReader.cs           fields and varints over one frame; ProtocolException
 │   ├── Snapshot.cs             the snapshot decoder, streaming into a sink
 │   ├── Messages.cs             Welcome, Pong, Kick; the client's own messages; stream framing
 │   ├── ClientWorld.cs          what the client holds between snapshots
-│   ├── Maze.cs                 a maze's walls from its seed, as the server makes them
+│   ├── Maze.cs                 a maze's walls from its seed, made as the server makes them
 │   ├── MatchConnection.cs      join, play, lose, resume, leave: 08 §3
 │   ├── TankMotion.cs           the room's step of a driven tank, and a maze's walls by cell: 02 §9
-│   ├── OwnTank.cs              the own tank, predicted: steps, replay, corrections (08 §4, D-62)
+│   ├── OwnTank.cs              the player's own tank, predicted: steps, replay, corrections (08 §4, D-62)
 │   ├── ApiClient.cs            the platform API, its endpoints tried in turn, and what it answers
 │   ├── LobbyClient.cs          the lobby WebSocket: auth, ping, requests, pushes
 │   ├── WebSocketLink.cs        the lobby's WebSocket itself, RFC 6455's client over TCP or TLS (D-108)
-│   ├── TrustRoot.cs            the backend's root, a certificate checked by the client itself (D-82, D-108)
+│   ├── TrustRoot.cs            the backend's root certificate, which the client checks by itself (D-82, D-108)
 │   ├── WebRequestTransport.cs  the API's requests through HttpWebRequest, each checked for its host (D-108)
-│   ├── PartyState.cs           the party as told, the newest kept (04 §4, D-74)
+│   ├── PartyState.cs           the party as told, the newest state kept (04 §4, D-74)
 │   ├── Scene.cs                what a frame draws where, at a render tick, and the render clock: 08 §8
 │   ├── TouchSticks.cs          two sticks, or keys and a mouse, to an input: 08 §8
 │   ├── AccountKeeper.cs        the account kept across launches, in a secure store: 08 §8
 │   └── Json.cs                 strict JSON for the API and the lobby, so the core needs no package
 ├── Core.Tests/                 NUnit, and the vectors the server's tests read, linked, never copied
-├── Headless/                   the core driven without Unity against a running stack
+│   └── Pki/                    the tests' certificates, made by Pki/make.sh
+├── Headless/                   the core driven without Unity against a running backend
 ├── Unity/com.backend.client/   the Unity layer: thin scripts over the core (08 §8)
 ├── UnityCheck/                 the scripts compiled against stubs: nothing run
+├── UnityRuntimeCheck/          what unity2019-check.sh runs on Unity's Mono
 ├── unity-package.sh            builds the core into the Unity package
-├── unity-check.sh              the check, in every platform branch
+├── unity-check.sh              the check against stubs, in every platform branch
 ├── unity2019-check.sh          the core and the scripts by Unity 2019.4.28f1's compiler, and the core on its Mono
-├── UnityRuntimeCheck/          what that runs on Unity's Mono
 ├── vs2019-check.sh             the core built by Visual Studio 2019's MSBuild and Roslyn, for .NET Framework 4.7.1 too
-└── headless-drill.sh           starts the stack from a release and runs the headless client
+└── headless-drill.sh           starts the backend from a release and runs the headless driver against it
 ```
 
 ## Building, testing, packaging, checking
 
-The .NET 8 SDK is at `/opt/dotnet` on the development machine, off the PATH like
-the JDK. The test project downloads NUnit from nuget.org the first time; the
-core itself has no dependencies.
+Run these commands from `client/`. On the development machine the .NET 8 SDK is at `/opt/dotnet`, which is not on
+the PATH (the JDK is not either). The core itself has no package dependencies. The test project and the driver
+download their NuGet packages from nuget.org the first time they are built: NUnit and its test adapter, and the
+.NET Framework 4.7.1 reference assemblies.
 
 ```bash
 cd client
 export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
-/opt/dotnet/dotnet build Headless                                 # the driver and the core, Debug (Backend.Client.sln: Core, UnityCheck)
+/opt/dotnet/dotnet build Headless                                 # the driver and the core, Debug
 /opt/dotnet/dotnet test Core.Tests -f net8.0 --logger "console;verbosity=normal"   # the core's tests: read "Total tests:"
 ./unity-package.sh                                                # the core, Release, into the Unity package
 ./unity-check.sh                                                  # the package compiled against stubs
@@ -82,149 +111,178 @@ export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 ./vs2019-check.sh                                                 # Visual Studio 2019's MSBuild and Roslyn, in docker (D-108)
 ```
 
-**Check the total, not only the verdict.** `dotnet test` says "Passed!" even when
-its host process dies part-way, counting only the tests that ran; an unhandled
-exception on any background thread does that. `--logger "console;verbosity=normal"`
-prints `Total tests:`, which reads `Unknown` after such a crash.
+**Check the total, not only the verdict.** `dotnet test` says "Passed!" even when its host process dies part of the
+way through: it counts only the tests that ran. An unhandled exception on any background thread does that. The
+option `--logger "console;verbosity=normal"` prints `Total tests:`, and after such a crash it reads `Unknown`.
 
-`unity-package.sh` builds `Core` in Release and copies
-`Backend.Client.Core.dll` into `Unity/com.backend.client/Runtime/Plugins/`,
-which git ignores: run it before opening the package in Unity, and again
-whenever the core changes. The package's `Runtime/csc.rsp` gives its assembly
-`System.Net.Http`, which Unity does not reference by default at the .NET 4.x
-API level (D-113); `unity2019-check.sh` compiles the scripts as Unity does,
-with that file and refused without it. `unity-check.sh` compiles against the core's
-project, not that copy, so it cannot tell a stale copy. Both take `DOTNET`, and
-the check `JAVAC`, from the environment.
+What each script does, and what it needs:
+
+| Script | What it does | What it needs |
+|---|---|---|
+| `unity-package.sh` | Builds `Core` in Release and copies `Backend.Client.Core.dll` into `Unity/com.backend.client/Runtime/Plugins/`. Git ignores that copy | the .NET SDK (`DOTNET`) |
+| `unity-check.sh` | Compiles the package's scripts against stubs of the Unity API, for no platform, the editor, iOS and Android; and the Android plugin's Java against stubs of Android's API. Nothing is run ([UnityCheck](UnityCheck/README.md)) | the .NET SDK (`DOTNET`) and `javac` (`JAVAC`) |
+| `unity2019-check.sh` | Compiles the core and the package's scripts with Unity 2019.4.28f1's own compiler, at both of Unity's API levels and in each platform branch, with the package's `csc.rsp` as Unity reads it; checks that the scripts are refused at .NET 4.x without it. Then runs the core (`UnityRuntimeCheck`) and its tests, compiled by Unity's compiler, on Unity's own Mono 5.11 | Unity 2019.4.28f1's Linux editor, which it downloads once into `work/unity` (1.8 GB, its SHA-256 checked); NUnit and NUnitLite 3.14.0, from nuget.org once. `UNITY_DATA` names another copy of the editor |
+| `vs2019-check.sh` | Builds with Visual Studio 2019's MSBuild and Roslyn, from Microsoft's SDK images: 16.11 (the .NET 5 SDK) and 16.7 (the .NET Core 3.1 SDK). It builds the core's project; the core's sources in a .NET Framework 4.7.1 library; a 4.7.1 app that references the core; Unity 2019.4's project as VS 2019 compiles it, in each platform branch; and `Backend.Client.sln`. Nothing is run on .NET Framework itself | docker; the network once, for the images and the reference assemblies' package; Unity 2019.4.28f1's editor in `work/unity` |
+
+`unity-package.sh` and `unity-check.sh` take `DOTNET` from the environment; by default they use
+`/opt/dotnet/dotnet` when it is there, and otherwise the `dotnet` on the PATH. `unity-check.sh` also takes `JAVAC`;
+by default it uses the `javac` on the PATH, and otherwise `/opt/jdk21/bin/javac`.
+
+**The library in the package.** Run `unity-package.sh` before you open the package in Unity, and again whenever the
+core changes. `unity-check.sh` compiles against the core's project, not against that copy, so it cannot tell when
+the copy is stale.
+
+**`csc.rsp`.** The package's `Runtime/csc.rsp` gives the package's assembly a reference to `System.Net.Http`. Unity
+does not reference that assembly by default at the .NET 4.x API level (D-113). `unity2019-check.sh` compiles the
+scripts as Unity does: with that file they compile, and without it they are refused.
 
 ## Against the real server
+
+A **drill** starts the whole backend from a release, on ports of its own, and runs the headless driver against it.
+Each path a player takes is a **scenario** ([glossary](../docs/glossary.md#9-building-checking-and-running)).
+`headless-drill.sh` does it all and stops every process on the way out.
 
 ```bash
 /opt/dotnet/dotnet build Headless
 TMPDIR=<scratchpad> ./headless-drill.sh [scenario ...]           # plaintext
 TLS=1 TMPDIR=<scratchpad> ./headless-drill.sh play untrusted      # the arena over TLS
+SIMPLE=1 FRONT=https TMPDIR=<scratchpad> ./headless-drill.sh play # through nginx; the simple clients' live checks first
 ```
 
-It needs the backend's release (`backend/scripts/make-release.sh`), the j-redis
-server and command-line jars, a JDK 21, python3 and the development MySQL; the
-script says which, and where it looks. It runs the headless client from
-`Headless/bin/Debug/net8.0`, built by `dotnet build Headless`, with
-`http://127.0.0.1:8093 --lobby ws://127.0.0.1:8094/lobby`, the operator's API
-and a way to write the drill's fixtures (see [Headless/README.md](Headless/README.md)).
-With no scenario named it runs `play resume badticket lifecycle`.
+**What it needs.** The script says what it is missing, and where it looked.
 
-**The scenarios**, in the driver's order: `play prediction equip boost team
-tournament teammatch teamcup rename apply roundrobin levels gems purchase pass
-skin milestone season achievements goals social guest stats domination tag maze
-sandbox resume coldresume badticket lifecycle lobby replaced badsession duel
-walkover party decline rffa coop banned notice removed phrase erase`, and
-`untrusted`, with `TLS=1`. What each checks, and what it needs, is in
+- The backend's release (`backend/scripts/make-release.sh`). A release carries its own Java runtime, j-redis and
+  MySQL, and the drill takes them from it. For an older release without them: a JDK 21 (`/opt/jdk21`), j-redis
+  built, and `/usr/sbin/mysqld`.
+- The headless driver, built by `dotnet build Headless`, and .NET at `/opt/dotnet`.
+- python3.
+- The development MySQL (`dev-mysql.sh`, 127.0.0.1:3314). The drill starts it when it is not running, and stops it
+  after. The drill uses the database `backend_dev`, which a run by hand uses too, so do not run the two at once.
+- With `SIMPLE=1`: Unity 2019.4.28f1 in `work/unity`, which `unity2019-check.sh` unpacks once. With `NEWMAN=1`:
+  `npx`, which runs newman.
+
+**What it runs.** The headless driver from `Headless/bin/Debug/net8.0`, given the API at `http://127.0.0.1:8093` and
+`--lobby ws://127.0.0.1:8094/lobby` (with `FRONT`, nginx's addresses instead). It also gives the driver the
+operator's API and a way to write the drill's fixtures (see [Headless/README.md](Headless/README.md)). With no
+scenario named, it runs `play resume badticket lifecycle`.
+
+**The scenarios**, in the driver's order: `play prediction equip boost team tournament teammatch teamcup rename apply
+roundrobin levels gems purchase pass skin milestone season achievements goals social guest stats domination tag maze
+sandbox resume coldresume badticket lifecycle untrusted lobby replaced badsession duel walkover party decline rffa
+coop banned notice erase removed phrase`. `untrusted` needs a grant with TLS and a second root: `TLS=1`, or
+`FRONT=https` or `FRONT=http`. What each scenario checks, and what it needs, is in
 [Headless/README.md](Headless/README.md#scenarios).
 
-**The modes**, set in the environment:
+**The modes.** You choose them with environment variables:
 
 | Variable | Default | What it does |
 |---|---|---|
-| `TLS=1` | 0 | The arena serves a test certificate naming 127.0.0.1, made for the run; the client trusts only it, and `untrusted` a different one. The lobby and the API stay plaintext |
-| `DRAIN_AFTER=<s>` | unset | Stops the arena `s` seconds in (SIGTERM): it drains (01 §8.6) |
-| `FAILOVER=1` or `demote` | 0 | The store with a replica (6392): the scenarios, then the primary killed and the replica promoted by `promote-store.sh` (1), or the old primary demoted and alive (demote); every process's subscription looked for on the new primary; the scenarios again (D-34, O-6). `demote` runs the scenarios only |
-| `MYSQL_FAILOVER=1`, `demote` or `freeze` | 0 | Two MySQL servers of the drill's own (3307, 3308, GTIDs, the replica 30 s behind): the scenarios; the primary killed (1), stopped by SIGSTOP with platform's first answer timed (freeze, O-9), or handed over and fenced (demote); the replica promoted by `promote-mysql.sh`; the scenarios again; the old primary rebuilt by clone, handed back, and the scenarios a third time (D-35). `freeze` runs the scenarios only |
-| `BOTS=<n>[:<s>]` | s = 120 | The load run (07 §4): `n` bots of `tools/BotClient` play `s` seconds in place of the scenarios; each process's cores, the arena's threads and numbers, NFR-2 per connection. `ARENA_OPTS` adds to the arena's JVM options |
-| `BOTS` with `FAILOVER=1` or `MYSQL_FAILOVER=1`/`demote` | | The failover under load (architecture/02 §6): the primary killed or handed over halfway through, the replica promoted 20 s after the bots leave, every stay paid once, a probe's refusals timed |
-| `BOTS` with `SOAK=1` | 0 | The soak (07 §4): stays of `STAYS` seconds (60:300) played again, the duel scenario every 30 s, every process sampled every `SAMPLE_EVERY` s (300), `tools/SoakJudge` judging from `JUDGE_FROM` s (half the run) |
-| `BOTS` with `WORKERS=<k>` | unset | The workers' rate: `k` workers paused while the bots play, then draining their stays together, timed |
-| `TAKEOVER=1` | 0 | The worker stopped with the results in flight, killed, and a second worker taking them over (05) |
-| `WATCH=1` | 0 | The platform watches the four processes and sends alerts to a receiver of the drill's (9194): after the scenarios the worker is killed, and `TargetDown` must be listed by the admin API and sent within three minutes (04 §12, D-86); with `BOTS` too. Not with `TAKEOVER` |
-| `IDLEGUEST=1` | 0 | A guest made, aged 181 days in the database, and erased by a second worker's retention (its metrics on 9193) a minute after it starts (D-87) |
-| `RELEASE`, `JREDIS_JAR`, `JREDIS_CLI_JAR`, `JAVA`, `MYSQLD_BIN`, `DOTNET`, `TOOLS_JAR` | the release under `backend/target/release`, and its own j-redis, runtime and MySQL (j-redis's build, `/opt/jdk21/bin/java` and `/usr/sbin/mysqld` for a release without them); `/opt/dotnet/dotnet`; the tools' jar | Where things are |
-| `MYSQL_PORT` | 3314 | The development MySQL the drill's backend uses and starts (`dev-mysql.sh`) |
+| `TLS=1` | 0 | The arena serves a test certificate (RSA) that names 127.0.0.1, made for the run. The client trusts only that certificate, and `untrusted` trusts a different one. The lobby and the API stay plaintext. Not with `FRONT` |
+| `FRONT=https`, `http` or `plain` | unset | The release's nginx in front of the drill's processes, set up as `dev-nginx.sh` sets it up, on ports of its own: 8095 for 80, 8096 for 443, 9095 for 9001 (D-107). `https`: the API and the lobby over TLS on 8096. `http`: the API and the lobby in clear on 8095. With either, matches go over TLS on 9095, to the arena named `a1.arena.internal`. `plain`: nginx without TLS (D-101), the API and the lobby on 8095 and matches plain on 9095 |
+| `SIMPLE=1` | 0 | Before the scenarios, the live check of [`client-simple`](../client-simple/README.md) (D-111): the API, the lobby and a match. It goes through `FRONT`'s nginx when `FRONT` is set, and straight to the processes otherwise. Then, unless `TLS=1`, the live check of [`client-simple-no-tls`](../client-simple-no-tls/README.md): straight, or through nginx's 80 with `FRONT`, its match through `/match/` when the grant asks for TLS (D-114, D-115) |
+| `NEWMAN=1` | 0 | First, on the fresh backend, the Postman collection (`docs/api/backend.postman_collection.json`) through the same API address, run by newman |
+| `DRAIN_AFTER=<s>` | unset | Stops the arena `s` seconds in (SIGTERM), so it drains (01 §8.6) |
+| `FAILOVER=1` or `demote` | 0 | The store with a replica (6392). The drill runs the scenarios. Then it kills the primary and `promote-store.sh` promotes the replica (`1`), or it demotes the old primary and keeps it alive (`demote`). It looks for every process's subscription on the new primary, and runs the scenarios again (D-34, O-6). `demote` runs the scenarios only, not the bots |
+| `MYSQL_FAILOVER=1`, `demote` or `freeze` | 0 | Two MySQL servers of the drill's own (3307 and 3308, with GTIDs, the replica 30 s behind). The drill runs the scenarios. Then the primary is killed (`1`), stopped by SIGSTOP with platform's first answer timed (`freeze`, O-9), or handed over and fenced (`demote`); `promote-mysql.sh` promotes the replica; the scenarios run again. Then the old primary is rebuilt by clone and handed back to, and the scenarios run a third time (D-35). `freeze` runs the scenarios only, not the bots |
+| `BOTS=<n>[:<s>]` | s = 120 | The load run (07 §4): `n` bots of `tools/BotClient` play for `s` seconds in place of the scenarios. It reports each process's cores, the arena's threads and numbers, and NFR-2 per connection. `ARENA_OPTS` adds to the arena's JVM options |
+| `BOTS` with `FAILOVER=1`, or with `MYSQL_FAILOVER=1` or `demote` | | The failover under load (architecture/02 §6): the primary is killed or handed over halfway through, and the replica promoted 20 s after the bots leave. It checks that every stay is paid once, and times how long a probe was refused |
+| `BOTS` with `SOAK=1` | 0 | The soak (07 §4): stays of `STAYS` seconds (60:300) are played again and again, the duel scenario runs every 30 s, every process is sampled every `SAMPLE_EVERY` s (300), and `tools/SoakJudge` judges from `JUDGE_FROM` s (by default half the run) |
+| `BOTS` with `WORKERS=<k>` | unset | The workers' rate: `k` workers are paused while the bots play, then drain their stays together, timed |
+| `TAKEOVER=1` | 0 | The worker is stopped with the results in flight, then killed, and a second worker takes them over (05) |
+| `WATCH=1` | 0 | The platform watches the four processes and sends alerts to a receiver of the drill's (9194). After the scenarios the drill kills the worker; `TargetDown` must be listed by the admin API and sent within three minutes (04 §12, D-86). Works with `BOTS` too. Not with `TAKEOVER` |
+| `IDLEGUEST=1` | 0 | A guest is made and aged 181 days in the database. A second worker (its metrics on 9193) erases it by retention a minute after it starts (D-87) |
+| `RELEASE`, `JREDIS_JAR`, `JREDIS_CLI_JAR`, `JAVA`, `MYSQLD_BIN`, `DOTNET`, `TOOLS_JAR` | the release under `backend/target/release`, and its own j-redis, runtime and MySQL (for a release without them: j-redis's build, `/opt/jdk21/bin/java` and `/usr/sbin/mysqld`); `/opt/dotnet/dotnet`; the tools' jar | Where things are |
+| `MYSQL_PORT` | 3314 | The development MySQL that the drill's backend uses, and that the drill starts (`dev-mysql.sh`) |
 
-Ports: 6390 j-redis (6392 its replica), 8093 platform, 8094 gateway, 9011 the
-arena, 9195 platform's metrics, 9196 platform's admin API, 9197 the arena's
-metrics, 9198 the gateway's, 9199 the worker's; MySQL 3314, the development MySQL
-(`dev-mysql.sh`, started when it is not running), and 3307 and 3308 for `MYSQL_FAILOVER`; 9193 a second worker's
-metrics with `IDLEGUEST`, 9194 the alerts' receiver with `WATCH`. Every port of the run's modes is tried before
-anything starts (`check-bind.sh`). Logs go to a directory under `TMPDIR`, which the script
-names first. After the run it prints the matcher's metrics, the gateway's
-latency to platform, the arena's log, and the database's view of the last
-match of each mode.
+**Ports.**
+
+| Port | What |
+|---|---|
+| 6390, 6392 | j-redis; its replica with `FAILOVER` |
+| 8093, 8094, 9011 | platform, the gateway, the arena |
+| 9195, 9196 | platform's metrics, platform's admin API |
+| 9197, 9198, 9199 | the metrics of the arena, the gateway and the worker |
+| 3314 | the development MySQL (`dev-mysql.sh`), started when it is not running |
+| 3307, 3308 | the drill's own MySQL servers, with `MYSQL_FAILOVER` |
+| 9193 | a second worker's metrics, with `IDLEGUEST` |
+| 9194 | the alerts' receiver, with `WATCH` |
+| 8095, 8096, 9095 | nginx in front, with `FRONT`: for 80, 443 and 9001 |
+
+Before anything starts, the drill tries every port that the run's modes use (`check-bind.sh`), and names one that is
+in use or that a policy of the machine refuses. Logs go to a directory under `TMPDIR`, which the script names first.
+After the run it prints the matcher's metrics, the gateway's latency to platform, the arena's log, and the
+database's view of the last match of each mode.
 
 ## Built so far
 
-08 §7, steps 1 to 4, and §8: the wire, the world, the match connection, the
-API and the lobby; the own tank's prediction, its movement rule held bit for
-bit to a trajectory the server's own room wrote
-(`backend/arena/src/test/resources/motion-2026.txt`); what the Unity layer
-draws at a render tick, the sticks to an input and the account kept across
-launches; and the Unity package's scripts, compiled against stubs and not yet
-run in Unity. The decoder is checked against every decoded field of every
-[golden vector](../protocol-spike/vectors/vectors.txt), the same file the
-server's tests read; the world against the server's reference client, down to
-its rounding (Java rounds half up, .NET to even, and a bullet at heading 400
-seventeen ticks on is where the two differ). The connection is checked against
-a scripted arena for every kick, a desync, resume backoff and its minute, input
-cadence and pings, and against the real arena by the drill, plaintext and TLS.
-The API and the lobby go the whole path in the drill: log in, the lobby's match
-request, a match, and the worker's reward read back from the inventory.
+08 §7, steps 1 to 4, and §8 are built:
 
-What 08 says a client does and the package's scripts do not do yet (a cold
-resume's app half, what follows `Kick(2)`, `Kick(4)` and `Kick(5)`, the lobby's
-endpoints in turn, `Retry-After`, refetching after a lobby reconnect) is listed
-in [08 §8](../docs/detailed-design/08-client.md#not-in-the-packages-scripts-yet).
+- the wire, the world, the match connection, the API and the lobby;
+- the prediction of the player's own tank. Its movement rule matches, bit for bit, a trajectory that the server's own
+  room wrote (`backend/arena/src/test/resources/motion-2026.txt`);
+- what the Unity layer draws at a render tick, the sticks turned into an input, and the account kept across launches;
+- the Unity package's scripts. They are compiled against stubs and by Unity 2019.4.28f1's own compiler, but not yet
+  run in Unity.
+
+How it is checked:
+
+- **The decoder** against every decoded field of every [golden vector](../protocol-spike/vectors/vectors.txt), the
+  same file that the server's tests read.
+- **The world** against the server's reference client, down to its rounding: Java rounds half up and .NET rounds
+  half to even, and a bullet at heading 400, seventeen ticks on, is where the two differ.
+- **The connection** against a scripted arena: every kick, a desync, the resume backoff and its minute, the input
+  cadence and the pings. Against the real arena by the drill: plaintext, TLS, and through nginx.
+- **The API and the lobby** along the whole path in the drill: log in, the lobby's match request, a match, and the
+  worker's reward read back from the inventory.
+
+What 08 says a client does, and the package's scripts do not do yet, is listed in
+[08 §8](../docs/detailed-design/08-client.md#not-in-the-packages-scripts-yet): a cold resume's part in the app,
+what follows `Kick(2)`, `Kick(4)` and `Kick(5)`, the lobby's endpoints tried in turn, `Retry-After`, and fetching
+the queue and the party again after the lobby reconnects.
 
 ## Drill records
 
-**The duel, 2026-09-27**: two players in the lobby queued for a duel, were
-matched by `evt.match.found` within a second, and found the match by
-`GET /v1/queue` as well; both joined the room made for it a millisecond apart,
-and the three minutes ended it in a draw, `Kick(6)` to both, the result in
-MySQL with each placed first and a rated duel counted. With only one of the two
-going, the join window ended it after 30 s as a walkover, recorded unrated and
-unpaid. The drill prints the database's view of the last duels. Its first run
-found T-13: the second player was refused as the room let the first in
+What the live drills showed, by date. Two of them found a defect on their first run (T-13 and T-16), which the
+[defect register](../docs/defects.md#4-concurrency) records.
+
+**The duel, 2026-09-27.** Two players in the lobby queued for a duel. `evt.match.found` matched them within a
+second, and `GET /v1/queue` found the match as well. Both joined the room made for it, a millisecond apart. The
+three minutes ended it in a draw: `Kick(6)` to both, and the result in MySQL with each placed first and a rated duel
+counted. With only one of the two going, the join window ended it after 30 s as a walkover, recorded unrated and
+unpaid. The drill prints the database's view of the last duels. Its first run found T-13: the room let the first
+player in and refused the second ([defects](../docs/defects.md#4-concurrency)).
+
+**Parties and team-vs-team, 2026-09-29.** Six players were in the lobby. One invited two, who accepted, and each of
+the three was told about the party of three. A member's queue join was refused `in_party`, and the leader's join for
+a duel `party_too_big`. The leader queued the party for team-vs-team, and both members were told. One member left the
+queue, which took the party out and told the other two. The leader queued it again, and three more players queued
+alone. All six were matched to one arena and joined its room within 3 ms: the party on team 1, the three alone on
+team 2. Nobody fired. The five minutes ended it at 299 s, a draw, with `Kick(6)` to all six. Each was paid for taking
+part and counted a rated team match. No rating moved, because a draw between equal teams moves none. The party
+outlived the match. The drill prints the database's view of the last team match, by team.
+
+**The confirm step, 2026-09-29.** Every scenario that queues is now asked `evt.match.ready` and accepts before its
+match is made. The duel, the walkover and the six of the party all passed this way. In `decline`, one of two
+players declined. The other was told it was queued again, and nobody was sent to a room. `GET /v1/queue` had said
+`confirming` with the time left, and the player who declined was refused `queue_locked`. Its first run found T-16:
+the six of the party accepted together and overtook one another, and the sixth was refused
 ([defects](../docs/defects.md#4-concurrency)).
 
-**Parties and team-vs-team, 2026-09-29**: six players in the lobby. One invited
-two, who accepted, and each of the three was told the party of three. A
-member's queue join was refused `in_party`, and the leader's for a duel
-`party_too_big`. The leader queued the party for team-vs-team, and both members
-were told; one member left the queue, which took the party out and told the
-other two; the leader queued it again, and three more queued alone. All six
-were matched to one arena, joined its room within 3 ms, and found the party on
-team 1 and the three alone on team 2. Nobody fired: the five minutes ended it at
-299 s, a draw, `Kick(6)` to all six, each paid for taking part and counted a
-rated team match with no rating moved, as a draw between equal teams moves
-none; the party outlived the match. The drill prints the database's view of the
-last team match, by team.
+**Ranked free-for-all, 2026-09-29.** Eight players queued alone, were asked about one match, accepted, and joined
+its room. Each was on team 0, and the Welcome said mode 3. Nobody fired. The four minutes ended it at 239 s: all
+eight had the same score, so all were placed first, with `Kick(6)` to each. Each was paid for taking part and counted
+one rated free-for-all. No rating moved, because a draw among equals moves none. The drill prints the last
+free-for-all's view.
 
-**The confirm step, 2026-09-29**: every scenario that queues is now asked
-`evt.match.ready` and accepts before its match is made: the duel, the walkover
-and the six of the party all passed so. In `decline`, one of two declined: the
-other was told it was queued again, nobody was sent to a room, `GET /v1/queue`
-had said `confirming` with the time left, and the one who declined was refused
-`queue_locked`. Its first run found T-16: the six of the party accepting
-together overtook one another, and the sixth was refused
-([defects](../docs/defects.md#4-concurrency)).
+**Co-op, 2026-09-29.** A party of two and one player alone queued for co-op. They were asked about one match as one
+team, accepted, and joined its room, each on team 1, the Welcome saying mode 4. They drove toward where the waves
+come, without firing. The first wave came into view, and its hunting tanks killed all three, 24 s after it was seen
+and 33 s into the match. The wipe ended it. Each was placed first with one death and paid for taking part, and no
+rating moved.
 
-**Ranked free-for-all, 2026-09-29**: eight players queued alone, were asked
-about one match and accepted, and joined its room, each team 0, the Welcome
-saying mode 3. Nobody fired: the four minutes ended it at 239 s, all eight on
-the same score and so all placed first, `Kick(6)` to each; each was paid for
-taking part and counted one rated free-for-all, no rating moved, as a draw
-among equals moves none. The drill prints the last free-for-all's view.
-
-**Co-op, 2026-09-29**: a party of two and one player alone queued for co-op, were
-asked about one match as one team, accepted, and joined its room, each team 1,
-the Welcome saying mode 4. They drove toward where the waves come, without
-firing: the first wave came into view, and its hunting tanks killed all three,
-24 s after it was seen, 33 s into the match. The wipe ended it; each was placed
-first with one death, paid for taking part, and no rating moved.
-
-**Phrases, 2026-09-29** (docs 01 §9): in the public arena, the phrase list
-platform served had the version the Welcome named, sixteen phrases; "Hello!"
-said came back to its speaker by their own handle and name, a second said at
-once was dropped without a kick, and one two seconds on was heard. In `coop`,
-a call for help from one of the three reached all three, by name, before the
-first wave came. Before the queue, the party of two said "Good luck!" in the
-lobby: both heard it, the third player did not, and a second at once was
+**Phrases, 2026-09-29** (docs 01 §9). In the public arena, the phrase list that platform served had the version
+that the Welcome named: sixteen phrases. "Hello!", once said, came back to its speaker by their own handle and name.
+A second phrase said at once was dropped without a kick, and one said two seconds later was heard. In `coop`, a call
+for help from one of the three reached all three, by name, before the first wave came. Before the queue, the party
+of two said "Good luck!" in the lobby. Both heard it, the third player did not, and a second phrase said at once was
 refused `too_soon`.

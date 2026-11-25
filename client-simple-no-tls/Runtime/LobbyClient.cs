@@ -64,7 +64,7 @@ namespace Backend.Client.Simple
         private DateTime _lastSent;
         private string _refused;
 
-        /// <param name="url"><c>ws://192.168.1.20/lobby</c>: a backend run plain (PLAIN=1); this client has no TLS</param>
+        /// <param name="url"><c>ws://192.168.1.20/lobby</c>: the site's 80, or a backend run plain (PLAIN=1); this client has no TLS</param>
         public LobbyClient(string url)
         {
             if (!url.StartsWith("ws://", StringComparison.Ordinal))

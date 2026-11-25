@@ -36,7 +36,7 @@ namespace Backend.Client.Simple
         private readonly HttpClient _client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         private readonly string _baseUrl;
 
-        /// <param name="baseUrl">the API's address in clear, <c>http://192.168.1.20</c>: a backend run plain (PLAIN=1)</param>
+        /// <param name="baseUrl">the API's address in clear, <c>http://192.168.1.20</c>: the site's 80, or a backend run plain (PLAIN=1)</param>
         public BackendHttp(string baseUrl)
         {
             if (!baseUrl.StartsWith("http://", StringComparison.Ordinal))

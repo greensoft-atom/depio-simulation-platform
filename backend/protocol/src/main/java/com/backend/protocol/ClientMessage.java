@@ -50,8 +50,8 @@ public final class ClientMessage {
     public static final int MOVE_RIGHT = 8;
 
     /**
-     * An input's {@code seq} is a 24-bit counter that wraps: at 20 inputs a second that is
-     * nine days, which an open match on a server that is never restarted can reach.
+     * An input's {@code seq} is a 24-bit counter that wraps: at ten inputs a second that is
+     * about 19 days, which an open match on a server that is never restarted can reach.
      * Everything that compares or subtracts seqs does it modulo 2^24.
      */
     public static final int INPUT_SEQ_MASK = 0xFFFFFF;

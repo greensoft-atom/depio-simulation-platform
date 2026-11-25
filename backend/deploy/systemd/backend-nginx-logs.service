@@ -1,4 +1,4 @@
-# Rotates nginx's logs (docs/operations/01-deploy.md §7, D-85, O-45): each log renamed with a UTC stamp,
+# Rotates nginx's logs (docs/operations/01-deploy.md §4, D-85, O-45): each log renamed with a UTC stamp,
 # nginx told to reopen them, the renamed files compressed, and rotated files older than KEEP_DAYS deleted.
 # Run nightly by backend-nginx-logs.timer on every machine, since every one runs nginx (D-82); the front's
 # access.log grows about a thousand lines a second at 10 000 players. KEEP_DAYS, 1 to 365: 14 is long

@@ -1,20 +1,30 @@
 # 10 — Client library: `j-redis-client`
 
-This document explains how the client works inside. For a hands-on guide with
-runnable examples, see [guide/05-client-guide.md](guide/05-client-guide.md).
+This page explains how the Java client library, `j-redis-client`, works inside.
+It is for engineers who change the client, and for application developers who
+need to know exactly how it behaves under timeouts, failures and failover. It
+covers the design principles, the classes, the API, how replies are matched to
+requests, timeouts and reconnects, following a new primary, pub/sub,
+transactions, blocking commands, the blocking facade, embedded mode, the
+threading rules, configuration and metrics. For a hands-on guide with runnable
+examples, see [guide/05-client-guide.md](guide/05-client-guide.md).
 
 ## 1. Principles
 
 - **The only client.** No third-party Redis client library is used anywhere:
   not in applications, not in tools, not in tests (D-14). `j-redis-cli`, the
   benchmark and every test use this library.
-- **Non-blocking first.** Latency-critical threads (event loops, per-session
-  worker threads) must never block, so the core API returns `CompletableFuture`s.
-  A sync facade on top serves ordinary worker threads.
-- **No extra dependencies.** Netty 4.1.122 and the shared RESP codec from
+- **Non-blocking first.** Latency-critical threads (event loops, worker threads
+  that serve one session each) must never block. So the core API returns
+  `CompletableFuture`s. A blocking ("sync") facade on top of it serves ordinary
+  worker threads.
+- **No extra dependencies.** The client needs only Netty (4.1.122 in j-redis's
+  own build) and the shared RESP (REdis Serialization Protocol) codec from
   `j-redis-common`. It can share the application's existing Netty event loops.
-- **Same API, embedded or remote.** Tests run the real engine in-process with no
-  socket and no code changes ([§10](#10-embedded-mode)).
+  Inside the backend, the backend's build puts it on Netty 4.2 with the rest of
+  the backend (`backend/pom.xml`).
+- **The same API, embedded or remote.** Tests run the real engine in the same
+  process, with no socket and no code changes ([§10](#10-embedded-mode)).
 
 ## 2. Structure
 
@@ -23,17 +33,17 @@ com.jredis.client
 ├── JRedisClient          entry point; command connection(s); typed + generic commands (AsyncCommands)
 ├── JRedisSync            blocking facade (client.sync())
 ├── JRedisPubSub          dedicated subscriber connection (client.pubSub())
-├── JRedisBlocking        dedicated connection for BLPOP / BLMOVE / BZPOPMIN (client.blocking())
+├── JRedisBlocking        dedicated connection for BLPOP / BLMOVE / BZPOPMIN / XREAD(GROUP) BLOCK (client.blocking())
 ├── Transaction           MULTI … EXEC builder (client.multi())
 ├── LeasedConnection      exclusive connection for WATCH (client.withLeasedConnection(...))
-├── SetArgs, ScanResult, ScoredMember, ZAround      argument and result types
+├── SetArgs, XAddArgs, ScanResult, ScoredMember, ZAround, Streams   argument and result types
 ├── ClientMetrics         counters and per-command latency histograms
 ├── ThreadGuard           marks threads on which the sync facade must refuse to run
 ├── JRedisException       ├─ JRedisServerException    (-ERR …, prefix())
 │                         ├─ JRedisTimeoutException
 │                         ├─ JRedisConnectionException (outcome unknown)
 │                         └─ JRedisClosedException
-└── Connection, LeasePool, ReplyDecoder, …  (package-private internals)
+└── Connection, LeasePool, PrimaryFinder, ReplyDecoder, …  (package-private internals)
 
 com.jredis.common.Reply   SIMPLE, ERROR, INTEGER, BULK, ARRAY, NULL
 
@@ -41,7 +51,9 @@ com.jredis.embedded       module j-redis-embedded, so the client jar never depen
 └── JRedisEmbedded, EmbeddedConfig
 ```
 
-All exceptions are unchecked.
+All exceptions are unchecked. `XAddArgs` and `Streams` arrived with streams
+(2.1); `PrimaryFinder`, which finds the primary among several addresses,
+arrived with replication (2.2).
 
 ## 3. API
 
@@ -67,15 +79,30 @@ CompletableFuture<Reply>   r   = client.send("J.ZAROUND", "lb:weekly:points", "u
 
 - `start()` connects; nothing connects before it. A request sent to a client
   that was never started fails with "call start() first". Calling `start()`
-  again is harmless.
+  again does no harm.
 - Typed methods cover the common commands; `send` covers every other one.
-- A server error reply completes the future exceptionally with
-  `JRedisServerException`; `prefix()` returns `WRONGTYPE`, `OOM`, `MISCONF`…
-- Inside an `EXEC` result, a failed command is a `Reply` of type `ERROR`, because
-  the other commands still ran ([07 §3.2](07-pubsub-blocking-transactions.md#32-exec)).
+- When the server replies with an error, the future completes exceptionally
+  with `JRedisServerException`. Its `prefix()` returns the error's first word:
+  `WRONGTYPE`, `OOM`, `MISCONF`…
+- Inside an `EXEC` result, a failed command is a `Reply` of type `ERROR`,
+  because the other commands still ran
+  ([07 §3.2](07-pubsub-blocking-transactions.md#32-exec)).
 
-**Streams (2.1)** ([15](15-streams.md)) have typed methods too, their answers as
-the records of `Streams`:
+**Commands a command connection refuses.** A command connection is shared by
+many threads, so `send` (and every typed method) refuses the commands that
+would stall it or change its state. Each throws `IllegalArgumentException`
+before anything is sent:
+
+| Commands | Use instead |
+|---|---|
+| `BLPOP`, `BRPOP`, `BLMOVE`, `BRPOPLPUSH`, `BZPOPMIN`, `BZPOPMAX`; `XREAD` and `XREADGROUP` with `BLOCK` | `client.blocking()` (§8) |
+| `SUBSCRIBE`, `PSUBSCRIBE`, `UNSUBSCRIBE`, `PUNSUBSCRIBE` | `client.pubSub()` (§6) |
+| `MULTI`, `EXEC`, `DISCARD` | `client.multi()`, so that the transaction is written atomically (§7) |
+| `WATCH`, `UNWATCH` | `client.withLeasedConnection(...)` (§7) |
+| `QUIT`, `RESET`, `SELECT`, `AUTH`, `HELLO` | Nothing: they would change the shared connection's state |
+
+**Streams (2.1)** ([15](15-streams.md)) have typed methods too. Their results
+are the records in `Streams`:
 
 ```java
 String id = client.sync().xadd("s:match-result", XAddArgs.minId(oldestId).approximately(), "*", "e", json);
@@ -87,18 +114,20 @@ Streams.AutoClaim stale = client.sync().xautoclaim("s:match-result", "rewards", 
 List<Streams.Group> groups = client.sync().xinfoGroups("s:match-result");     // lag per group
 ```
 
-An entry's fields keep their order; a pending entry whose stream entry is gone
-comes back with null fields. A read that finds nothing answers an empty map.
-Waiting for entries is `client.blocking()`'s (§8): `XREAD` and `XREADGROUP`
-with `BLOCK` on the shared connection are refused, as the list pops are. The
-rest (`XINFO STREAM`, `XGROUP SETID`, …) is `send`.
+- An entry's fields keep their order.
+- A pending entry whose stream entry is gone comes back with null fields.
+- A read that finds nothing returns an empty map.
+- To wait for entries, use `client.blocking()` (§8). On the shared connection,
+  `XREAD` and `XREADGROUP` with `BLOCK` are refused, as the blocking list pops
+  are.
+- Everything else (`XINFO STREAM`, `XGROUP SETID`, …) goes through `send`.
 
 ## 4. Correlating replies
 
-RESP has no request ids; the server answers each connection **in request
-order** ([02 §3](02-architecture.md#ordering-guarantee)). The client therefore
-keeps a FIFO of pending requests per connection and matches each reply to the
-head of the queue.
+RESP has no request ids. The server answers each connection **in request
+order** ([02 §3](02-architecture.md#ordering-guarantee)). So the client keeps a
+first-in, first-out (FIFO) queue of pending requests for each connection, and
+matches each reply to the request at the head of the queue.
 
 ```
 send (any thread)                                  receive (event loop)
@@ -111,83 +140,105 @@ eventLoop.execute(() -> {                          p = pending.poll()
 })                         // loop iteration
 ```
 
-- The pending queue is touched **only on the connection's event loop**, so it
+- Only the connection's event loop touches the pending queue, so the queue
   needs no lock.
 - Commands sent from many threads within one event-loop iteration are written
-  together and flushed once: **automatic pipelining** with no API for it.
-- A reply with nothing pending means the stream is out of sync; the connection
-  is closed rather than risk completing the wrong future.
+  together and flushed once. This is **automatic pipelining**, with no API for
+  it.
+- A reply with nothing pending means the stream of replies is out of step. The
+  client then closes the connection, rather than risk completing the wrong
+  future.
 
 ### What follows from ordering
 
 | Consequence | Handling |
 |---|---|
-| A timed-out request cannot be removed from the middle of the FIFO | It stays, marked; its reply is dropped when it arrives |
-| One slow reply delays every reply behind it (head-of-line) | Busy services use two command connections ([09 §5](09-integration-patterns.md#5-connections-per-process)) |
-| A blocking command would stall the connection indefinitely | Rejected on command connections; use `JRedisBlocking` |
-| `SUBSCRIBE` changes the connection's protocol mode | Rejected on command connections; use `JRedisPubSub` |
+| A timed-out request cannot be removed from the middle of the FIFO | It stays, marked as timed out; its reply is dropped when it arrives |
+| One slow reply delays every reply behind it (head-of-line blocking) | Busy services use two command connections ([09 §5](09-integration-patterns.md#5-connections-per-process)) |
+| A blocking command would stall the connection indefinitely | Refused on command connections (§3); use `JRedisBlocking` |
+| `SUBSCRIBE` changes the connection's protocol mode | Refused on command connections (§3); use `JRedisPubSub` |
 | Another thread's command could land between `MULTI` and `EXEC` | A transaction is written as a single event-loop task ([§7](#7-transactions)) |
-| With several command connections, one thread's commands could run out of order, for example `SET` then `EXPIRE` | Each thread is **pinned to one command connection** (thread id modulo the count). It moves to another connection only while its own is down, and requests already sent on it have then failed. Threads spread across the connections (D-19). |
+| With several command connections, one thread's commands could run out of order, for example `SET` then `EXPIRE` | Each thread is **pinned to one command connection** (its thread id modulo the number of connections). It moves to another connection only while its own is down, and the requests already sent on its own have then failed. Threads spread across the connections (D-19). |
 
 ## 5. Timeouts, failures, reconnects
 
 ### Timeouts
 
-Each request carries a deadline. A task on the connection's own event loop
-checks deadlines every 10 ms, so no extra timer thread and no locking are
-needed. On expiry the future fails with `JRedisTimeoutException`, and the
-request stays in the FIFO as described above. When its reply arrives later it
-is dropped, never handed to the next request.
+Each request carries a deadline. Every 10 ms, a task on the connection's own
+event loop checks the deadlines, so no extra timer thread and no locking are
+needed. When a deadline passes, the future fails with `JRedisTimeoutException`,
+and the request stays in the FIFO, as described above. When its reply arrives
+later, the client drops it; it never hands it to the next request.
 
-The connection is treated as **stuck** and closed if 5 requests in a row time
-out, or the oldest pending request has waited more than 3× the timeout. A
-transaction counts as one request here.
+The client treats the connection as **stuck**, and closes it, in two cases:
 
-Futures are failed only after the scan of the pending queue. A callback that
-sends a new request (a retry, say) then cannot disturb the scan, and no
-exception can ever stop the periodic check.
+- 5 requests in a row have timed out; or
+- the oldest pending request has waited more than 3 times the command timeout.
+
+A transaction counts as one request here.
+
+The client fails the futures only after it has scanned the pending queue. So a
+callback that sends a new request (a retry, for example) cannot disturb the
+scan, and no exception can ever stop the periodic check.
 
 ### Connection loss
 
 Every pending request fails with `JRedisConnectionException`. For a write, the
-**outcome is unknown**: the server may or may not have executed it. **The
-library never retries a request by itself**, because retrying `INCR` or `LPUSH`
-could apply it twice. Callers retry only idempotent operations, and should make
-writes idempotent where it matters (the work-queue pattern in
+**outcome is unknown**: the server may or may not have run it. **The library
+never retries a request by itself**, because retrying `INCR` or `LPUSH` could
+apply it twice. Callers retry only idempotent operations (operations that give
+the same result when done twice), and should make writes idempotent where it
+matters (the work-queue pattern in
 [09 §3](09-integration-patterns.md#3-recipes)).
 
-While disconnected, new requests **fail immediately**. A caller that must not
-lose data can react at once, for example by spooling it to local disk, instead
-of waiting for a timeout.
+While the client is disconnected, new requests **fail at once**. A caller that
+must not lose data can then react immediately, for example by spooling the
+data to local disk, instead of waiting for a timeout.
 
 ### Reconnect
 
-Exponential backoff from 100 ms to 5 s with ±20 % jitter. After connecting,
-the handshake is pipelined before any user command: `AUTH default <password>`
-(if configured; a server without a password accepts it too), `CLIENT SETNAME`,
-and `CLIENT SETINFO lib-name j-redis-client lib-ver <v>`. A failed `AUTH` is
-logged as ERROR and retried at the maximum backoff: a misconfiguration should be
-loud, not a tight retry loop. Host names are resolved on a separate thread,
-never on an event loop. A closed connection stays closed, even if a connect
-attempt completes afterwards.
+1. The client waits before each new attempt. The wait grows exponentially from
+   100 ms to 5 s, with ±20 % random jitter.
+2. After it connects, it pipelines a handshake before any user command:
+   - `AUTH default <password>`, if a password is configured (a server without
+     a password accepts it too);
+   - `CLIENT SETNAME <name>`, if a client name is configured. A pub/sub
+     connection adds `-pubsub` to the name and a blocking one `-blocking`, so
+     `CLIENT LIST` shows what each connection is for;
+   - `CLIENT SETINFO LIB-NAME j-redis-client` and
+     `CLIENT SETINFO LIB-VER <version>`.
+3. If `AUTH` fails, the client logs an ERROR and retries at the maximum
+   backoff. A misconfiguration should be loud, not a tight retry loop.
+
+Host names are resolved on a separate thread, never on an event loop. A closed
+connection stays closed, even if a connect attempt completes afterwards.
 
 ### Several addresses: following the primary (2.2)
 
-With `addresses(...)` naming more than one server, a connection first asks each
-of them, on the resolver thread with plain sockets, `AUTH` (if configured) and
-`ROLE`, then connects to the primary with the highest epoch
-([16 §10](16-replication.md#10-clients-following-the-primary)). The highest
-epoch any server has shown, replicas included, is kept for the whole client:
-no connection uses a primary below it, and if none qualifies it retries with
-the usual backoff. A `-READONLY` reply means the primary was demoted: the
-command fails with it, and the connection closes, so the next attempt looks
-again. Blocking and pub/sub connections do the same, and subscriptions are made
-again as after any reconnect.
+`addresses(...)` can name more than one server: a primary and its replicas.
+Then each connection finds the primary before it connects
+([16 §10](16-replication.md#10-clients-following-the-primary)):
+
+1. On the resolver thread, with plain sockets, it sends each server `AUTH` (if
+   a password is configured) and `ROLE`.
+2. It connects to the primary with the highest epoch.
+
+The client keeps, for its whole life, the highest epoch that any server has
+shown, replicas included. No connection uses a primary below that epoch. If no
+server qualifies, the connection retries with the usual backoff.
+
+A `-READONLY` reply means that the primary was demoted. The command fails with
+that error, and the connection closes, so the next attempt looks for the
+primary again. Blocking and pub/sub connections do the same, and the client
+subscribes again, as after any reconnect. Since 2.2.1, a subscriber's
+connection is also pinged every `pubsubPingMillis`; a ping left unanswered
+for three command timeouts closes the connection as a stuck one, and once one
+connection of the client has found a new primary, its other connections follow.
 
 ## 6. Pub/Sub
 
-A dedicated connection, because a RESP2 connection in subscriber mode cannot
-run other commands ([03 §6](03-protocol.md#6-pubsub-frames)).
+Pub/sub uses a dedicated connection, because a RESP2 connection in subscriber
+mode cannot run other commands ([03 §6](03-protocol.md#6-pubsub-frames)).
 
 ```java
 JRedisPubSub ps = client.pubSub();
@@ -197,11 +248,14 @@ ps.psubscribe("group:*", (pattern, channel, message) -> fanOut(channel, message)
 ps.onReconnect(() -> worker.post(Command.resync()));        // messages may have been missed
 ```
 
-- `subscribe` returns a future that completes on the server's confirmation.
-- Listeners run on the event loop; they must hand work off, never block.
-- Subscriptions are remembered and **re-issued after a reconnect**, then
-  `onReconnect` fires. Messages published while disconnected are gone, because
-  Pub/Sub is at-most-once ([07 §1.4](07-pubsub-blocking-transactions.md#14-delivery-guarantees)).
+- `subscribe` returns a future that completes when the server confirms the
+  subscription.
+- Listeners run on the event loop. They must hand work off to another thread,
+  and never block.
+- The client remembers the subscriptions and **makes them again after a
+  reconnect**, then calls the `onReconnect` hook. Messages published while the
+  client was disconnected are gone, because pub/sub delivers at most once
+  ([07 §1.4](07-pubsub-blocking-transactions.md#14-delivery-guarantees)).
   Anything that must not be lost goes through a list.
 
 ## 7. Transactions
@@ -213,19 +267,19 @@ CompletableFuture<List<Reply>> result = client.multi()
         .exec();
 ```
 
-`MULTI`, the queued commands and `EXEC` are encoded together and written in
-**one event-loop task**, so no other request on the connection can interleave;
-otherwise it would silently become part of the transaction. The `+OK` and
-`+QUEUED` replies are consumed internally, and the future completes with the
-`EXEC` array. If a command was rejected while queueing, the future fails with
-`EXECABORT`.
+The client encodes `MULTI`, the queued commands and `EXEC` together, and writes
+them in **one event-loop task**. So no other request on the connection can come
+in between; such a request would otherwise silently become part of the
+transaction. The client consumes the `+OK` and `+QUEUED` replies itself, and
+the future completes with the `EXEC` array. If the server refused a command
+while queueing it, the future fails with `EXECABORT`.
 
 ### `WATCH` needs a leased connection
 
 `WATCH` state belongs to a connection, and between `WATCH` and `EXEC` the
-caller reads and decides. Nobody else may use the connection meanwhile, so it
-is leased exclusively from a small pool (up to 4, created on demand). This is a
-blocking pattern for ordinary worker threads:
+caller reads data and decides. Nobody else may use the connection meanwhile.
+So the client leases it exclusively from a small pool: up to 4 connections,
+created on demand. This is a blocking pattern, for ordinary worker threads:
 
 ```java
 boolean added = client.withLeasedConnection(conn -> {
@@ -241,12 +295,14 @@ boolean added = client.withLeasedConnection(conn -> {
 });
 ```
 
-The lease is reset with `UNWATCH` before it goes back to the pool, even if the
-callback throws. If the connection was re-established between `WATCH` and
-`EXEC`, the server no longer watches anything. `EXEC` then fails with
-`JRedisConnectionException` instead of committing unchecked; read again and
-retry. `withLeasedConnection` refuses to run on a client event-loop thread or a
-thread marked non-blocking.
+- Before the lease goes back to the pool, the client resets it with `UNWATCH`,
+  even if the callback throws.
+- If the connection was re-established between `WATCH` and `EXEC`, the server
+  no longer watches anything. `EXEC` then fails with
+  `JRedisConnectionException`, instead of committing without the check. Read
+  again and retry.
+- `withLeasedConnection` refuses to run on one of the client's event-loop
+  threads, or on a thread marked non-blocking.
 
 ## 8. Blocking commands
 
@@ -256,16 +312,19 @@ b.blmove("q:jobs", "q:jobs:processing", false, true, 5.0)   // RIGHT → LEFT, w
  .thenAccept(item -> { if (item != null) jobWorker.submit(item); });
 ```
 
-Stream reads wait the same way, for `BLOCK` milliseconds: `b.xreadgroup(5_000,
-"rewards", "worker-1", 64, Map.of("s:match-result", ">"))` completes with the
-entries per stream, or an empty map when the time runs out.
+Stream reads wait the same way, for `BLOCK` milliseconds:
+`b.xreadgroup(5_000, "rewards", "worker-1", 64, Map.of("s:match-result", ">"))`
+completes with the entries for each stream, or with an empty map when the time
+runs out.
 
-One blocking command is outstanding per `JRedisBlocking` at a time; further
-calls queue behind it. Each is sent from a fresh task, so a long queue drains
-cleanly, with every call failing, when the connection is lost. The client-side
-timeout is the server timeout plus the normal command timeout. A server timeout
-of `0` (wait forever) disables it. `isConnected()` shows the connection's
-state.
+- Only one blocking command is outstanding on a `JRedisBlocking` at a time.
+  Later calls queue behind it.
+- Each call is sent from a fresh task. So when the connection is lost, a long
+  queue drains cleanly, with every call failing.
+- The client-side timeout is the server timeout plus the normal command
+  timeout. A server timeout of `0` (wait forever) turns the client-side
+  timeout off.
+- `isConnected()` shows the connection's state.
 
 ## 9. Sync facade
 
@@ -274,13 +333,13 @@ JRedisSync sync = client.sync();
 String userId = sync.get("sess:" + token);   // blocks up to the command timeout
 ```
 
-Every method is `future.get(timeout)` with the exception unwrapped. Two guards
+Every method is `future.get(timeout)`, with the exception unwrapped. Two guards
 make misuse fail loudly instead of hanging:
 
 | Guard | Why |
 |---|---|
-| Throws if called on one of the client's own event-loop threads | That thread is the one that must read the reply, so this is a guaranteed deadlock |
-| Throws if the thread is marked non-blocking (`ThreadGuard.markNonBlocking()`) | Latency-critical threads mark themselves at start-up, turning an accidental blocking call into an immediate exception |
+| Throws if called on one of the client's own event-loop threads | That thread is the one that must read the reply, so the call would certainly deadlock |
+| Throws if the thread is marked non-blocking (`ThreadGuard.markNonBlocking()`) | Latency-critical threads mark themselves at start-up. An accidental blocking call then fails at once with an exception |
 
 ## 10. Embedded mode
 
@@ -291,21 +350,22 @@ try (JRedisEmbedded server = JRedisEmbedded.start(EmbeddedConfig.inMemory())) { 
 }
 ```
 
-- Starts the real server (command thread, `Db` and optionally persistence)
-  listening on **Netty's in-VM transport** (`LocalServerChannel`) instead of
-  TCP. The embedded client connects with `LocalChannel`. Both sides run the
-  same pipelines as over the network: RESP encoding, the request decoder,
-  backpressure and reply decoding. So `Reply` objects, ordering and timeouts
-  are identical, and code that works embedded works over TCP. No socket is
-  opened.
-- `EmbeddedConfig.inMemory()` (no persistence, fastest) or
-  `.persistentAt(dir)` (the full AOF). `.clock(new ManualClock(t))` makes TTL
-  tests deterministic, and `.configure(c -> …)` sets any server directive.
-- A fail-stop does not halt the JVM in embedded mode. The engine stops and
-  `fatalError()` returns the reason, which tests assert is null.
+- `JRedisEmbedded` starts the real server (the command thread, the `Db` and
+  optionally persistence). The server listens on **Netty's in-VM transport**
+  (`LocalServerChannel`) instead of TCP, and the embedded client connects with
+  `LocalChannel`. Both sides run the same pipelines as over the network: RESP
+  encoding, the request decoder, backpressure and reply decoding. So `Reply`
+  objects, ordering and timeouts are identical, and code that works embedded
+  works over TCP. No socket is opened.
+- `EmbeddedConfig.inMemory()` runs without persistence and is the fastest.
+  `.persistentAt(dir)` runs with the full AOF (append-only file).
+  `.clock(new ManualClock(t))` makes TTL tests deterministic, and
+  `.configure(c -> …)` sets any server directive.
+- In embedded mode, a fail-stop does not halt the JVM. The engine stops, and
+  `fatalError()` returns the reason. Tests assert that it is null.
 
-This needed no seam beyond the existing one: the server's `NettyServer` can
-listen either on TCP or on a local address.
+This needed no new seam in the server: its `NettyServer` can already listen
+either on TCP or on a local address.
 
 ## 11. The threading contract, by example
 
@@ -324,29 +384,42 @@ jredis.multi()
 Three rules for every callback:
 
 1. Never block: no `join()`, no `sync()`, no I/O.
-2. Never touch state owned by another thread (session state, caches).
-3. Hand the result to its owner thread through that thread's queue.
+2. Never touch state that another thread owns (session state, caches).
+3. Hand the result to its owner thread, through that thread's queue.
 
 ## 12. Configuration
 
+These are the builder's settings (`JRedisClient.builder()`):
+
 | Setting | Default | Notes |
 |---|---|---|
-| `address` | `127.0.0.1:6379` | `localAddress(name)` for embedded mode |
-| `password` | none | Sent with `AUTH` on every (re)connect |
+| `address` | `127.0.0.1:6379` | `address(host, port)`. `localAddress(name)` is for embedded mode |
+| `addresses` | none | `addresses("host:port", …)`: several servers, to follow the primary (§5, 2.2) |
+| `password` | none | Sent with `AUTH` on every connect and reconnect |
 | `clientName` | none | Shown in `CLIENT LIST`. Set it: it makes incidents readable. |
-| `eventLoopGroup` | own group | Share the application's group to save threads |
-| `ioThreads` | 1 | Threads of the client's own group |
+| `eventLoopGroup` | the client's own group | Share the application's group to save threads |
+| `ioThreads` | 1 | The threads of the client's own group |
 | `connectTimeoutMillis` | 2000 | |
 | `commandTimeoutMillis` | 2000 | |
 | `commandConnections` | 1 | 2 for busy services |
-| `reconnectBackoffMillis` | 100 → 5000 | Exponential, ±20 % jitter |
-| `pubsubPingMillis` | 5000 | A subscriber's connection pinged, so one answering nothing is noticed ([16 §10](16-replication.md#10-clients-following-the-primary)); 0, never |
-| `leasePoolMax` | 4 | `WATCH` connections |
-| `callbackExecutor` | event loop | Set an executor if callbacks cannot be kept short |
+| `reconnectBackoffMillis` | 100 → 5000 | `reconnectBackoffMillis(min, max)`. Exponential, with ±20 % jitter |
+| `pubsubPingMillis` | 5000 | How often a subscriber's connection is pinged, so that a server that answers nothing is noticed ([16 §10](16-replication.md#10-clients-following-the-primary)); 0 means never |
+| `leasePoolMax` | 4 | The most `WATCH` connections |
+| `callbackExecutor` | the event loop | Set an executor if callbacks cannot be kept short |
 
 ## 13. Metrics
 
-`client.metrics()` returns counters (`sent`, `received`, `serverErrors`,
-`timeouts`, `connectionLosses`, `reconnects` and `failedFast`) and a latency
-histogram (HdrHistogram, microseconds) per command name via `latency()`.
+`client.metrics()` returns counters and latency histograms:
+
+| Metric | What it counts |
+|---|---|
+| `sent` | Requests sent |
+| `received` | Replies received |
+| `serverErrors` | Error replies from the server |
+| `timeouts` | Requests that timed out |
+| `connectionLosses` | Connections lost |
+| `reconnects` | Reconnections |
+| `failedFast` | Requests failed at once because their connection was not connected |
+| `latency()` | One latency histogram (HdrHistogram, in microseconds) for each command name |
+
 Services export these alongside their own metrics.

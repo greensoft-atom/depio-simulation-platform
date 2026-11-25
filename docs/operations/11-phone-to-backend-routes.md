@@ -1,19 +1,25 @@
 # Phone-to-backend routes
 
-Every connection the Android app opens to the backend, from the phone to the process that answers it, on the site
-and on a development machine; and nginx's part in full: each of its files, each setting in them and why, how the
-install guide and the development scripts change them, its logs, and how it is run and checked. The ports and the
-firewall are [05](05-ports-and-firewall.md)'s, the certificate [06](06-certificates.md)'s; this page draws the
-routes through both.
+This page follows every connection the Android app opens to the backend, from the phone to the process that answers
+it, on the site and on a development machine. It is for operators who run nginx, and for client developers who need
+to know where each request goes. It also describes nginx's part in full: each of its files, each setting in them and
+why, how the install guide and the development scripts change them, its logs, and how it is run and checked. The
+ports and the firewall are [05](05-ports-and-firewall.md)'s, and the certificate is [06](06-certificates.md)'s; this
+page draws the routes through both. Words such as grant, TLS name, PROXY line and match through 80 are defined in the
+[glossary](../glossary.md#6-on-the-wire).
 
-The addresses are the examples', as in 05: the site's public address `203.0.113.10`, a phone at `198.51.100.7`. The
-layout is the launch's one machine ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)): every process on it, nginx alone reachable from outside.
+The addresses are the examples', as in 05: the site's public address is `203.0.113.10`, and a phone is at
+`198.51.100.7`. The layout is the launch's one machine
+([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)):
+every process runs on it, and only nginx can be reached from outside.
 
 ## 1. The three routes
 
-The app opens three connections, all to the site's one public address, and every one goes through nginx: over TLS,
-which nginx ends, on 443 and 9001 ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)); or, for a client without TLS, all three in clear on 80, a
-match asking for its arena by name ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)):
+The app opens three connections: ① the API, ② the lobby and ③ a match. All three go to the site's one public
+address, and every one goes through nginx. A client with TLS uses 443 and 9001, where nginx ends TLS
+([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)).
+A client without TLS uses 80 for all three, in clear; its match asks nginx for its arena by name
+([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)):
 
 ```mermaid
 flowchart LR
@@ -34,7 +40,8 @@ flowchart LR
     phone -->|"①②③ in clear: /v1/…, /lobby,<br/>GET /match/a1.arena.internal"| p80
     p443 -->|"/v1/: HTTP"| pf
     p443 -->|"/lobby: WebSocket"| gw
-    p80 -->|"/v1/, /lobby: as 443's"| pf
+    p80 -->|"/v1/: as 443's"| pf
+    p80 -->|"/lobby: as 443's"| gw
     p80 -->|"/match/: the request, 101, then TCP"| a1
     gw -->|"its requests"| pf
     p9001 -->|"the PROXY line, then TCP"| a1
@@ -42,9 +49,12 @@ flowchart LR
     p9001 -.->|"a3.arena.internal"| a3
 ```
 
-The thick arrows are TLS, from the phone to nginx; the thin ones are plain: behind nginx on `127.0.0.1`, where every
-process but nginx listens, and a client without TLS to 80, whose `/lobby` goes to the gateway as 443's does. An arrow
-is who opens the connection; the answers come back on it.
+How to read the diagram:
+- The thick arrows are TLS, from the phone to nginx.
+- The thin arrows are plain: behind nginx, on `127.0.0.1`, where every process but nginx listens; and from a client
+  without TLS to 80, whose `/v1/` and `/lobby` go where 443's go.
+- The dotted arrows are the other arenas, reached the same way by their own names.
+- An arrow points from the side that opens the connection. The answers come back on the same connection.
 
 | Route | The app dials | It checks the certificate for | nginx | Then |
 |---|---|---|---|---|
@@ -55,9 +65,9 @@ is who opens the connection; the answers come back on it.
 | ② in clear | `ws://203.0.113.10/lobby` | nothing | the same `/lobby` | the gateway |
 | ③ in clear | TCP to `203.0.113.10:80`, `GET /match/<the grant's tlsName>`, then the match once 101 is read | nothing | `location ~ ^/match/`: the arena that name maps to, by the same list as 9001's, the request passed on; an unknown name, 404 | the arena, which reads the request, answers 101, and takes the ticket as on 9001 |
 
-What travels in clear is readable on the way, and usable by whoever reads it first: passwords, session tokens, join
-tickets. The owner chose to serve it (Q-64). Nothing else on the machine is reachable from the internet: every other
-process is bound to `127.0.0.1` ([03 §6 to §8](03-install-guide.md)).
+What travels in clear can be read by anyone on the way, and used by whoever reads it first: passwords, session
+tokens, join tickets. The owner chose to serve it (Q-64). Nothing else on the machine can be reached from the
+internet: every other process is bound to `127.0.0.1` ([03 §6 to §8](03-install-guide.md)).
 
 ## 2. One session, in order
 
@@ -87,18 +97,18 @@ sequenceDiagram
     S-->>G: pushed
     G-->>P: evt.match.found: 203.0.113.10, 9001, a1.arena.internal, ticketId
     P->>N: TLS to :9001, giving a1.arena.internal
-    N->>A: PROXY TCP4 198.51.100.7 10.0.0.1 51234 9011
+    N->>A: PROXY TCP4 198.51.100.7 10.0.0.1 51234 9001
     P->>A: Join(ticketId), through nginx
     A->>S: the ticket claimed, once
     A-->>P: Welcome, then 15 frames a second
 ```
 
-Every message from the app crosses nginx; the diagram draws the hop only where nginx adds something. A device's
-later launches skip the guest and log in with the key it keeps (`AccountKeeper`). A match found arrives on the lobby,
-or answers `GET /v1/queue` or `POST /v1/match-requests`: `arenaHost` the site's address, `arenaPort` 9001, `tls`
-true, the arena's `tlsName`, and a `ticketId`.
+Every message from the app crosses nginx; the diagram draws that hop only where nginx adds something. On its later
+launches a device skips the guest step, and logs in with the guest key it keeps (`AccountKeeper`). A match found
+arrives on the lobby (`evt.match.found`), or as the answer to `GET /v1/queue` or `POST /v1/match-requests`. It holds
+`arenaHost`, the site's address; `arenaPort`, 9001; `tls`, true; the arena's `tlsName`; and a `ticketId`.
 
-Without TLS the session is the same in clear on 80, but for its match, which asks for the arena by name:
+Without TLS, the session is the same, in clear on 80, except for its match, which asks nginx for the arena by name:
 
 ```mermaid
 sequenceDiagram
@@ -116,21 +126,22 @@ sequenceDiagram
 
 ## 3. Limits and timeouts
 
-nginx always waits longer than the process behind it, so the process decides when a connection is dead, and says
-why in its own log and metrics.
+nginx always waits longer than the process behind it. So the process, not nginx, decides when a connection is dead,
+and it says why in its own log and metrics.
 
 | Route | The app | nginx | The process behind |
 |---|---|---|---|
-| ① the API | gives up after 10 s | 15 s for an answer; a body up to 4 KiB; the four sign-up and login paths 2 a second an address, 30 at once, then 429 | the platform: a body up to 4 KiB; password attempts limited precisely, nginx's limit only a flood guard in front |
-| ② the lobby | a ping every 30 s, lost with no answer in 10 s; reconnects after 1 s, doubling to 30 s | closes after 150 s without a byte | the gateway: the token within 5 s; closes a lobby silent for 120 s |
+| ① the API | gives up after 10 s | 15 s for an answer; a body up to 4 KiB; the four sign-up and login paths: 2 a second per address, a burst of 30, then 429 | the platform: a body up to 4 KiB; password attempts limited precisely, nginx's limit only a flood guard in front of it |
+| ② the lobby | a ping every 30 s; the lobby counts as lost when a ping has no answer in 10 s; it reconnects after about 1 s, the wait doubling up to 30 s, each wait spread by ±50 % | closes after 150 s without a byte | the gateway: the token within 5 s; closes a lobby silent for 120 s |
 | ③ a match | 5 s to dial; a ping every 10 s in every state | 5 s to reach the arena; closes after 60 s without a byte | the arena: `Join` within 10 s; drops a connection after 30 s without a frame |
-| ③ in clear, `/match/` | 10 s to dial; nginx's answer read to its blank line, 4 KiB at most; then as ③ | the same: 5 s to reach the arena, 60 s without a byte either way | the same, after its request: 1 KiB at most, nginx's |
+| ③ in clear, `/match/` | `client-simple-no-tls`: 10 s to dial; nginx's answer read up to its blank line, 4 KiB at most; then as ③ | the same: 5 s to reach the arena, 60 s without a byte either way | the same, once it has read nginx's request, 1 KiB at most |
 
 ## 4. nginx, file by file
 
-The release's nginx (`/opt/backend/nginx`, 1.30.5, OpenSSL 3.5.9 compiled in, built for glibc 2.28,
-[D-100](../architecture/03-decision-log.md#d-100--the-releases-nginx-is-built-on-rocky-8-glibc-228-the-floor-mysql-already-sets)) reads six files, which the release ships in `nginx-conf/`
-and the install copies to `/etc/backend/nginx/`. They include each other so:
+The release's nginx is in `/opt/backend/nginx`: version 1.30.5, with OpenSSL 3.5.9 compiled in, built for glibc 2.28
+([D-100](../architecture/03-decision-log.md#d-100--the-releases-nginx-is-built-on-rocky-8-glibc-228-the-floor-mysql-already-sets)).
+It reads six configuration files. The release ships them in `nginx-conf/`, and the install copies them to
+`/etc/backend/nginx/`. They include each other like this:
 
 ```mermaid
 flowchart TD
@@ -150,8 +161,9 @@ flowchart TD
     st -->|"9001's map"| ar
 ```
 
-The same files go on every machine, so any can be the front; only the addresses in `backend-upstreams.conf` and
-`backend-arenas.conf`, and the address in `server_name`, are the site's own (§4.7).
+The same files go on every machine, so that any machine can be the front. Only three things in them are the site's
+own: the addresses in `backend-upstreams.conf`, the names and addresses in `backend-arenas.conf`, and the address in
+`server_name` (§4.7).
 
 ### 4.1 `nginx.conf`, the main file
 
@@ -167,7 +179,7 @@ The same files go on every machine, so any can be the front; only the addresses 
 | `log_format backend` | `$remote_addr [$time_local] "$request" $status $body_bytes_sent $request_time $upstream_addr "$http_user_agent"` | `$upstream_addr` says which machine served each request, behind the front |
 | `access_log` | `/var/log/backend-nginx/access.log backend` | |
 | `sendfile`, `tcp_nopush` | `on`, `on` | nginx's usual pair |
-| `keepalive_timeout` | `65s` | How long a phone's idle HTTPS connection is kept for its next call |
+| `keepalive_timeout` | `65s` | How long a phone's idle connection, HTTPS or HTTP, is kept for its next call |
 | `include` | `backend.conf` in `http`, `backend-stream.conf` in `stream` | The two servers |
 
 ### 4.2 `backend.conf`, the server on 443 and 80
@@ -180,14 +192,14 @@ At the top, outside the server:
 | `limit_req_status` | `429` | What a phone over it is answered |
 | `server_tokens` | `off` | No version in errors or headers |
 | `include` | `backend-upstreams.conf` | The platforms and the gateways (§4.4) |
-| `map $backend_match_name $backend_match_arena` | `include backend-arenas.conf`; `default ""` | A match in clear names its arena in its path, the grant's `tlsName`: the name to its address by 9001's list (§4.5) |
+| `map $backend_match_name $backend_match_arena` | `include backend-arenas.conf`; `default ""` | A match in clear names its arena in its path: the grant's `tlsName`. The map turns that name into the arena's address, by the same list as 9001's (§4.5). A name not in the list maps to nothing |
 
 The server:
 
 | Setting | Value | Why |
 |---|---|---|
 | `listen` | `443 ssl`, `[::]:443 ssl`, `80`, `[::]:80` | IPv4 and IPv6; 80 in clear for a client without TLS, the same locations as 443's ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)) |
-| `server_name` | `203.0.113.10` | The site's address, which the install puts in place of the example's; the one server on 443 and 80 either way |
+| `server_name` | `203.0.113.10` | The site's address, which the install writes in place of the example's. This is the only server on 443 and 80, so it answers every request there whatever name it carries; `install-certificate.sh` reads the name, which the certificate must hold |
 | `ssl_certificate`, `ssl_certificate_key` | `/etc/backend/tls/fullchain.pem`, `/etc/backend/credentials/privkey.pem` | Installed by `install-certificate.sh`, which checks both before nginx sees them; the key lives with the other secrets, root's |
 | `ssl_protocols` | `TLSv1.2 TLSv1.3` | Android before 10 has no 1.3 |
 | `ssl_ciphers` | ECDHE with AES-GCM or ChaCha20-Poly1305, ECDSA and RSA | TLS 1.2 with forward secrecy and authenticated encryption alone; 1.3 has nothing else |
@@ -228,8 +240,9 @@ As the release ships it, for three machines:
 | `backend_gateway` | `10.0.0.1:8090`, `10.0.0.2:8090`, `10.0.0.3:8090` | `least_conn` | A lobby lasts the session, so each new one goes to the gateway holding the fewest |
 | `backend_platform` | `10.0.0.1:8080`, `10.0.0.2:8080`, `10.0.0.3:8080` | `keepalive 32`, `keepalive_timeout 20s` | Kept below the platform's 1 000 idle connections, and dropped before its 30 s idle timeout: the other way round the platform closed a connection nginx was about to reuse, and nginx does not send a `POST` again, so a login failed with 502 |
 
-A server that fails is passed over for 10 s (nginx's `max_fails 1` and `fail_timeout 10s`); a `POST` already sent
-is not sent to another. On the launch's one machine each upstream has one server, on `127.0.0.1` (§4.7).
+A server that fails is passed over for 10 s (nginx's defaults, `max_fails 1` and `fail_timeout 10s`). A `POST` that
+was already sent is not sent again to another server. On the launch's one machine each upstream has one server, on
+`127.0.0.1` (§4.7).
 
 ### 4.5 `backend-stream.conf`, the server on 9001
 
@@ -242,13 +255,13 @@ is not sent to another. On the launch's one machine each upstream has one server
 | `ssl_certificate`, `ssl_certificate_key`, `ssl_protocols`, `ssl_ciphers`, `ssl_prefer_server_ciphers`, `ssl_session_timeout`, `ssl_session_tickets` | as 443's | The same certificate, naming the address and every arena |
 | `ssl_session_cache` | `shared:backend_stream_tls:10m` | A zone of its own, as the stream module's must be: a phone that reconnects within the hour resumes |
 | `proxy_pass` | `$backend_arena` | The arena the name mapped to |
-| `proxy_protocol` | `on` | Each connection begins with one line naming the phone's address, `PROXY TCP4 198.51.100.7 10.0.0.1 51234 9011`, which an arena with a TLS name requires and its logs name ([D-105](../architecture/03-decision-log.md#d-105--an-arena-behind-the-front-knows-the-phones-address-nginxs-proxy-line-read-once)) |
+| `proxy_protocol` | `on` | Each connection begins with one line naming the phone's address, `PROXY TCP4 198.51.100.7 10.0.0.1 51234 9001`, which an arena with a TLS name requires and its logs name ([D-105](../architecture/03-decision-log.md#d-105--an-arena-behind-the-front-knows-the-phones-address-nginxs-proxy-line-read-once)) |
 | `proxy_connect_timeout` | `5s` | An arena that does not accept within 5 s: the phone's connection is closed, and it tries again from the lobby |
 | `proxy_timeout` | `60s` | Longer than the arena's 30 s without a frame, so the arena decides |
 
 ### 4.6 The numbers that must agree
 
-Change one of a pair and the other with it:
+Each row is a pair that must agree. Change one, and change the other with it:
 
 | Here | There | The rule |
 |---|---|---|
@@ -264,7 +277,8 @@ Change one of a pair and the other with it:
 
 ### 4.7 On the launch's one machine
 
-The install guide's §9 changes three things in the copies it installs, and nothing else:
+The install guide's §9 changes three things in the copies it installs, and nothing else. In short (the guide's block
+writes the two files in full, one directive a line):
 
 ```bash
 sed -i "s/203\.0\.113\.10/$ADDRESS/" /etc/backend/nginx/backend.conf     # server_name: the machine's address
@@ -277,7 +291,8 @@ a2.arena.internal  127.0.0.1:9012;
 a3.arena.internal  127.0.0.1:9013;
 ```
 
-The certificate is then made for `$ADDRESS` and those three names, and installed ([03 §9](03-install-guide.md)).
+The certificate is then made for `$ADDRESS` and those three names, and installed
+([03 §9](03-install-guide.md#9-nginx-and-the-certificate)).
 
 ### 4.8 Its logs
 
@@ -287,16 +302,20 @@ The certificate is then made for `$ADDRESS` and those three names, and installed
 | `/var/log/backend-nginx/stream.log` | each match connection on 9001: the phone's address, the name it gave, the arena, its bytes and length | which arena a phone reached; a name not in the list (`""` or an unknown name, no arena) |
 | `/var/log/backend-nginx/error.log` | nginx's own warnings and errors | a certificate it could not load, an upstream refused |
 
-They are rotated each night at 00:05 UTC and 14 days kept (`backend-nginx-logs.timer`, `rotate-nginx-logs.sh`,
-[D-85](../architecture/03-decision-log.md#d-85--nginxs-logs-rotated-by-a-timer-of-the-releases-own-and-kept-a-number-of-days)). The processes behind log the phone's address too: the platform and the gateway from
-`X-Forwarded-For`, an arena from the PROXY line (`player 123 joined from 198.51.100.7:51234`) or, for a match in clear,
-from 80's request, without a port (`player 123 joined from 198.51.100.7`).
+The logs are rotated each night at 00:05 UTC, and 14 days of them are kept (`backend-nginx-logs.timer`,
+`rotate-nginx-logs.sh`,
+[D-85](../architecture/03-decision-log.md#d-85--nginxs-logs-rotated-by-a-timer-of-the-releases-own-and-kept-a-number-of-days)).
+The processes behind nginx log the phone's address too:
+- the platform and the gateway, from `X-Forwarded-For`;
+- an arena, from the PROXY line (`player 123 joined from 198.51.100.7:51234`); or, for a match in clear, from 80's
+  request, without a port (`player 123 joined from 198.51.100.7`).
 
 ### 4.9 Running it
 
-`backend-nginx.service` runs it: started as root, which binds 80, 443 and 9001 and reads the key, its workers as
-`nginx`. It tests the configuration before it starts and before every reload (`nginx -t -q`), so a broken file is
-refused and the running nginx goes on as it was. A reload drops no connection: the old workers finish theirs.
+`backend-nginx.service` runs nginx. Its master process starts as root, so that it can bind 80, 443 and 9001 and read
+the key; its workers run as `nginx`. The unit tests the configuration before it starts nginx and before every reload
+(`nginx -t -q`). So a broken file is refused, and the running nginx goes on as it was. A reload drops no connection:
+the old workers finish the connections they hold.
 
 ```bash
 systemctl reload backend-nginx                  # after any change to /etc/backend/nginx/*.conf
@@ -304,18 +323,22 @@ systemctl reload backend-nginx                  # after any change to /etc/backe
 journalctl -u backend-nginx                     # a start or a reload refused, and why
 ```
 
-`install-certificate.sh` installs a certificate this way too: it checks the files, tests nginx with them, reloads,
-and puts the previous ones back if nginx refuses the new ([06](06-certificates.md)). Starting and stopping with the
-other units is [07](07-start-stop-restart.md)'s.
+`install-certificate.sh` installs a certificate the same way: it checks the files, tests nginx with them, reloads it,
+and puts the previous files back if nginx refuses the new ones ([06 §4](06-certificates.md#4-installing-it-on-every-machine)).
+Starting and stopping nginx with the other units is in [07](07-start-stop-restart.md).
 
 ## 5. On a development machine
 
-`dev-nginx.sh` runs the same release nginx with the same six files, rewritten for one development machine into
-`work/nginx/conf/` ([D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it), [development/03 §5](../development/03-build-and-run.md#5-running-it-by-hand)), on every IPv4 address. By default the routes are
-the site's, over TLS; with `PLAIN=1` the same routes go without TLS
-([D-101](../architecture/03-decision-log.md#d-101--a-plain-run-by-hand-goes-through-nginx-as-the-site-does-80-and-9001-without-tls)).
+On a development machine, `dev-nginx.sh` runs the same release nginx with the same six files. It rewrites them for
+that one machine into `work/nginx/conf/`
+([D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it),
+[development/03 §5](../development/03-build-and-run.md#5-running-it-by-hand)), and nginx listens on every IPv4
+address. It runs one of two ways:
+- **TLS**, the default: the site's routes, with 443 and 9001 over TLS and 80 in clear, as on the site;
+- **plain**, with `PLAIN=1`: the same routes without TLS, on 80 and 9001 alone
+  ([D-101](../architecture/03-decision-log.md#d-101--a-plain-run-by-hand-goes-through-nginx-as-the-site-does-80-and-9001-without-tls)).
 
-What its rewrite changes, both ways:
+What the rewrite changes, in both ways:
 
 | In the release's files | Becomes |
 |---|---|
@@ -327,11 +350,11 @@ What its rewrite changes, both ways:
 | `backend-arenas.conf` | one name, `a1.arena.internal`, to `127.0.0.1:9021` |
 | `http { }` | temporary files in `work/nginx/temp`, none to disk (`proxy_max_temp_file_size 0`) |
 
-And each way's own:
+And what differs between the two ways:
 
 | | TLS (the default) | Plain (`PLAIN=1`) |
 |---|---|---|
-| Port 80 | as on the site: the API, the lobby and `/match/` in clear ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included); in development alone since D-107, a redirect before) | the 443 server, without TLS: the API and the lobby; `/match/` left, unused, as the arena reads no request |
+| Port 80 | as on the site: the API, the lobby and `/match/` in clear ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)). Before D-115 only development served the API and the lobby on 80 (since D-107); before D-107, 80 was a redirect | the 443 server, without TLS: the API and the lobby. `/match/` is left in, unused: the plain way's grants ask for no TLS, and its arena, without a TLS name, reads no request |
 | Port 443 | the API and the lobby, TLS | not listened on |
 | Port 9001 | TLS, the arena by its name, with the PROXY line | without TLS, `proxy_pass 127.0.0.1:9021` (no name to route by), no PROXY line: the arena has no TLS name |
 | The certificate | from a root of its own made once, `work/nginx/ca/`, naming `PUBLIC_ADDRESS`, `127.0.0.1` and `a1.arena.internal` | none |
@@ -347,30 +370,38 @@ The app's settings, the three ways side by side:
 | Without TLS | `http://203.0.113.10`, `ws://203.0.113.10/lobby`, no root | `http://<PUBLIC_ADDRESS>`, `ws://…/lobby`, no root | as above |
 | Matches without TLS | through 80, `/match/<tlsName>` | through 80, `/match/<tlsName>` | 9001 in clear, as the grant says |
 
-Any build takes any of them (D-115). The two roots are different: a build for development carries the development
-root, and the players' build the site's. A client with TLS given `http://` still plays over TLS: its matches go to
-9001 as the grant says, and it trusts the root for them; the client without TLS, `client-simple-no-tls`, goes through
-80's `/match/` for a grant that asks for TLS. Whatever reaches the machine's 80 reads that traffic, passwords
-and tokens too: the firewall of a development machine decides who. Any build takes `http://` and `ws://` when it is
-given them, a players' build too ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)). On Android the plain way may also need the app to allow
-cleartext, which is not checked here (no Unity).
+Notes on the table:
+- **Any build may use any of these settings**, a players' build too: it takes `http://` and `ws://` when it is given
+  them ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
+- **The two roots are different.** A build for development carries the development root, and the players' build
+  carries the site's.
+- **A client with TLS given `http://`** (the full client, `client-simple`) still plays its matches over TLS: they go
+  to 9001 as the grant says, and the client trusts its root for them. Only the client without TLS,
+  `client-simple-no-tls`, goes through 80's `/match/`, for a grant that asks for TLS.
+- **Whoever can reach the machine's 80 can read that traffic**, passwords and tokens too. On a development machine
+  its firewall decides who that is.
+- **On Android**, the way in clear may also need the app to allow cleartext traffic. That is not checked here, as
+  there is no Unity editor and no phone.
 
 ## 6. What protects each route
 
 **What is trusted.**
 - One certificate, from the backend's own CA, names the address and every arena; nginx serves it on 443 and 9001.
-  80 has none: what crosses it, passwords, tokens and tickets, is readable and usable on the way (D-115, Q-64).
-- The app accepts a chain that ends at the root it ships, byte for byte, and nothing else (`TrustRoot`), and checks
-  the name: the address on 443, the arena's name on 9001.
-- TLS 1.2 and 1.3, forward secrecy and authenticated ciphers alone, no session tickets.
-- Behind nginx the traffic is plain, on loopback, or on the private network with more machines.
+  80 has no certificate: what crosses it (passwords, tokens and tickets) can be read and used by anyone on the way
+  (D-115, Q-64).
+- The app accepts only a certificate that the root it ships has signed, checked with the root's own key
+  (`TrustRoot`, [06 §5](06-certificates.md#5-in-the-app)), and it checks the name: the address on 443, the arena's
+  name on 9001.
+- TLS 1.2 and 1.3 alone, with forward secrecy and authenticated ciphers only, and no session tickets.
+- Behind nginx the traffic is plain: on loopback, or on the private network with more machines.
 
 **What fails closed.**
-- Any path on 443 or 80 but `/v1/`, `/lobby` and `/match/<name>`: 404; `/match/` with a name not in the list: 404.
-- 9001 with no name, a name not in the list, or no TLS: closed.
-- A connection to an arena behind the front that does not begin with nginx's PROXY line or nginx's request for a
-  match: closed, and counted (`backend_arena_connections_dropped_total{reason="proxy_line"}`).
-- A certificate from any other root: refused by the app.
+- Any path on 443 or 80 other than `/v1/`, `/lobby` and `/match/<name>` is answered 404, and so is `/match/` with a
+  name not in the list.
+- On 9001, a connection with no name, with a name not in the list, or without TLS is closed.
+- A connection to an arena behind the front that does not begin with nginx's PROXY line, or with nginx's request for
+  a match, is closed and counted (`backend_arena_connections_dropped_total{reason="proxy_line"}`).
+- A certificate from any other root is refused by the app.
 
 ## 7. The phone's address behind nginx
 
@@ -382,22 +413,25 @@ Each process behind nginx knows the phone's address, from nginx alone:
 | gateway | the same, on the lobby's upgrade | its logs |
 | arena | the PROXY line, on an arena with a TLS name; for a match in clear, 80's request's `X-Forwarded-For`, which nginx sets to the address it saw, without a port | its logs: every join, and every line that names a connection |
 
-An earlier entry of `X-Forwarded-For` is the phone's to write, and is never read; `/match/` sends none of the phone's
-headers, so the arena's one entry is nginx's. The arena takes the line or the request from
-whoever connects, since only nginx reaches an arena behind the front: it is bound to loopback, or to the private
-network, which the firewall closes to the internet.
+Only the last entry of `X-Forwarded-For` is read, because nginx wrote it; the entries before it may have been written
+by the phone. `/match/` sends none of the phone's headers, so the one entry the arena gets is nginx's. The arena
+believes the PROXY line or the request from whoever connects, because only nginx can reach an arena behind the front:
+the arena is bound to loopback, or to the private network, which the firewall closes to the internet.
 
 ## 8. More machines
 
-The phone's routes stay the same; only nginx's targets change. With a standby
-([10](10-two-machines.md)), B's arenas have names of their own, `b1.arena.internal` and on, which the front's nginx
-sends to B's private address. With three machines, `backend-upstreams.conf` spreads the API and the lobby over the
-three platforms and gateways, and each arena's name in `backend-arenas.conf` points at its own machine; the release's
-files are already that layout (§4.4, §4.5).
+The phone's routes stay the same; only nginx's targets change:
+- **With a standby** ([10](10-two-machines.md)), B's arenas have names of their own, `b1.arena.internal` and the
+  next ones, which the front's nginx sends to B's private address.
+- **With three machines**, `backend-upstreams.conf` spreads the API and the lobby over the three platforms and
+  gateways, and each arena's name in `backend-arenas.conf` points at its own machine. The release's files already
+  have that layout (§4.4, §4.5).
 
 ## 9. Checking it
 
-By hand, on the machine or from anywhere that reaches the address:
+By hand, on the machine or from anywhere that reaches the address. `ca.pem` is the backend's root (06 §1); put the
+site's address in place of `203.0.113.10`. Each `Verify return` line should say `0 (ok)`, the health check should
+answer `{"status":"ok"}`, and the request for an arena on 80 should print `HTTP/1.1 101 Switching Protocols`.
 
 ```bash
 # 443: the certificate names the address and chains to the backend's root
@@ -416,9 +450,9 @@ tail /var/log/backend-nginx/stream.log
 journalctl -u backend-arena@a1 | grep 'joined from'
 ```
 
-`install-certificate.sh --check` says what each port serves and until when ([06](06-certificates.md)).
+`install-certificate.sh --check` says what each port serves, and until when ([06](06-certificates.md)).
 
-The scripts that check these routes as written:
+These scripts check the routes as this page describes them:
 
 | Script | What it proves |
 |---|---|
@@ -428,23 +462,29 @@ The scripts that check these routes as written:
 | `check-two-machines-el9.sh` | matches by the C# client on B's arenas through A's nginx |
 | `check-nginx-logs.sh` | the logs' rotation |
 | `dev-nginx.sh test`, `dev-backend.sh test` | a run by hand, TLS or plain: nginx's configuration, 80 and 443 with the platform behind them, its certificate, two bots registered, in the lobby and in a match through nginx |
-| `headless-drill.sh` with `FRONT=https`, `FRONT=http` or `FRONT=plain`, and `NEWMAN=1` | every route of §10 through the release's nginx as `dev-nginx.sh` configures it, on the drill's own stack: the Postman collection first (every HTTP route, its body, each answer's status tested), then the C# client's scenarios (the API, the lobby, matches on 9001's place, read by the arena from the PROXY line in the TLS ways); 8095 for 80, 8096 for 443, 9095 for 9001 ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)). With `SIMPLE=1`, `client-simple-no-tls` through 80 too, its matches in the TLS ways through `/match/` |
+| `headless-drill.sh` with `FRONT=https`, `FRONT=http` or `FRONT=plain`, and `NEWMAN=1` | every route of §10 through the release's nginx as `dev-nginx.sh` configures it, on the drill's own stack: the Postman collection first (every HTTP route, its body, each answer's status tested), then the C# client's scenarios (the API, the lobby, and matches on the port that stands for 9001, which the arena reads from the PROXY line in the TLS ways). The drill's nginx uses 8095 for 80, 8096 for 443 and 9095 for 9001 ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)). With `SIMPLE=1`, also `client-simple-no-tls` through the port for 80, its matches through `/match/` in the TLS ways |
 
 ## 10. Every route, one by one
 
-Every route the app takes, from the phone through nginx to the process that answers, as the code has it on
-2026-11-05 ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)), and what ran each through nginx in the checks of that day: `headless-drill.sh` with
-`FRONT=https`, `http` and `plain` and `NEWMAN=1` (§9), nginx's own access log read, Postman's user agent the
-collection's requests and none the C# client's.
+This section lists every route the app takes, from the phone through nginx to the process that answers, as the code
+had it on 2026-11-05
+([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)).
+For each route it also says what ran it through nginx in the checks of that day: `headless-drill.sh` with
+`FRONT=https`, `http` and `plain`, and `NEWMAN=1` (§9). nginx's own access log was read to tell them apart: the
+collection's requests carry Postman's user agent, and none of the C# client's do.
 
 ### 10.1 HTTP, to the platform
 
-Common to every row: nginx's server on 443 (and 80 on a development machine, §5), a body of 4 KB at most (nginx's
-own 413 beyond, not JSON), the location's proxy settings (`backend-platform.conf`, §4.3: `X-Forwarded-For`,
-timeouts) to `backend_platform`, and the platform's answer, JSON. A path no route has, or a route's path with more
-after it, is the platform's JSON 404 `no_such_route`. "Bearer" is `Authorization: Bearer <token>` from
-`POST /v1/sessions`; "req" a field the route refuses the request without, "opt" one it does not need. Each route's
-errors and examples: [api/01](../api/01-http-api.md).
+What every row has in common:
+- nginx's server on 443, and on 80 (on the site since D-115, on a development machine since D-107, §5);
+- a body of 4 KiB at most; beyond that, nginx answers its own 413, which is not JSON;
+- the location's proxy settings (`backend-platform.conf`, §4.3: `X-Forwarded-For`, timeouts), to `backend_platform`;
+- the platform's answer, in JSON. A path that no route has, or a route's path with more after it, is the platform's
+  JSON 404 `no_such_route`.
+
+In the tables, "bearer" is the header `Authorization: Bearer <token>`, with the token from `POST /v1/sessions`; "req"
+is a field without which the route refuses the request, and "opt" one it does not need. Each route's errors and
+examples are in [api/01](../api/01-http-api.md).
 
 <!-- The table: the platform's routes read from PlatformHttpServer, and the runs' access logs (D-107). -->
 #### Health
@@ -574,31 +614,18 @@ errors and examples: [api/01](../api/01-http-api.md).
 | `DELETE /v1/tournaments/{id}/entries` | bearer | none | 200 the tournament | `/v1/` | the collection |
 | `GET /v1/tournaments/{id}/match` | bearer | none | 200 the grant, a JSON string from `TournamentService.match`, written as is | `/v1/` | the client and the collection |
 
-#### ## Other paths the code accepts (not counted as rows)
-
-| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
-|---|---|---|---|---|---|
-
-#### ## Disagreements with docs/api/01
-
-| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
-|---|---|---|---|---|---|
-
-#### ## Unsure
-
-| Route | Auth | Body | Success | nginx | Through nginx, in the runs |
-|---|---|---|---|---|---|
-
-Through nginx in the runs, every route but two: `POST /v1/queue/decline`, which the app sends as the lobby's
-`match.decline` (§10.2), the gateway passing it to the platform on the private side, not through nginx; and
-`/health`, the process's own, which nginx does not pass.
+In the runs, every route went through nginx except two:
+- `POST /v1/queue/decline`, which the app sends as the lobby's `match.decline` (§10.2). The gateway passes it to the
+  platform on the private side, not through nginx.
+- `/health`, the process's own, which nginx does not pass on.
 
 ### 10.2 The lobby, to a gateway
 
-One location, `= /lobby` (§4.2): the WebSocket's upgrade passed to `backend_gateway`, the gateway with the fewest
-connections (`least_conn`, §4.4), the connection held as long as the app keeps it. The app's messages and what each
-does on the platform (the gateway calls it on the private side, with the session's token); the fields and refusals
-are the HTTP route's ([api/02 §4](../api/02-lobby-websocket.md#4-what-a-client-sends)):
+The lobby has one location, `= /lobby` (§4.2). nginx passes the WebSocket's upgrade to `backend_gateway`: the
+gateway with the fewest connections (`least_conn`, §4.4). The connection is held for as long as the app keeps it.
+The table lists the app's messages and the platform's route that each one becomes: the gateway calls the platform on
+the private side, with the session's token. Each message's fields and refusals are those of its HTTP route
+([api/02 §4](../api/02-lobby-websocket.md#4-what-a-client-sends)):
 
 | The app sends `t` | `d` | The platform's route it is |
 |---|---|---|
@@ -612,19 +639,22 @@ are the HTTP route's ([api/02 §4](../api/02-lobby-websocket.md#4-what-a-client-
 | `party.leave` | | `POST /v1/party/leave` |
 | `party.say` | `{"phraseId"}` | `POST /v1/party/say` |
 
-And what the gateway pushes, `evt.match.ready`, `evt.match.found`, `evt.queue.update`, the party's, the team's, the
-friends', `evt.inbox`, `evt.rewards`, `evt.tournament.match`, `evt.notice`, `evt.session.revoked`,
-`evt.session.replaced` and `evt.resync`: [api/02 §6](../api/02-lobby-websocket.md#6-pushes). Through nginx in the
-runs: every scenario's lobby, `ws://` on 80's place and `wss://` on 443's.
+The gateway pushes `evt.match.ready`, `evt.match.found`, `evt.queue.update`, the party's, the team's and the
+friends' events, `evt.inbox`, `evt.rewards`, `evt.tournament.match`, `evt.notice`, `evt.session.revoked`,
+`evt.session.replaced` and `evt.resync` ([api/02 §6](../api/02-lobby-websocket.md#6-pushes)). Through nginx in the
+runs: every scenario's lobby, `ws://` on the drill's port for 80 and `wss://` on its port for 443.
 
 ### 10.3 A match, to an arena
 
-9001's server (§4.5): TLS ended by nginx, the arena chosen by the name the handshake gives (the grant's `tlsName`),
-and the connection passed on after nginx's PROXY line, which the arena reads for the phone's address (§7); in the
-plain way of a development machine, no TLS, no line, the one arena. Or, for a client without TLS, 80's `/match/`
-(§4.2): `GET /match/<tlsName> HTTP/1.1` with `Connection: Upgrade` and `Upgrade: backend-match`, nginx's request
-to the arena the name maps to, its `HTTP/1.1 101 Switching Protocols` back, and the connection the match's from
-then on. Then the match's own binary frames, each a varint length and its bytes
+A match reaches its arena one of two ways:
+- **On 9001** (§4.5): nginx ends TLS, chooses the arena by the name the handshake gives (the grant's `tlsName`), and
+  passes the connection on after its PROXY line, from which the arena reads the phone's address (§7). In the plain
+  way of a development machine there is no TLS and no line, and nginx passes every connection to the one arena.
+- **On 80**, for a client without TLS, by `/match/` (§4.2): the client sends `GET /match/<tlsName> HTTP/1.1` with
+  `Connection: Upgrade` and `Upgrade: backend-match`. nginx sends its own request to the arena the name maps to, and
+  the arena's `HTTP/1.1 101 Switching Protocols` comes back. From then on the connection carries the match.
+
+Then come the match's own binary frames, each a varint length followed by its bytes
 ([02-networking §3](../detailed-design/02-networking.md#3-messages)):
 
 | From the app | | From the arena | |
@@ -637,6 +667,7 @@ then on. Then the match's own binary frames, each a varint length and its bytes
 | `Leave` (9), `Resume` (10) | none, the resume secret | | |
 | `Sandbox` (11) | a sandbox's powers | | |
 
-Through nginx in the runs: every scenario's matches, on 9001's place, over TLS in the TLS ways, read by the arena
-from the PROXY line (its log names each player's address), plain in the plain way; and since 2026-11-25
-`client-simple-no-tls`'s, through 80's place by `/match/` in the TLS ways (D-115).
+Through nginx in the runs: every scenario's matches, on the drill's port for 9001. In the TLS ways they went over
+TLS, and the arena read the PROXY line (its log names each player's address); in the plain way they went plain.
+Since 2026-11-25 `client-simple-no-tls`'s matches also went through the drill's port for 80, by `/match/`, in the
+TLS ways (D-115).

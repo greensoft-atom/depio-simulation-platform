@@ -26,7 +26,7 @@ namespace Backend.Client.Simple
         /// <summary>The reason the server gave when it closed, as "1000 Bye".</summary>
         public string CloseReason { get; private set; }
 
-        /// <param name="url"><c>ws://192.168.1.20/lobby</c>: a backend run plain (PLAIN=1)</param>
+        /// <param name="url"><c>ws://192.168.1.20/lobby</c>: the site's 80, or a backend run plain (PLAIN=1)</param>
         public WebSocketConnection(string url)
         {
             _uri = new Uri(url);

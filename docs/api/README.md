@@ -1,63 +1,91 @@
 # The backend's APIs
 
-Everything a client or an operator calls, with real requests and answers, and a Postman
-collection that runs all of the HTTP ones in order.
+This folder describes every interface that a client or an operator calls, with real requests and real answers. It is
+for client developers and the UI team, and for operators who use the admin API. It also holds a Postman collection
+that runs every HTTP route of the player API in order, and a small Node script that walks through the lobby. New words
+are explained in the [glossary](../glossary.md).
+
+## The interfaces
 
 | Interface | Who calls it | Where | Reference |
 |---|---|---|---|
-| The player API, HTTP | the client | `https://<name>/v1/...` (nginx to `platform`), or `http://<name>/v1/...` on 80 without TLS (D-115) | [01 — the player API](01-http-api.md) |
-| The lobby, WebSocket | the client, between matches | `wss://<name>/lobby` (nginx to `gateway`), or `ws://<name>/lobby` on 80 without TLS | [02 — the lobby WebSocket](02-lobby-websocket.md) |
-| The admin API, HTTP | operators | `http://127.0.0.1:9120/admin/...` on the machine, over SSH | [03 — the admin API](03-admin-api.md) |
-| A match, binary over TCP | the client, in a match | `<arenaHost>:<arenaPort>`, from a grant, TLS with the grant's `tlsName` behind the front (D-82); without TLS, 80's `GET /match/<tlsName>`, then the same frames (D-115) | [02-networking](../detailed-design/02-networking.md) |
-| Metrics, Prometheus text | monitoring | `GET /metrics` on each process's loopback port | [operations/01 §7](../operations/01-deploy.md#7-installing-a-machine) |
+| The player API, HTTP | the client | `https://<address>/v1/...`, through nginx to `platform`; or `http://<address>/v1/...` on port 80, without TLS ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)) | [01 — the player API](01-http-api.md) |
+| The lobby, a WebSocket | the client, between matches | `wss://<address>/lobby`, through nginx to `gateway`; or `ws://<address>/lobby` on port 80, without TLS | [02 — the lobby WebSocket](02-lobby-websocket.md) |
+| The admin API, HTTP | operators | `http://127.0.0.1:9120/admin/...` on the machine itself, reached over SSH | [03 — the admin API](03-admin-api.md) |
+| A match, binary over TCP | the client, during a match | the `arenaHost` and `arenaPort` of a grant. Behind the front, the client speaks TLS to port 9001 and sends the grant's `tlsName` as the TLS name ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)). A client without TLS connects to port 80 instead, sends `GET /match/<tlsName>`, and then the same frames (D-115) | [02-networking](../detailed-design/02-networking.md) |
+| Metrics, in the Prometheus text format | the backend's own watch ([operations/08](../operations/08-monitoring.md)) | `GET /metrics` on each process's own loopback port | [operations/01 §7](../operations/01-deploy.md#7-installing-a-machine) |
 
-A small C# client for Unity that makes these calls, with examples: [`client-simple/`](../../client-simple/README.md)
-([D-111](../architecture/03-decision-log.md#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms));
-without TLS, for a backend run plain, [`client-simple-no-tls/`](../../client-simple-no-tls/README.md) (D-114).
+Some words used above:
 
-How a client goes from nothing to a match: register or make a guest, log in (a token), open
-the lobby with that token, queue or ask for a seat, accept the match it is asked about, and
-take the grant to the arena ([01](01-http-api.md) §6, [02](02-lobby-websocket.md) §5).
+- **`<address>`** is the site's one public IP address, for example `203.0.113.10`. The site has no domain name.
+- **The front** is the machine that this address reaches. Its nginx ends TLS and passes each connection to the right
+  process ([glossary](../glossary.md)).
+- **A grant** is what the backend gives a client for one match: the arena's address and port, a single-use ticket,
+  and whether to use TLS ([01 §6](01-http-api.md#6-matchmaking-from-a-request-to-the-arena)).
 
-Why each rule is as it is: [04 — platform services](../detailed-design/04-platform-services.md),
+Two small C# clients for Unity make these calls, and come with examples:
+[`client-simple/`](../../client-simple/README.md)
+([D-111](../architecture/03-decision-log.md#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms)),
+and [`client-simple-no-tls/`](../../client-simple-no-tls/README.md), the same without TLS, for a backend run plain or
+the site's port 80 (D-114, D-115). The full client is in [`client/`](../../client/README.md)
+([detailed-design/08](../detailed-design/08-client.md)).
+
+## From nothing to a match
+
+A client goes through these steps. Each step names the section that describes it.
+
+1. Register an account, or make a guest account ([01 §2](01-http-api.md#2-accounts-and-sessions)).
+2. Log in. The answer is a session token ([01 §2](01-http-api.md#2-accounts-and-sessions)).
+3. Open the lobby WebSocket and send that token first ([02 §3](02-lobby-websocket.md#3-authenticate-the-first-message)).
+4. Join a queue, or ask for a seat in the public arena
+   ([01 §6](01-http-api.md#6-matchmaking-from-a-request-to-the-arena)).
+5. When the lobby asks about a match it found, accept it ([02 §5](02-lobby-websocket.md#5-a-whole-session)).
+6. Take the grant that the lobby pushes, and connect to the arena with its ticket
+   ([02-networking](../detailed-design/02-networking.md)).
+
+Why each rule is as it is: [04 — platform services](../detailed-design/04-platform-services.md) and
 [03 — gateway](../detailed-design/03-gateway.md).
 
 ## The Postman collection
 
-[`backend.postman_collection.json`](backend.postman_collection.json) (Postman's format 2.1):
-137 requests in 14 folders (00 to 13), one scenario from the health check to the end of a season, every route of the player API among them (D-107). Three
-players (A, B, C) and a guest are made, with names unique to the run; each request tests its
-status and keeps in the collection's variables what later ones need (tokens, ids, an order,
-a team, a tournament).
+[`backend.postman_collection.json`](backend.postman_collection.json) is in Postman's format 2.1. It holds 137 requests
+in 14 folders, numbered 00 to 13. Together they are one scenario, from the health check to the end of a season, and
+they call every route of the player API (D-107).
 
-**Import**: Postman, Import, the file. **Set** the collection's variables:
+The collection makes three players (A, B and C) and a guest, with names unique to each run. Each request tests the
+status of its answer. It also keeps, in the collection's variables, what later requests need: tokens, ids, an order,
+a team, a tournament.
+
+**To import it**: in Postman, choose Import, then the file. **Then set** the collection's variables:
 
 | Variable | Default | Set it to |
 |---|---|---|
-| `baseUrl` | `http://127.0.0.1:8080` | the platform; from another machine, `https://<address>` through `dev-nginx.sh`'s nginx, trusting `work/nginx/ca/ca.pem` ([development/03 §5.0](../development/03-build-and-run.md#50-clients-on-other-machines-the-front)); or `https://<the site's address>` through the front's nginx, trusting the backend's root, `ca.pem` ([operations/06](../operations/06-certificates.md)): in Postman, Settings, Certificates, CA certificates; with newman, `--ssl-extra-ca-certs ca.pem` |
-| `adminUrl` | `http://127.0.0.1:9120` | the admin API, through an SSH tunnel |
-| `adminToken` | | the admin secret (`/etc/backend/credentials/admin-token`; on a run by hand, `work/admin-token`, [development/03 §5.1](../development/03-build-and-run.md#51-trying-each-interface)) |
-| `password` | `example-password-1` | any, 8 to 128 characters |
+| `baseUrl` | `http://127.0.0.1:8080` | the platform. Use the default on the machine itself. From another machine, use one of these: `https://<address>` through `dev-nginx.sh`'s nginx, trusting `work/nginx/ca/ca.pem` ([development/03 §5.0](../development/03-build-and-run.md#50-clients-on-other-machines-the-front)); `http://<address>`, the same nginx on port 80 without TLS (D-107); or `https://<the site's address>` through the front's nginx, trusting the backend's root certificate, `ca.pem` ([operations/06](../operations/06-certificates.md)). To trust a certificate in Postman: Settings, Certificates, CA certificates. With newman: `--ssl-extra-ca-certs ca.pem` |
+| `adminUrl` | `http://127.0.0.1:9120` | the admin API, through an SSH tunnel ([03 §1](03-admin-api.md#1-reaching-it)) |
+| `adminToken` | | the admin secret: on an installed machine, the value of `BACKEND_ADMIN_TOKEN` in `/etc/backend/platform.env`, which the install made in `/etc/backend/credentials/admin-token` (D-102); on a run by hand, the contents of `work/admin-token` ([development/03 §5.1](../development/03-build-and-run.md#51-trying-each-interface)) |
+| `password` | `example-password-1` | any password of 8 to 128 characters |
 
-**Run** it whole, in order (Run collection): a folder alone lacks what earlier ones set.
+**Run it whole, in order** (Run collection). A folder run alone fails, because it lacks what earlier folders set.
 
-What it needs and does:
+What the collection needs, and what it does:
 
-- **A test stack, never production.** Folder 09 sends a notice to every connected player,
-  closes a room and suspends this run's player C; folder 12 ends the current season.
-- **Once per fresh stack.** Run again on the same data, a few checks fail on what the last
-  run left: `409 season_ended` until the worker begins the next season, a minute or so
-  later, and a closed room no longer there. On a run by hand, start afresh as
-  [development/03 §5.1](../development/03-build-and-run.md#51-trying-each-interface) says;
-  it gives the command for a run by hand with payments and the admin API on, too.
-- **Payments switched on**: `platform` with `BACKEND_PAYMENT_PROVIDER=simulated`, or folder 03's
-  payments answer 503 `payments_off` and the purchases after them fail.
-- **The admin API on** (`BACKEND_ADMIN_ADDR` and its secret) for folders 09 and 12, and **a live
-  arena** for folder 08.
-- **At most twice a minute**: a run makes 15 logins, registrations and password-checked
-  deletions, and an address may make 30 a minute.
-- Matching a duel needs players connected to the lobby, which a collection cannot be: folder 08
-  queues and leaves, and the whole duel is in `lobby-example.mjs` ([02](02-lobby-websocket.md) §9).
+- **A test stack, never production.** Folder 09 sends a notice to every connected player, closes a room and suspends
+  this run's player C. Folder 12 ends the current season.
+- **A fresh stack for each run.** When it runs again on the same data, a few checks fail because of what the last run
+  left. One is `409 season_ended`, until the worker begins the next season about a minute later. Another is a closed
+  room that is no longer there. On a run by hand, start afresh as
+  [development/03 §5.1](../development/03-build-and-run.md#51-trying-each-interface) says. That section also gives the
+  command for a run by hand with payments and the admin API switched on.
+- **Payments switched on.** Start `platform` with `BACKEND_PAYMENT_PROVIDER=simulated`. Without it, folder 03's
+  payment requests answer 503 `payments_off`, and the purchases that come after them fail.
+- **The admin API switched on** (`BACKEND_ADMIN_ADDR` and its secret) for folders 09 and 12, and **a live arena** for
+  folder 08.
+- **At most two runs a minute.** One run makes 15 requests that count against the login limit: registrations,
+  logins, a guest made, an upgrade and account deletions that check a password. One address may make 30 of them a
+  minute ([01 §0, Limits](01-http-api.md#limits)).
+- **No whole duel.** The matcher only matches players who are connected to the lobby, and a collection cannot hold a
+  WebSocket connection. So folder 08 joins a queue and leaves it. The whole duel is in `lobby-example.mjs`
+  ([02 §9](02-lobby-websocket.md#9-trying-it)).
 
 From the command line, with [newman](https://github.com/postmanlabs/newman) (Node 18 or later):
 
@@ -69,42 +97,42 @@ npx newman run docs/api/backend.postman_collection.json \
 #   --env-var baseUrl=https://<address> --ssl-extra-ca-certs work/nginx/ca/ca.pem
 ```
 
-**The lobby** is not in the collection: a collection file cannot hold WebSocket requests.
-[`lobby-example.mjs`](lobby-example.mjs) walks through it with two players
-([02](02-lobby-websocket.md) §9), and Postman can open one by hand.
+**The lobby is not in the collection**, because a collection file cannot hold WebSocket requests.
+[`lobby-example.mjs`](lobby-example.mjs) walks through the lobby with two players
+([02 §9](02-lobby-websocket.md#9-trying-it)). Postman can also open a lobby connection by hand.
 
 ## How this was checked
 
-On 2026-10-06, against a stack made from this repository's release on the development
-machine: the release's runtime, a MySQL 8.4 from `vendor/` with an empty database, j-redis,
-`platform` (admin API on, payments simulated), a worker, the gateway and one arena with four
-rooms, each on a port of its own.
+The examples were checked first on 2026-10-06. The stack was built from this repository's release, on the
+development machine: the release's Java runtime, a MySQL 8.4 from `vendor/` with an empty database, j-redis,
+`platform` (with the admin API on and payments simulated), one worker, the gateway, and one arena with four rooms.
+Each process listened on a port of its own.
 
-- **The collection**, by newman 6.2.2: 131 requests, 131 checks passed, in 15 seconds. Its first
-  run had 5 failures, all the collection's: a request sent to the wrong listener, and a duel
-  polled to the end over HTTP, which the matcher never makes for players without a lobby
-  connection (it drops them within a second; 01 §6 says so now). Both fixed; the second run is
-  the one shown in the references.
-- **Again on 2026-10-24**, with folder 13 added (an account deleted, D-84): 135 requests, 137
-  checks passed, against `run-local.sh`'s stack from that day's release, the admin API on and
-  payments simulated.
-- **The lobby**, by `lobby-example.mjs` on Node 24: every answer as expected, a whole duel
-  included.
-- **The examples in 01-03 are those runs' requests and answers.** A few needed a player with
-  coins or 10 rated matches, which no route gives a new account; they were run with `curl`
-  after the test database gave them, and say so. A few shapes the runs could not produce (a
-  board with rows, a tournament's match grant, the pushes no request triggered) are given from
-  the code, and say so.
-- **Through nginx, on 2026-11-05** (D-107): the collection on the live drill's own stack, the release's nginx in
-  front of it as `dev-nginx.sh` configures it (`headless-drill.sh FRONT=… NEWMAN=1`), three ways: over TLS on 443's
-  place, in clear on 80's, and the plain way. 135 requests, 137 checks, none failed, each way; with the API's health
-  under `/v1/` and a team's application withdrawn added, 137 requests and 139 checks, again none failed. Every
-  player-API request reached nginx's access log, the admin API's (loopback, not nginx's) apart. Then the C# client's
-  scenarios through the same nginx: [operations/11 §10](../operations/11-phone-to-backend-routes.md#10-every-route-one-by-one).
-- **Not checked**: nginx's limits (its own 413 and 429 are described from its configuration), and the match
-  protocol here (it has its own drills).
+- **The collection**, by newman 6.2.2: 131 requests, 131 checks passed, in 15 seconds. The first run had 5 failures,
+  all of them mistakes in the collection. One request went to the wrong listener. And one duel was polled to the end
+  over HTTP, which can never work: the matcher drops players without a lobby connection within a second, and makes no
+  match for them ([01 §6](01-http-api.md#6-matchmaking-from-a-request-to-the-arena) says so now). Both were fixed. The
+  second run is the one these pages show.
+- **Again on 2026-10-24**, with folder 13 added (an account deleted, D-84): 135 requests, 137 checks passed. This ran
+  against `run-local.sh`'s stack, built from that day's release, with the admin API on and payments simulated.
+- **The lobby**, by `lobby-example.mjs` on Node 24: every answer was as expected, a whole duel included.
+- **The examples in pages 01 to 03 are those runs' requests and answers.** A few needed a player with coins, or with
+  10 rated matches, and no route gives those to a new account. These were run with `curl`, after the test database
+  gave the player what was needed, and they say so. A few shapes could not come from the runs at all: a board with
+  rows, a tournament's match grant, and the pushes that no request triggered. These are given from the code, and say
+  so.
+- **Through nginx, on 2026-11-05** (D-107). The collection ran on the live drill's own stack, with the release's nginx
+  in front of it, configured as `dev-nginx.sh` configures it (`headless-drill.sh FRONT=… NEWMAN=1`). It ran three
+  ways: over TLS in port 443's place, in clear in port 80's place, and the plain way. Each way had 135 requests and
+  137 checks, and none failed. Then the API's health under `/v1/` and a team application withdrawn were added: 137
+  requests and 139 checks, and again none failed. Every player-API request reached nginx's access log. The admin
+  API's requests did not, because the admin API is on loopback and does not go through nginx. After that, the C#
+  client's scenarios ran through the same nginx:
+  [operations/11 §10](../operations/11-phone-to-backend-routes.md#10-every-route-one-by-one).
+- **Not checked here**: nginx's limits (its own 413 and 429 answers are described from its configuration), and the
+  match protocol, which has its own drills.
 
-To run it again: the stack as [build and run §5](../development/03-build-and-run.md#5-running-it-by-hand)
-starts it, the platform with `BACKEND_PAYMENT_PROVIDER=simulated`, `BACKEND_ADMIN_ADDR` and
-`BACKEND_ADMIN_TOKEN`; then newman as above, and
+To run it again: start the stack as [build and run §5](../development/03-build-and-run.md#5-running-it-by-hand)
+starts it, with `platform` given `BACKEND_PAYMENT_PROVIDER=simulated`, `BACKEND_ADMIN_ADDR` and `BACKEND_ADMIN_TOKEN`.
+Then run newman as above, and
 `node docs/api/lobby-example.mjs <platform> <lobby> <admin> <secret>`.

@@ -1,9 +1,9 @@
 # nginx, the front for the lobby, the API and match traffic, on every machine (D-82, docs/operations/05):
-# the release's own, /opt/backend/nginx, built for RHEL 9 (docs/detailed-design/09 §5). Not the
+# the release's own, /opt/backend/nginx, built for glibc 2.28, RHEL 8 and 9 (D-100, docs/detailed-design/09 §5). Not the
 # distribution's package. Its configuration is /etc/backend/nginx/ (the release's nginx-conf/).
 #
 # Install: the system user (useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin
-# nginx), the five files of the release's nginx-conf/ in /etc/backend/nginx/, then
+# nginx), the six files of the release's nginx-conf/ in /etc/backend/nginx/, then
 # systemctl enable --now backend-nginx, and backend-nginx-logs.timer, which rotates its logs (D-85).
 [Unit]
 Description=backend: nginx, the TLS edge for the lobby, the API and match traffic

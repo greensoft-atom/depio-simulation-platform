@@ -1,5 +1,5 @@
 #!/bin/bash
-# Checks rotate-nginx-logs.sh (docs/operations/01-deploy.md §7, O-45, D-85) on this machine, with the release's nginx
+# Checks rotate-nginx-logs.sh (docs/operations/01-deploy.md §4, O-45, D-85) on this machine, with the release's nginx
 # on a loopback port and a log directory of its own: a request logged; the logs renamed with a UTC stamp, nginx told
 # to reopen them, the renamed ones compressed; the next request in a fresh access.log; the rotated files past
 # KEEP_DAYS deleted and the others kept; an empty log left alone; nginx not running rotated all the same; KEEP_DAYS

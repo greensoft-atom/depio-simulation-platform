@@ -216,7 +216,7 @@ public final class WorkerMain {
                 tournaments::failedCount);
         // The fleet's latest check, read from the store, so every worker reports the same one.
         m.gauge("backend_worker_ledger_mismatches",
-                "Players whose coins their ledger does not explain, at the fleet's last daily check."
+                "Players whose coins or gems their ledger does not explain, at the fleet's last daily check."
                         + " Alert on anything above zero.", () -> {
                     long[] last = ledgerCheck.latest();
                     return last == null ? Double.NaN : last[0];

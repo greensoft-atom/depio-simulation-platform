@@ -56,7 +56,7 @@ public final class MatchFrameHandler extends SimpleChannelInboundHandler<ByteBuf
      *        TLS handshake included. Nothing that has not joined needs a socket for longer, and
      *        the idle rule alone would let a connection that pings and never joins keep one for
      *        ever.
-     * @param readerIdleMillis without one whole frame. A client in the foreground sends 20
+     * @param readerIdleMillis without one whole frame. A client in the foreground sends ten
      *        inputs a second and every client pings every 10 s, so this is three missed
      *        pings: a phone that has gone, or one suspended in the background.
      * @param stallMillis unwritable throughout, so nothing sent to the client drained. Its

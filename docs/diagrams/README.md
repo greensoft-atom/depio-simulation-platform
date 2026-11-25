@@ -1,41 +1,58 @@
 # Diagrams
 
-The backend and its client drawn whole, in [Mermaid](https://mermaid.js.org/): 67 diagrams in
-seven files, each drawn from the code as of 2026-10-04 (01 and 07 redrawn for D-82 on 2026-10-19, and
-02, 03, 04 and 06's match path for it on 2026-11-01) and linked to the design document that
-gives its reasons. GitHub, GitLab and most editors render them in place; nothing here is an
-image to keep in step by hand.
+This folder draws the backend and its client whole, in [Mermaid](https://mermaid.js.org/). It is for
+engineers and operators who want a picture before, or beside, the design documents. There are 69
+diagrams in seven files. Each diagram is drawn from the code, and each file links the design
+documents that give the reasons. GitHub, GitLab and most editors render the diagrams in place, so
+there is no image to keep in step by hand.
+
+**How current they are.** The diagrams were drawn from the code as of 2026-10-04. They were redrawn
+for the single public address and the front's nginx
+([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name))
+in 01 and 07 on 2026-10-19, and for the match path in 02, 03, 04 and 06 on 2026-11-01. On 2026-11-25
+they were checked again against the code and redrawn where it had moved on: port 80 in clear and a
+match through it
+([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included))
+in 01, 02, 03, 04, 06 and 07; the promotion scripts' refusals and MySQL's handover
+([D-95](../architecture/03-decision-log.md#d-95--a-promotion-refuses-an-old-primary-it-can-neither-rule-out-nor-fence-and-a-handover-closes-mysqls-last))
+in 07; the core's certificate check (D-108) and the three client trees (D-111 to D-115) in 06.
 
 ## The files
 
 | File | What it draws |
 |---|---|
-| [01 — System](01-system.md) | Who uses the system, the processes and stores with their protocols and ports, the Maven modules and their dependencies, a match from a login to its rewards, high availability |
-| [02 — Arena and wire](02-arena-and-wire.md) | A room's lifecycle, the tick, a join and a resume, snapshot encoding, the collision broadphase, a made match, draining, every message on the match connection |
-| [03 — Lobby and store](03-lobby-and-store.md) | The lobby connection and its auth, pushes across gateways, tickets, a room reserved for a made match, the store's failover, slow clients, who writes and reads each key family |
-| [04 — Platform](04-platform.md) | Accounts and guests, the public arena's seat, the queue and its confirm step, parties, teams, tournaments and their scheduler, payments, the season pass, the shop, the admin API |
-| [05 — Data and worker](05-data-and-worker.md) | All 36 tables with their keys, the result pipeline and one result's transaction, retention, a season's close, the ledger check, the replica's heartbeat |
-| [06 — Client](06-client.md) | The core's types, its two connections' lifecycles, join and resume, the own tank's prediction, the render clock, sign-in, the party rule, the Unity layer's wiring |
-| [07 — Deploy and operations](07-deploy-and-operations.md) | The three machines, nginx's routes, a release, a rolling deploy, the store's and MySQL's failovers, the backups and their timers, a restore to a moment |
+| [01 — System](01-system.md) | Who uses the system; the processes and stores, with their protocols and ports; the Maven modules and their dependencies; a match from a login to its rewards; high availability |
+| [02 — Arena and wire](02-arena-and-wire.md) | A room's lifecycle, the tick, a join and a resume, snapshot encoding, the collision broadphase, a made match, draining, and every message on the match connection |
+| [03 — Lobby and store](03-lobby-and-store.md) | The lobby connection and its auth, pushes across gateways, tickets, a room reserved for a made match, the store's failover, slow clients, and who writes and reads each family of keys |
+| [04 — Platform](04-platform.md) | Accounts and guests, the public arena's seat, the queue and its confirm step, parties, teams, tournaments and their scheduler, payments, the season pass, the shop, and the admin API |
+| [05 — Data and worker](05-data-and-worker.md) | All 36 tables with their keys, the result pipeline and one result's transaction, retention, a season's close, the ledger check, and the replica's heartbeat |
+| [06 — Client](06-client.md) | The core's types, its two connections' lifecycles, join and resume, the own tank's prediction, the render clock, sign-in, the party rule, the Unity layer's wiring, and the three client trees and their ways in |
+| [07 — Deploy and operations](07-deploy-and-operations.md) | The launch's one machine, the three machines, nginx's routes, a release, a rolling deploy, the store's and MySQL's failovers, the backups and their timers, and a restore to a moment |
 
 ## By kind
+
+The same diagrams, grouped by what kind of picture each one is. The type after each name is
+Mermaid's.
 
 ### Architecture and structure
 
 - [System context](01-system.md#1-system-context) · flowchart
 - [Containers](01-system.md#2-containers) · flowchart
 - [Maven modules](01-system.md#3-maven-modules) · flowchart
-- [High availability](01-system.md#5-high-availability) · flowchart
-- [Who writes and reads each key family](03-lobby-and-store.md#who-writes-and-reads-each-key-family) · flowchart
-- [The core's structure](06-client.md#1-the-cores-structure) · classDiagram
+- [Primaries, replicas and promotion](01-system.md#primaries-replicas-and-promotion) · flowchart
+- [Leases](01-system.md#leases) · flowchart
+- [Who writes and reads each key family](03-lobby-and-store.md#who-writes-and-reads-each-key-family) · two flowcharts
+- [The core's structure](06-client.md#1-the-cores-structure) · four classDiagrams
 - [The Unity layer's wiring](06-client.md#9-the-unity-layers-wiring) · flowchart
+- [The three client trees and their ways in](06-client.md#10-the-three-client-trees-and-their-ways-in) · flowchart
 
 ### Schema
 
-- [The tables](05-data-and-worker.md#the-tables) · erDiagram
+- [The tables](05-data-and-worker.md#the-tables) · four erDiagrams
 
 ### Deployment and operations
 
+- [The launch's one machine](07-deploy-and-operations.md#the-launchs-one-machine) · flowchart
 - [The three machines](07-deploy-and-operations.md#the-three-machines) · flowchart
 - [nginx's routes](07-deploy-and-operations.md#nginxs-routes) · flowchart
 - [The release](07-deploy-and-operations.md#the-release) · flowchart
@@ -100,16 +117,17 @@ image to keep in step by hand.
 ## Where the words come from
 
 The names are the [glossary](../glossary.md)'s and the code's. Each file opens with the design
-documents it follows; where a diagram and a design document disagree, the code decides, and the
+documents it follows. Where a diagram and a design document disagree, the code decides, and the
 disagreement is a defect for [the register](../defects.md) (DOC).
 
 ## Checking them
 
-Every block, 67, was rendered with the Mermaid CLI (`mmdc` 11.16.0) after the review's fixes,
-2026-10-04. To render one file's diagrams to SVG:
+Every block, 67 at the time, was rendered with the Mermaid CLI (`mmdc` 11.16.0) after the review's
+fixes, on 2026-10-04. The blocks added or redrawn since were not rendered by that tool here. To
+render one file's diagrams to SVG:
 
 ```bash
 npx -y @mermaid-js/mermaid-cli -i docs/diagrams/04-platform.md -o /tmp/platform.md
 ```
 
-A block that does not parse fails the command with the line it stopped at.
+A block that does not parse fails the command, with the line where it stopped.

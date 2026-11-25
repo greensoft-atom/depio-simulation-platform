@@ -1,19 +1,24 @@
 # Diagrams: the arena and the wire
 
-How an arena runs its rooms and what crosses the match connection, drawn from
-the code in `backend/arena`, `backend/sim` and `backend/protocol`. The design is
-in [01 Realtime arena](../detailed-design/01-arena.md) and
-[02 Networking](../detailed-design/02-networking.md); the modules' own pages are
+This file shows how an arena runs its rooms, and what crosses the match connection between the
+client and the arena. It is for engineers working on the arena, the protocol or a client. The
+diagrams are drawn from the code in `backend/arena`, `backend/sim` and `backend/protocol`. The
+design is in [01 Realtime arena](../detailed-design/01-arena.md) and
+[02 Networking](../detailed-design/02-networking.md). The modules' own pages are
 [arena](../../backend/arena/README.md), [sim](../../backend/sim/README.md),
-[protocol](../../backend/protocol/README.md) and
-[tools](../../backend/tools/README.md).
+[protocol](../../backend/protocol/README.md) and [tools](../../backend/tools/README.md).
+
+A *room* is one simulated world inside an arena, with its own thread. A *made match* is a timed
+match that `platform` or `worker` makes for a roster; the arena makes its room from the first ticket
+that names it. Both words, and the others used here, are in the [glossary](../glossary.md).
 
 ## Room lifecycle
 
-`RoomThread` holds a room's stage; `RoomRegistry` creates rooms, drops the
-finished and failed ones, and its watchdog abandons a hung one. A public room
-(`MatchRules.OPEN`) and a timed one stay in `Playing`; only a made match's room
-waits for a roster and ends ([01 §8.1](../detailed-design/01-arena.md#81-the-mode-decides-the-lifecycle)).
+`RoomThread` holds a room's stage. `RoomRegistry` creates rooms and drops the finished and failed
+ones, and its watchdog abandons a room that hangs. A public room (`MatchRules.OPEN`) and a timed
+room stay in `Playing`. Only a made match's room waits for a roster, and ends
+([01 §8.1](../detailed-design/01-arena.md#81-the-mode-decides-the-lifecycle)). Each arrow is labelled
+with what moves the room on.
 
 ```mermaid
 stateDiagram-v2
@@ -38,10 +43,11 @@ stateDiagram-v2
 
 ## The tick loop
 
-`RoomThread.run` keeps a 40 ms deadline and calls `RoomThread.tick`, which wraps
-`Room.step`. The order is fixed: input before the step, everything that reads
-the step's kills after it, the snapshots last
-([01 §1](../detailed-design/01-arena.md#tick-loop)).
+`RoomThread.run` keeps a 40 ms deadline (25 ticks a second) and calls `RoomThread.tick`, which
+wraps `Room.step`. The order inside a tick is fixed: input is applied before the step; everything
+that reads the step's kills comes after it; the snapshots go last
+([01 §1](../detailed-design/01-arena.md#tick-loop)). A dotted arrow is the path taken when the step
+throws an exception.
 
 ```mermaid
 flowchart TD
@@ -71,23 +77,45 @@ flowchart TD
 
 ## Join, with the ticket claim and the Welcome
 
-`MatchFrameHandler` reads the `Join` on the connection's event loop and claims
-the ticket from j-redis without blocking it; `RoomRegistry` reserves a place, and
-the room thread admits the player
-([02 §3](../detailed-design/02-networking.md#3-messages),
-[04 §3](../detailed-design/04-platform-services.md#3-arena-registry-rooms-and-tickets)).
+How a player gets into a room, in order:
+
+1. **The way in.** On the site a client reaches its arena through the front's nginx, in one of two
+   ways. Over TLS it dials 9001 and sends the grant's `tlsName` in its handshake; nginx ends the TLS
+   and sends the arena one PROXY line with the phone's address first
+   ([D-105](../architecture/03-decision-log.md#d-105--an-arena-behind-the-front-knows-the-phones-address-nginxs-proxy-line-read-once)).
+   In clear it dials 80 and sends `GET /match/<tlsName>` with `Upgrade: backend-match`; nginx passes
+   that request on, with the phone's address in `X-Forwarded-For`, and the arena answers `101`
+   ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
+   `ProxyLine`, the first handler in the arena's pipeline, reads the line or the request once,
+   keeps the phone's address for the logs, and takes itself out of the pipeline. Anything else
+   first is closed and counted (`dropped{reason="proxy_line"}`). An arena that is not behind the
+   front reads neither, and ends TLS itself when it has TLS of its own.
+2. **The ticket.** `MatchFrameHandler` reads the `Join` on the connection's event loop, and claims
+   the ticket from j-redis without blocking that loop.
+3. **The place.** `RoomRegistry` reserves a place in a room, and the room thread admits the player
+   ([02 §3](../detailed-design/02-networking.md#3-messages),
+   [04 §3](../detailed-design/04-platform-services.md#3-arena-registry-rooms-and-tickets)).
 
 ```mermaid
 sequenceDiagram
     participant C as client
     participant N as nginx on the front
+    participant X as ProxyLine
     participant H as MatchFrameHandler
     participant S as store
     participant G as RoomRegistry
     participant R as RoomThread
-    C->>N: TCP to the site's 9001, TLS with the grant's tlsName
-    N->>H: the connection, plaintext on the private network, to the arena the name maps to
-    Note over C,H: every later frame passes nginx, and without the front an arena ends TLS itself
+    alt over TLS
+        C->>N: TCP to the site's 9001, TLS with the grant's tlsName
+        N->>X: the connection, plaintext on the private network, to the arena the name maps to
+        N->>X: first a PROXY line with the phone's address and port
+    else in clear (D-115)
+        C->>N: TCP to the site's 80, GET /match/ and the tlsName, Upgrade backend-match
+        N->>X: that request, to the arena the name maps to, the phone's address in X-Forwarded-For
+        X-->>C: HTTP/1.1 101 Switching Protocols, through nginx
+    end
+    X->>X: keep the phone's address, then leave the pipeline
+    Note over C,H: every later frame passes nginx unread. Without the front an arena reads no PROXY line, and ends TLS itself if it has TLS
     Note over H: Join or Resume due within 10 s
     C->>H: Join with version, ticket, optional profile
     alt another protocol version
@@ -119,10 +147,12 @@ sequenceDiagram
 
 ## Resume after a lost connection
 
-A connection that closes without `Leave` leaves its stay waiting. `RoomThread`
-parks the tank, takes it out after 10 s keeping what it had grown into, and
-ends the stay after 60 s; a `Resume` with the latest secret takes it back
-([02 §10](../detailed-design/02-networking.md#10-session-reconnect-and-app-lifecycle)).
+A connection that closes without `Leave` leaves its *stay* (the player's time in the room)
+waiting. `RoomThread` parks the tank, and after 10 s takes it out of the world, keeping what it had
+grown into. After 60 s it ends the stay. A `Resume` with the latest resume secret, on a new
+connection to the same arena, takes the stay back
+([02 §10](../detailed-design/02-networking.md#10-session-reconnect-and-app-lifecycle)). The new
+connection comes in through the front as the first one did (above).
 
 ```mermaid
 sequenceDiagram
@@ -153,10 +183,10 @@ sequenceDiagram
 
 ## Snapshot encoding
 
-`RoomThread.sendSnapshots` decides whether a client's round goes out
-(`TrafficControl`), and `SnapshotEncoder` writes it against that client's
-`ClientView`: deltas against what was last sent, handles freed only once the
-client acknowledges their removal
+`RoomThread.sendSnapshots` decides whether a client's round goes out (`TrafficControl`).
+`SnapshotEncoder` then writes it against that client's `ClientView`. It writes deltas against what
+was last sent, and frees a handle (a one-byte alias for an entity) only once the client has
+acknowledged its removal
 ([02 §4, §5, §7, §8](../detailed-design/02-networking.md#4-the-snapshot)).
 
 ```mermaid
@@ -188,9 +218,9 @@ flowchart TD
 
 ## Collision broadphase
 
-`Room.rebuildHash` files every entity in one 200-unit cell by its centre, so
-each query reaches the largest radius anything has. `Room.collide` settles each
-bullet's hits first, then each tank's body contacts, every pair once
+`Room.rebuildHash` files every entity in one 200-unit cell of a grid, by its centre. So each query
+must reach out by the largest radius anything has. `Room.collide` settles each bullet's hits first,
+then each tank's body contacts, and handles every pair once
 ([01 §6](../detailed-design/01-arena.md#6-spatial-hash-and-collisions)).
 
 ```mermaid
@@ -226,11 +256,14 @@ flowchart TD
 
 ## A made match, from grant to published result
 
-The matcher in `platform` makes the match and its tickets; the arena makes the
-match's room from its first ticket (`RoomRegistry.allocateMatch`, D-20),
-`RoomThread` plays it, and `MatchResultPublisher` hands the result to the
-workers through the stream `s:match-result` ([04 §4](../detailed-design/04-platform-services.md#4-matchmaking),
-[01 §8](../detailed-design/01-arena.md#8-match-modes)).
+Four parts take a made match from the grant to its published result:
+
+- the matcher in `platform` makes the match and its tickets;
+- the arena makes the match's room from its first ticket (`RoomRegistry.allocateMatch`, D-20);
+- `RoomThread` plays it;
+- `MatchResultPublisher` hands the result to the workers, through the stream `s:match-result`
+  ([04 §4](../detailed-design/04-platform-services.md#4-matchmaking),
+  [01 §8](../detailed-design/01-arena.md#8-match-modes)).
 
 ```mermaid
 sequenceDiagram
@@ -243,7 +276,7 @@ sequenceDiagram
     P->>P: the matcher fills a roster and picks an arena with a free room
     P->>S: one ticket per player, with the match id, mode and team
     P-->>C: grant with arena host and port (the site's address, 9001), ticket, tls, tlsName
-    C->>A: through the front's nginx by tlsName, Join with the ticket
+    C->>A: through the front's nginx by tlsName, on 9001 over TLS or on 80 in clear, then Join with the ticket
     A->>S: claim the ticket
     A->>A: allocateMatch makes the room on the first ticket
     A->>S: mark the match's first arrival
@@ -265,9 +298,15 @@ sequenceDiagram
 
 ## Draining an arena
 
-`ArenaMain`'s shutdown hook stops an arena in this order: no new players, the
-public rooms ended at once, the made matches played out, then everything
-published ([01 §8.6](../detailed-design/01-arena.md#86-draining-an-arena-designed-2026-09-29-plan-item-7)).
+`ArenaMain`'s shutdown hook stops an arena in this order
+([01 §8.6](../detailed-design/01-arena.md#86-draining-an-arena-designed-2026-09-29-plan-item-7)):
+
+1. no new players;
+2. the public rooms ended at once;
+3. the made matches played out, for up to 11 minutes;
+4. then everything published.
+
+systemd allows the stop 12 minutes (`TimeoutStopSec`) for this.
 
 ```mermaid
 flowchart TD
@@ -290,10 +329,14 @@ flowchart TD
 
 ## The wire, message by message
 
-Every frame is `varint length, payload` of at most 8 KiB, the payload's first
-byte its type; little-endian except the two big-endian `u32`s. Constants are in
-`protocol/Wire` and `protocol/ClientMessage`, mirrored in `client/Core/Wire.cs`;
-protocol version 4 ([02 §2–§4](../detailed-design/02-networking.md#2-primitives)).
+Every frame is `varint length, payload`, at most 8 KiB. The payload's first byte is its type. All
+numbers are little-endian except the two big-endian `u32`s. The constants are in `protocol/Wire` and
+`protocol/ClientMessage`, mirrored in `client/Core/Wire.cs`. This is protocol version 4
+([02 §2–§4](../detailed-design/02-networking.md#2-primitives)).
+
+Behind the front, what nginx sends before the first frame is not a frame: the PROXY line on 9001,
+or, on 80, the `GET /match/<name>` request that nginx passes on and the arena's `101` answer (see
+the join above). The frames after it are the same either way.
 
 | Direction | Id | Message | Payload | When |
 |---|---|---|---|---|

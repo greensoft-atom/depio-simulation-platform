@@ -6,11 +6,11 @@ namespace Backend.Client.Simple.Examples
     /// <summary>
     /// The API, step by step: is it up; a guest account made once and kept on the device; logged in; the shop and the
     /// inventory read. Each step awaits the one before. Add it to an object in a scene, set the address of a backend
-    /// run plain, press Play, and read the Console.
+    /// run plain or of the site's 80, press Play, and read the Console.
     /// </summary>
     public class HttpExample : MonoBehaviour
     {
-        [Tooltip("http://<address>: a backend run plain (PLAIN=1); this client has no TLS")]
+        [Tooltip("http://<address>: the site's 80, or a backend run plain (PLAIN=1); this client has no TLS")]
         public string apiUrl = "http://127.0.0.1";
 
         private BackendHttp _http;

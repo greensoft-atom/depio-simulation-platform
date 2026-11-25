@@ -19,7 +19,7 @@ import org.slf4j.LoggerFactory;
 /**
  * What nginx sends an arena behind the front before the phone's own bytes, one of two:
  * <ul>
- *   <li>from 9001 (D-105), version 1 of the PROXY protocol's line, {@code PROXY TCP4 198.51.100.7 10.0.0.1 51234 9011\r\n};
+ *   <li>from 9001 (D-105), version 1 of the PROXY protocol's line, {@code PROXY TCP4 198.51.100.7 10.0.0.1 51234 9001\r\n};
  *   <li>from 80, for a match without TLS (D-115), its request for the arena by name, {@code GET /match/a1.arena.internal
  *       HTTP/1.1}, with nginx's own headers to the blank line, the phone's address in {@code X-Forwarded-For}; answered
  *       {@code 101 Switching Protocols}, after which nginx passes the bytes both ways.

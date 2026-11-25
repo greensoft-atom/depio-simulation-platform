@@ -35,7 +35,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
  * path no client will ever use.
  *
  * The lobby part is the JDK's HTTP and WebSocket client, once per bot. The arena
- * connection is Netty, because that one carries 20 messages a second for the whole match.
+ * connection is Netty, because that one carries ten inputs a second, and the snapshots, for the whole match.
  *
  * Usage: BotClient [bots] [seconds] [platformUrl] [lobbyUrl]
  *

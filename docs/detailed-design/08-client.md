@@ -1,23 +1,32 @@
 # 08 — Client
 
-The Unity app a player installs on Android, from the owner's own copy, not a store
+This document is the design of the client: the Unity app that a player installs on Android. The app comes from the
+owner's own copy, not from a store
 ([D-1](../architecture/03-decision-log.md#d-1--unity-native-mobile-client-no-browser-build),
-[C-10](../requirements/01-scope-and-nfrs.md#3-constraints); the iOS parts below stay, unused).
-**Status: designed 2026-09-27**, when the owner decided that Claude writes it
-([plan](../plan.md), item 3). **Built: steps 1 to 4 of §7**, the wire, the
-world, the match connection, the API, the lobby and the own tank's prediction,
-and **§8 (a)**, what the Unity layer draws, how it steers and the account kept.
-**§8 (b), the Unity package, is written**: compiled against stubs, and since 2026-11-05 by Unity 2019.4.28f1's own
-compiler against its own `UnityEngine` assemblies (D-108); not run in the editor or on a phone.
-The Unity layer was deferred by the owner (2026-09-27), the backend finished
-first; **the owner brought it back on 2026-10-04** (Q-51), as scripts: §8, plan
-item 77. The own tank's prediction, deferred with it, the owner brought back on
-2026-10-03, and it was built that day: step 4, designed in §4 (plan item 70).
+[C-10](../requirements/01-scope-and-nfrs.md#3-constraints)); the iOS parts below stay in the code, unused. It is for
+the client's developers and reviewers. It covers how the client is layered (§1), which thread does what (§2), the
+match connection and how it recovers (§3), the world and how it is drawn (§4), the lobby and the API (§5), how the
+client is tested on a machine without the Unity editor (§6), the order of the work (§7), the Unity layer as scripts
+(§8), and the simple clients for the UI team (§9). New words are explained in the [glossary](../glossary.md).
 
-The server documents what a client must do; this document does not repeat it.
-It decides what the server documents leave open: how the client is layered, which
-thread does what, how it recovers, and how it is tested on a machine that has no
-Unity.
+The server's documents say what a client must do, and this document does not repeat them. It decides what they leave
+open: how the client is layered, which thread does what, how it recovers, and how it is tested on a machine that has
+no Unity editor. The routes and messages themselves are in [docs/api](../api/README.md).
+
+**Status.**
+
+- **Designed on 2026-09-27**, when the owner decided that Claude writes the client ([plan](../plan.md), item 3).
+- **Built**: steps 1 to 4 of §7 (the wire, the world, the match connection, the API, the lobby, and the prediction of
+  the player's own tank), and **§8 (a)**: what the Unity layer draws, how it steers, and how the account is kept.
+- **Written: §8 (b), the Unity package.** It is compiled against stubs, and since 2026-11-05 also by Unity
+  2019.4.28f1's own compiler against Unity's own `UnityEngine` assemblies (D-108). It has not run in the Unity editor
+  or on a phone.
+- **History.** The owner deferred the Unity layer on 2026-09-27, so that the backend was finished first. **The owner
+  brought it back on 2026-10-04** (Q-51), as scripts: §8, plan item 77. The prediction of the own tank was deferred
+  with it. The owner brought that back on 2026-10-03, and it was built that day: step 4, designed in §4 (plan item
+  70).
+- **The simple clients**, `client-simple/` and `client-simple-no-tls/`, were added on 2026-11-24 and 2026-11-25 for
+  the UI team (§9).
 
 ## 1. Two layers
 
@@ -30,567 +39,561 @@ Unity.
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Everything that speaks to the server is in the core, and the core knows
-nothing of Unity.** The most expensive bug this project can have is the client
-and the server disagreeing about a byte, and the only defence is to run the
-client's own code against the real server. With no engine in it, the core
-builds and runs with the .NET SDK on the development machine, where the server
-runs too: its tests apply the golden vectors field by field, and a headless
-client drives the real stack through login, lobby, a match, a lost connection and
-a resume ([§6](#6-testing)).
+**Everything that speaks to the server is in the core, and the core knows nothing of Unity.** The most expensive bug
+this project can have is a client and a server that disagree about a byte. The only defence is to run the client's
+own code against the real server. The core has no engine in it, so it builds and runs with the .NET SDK on the
+development machine, where the server runs too. Its tests apply the golden vectors field by field: snapshot frames,
+each with what it decodes to, written by the protocol spike's independent codec, which the server's decoder must read
+too ([glossary](../glossary.md)). And a headless client, one with no screen, drives the real stack through a login,
+the lobby, a match, a lost connection and a resume ([§6](#6-testing)).
 
-**The Unity layer is thin because it cannot be tested here.** There is no Unity
-on the development machine. What it does — draw what the world holds, turn
-touches into inputs, tell the core the app went to the background, keep the
-account's key in the device's secure store — is kept small enough to review by
-reading, and is to be verified in the Unity editor: none of it has run yet
-(§8).
+**The Unity layer is thin because it cannot be tested here.** The development machine has no Unity editor (the editor
+needs a licence). It does have Unity 2019.4.28f1's compiler, assemblies and Mono runtime, in `work/unity` (D-108), so
+the scripts are compiled there, but never run. The layer does four things: it draws what the world holds, turns
+touches into inputs, tells the core when the app goes to the background, and keeps the account's key in the device's
+secure store. It is kept small enough to review by reading. It is to be checked in the Unity editor: none of it has
+run yet (§8).
 
-**.NET Standard 2.0 and C# 7.3** because that is what the owner's team builds in, Unity 2019.4 (at either of its API
-levels, .NET Standard 2.0 and .NET 4.x) and Visual Studio 2019 on .NET Framework 4.7.1, and what Unity 2022.3 and 6
-take as well ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root); it was .NET Standard 2.1 and C# 9, for 2022.3 and 6 alone). No spans, which neither
-has: a frame is an array's segment. `client/unity2019-check.sh` compiles it with Unity 2019.4.28f1's own compiler. The main thread's work on a
-frame — decoding, applying, predicting, building the scene — allocates nothing
-but the names a frame carries (a new tank's, a kill's, a phrase's speaker's),
-for the same reason the server's tick allocates nothing: garbage on a phone
-shows up as dropped frames. The receive thread allocates one array for each
-frame it hands over (`FrameReader`).
+**.NET Standard 2.0 and C# 7.3**, because that is what the owner's team builds with: Unity 2019.4, at either of its
+API levels (.NET Standard 2.0 and .NET 4.x), and Visual Studio 2019 on .NET Framework 4.7.1. Unity 2022.3 and Unity 6
+take them as well ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root)).
+Before D-108 the core was .NET Standard 2.1 and C# 9, for Unity 2022.3 and 6 alone. Neither C# 7.3 nor .NET Standard
+2.0 has `ReadOnlySpan<T>`, so a frame is an array segment: an array with an offset and a count.
+`client/unity2019-check.sh` compiles the core with Unity 2019.4.28f1's own compiler.
 
-Namespaces follow the system's name ([README](../README.md#naming)):
-`Backend.Client.Core`, `Backend.Client.Unity`. The code lives in
-[`client/`](../../client/README.md).
+**The main thread allocates almost nothing.** Its work on a frame (decoding, applying, predicting and building the
+scene) allocates nothing but the names that a frame carries: a new tank's name, a kill's names, a phrase speaker's
+name. The reason is the one for which the server's tick allocates nothing: on a phone, garbage shows up as dropped
+frames. The receive thread allocates one array for each frame it hands over (`FrameReader`).
+
+Namespaces follow the system's name ([README](../README.md#naming)): `Backend.Client.Core` and
+`Backend.Client.Unity`. The code is in [`client/`](../../client/README.md).
 
 ## 2. Threads
 
-Unity's API is main-thread only, and the world is single-writer, as a room is on
-the server ([07 §1](07-threading-and-performance.md#1-thread-inventory-arena-process)):
+Unity's API may be called from the main thread only. The world has a single writer, as a room has on the server
+([07 §1](07-threading-and-performance.md#1-thread-inventory-arena-process)):
 
 | Thread | Does | Touches the world? |
 |---|---|---|
-| Unity main | applies frames, renders, samples input, sends inputs | **the only writer** |
-| A receive thread per match connection; a reading task and a writing task per lobby connection | reads and frames bytes, each whole frame a new array, and queues them | no |
-| Timers on the main thread's clock | ping, input cadence, reconnect backoff, the silence that counts as a loss | no |
+| Unity's main thread | applies frames, renders, samples input, sends inputs | **the only writer** |
+| A receive thread for each match connection; a reading task and a writing task for each lobby connection | reads bytes and cuts them into frames, each whole frame a new array, and queues them | no |
+| Timers on the main thread's clock | the ping, the input cadence, the reconnect backoff, and the silence that counts as a loss | no |
 
-A frame is decoded where it is applied, on the main thread: a snapshot is about
-80 bytes, fifteen times a second, and decoding it off-thread would buy nothing
-but a second copy of the world. The receive queue is not bounded
-(`MatchConnection`'s is a `ConcurrentQueue`): what it holds is fifteen frames a
-second, and a client that falls behind reading is a client whose link the
-server is already stepping down ([02 §8](02-networking.md#8-traffic-profiles)).
+**A frame is decoded where it is applied**, on the main thread. A snapshot is about 80 bytes, fifteen times a second.
+Decoding it on another thread would buy nothing but a second copy of the world. The receive queue is not bounded
+(`MatchConnection`'s is a `ConcurrentQueue`). It holds fifteen frames a second, and when a client falls behind in
+reading, the server is already stepping that client's link down to fewer frames
+([02 §8](02-networking.md#8-traffic-profiles)).
 
 ## 3. The match connection
 
-What the client must do is [02 §3, §6, §9, §10](02-networking.md#3-messages):
-the version first in `Join` and `Resume`; `Ping` every 10 s in every state;
-`Input` ten times a second whenever the tank is alive and the app is in the
-foreground, each message one input that coalesces the two samples since the
-last (the latest move and aim, fire OR-ed), carrying the acknowledgement; `Lifecycle` on every
-background and return; `Leave` to quit; TLS when the grant says, checked against
-the name the grant gives (`tlsName`, else the host) and with nothing pinned
-([03 §2](03-gateway.md#2-position-and-shape)). Behind the site's front ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)) the
-grant's host is the site's address, its `tlsName` the arena's name, which the handshake sends and
-the front's nginx routes by; and the certificate is checked against the backend's own root, which
-the app ships (`TrustRoot`, [operations/06 §5](../operations/06-certificates.md#5-in-the-app)), in place of
-the device's store: by the client itself, for the name the handshake sends, the runtime's own verdict not asked
-([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root): issued by the root, RSA and SHA-256, valid now, the name in its subjectAltName). What this document adds:
+What the client must do is in [02 §3, §6, §9, §10](02-networking.md#3-messages):
 
-**A connection that falls silent is lost.** The arena sends fifteen frames a
-second: none for 3 s while the app is in the foreground, the match is joined
-(`InMatch`) and the own tank alive is taken as a lost connection, and resumed as
-any is. A dead tank's player is sent no frames, by design, only its events and
-the answers to its pings, every 10 s: dead, the limit is 13 s, or waiting to
-respawn, or for co-op's next wave, would be taken for a loss, and the resume would
-spawn the tank (defect [P-53](../defects.md#2-protocol--the-client-contract)).
-**Dead** is from the Death event until a frame moves the world's tick again, which
-only a player with a tank is sent: the arena never removes the own tank, so the
-entity cannot say (P-54). `Alive` is false meanwhile: no input goes out, nothing is
-predicted, and the HUD offers Respawn. Dialling and
-the TLS handshake are bounded too, so an arena's machine that has gone is found
-out within the resume's minute, not by the operating system's timeouts, which
-run to minutes.
+- the protocol version first, in `Join` and in `Resume`;
+- `Ping` every 10 seconds, in every state;
+- `Input` ten times a second, whenever the tank is alive and the app is in the foreground. Each `Input` message is one
+  input that joins the two samples taken since the last message: the latest move and aim, and fire if either sample
+  fired. It carries the acknowledgement of the frames received;
+- `Lifecycle` every time the app goes to the background and every time it returns;
+- `Leave` to quit;
+- TLS when the grant asks for it, checked against the name that the grant gives (`tlsName`, or else the host), with
+  nothing pinned ([03 §2](03-gateway.md#2-position-and-shape)).
 
-**What the client does on each ending.** `MatchConnection` ends with a
-`MatchEnd` for each, or resumes by itself; what follows an end is the layer
-above's. **The package's scripts do not do it yet** (§8): `BackendClient`
-keeps how the match ended (`LastEnd`) and goes back to the lobby screen, and
-the wait after `Kick(2)`, the backoff after `Kick(5)` and the log after
-`Kick(4)` are still to be written.
+Behind the site's front
+([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)),
+the grant's host is the site's address, and its `tlsName` is the arena's name. The TLS handshake sends that name, and
+the front's nginx routes the connection by it. The client checks the certificate against the backend's own root
+certificate, which the app ships (`TrustRoot`,
+[operations/06 §5](../operations/06-certificates.md#5-in-the-app)), in place of the device's certificate store. The
+client makes this check itself, for the name the handshake sends, and does not ask the runtime for its own verdict
+([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root)).
+The certificate must be issued by the root, be signed with RSA and SHA-256, be valid now, and carry the name in its
+subjectAltName. A client without TLS reaches the same arena through port 80 instead (§9).
+
+What this document adds:
+
+**A connection that falls silent is lost.** The arena sends fifteen frames a second. When no frame comes for
+3 seconds, the client takes the connection as lost, and resumes it as after any loss. This rule holds while the app is
+in the foreground, the match is joined (`InMatch`) and the own tank is alive.
+
+A dead tank's player is sent no frames, by design: only its events, and the answers to its pings, which go every 10
+seconds. So while the tank is dead, the limit is 13 seconds. With the 3-second limit, a player waiting to respawn, or
+waiting for co-op's next wave, would be taken for a loss, and the resume would spawn the tank (defect
+[P-53](../defects.md#2-protocol--the-client-contract)). **Dead** lasts from the Death event until a frame moves the
+world's tick again, and only a player with a tank is sent such a frame. The arena never removes the own tank, so the
+entity cannot say whether the tank is dead (P-54). Meanwhile `Alive` is false: no input goes out, nothing is
+predicted, and the HUD offers Respawn.
+
+Dialling and the TLS handshake are bounded too: 5 seconds for both together (`ConnectMs`), and 10 seconds for a `Join`
+or a `Resume` to get its `Welcome` (`JoinMs`). So the client finds out that an arena's machine has gone within the
+resume's minute, not by the operating system's timeouts, which run to minutes.
+
+**What the client does on each ending.** `MatchConnection` ends with a `MatchEnd` value for each ending, or it resumes
+by itself. What follows an end is the job of the layer above. **The package's scripts do not do it yet** (§8):
+`BackendClient` keeps how the match ended (`LastEnd`) and goes back to the lobby screen. The wait after `Kick(2)`, the
+backoff after `Kick(5)` and the log after `Kick(4)` are still to be written.
 
 | Ending | `MatchEnd` | Then |
 |---|---|---|
-| A frame the world cannot apply: an update for a handle it does not hold, a truncated frame | none: the core resumes (`LastProblem` says "desync: …") | a desync, not survivable by guessing: close, and resume as below; a resume starts a fresh view |
-| The socket closes or fails, no `Kick`; or the silence above | none while resuming; `ResumeExpired` after the minute; `Unreachable` if it never joined | Resume: dial the same arena with the latest secret, after 0.5 s, 1 s, 2 s, 4 s, 8 s …, until 60 s have passed since the loss; then back to the lobby for a ticket |
-| `Kick(1)` ticket or stay unknown | `BadTicket` | back to the lobby for a ticket, at once |
-| `Kick(2)` no room | `RoomFull` | ask for another ticket after 2 s; the grant was spent |
-| `Kick(3)` protocol version | `ProtocolVersion` | tell the player to update; never retry |
-| `Kick(4)` rate limit | `RateLimit` | a client bug: log it with the last messages sent, back to the lobby screen, no loop |
-| `Kick(5)` server fault, or a reason this client does not know | `ServerFault` | back through the lobby with backoff: 1 s doubling to 30 s, each wait jittered ±50 % so a restarting arena's players do not return together |
-| `Kick(6)` match over | `MatchOver` | a made match has ended ([04 §4](04-platform-services.md#4-matchmaking)): back to the lobby, where its result lands; not an error, nothing to reconnect to |
-| `Kick(7)` removed | `Removed` | an operator took the player out, or closed the room ([04 §10](04-platform-services.md#10-admin-api)): back to the lobby, nothing to reconnect to |
-| The player quits | `Left` | `Leave`; the connection is closed once the arena has closed it, or after 2 s (02 §10, P-34), and `Dispose` does not cut that short |
+| A frame the world cannot apply: an update for a handle it does not hold, or a truncated frame | none: the core resumes, and `LastProblem` says "desync: …" | a desync, which guessing cannot survive: close, and resume as below. A resume starts a fresh view |
+| The socket closes or fails without a `Kick`; or the silence above | none while resuming; `ResumeExpired` after the minute; `Unreachable` if the first connection was never made | Resume: dial the same arena with the latest secret after 0.5 s, 1 s, 2 s, 4 s and 8 s, then every 8 s, until 60 s have passed since the loss. Then back to the lobby for a ticket |
+| `Kick(1)`: the ticket or the stay is unknown | `BadTicket` | back to the lobby for a ticket, at once |
+| `Kick(2)`: no room | `RoomFull` | ask for another ticket after 2 s; the grant was spent |
+| `Kick(3)`: the protocol version | `ProtocolVersion` | tell the player to update the app; never retry |
+| `Kick(4)`: the rate limit | `RateLimit` | a bug in the client: log it with the last messages sent, and go back to the lobby screen. No loop |
+| `Kick(5)`: a server fault, or a reason this client does not know | `ServerFault` | back through the lobby with a backoff: 1 s, doubling up to 30 s, each wait jittered by ±50 % so that a restarting arena's players do not all return together |
+| `Kick(6)`: the match is over | `MatchOver` | a made match has ended ([04 §4](04-platform-services.md#4-matchmaking)): back to the lobby, where its result lands. Not an error; nothing to reconnect to |
+| `Kick(7)`: removed | `Removed` | an operator took the player out, or closed the room ([04 §10](04-platform-services.md#10-admin-api)): back to the lobby; nothing to reconnect to |
+| The player quits | `Left` | send `Leave`. The connection is closed once the arena has closed it, or after 2 s (02 §10, P-34); `Dispose` does not cut that short |
 
-**The resume secret is kept in memory**, from the latest `Welcome`, and **on
-disk by the app** for a cold resume
-([D-51](../architecture/03-decision-log.md#d-51--a-cold-resume-is-the-devices-the-app-keeps-its-stays-secret)):
-written with the grant's host, port and TLS where the account's key is kept,
-whenever the app goes to the background, and cleared when the stay ends.
-Restarted within the minute, the app makes a `MatchConnection` with those
-settings and calls `Resume(secret)` in place of `Join`; it then behaves as after
-any lost connection, and `Kick(1)` means the stay is over. The arena always
-accepted a `Resume` on any connection; only the core had no way to start one.
-**The core's half is built** and drilled (`MatchConnection.Resume`, the
-`coldresume` scenario); **the app's half**, writing the secret on the way to the
-background and resuming with it on launch, is the layer above's and **not in
-the package's scripts yet** (§8).
+**The resume secret is kept in memory**, from the latest `Welcome`, **and on disk by the app**, for a cold resume
+([D-51](../architecture/03-decision-log.md#d-51--a-cold-resume-is-the-devices-the-app-keeps-its-stays-secret)). In a
+cold resume, an app that was killed and then restarted takes up its stay again. The app writes the secret, with the
+grant's host, port and TLS, where it keeps the account's key, every time the app goes to the background. It clears
+the secret when the stay ends. When the app restarts within the minute, it makes a `MatchConnection` with those
+settings and calls `Resume(secret)` in place of `Join`. From then on it behaves as after any lost connection, and
+`Kick(1)` means that the stay is over. The arena always accepted a `Resume` on any connection; only the core had no
+way to start one.
 
-**Frames are timed by `tickDelta`**, never by the rate in `Welcome`, which is only
-where the profile starts ([02 §8](02-networking.md#8-traffic-profiles)). The
-traffic profile the client asks for is `mobile` by default and `saver` when the
-player turns it on in settings: `MatchSettings.Profile`, whose default, −1,
-leaves it out of `Join` and `Resume`, which the server reads as mobile. The
-package's scripts have no such setting yet.
+- **The core's half is built** and drilled: `MatchConnection.Resume`, and the drill's `coldresume` scenario.
+- **The app's half**, writing the secret on the way to the background and resuming with it on launch, is the layer
+  above's, and **not in the package's scripts yet** (§8).
+
+**Frames are timed by `tickDelta`**, never by the rate in `Welcome`, which is only where the traffic profile starts
+([02 §8](02-networking.md#8-traffic-profiles)). The client asks for the traffic profile `mobile` by default, and
+`saver` when the player turns that on in the settings. The setting is `MatchSettings.Profile`. Its default, −1, leaves
+the profile out of `Join` and `Resume`, and the server reads that as `mobile`. The package's scripts have no such
+setting yet.
 
 ## 4. The world, and when things are drawn
 
-The world is the server's `protocol/ClientWorld`, in C#, checked against the same
-vectors: handles, creates, world-space update deltas, removes before creates,
-events stepped over by their byte length when unknown, predicted entities
-carrying their death tick, and nothing cleared on death, respawn or a new match
-([02 §5](02-networking.md#5-entity-handles)). `ExpirePredicted` drops one whose
-death tick has passed with no remove; nothing calls it today. The world's tick
-moves only with a frame, and the server's remove of a bullet comes in the frame
-that passes its death, over a connection that loses nothing, so the server's
-remove is what ends them.
+**The world is the server's `protocol/ClientWorld`, written in C#**, and checked against the same vectors
+([02 §5](02-networking.md#5-entity-handles)). It applies:
 
-**Drawing happens a little in the past.** Other tanks are drawn between their
-last two samples at `renderTick = newestTick − 2 frames` (133 ms at 15 Hz, 200 at
-10), which hides one late frame. Bullets are extrapolated from their create to
-the render tick and drawn nowhere after their destroy, which is authoritative
-([02 §6](02-networking.md#6-client-side-simulation)); their hit effect is drawn
-where the destroy puts them. Shapes are drawn where they are and turned locally.
+- handles and creates;
+- updates, as deltas in world space;
+- removes, before creates;
+- unknown events, stepped over by their byte length;
+- predicted entities, which carry their death tick.
 
-**A maze's walls are made, never sent** ([01 §8.9](01-arena.md#89-maze-designed-2026-10-01-plan-item-32),
+It clears nothing on a death, a respawn or a new match. `ExpirePredicted` drops a predicted entity whose death tick
+has passed with no remove; nothing calls it today. The world's tick moves only with a frame. The server's remove of a
+bullet comes in the frame that passes the bullet's death, over a connection that loses nothing, so the server's remove
+is what ends a bullet.
+
+**Drawing happens a little in the past.** Other tanks are drawn between their last two samples, at
+`renderTick = newestTick − 2 frames`: 133 ms at 15 frames a second, and 200 ms at 10. That hides one late frame.
+Bullets are extrapolated from their create to the render tick, and drawn nowhere after their destroy, which is
+authoritative ([02 §6](02-networking.md#6-client-side-simulation)). A bullet's hit effect is drawn where the destroy
+puts the bullet. Shapes are drawn where they are, and turned locally.
+
+**A maze's walls are made on the client, never sent**
+([01 §8.9](01-arena.md#89-maze-designed-2026-10-01-plan-item-32),
 [D-48](../architecture/03-decision-log.md#d-48--a-maze-is-sent-as-a-seed-and-a-predicted-bullet-stops-at-its-walls-by-one-rule-on-both-sides)).
-The `Welcome`'s `MazeSeed`, 0 for none, is read when the frame has it; the
-connection's new `ClientWorld` makes `Walls` from it with `Maze.Walls`, a port of
-the server's generator and its random numbers, held to the server's walls for
-one seed by a golden vector the Java side wrote. A predicted bullet's path is
-known whole from its create, so the first tick its centre comes within its
-radius of a wall, checked after each move as the server checks, is found once:
-the frame that reaches it removes the bullet there and reports the removal for
-its hit, before the server's destroy, which then finds nothing; between frames
-it is drawn no further. Tanks, shapes and units slide along walls on the server
-and come in updates, so they need nothing here.
+The `Welcome`'s `MazeSeed` (0 for none) is read when the frame has it. The connection's new `ClientWorld` makes `Walls`
+from the seed with `Maze.Walls`, a port of the server's generator and its random numbers. A golden vector that the
+Java side wrote holds it to the server's walls for one seed.
 
-**Events reach the layer above through `MatchConnection.OnEvent`**, every event
-of every frame as it is applied: `ClientWorld` keeps the last frame's only, and
-one `Poll` applies every frame waiting, several after any stall
-([P-33](../defects.md#2-protocol--the-client-contract)). A death, the player's
-own progression, kills (`Kill`: `Killer` and `Victim`, [01 §9](01-arena.md#the-kill-feed-designed-2026-10-01-plan-item-37)), and phrases ([01 §9](01-arena.md#phrases-designed-2026-09-29-plan-item-8)):
-a phrase with a handle is drawn over that tank, one with handle 0 in the team's
-feed by the speaker's name; the words are the list's, from
-`ApiClient.Phrases()`, kept until a `Welcome` names another `PhraseListVersion`.
-`Say(id)` sends one; the server drops one within two seconds of the last, so
-the button can simply be greyed for two seconds.
+A predicted bullet's path is known whole from its create. So the client finds, once, the first tick at which the
+bullet's centre comes within its radius of a wall, checked after each move as the server checks. The frame that
+reaches that tick removes the bullet there, and reports the removal for its hit effect, before the server's destroy
+arrives (the destroy then finds nothing). Between frames, the bullet is drawn no further. Tanks, shapes and units
+slide along walls on the server and come in updates, so they need nothing here.
 
-**A sandbox** ([01 §8.10](01-arena.md#810-sandbox-designed-2026-10-01-plan-item-33)) is
-opened by `ApiClient.OpenSandbox`, for the player or, from a party's leader, the
-party (a 503 `no_room` is "not now": asked again a few seconds on, a room just freed
-is there); each member's lobby is pushed `evt.match.found` as for a match found, and
-the connection goes there as to any match. In it, `SetLevel(n)` rebuilds the own
-tank at a level from 1 to 45 and `SummonGuardian()` brings co-op's boss; the
-level comes back as the player's own progression, the Guardian as a tank of its
-class. Elsewhere the arena drops both.
+**Events reach the layer above through `MatchConnection.OnEvent`**: every event of every frame, as it is applied.
+`ClientWorld` keeps the last frame's events only, and one `Poll` applies every frame waiting, several after any stall
+([P-33](../defects.md#2-protocol--the-client-contract)). The events are:
 
-**The player's own tank is predicted** (designed 2026-10-03, plan item 70;
-the rule in [02 §9](02-networking.md#predicting-the-own-tank),
+- a death;
+- the player's own progression;
+- kills (`Kill`, with `Killer` and `Victim`, [01 §9](01-arena.md#the-kill-feed-designed-2026-10-01-plan-item-37));
+- phrases ([01 §9](01-arena.md#phrases-designed-2026-09-29-plan-item-8)). A phrase with a handle is drawn over that
+  tank. A phrase with handle 0 is drawn in the team's feed, by the speaker's name. The words are the list's, from
+  `ApiClient.Phrases()`, kept until a `Welcome` names another `PhraseListVersion`. `Say(id)` sends a phrase. The
+  server drops a phrase sent within two seconds of the last one, so the button can simply be greyed out for two
+  seconds.
+
+**A sandbox** ([01 §8.10](01-arena.md#810-sandbox-designed-2026-10-01-plan-item-33)) is a private room. It is opened
+by `ApiClient.OpenSandbox`, for the player, or, when a party's leader calls it, for the party. A 503 `no_room` means
+"not now": asked again a few seconds later, a room just freed is there. Each member's lobby is pushed
+`evt.match.found`, as for a match found, and the connection goes there as to any match. In a sandbox, `SetLevel(n)`
+rebuilds the own tank at a level from 1 to 45, and `SummonGuardian()` brings co-op's boss. The level comes back as the
+player's own progression event, and the Guardian as a tank of its class. Outside a sandbox, the arena drops both.
+
+**The player's own tank is predicted** (designed 2026-10-03, plan item 70; the rule is in
+[02 §9](02-networking.md#predicting-the-own-tank),
 [D-62](../architecture/03-decision-log.md#d-62--the-own-tank-is-predicted-by-the-servers-movement-rule-from-what-two-events-carry)).
-It is drawn in the present while everything else is drawn a little in the past,
-as realtime clients of this kind do: input to movement is then
-no time at all, and what the player sees of others is a frame or two old.
+The own tank is drawn in the present, while everything else is drawn a little in the past, as realtime clients of
+this kind do. Then the time from an input to the tank's movement is zero, and what the player sees of others is a
+frame or two old.
 
-- **`TankMotion.Step`** is the room's step of a driven tank, in C#: the move
-  bits to a direction, the acceleration and friction, the map's edge and a
-  maze's walls (`WallGrid`, the server's `Walls` with its cells of 300, a wall
-  in every cell it covers). It is held to the server's by a trajectory the
-  server's own `Room` writes, `backend/arena/src/test/resources/motion-2026.txt`
-  (by the arena's `MotionVectorTest`):
-  inputs that start, stop, turn and go diagonally, the map's corner, and a
-  maze's walls, each step's position and velocity as the floats' bits, which
-  the core's test must make bit for bit. Single-precision arithmetic in the
-  same order gives the same bits in Java and .NET; the vector is what proves it
-  stays so.
-- **`ClientWorld` keeps `Motion` and `MotionRule`** as state (`SelfMotion`:
-  the input's ticks and the velocity, from this frame or not; the acceleration
-  and radius, from the last `MotionRule`), not as events: `OnEvent` never sees
-  them. It notes a frame that created the own tank afresh (a respawn).
-- **`OwnTank`**, one a `MatchConnection`, does the rest. `Poll` steps it by the
-  clock at 25 Hz with the input held, each step stamped with the seq that will
-  carry it; a send stamps the steps of its seq with the input actually sent,
-  which is what the server will apply. It keeps 64 steps (2.56 s), each with the
-  state after it. On a frame it compares, reconciles and replays (02 §9), and
-  keeps the correction.
-- **What the layer above draws**: `OwnTank.DrawPosition(now, out x, out y)`, the
-  predicted position between the last two steps by the time since the last, plus what is
-  left of the correction (halved every 50 ms; over 64 units taken at once), and
-  `Angle`, the aim held. `Predicting` says whether it is: not while dead,
-  parked, joining or before `MotionRule` has come, when the server's tank, at
-  its newest sample, is drawn instead.
-- **What it measures, for the drill and for a development build**: each
-  frame's error, the matched step's position as predicted before the frame
-  against the frame's, and each correction (`OnReconciled`), and the frames
-  compared and the jumps. Measured live (02 §9): the error's median 0.16 units,
-  the wire's rounding, p95 under a unit, no jump.
+- **`TankMotion.Step`** is the room's step of a driven tank, in C#: the move bits turned into a direction, the
+  acceleration and friction, the map's edge, and a maze's walls (`WallGrid`: the server's `Walls`, with cells of 300
+  units, and a wall in every cell it covers). A trajectory that the server's own `Room` writes holds it to the
+  server's step: `backend/arena/src/test/resources/motion-2026.txt`, written by the arena's `MotionVectorTest`. The
+  trajectory has inputs that start, stop, turn and go diagonally, the map's corner, and a maze's walls. It gives each
+  step's position and velocity as the bits of the floats, and the core's test must make them bit for bit.
+  Single-precision arithmetic in the same order gives the same bits in Java and in .NET; the vector is what proves
+  that it stays so.
+- **`ClientWorld` keeps `Motion` and `MotionRule` as state**, not as events, so `OnEvent` never sees them.
+  `SelfMotion` holds the input's ticks and the velocity (from this frame, or from an earlier one), and the
+  acceleration and radius from the last `MotionRule`. The world also notes a frame that created the own tank afresh
+  (a respawn).
+- **`OwnTank`**, one for each `MatchConnection`, does the rest. `Poll` steps it by the clock at 25 Hz with the input
+  held. Each step is stamped with the sequence number (seq) of the input message that will carry it. When an input is
+  sent, the steps of its seq are stamped with the input actually sent, which is what the server will apply. `OwnTank`
+  keeps 64 steps (2.56 s), each with the state after it. On each frame it compares, reconciles and replays (02 §9),
+  and keeps the correction.
+- **What the layer above draws**: `OwnTank.DrawPosition(now, out x, out y)` is the predicted position between the
+  last two steps, by the time since the last step, plus what is left of the correction. The correction is halved
+  every 50 ms; a correction over 64 units is taken at once. `Angle` is the aim held. `Predicting` says whether the
+  tank is predicted now. It is not while the tank is dead, parked or joining, or before `MotionRule` has come; then
+  the server's tank is drawn instead, at its newest sample.
+- **What it measures, for the drill and for a development build**: each frame's error (the matched step's position,
+  as predicted before the frame, against the frame's position), each correction (`OnReconciled`), the frames compared
+  and the jumps. Measured live (02 §9): the error's median was 0.16 units, which is the wire's rounding; the 95th
+  percentile was under a unit; there was no jump.
 
-**Built 2026-10-03** (plan item 70): `TankMotion`, `WallGrid`, `OwnTank`,
-`ClientWorld.Motion`, and `MatchConnection.OwnTank`, stepped in `Poll` before
-the input goes out.
+**Built 2026-10-03** (plan item 70): `TankMotion`, `WallGrid`, `OwnTank`, `ClientWorld.Motion`, and
+`MatchConnection.OwnTank`, which `Poll` steps before the input goes out.
 
-Not predicted (02 §9): recoil and knocks, corrected a frame late. The own
-bullets come from the server's tank, a frame or two behind the drawn one
-while it moves; drawing them from the barrel is the Unity layer's to judge.
+**Not predicted** (02 §9): recoil and knocks, which are corrected a frame late. The own bullets come from the server's
+tank, a frame or two behind the drawn tank while it moves. Whether to draw them from the drawn barrel instead is for
+the Unity layer to judge.
 
 ## 5. The lobby and the API
 
-The API is [04's](04-platform-services.md), over HTTPS; the lobby is
-[03 §3](03-gateway.md#3-lobby-protocol), over a WebSocket. Each call's answers are
-in the backend's [API table](../../backend/README.md#the-platform-api). What the
-client adds:
+The API is [04's](04-platform-services.md), over HTTPS or plain HTTP. The lobby is
+[03 §3](03-gateway.md#3-lobby-protocol), over a WebSocket, `wss://` or `ws://`. Each call's answers are in the
+backend's [API table](../../backend/README.md#the-platform-api), and with examples in [docs/api](../api/README.md).
+What the client adds is below.
 
-- **The endpoints, tried in turn** ([D-13](../architecture/03-decision-log.md#d-13--the-client-holds-an-endpoint-list-no-vip)),
-  `https://` and `wss://` only: since D-82 one, the site's address, `https://203.0.113.10`. The
-  backend's root (`TrustRoot`) is trusted for both, each connection checking its own host: the API through
-  `HttpWebRequest` (`TrustRoot.HttpHandler`, one callback a request), the lobby through the core's own WebSocket
-  over `SslStream` ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root): Unity 2019's `HttpClientHandler` callback is not implemented, and .NET Standard
-  2.0's `ClientWebSocket` has none). `ApiClient` takes the list: an endpoint that
-  cannot be reached, or whose certificate is refused, moves the call to the
-  next, never to plain text, and the one that answered is tried first next
-  time. `LobbyClient` takes one address. Trying the lobby's endpoints in turn is
-  the layer above's, and **not in the package's scripts yet** (§8). **Any build
-  connects the way it is set up** ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)):
-  `https://`, `wss://` and the root, or `http://` and `ws://`, a players' build
-  too; D-104's refusal in a players' build is gone. A grant's TLS is the
-  backend's: the site's ask for it, so the full client plays over TLS on 9001
-  even when its API and lobby are in clear.
-- **The account's key lives in the device's secure store** (Keychain, Android
-  Keystore): `AccountKeeper` keeps a guest's key and logs in by it on every
-  launch (§8). Keeping the session token there too, so that a restarted app
-  skips the login, is the layer above's and **not built**: the package holds
-  the session in memory. A 401 means log in again.
-- **429 and 503 are waits, not errors**: honour `Retry-After`. `ApiResult`
-  carries it as `RetryAfterSeconds`; waiting it out before asking again is the
-  layer above's, **not in the package's scripts yet**. `ApiClient` gives every
-  call 10 s, which a login queued behind Argon2 needs
+### Connecting: endpoints, TLS and keys
+
+- **The endpoints, tried in turn**
+  ([D-13](../architecture/03-decision-log.md#d-13--the-client-holds-an-endpoint-list-no-vip)). Since D-82 the list
+  has one endpoint, the site's address, for example `https://203.0.113.10`. `ApiClient` takes the list. When an
+  endpoint cannot be reached, or its certificate is refused, the call moves to the next endpoint in the list. The
+  client never changes an `https://` endpoint to `http://` by itself. The endpoint that answered is tried first next
+  time. One exception: a `POST` that timed out is not sent to another endpoint, because it may have been done (a
+  guest made, a team applied to). The call then answers `timeout`; a `POST` with a key is safe to send again with its
+  key. `LobbyClient` takes one address. Trying the lobby's endpoints in turn is the layer above's, and **not in the
+  package's scripts yet** (§8).
+- **TLS and the backend's root.** The backend's root (`TrustRoot`) is trusted for both the API and the lobby, and each
+  connection checks its own host. The API goes through `HttpWebRequest` (`TrustRoot.HttpHandler`, one certificate
+  callback for each request). The lobby goes through the core's own WebSocket, over `SslStream`
+  ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root)).
+  The core does not use the usual classes: Unity 2019's `HttpClientHandler` certificate callback is not implemented,
+  and .NET Standard 2.0's `ClientWebSocket` has no callback at all. When the Unity package is given no root, it uses
+  the platform's own `HttpClient` and the device's own certificate store, for a backend that a public certificate
+  authority certifies.
+- **Any build connects the way it is set up**
+  ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
+  A build given `https://`, `wss://` and the root is encrypted. A build given `http://` and `ws://` is in clear. This
+  holds for a players' build too: D-104's refusal of plain connections in a players' build is gone. A grant's TLS is
+  the backend's choice. The site's grants ask for TLS, so the full client plays over TLS on port 9001 even when its API
+  and lobby are in clear.
+- **The account's key lives in the device's secure store** (the Keychain on iOS, the Android Keystore).
+  `AccountKeeper` keeps a guest's key, and logs in by it on every launch (§8). Keeping the session token there too, so
+  that a restarted app skips the login, is the layer above's, and **not built**: the package holds the session in
+  memory. A 401 means: log in again.
+- **429 and 503 are waits, not errors**: honour `Retry-After`. `ApiResult` carries it as `RetryAfterSeconds`. Waiting
+  it out before asking again is the layer above's, and **not in the package's scripts yet**. `ApiClient` gives every
+  call 10 seconds, which a login queued behind Argon2, the password hash, needs
   ([04 §1](04-platform-services.md#1-auth-and-sessions)).
-- **A purchase key is made when Buy is tapped and kept until the answer
-  arrives**, so a retry after a lost answer is the same purchase
-  ([04 §8](04-platform-services.md#8-economy-shop-inventory-and-equipment)). Kept
-  on disk: an app killed mid-purchase that retries with a new key would buy twice.
-  `ApiClient.NewPurchaseKey()` makes one; keeping it is the layer above's, and
-  the package has no shop screen yet.
-- **The lobby socket pings every 30 s**, answered by `ping.ok`: a ping followed
-  by 10 s in which nothing at all is heard is a lost connection
-  (`LobbyClient.PingAnswerMs`), found before the socket would say so. A message the socket delivers in fragments is
-  joined and decoded once whole. On `evt.session.replaced` the lobby does not
-  reconnect: the player signed in elsewhere; nor on `evt.session.revoked`: an
-  operator's ban or suspension, or the account deleted (D-84), after which logging in says whether the
-  account may play. A match an operator ends is `Kick(7)`, `MatchEnd.Removed`:
-  back to the lobby, nothing to reconnect to
-  ([03 §4](03-gateway.md#4-connection-lifecycle)). Nor after `invalid_session`,
-  which means log in again. Any other loss reconnects after 1 s, doubling to
-  30 s, each wait jittered ±50 % so a restarting gateway's players do not
-  return together.
-- **The queue for timed matches** ([04 §4](04-platform-services.md#4-matchmaking)):
-  `queue.join` over the lobby, and the match arrives as the push
-  `evt.match.found`, carrying the grant. A client that reconnects its lobby
-  while queued asks `GET /v1/queue` (`ApiClient.Queue`), which answers
-  `matched` with the grant if the push was missed; the grant lives as long as
-  its ticket, 60 s. `evt.resync`, which a gateway sends after dropping pushes it
-  could not deliver ([03 §8](03-gateway.md#8-backpressure-and-slow-clients)),
-  reaches `OnPush` and asks for the same: the queue, the party and a
-  tournament match fetched again. Both are the layer above's, **not in the
-  package's scripts yet**.
+- **A purchase key is made when Buy is tapped, and kept until the answer arrives**, so that a retry after a lost
+  answer is the same purchase ([04 §8](04-platform-services.md#8-economy-shop-inventory-and-equipment)). Keep it on
+  disk: an app killed in the middle of a purchase that retries with a new key would buy twice.
+  `ApiClient.NewPurchaseKey()` makes a key. Keeping it is the layer above's, and the package has no shop screen yet.
+
+### The lobby connection
+
+- **The lobby socket pings every 30 seconds**, and the gateway answers `ping.ok`. A ping followed by 10 seconds in
+  which nothing at all is heard is a lost connection (`LobbyClient.PingAnswerMs`). So the client finds a lost
+  connection before the socket would say so. A message that the socket delivers in fragments is joined, and decoded
+  once it is whole.
+- **When the lobby does not reconnect.** On `evt.session.replaced` the lobby does not reconnect: the player signed in
+  elsewhere. Nor on `evt.session.revoked`: an operator banned or suspended the account, or the account was deleted
+  (D-84). Logging in afterwards says whether the account may play. Nor after `invalid_session`, which means: log in
+  again. (A match that an operator ends is `Kick(7)`, `MatchEnd.Removed`: back to the lobby, with nothing to reconnect
+  to; [03 §4](03-gateway.md#4-connection-lifecycle).) Any other loss reconnects after 1 second, doubling up to 30
+  seconds, each wait jittered by ±50 % so that a restarting gateway's players do not all return together.
+
+### Queues and matches
+
+- **The queue for timed matches** ([04 §4](04-platform-services.md#4-matchmaking)). The client sends `queue.join` over
+  the lobby, and the match arrives as the push `evt.match.found`, which carries the grant. A client that reconnects its
+  lobby while queued asks `GET /v1/queue` (`ApiClient.Queue`). That answers `matched`, with the grant, if the push was
+  missed. The grant lives as long as its ticket: 60 seconds. A gateway sends `evt.resync` after it dropped pushes that
+  it could not deliver ([03 §8](03-gateway.md#8-backpressure-and-slow-clients)). `evt.resync` reaches `OnPush`, and it
+  asks for the same: fetch the queue, the party and a tournament match again. Both fetches are the layer above's, and
+  **not in the package's scripts yet**.
 - **A match found is asked about first**
-  ([D-27](../architecture/03-decision-log.md#d-27--a-match-found-asks-every-player-before-it-is-made)):
-  `evt.match.ready` puts `LobbyClient` in `confirming`, with `Ready` the match;
-  `AcceptMatch()` or `DeclineMatch()` answers it within its ten seconds, and a
-  refused answer leaves `AnswerRefusal`. The match itself still arrives as
-  `evt.match.found`; a match that is off arrives as `evt.queue.update`, queued
-  again, or none for whoever declined, who is then refused `queue_locked` for a
-  minute. `Ready` is cleared when the match is found (`evt.match.found`), when
-  the queue changes (`evt.queue.update`) and when a decline is answered
-  (`match.decline.ok`). `JoinQueue` starts a queue afresh, `QueueState` "none"
-  and `Ready` cleared, and `TakeGrant()`, which the layer above calls as it
-  joins a grant, hands the grant over and gives the queue back to the player,
-  "none", so the next queue is not taken for the last match. What to show, and
-  whether to accept on the player's behalf, is the Unity layer's.
-- **What a match paid** arrives as `evt.rewards` through `OnPush`, after
-  `worker` applies the result ([05 §6](05-worker-and-events.md#what-a-match-paid-pushed-designed-2026-10-01-plan-item-43)):
-  the place, coins, experience, rating change, the gems of a level milestone or an
-  achievement, each achievement reached by id, and each daily goal met with its
-  coins (04 §8); `ApiClient.Goals` lists today's three; a client that missed it
-  reads its inventory, and `ApiClient.Achievements` lists every achievement with
-  the player's progress.
-- **A team** ([04 §2](04-platform-services.md#team-events-pushed-designed-2026-10-01-plan-item-39)):
-  `LobbyClient.Team` is the team as the last `evt.team.update` gave it, null for
-  none or before any came; the calls are `ApiClient`'s (`MyTeam` and the rest).
-- **A party** ([04 §4](04-platform-services.md#parties), designed 2026-09-29):
-  `LobbyClient` sends `party.invite`, `party.accept`, `party.leave` and
-  `party.kick`, and keeps `Party`, the party as the newest answer or
-  `evt.party.update` gave it (null for none; `PartyState`, an older state of
-  the same party arriving after a newer one not applied, nor a late state of a
-  party it saw end, D-74), `Invitation`, the last
-  `evt.party.invite`, and `PartyRefusal`, a refused request's code.
-  `SayToParty(id)` sends `party.say`; each `evt.party.said` is told to
-  `OnPartySaid`, one call each, since several can arrive between polls
-  ([01 §9](01-arena.md#phrases-designed-2026-09-29-plan-item-8)). A member
-  does not queue; the leader does, and each member's `QueueState` follows
-  `evt.queue.update`, as the leader's follows its own answer. **A join's answer
-  is applied only while nothing has changed the queue since the join was sent**
-  ([T-61](../defects.md#4-concurrency)): an `evt.queue.update` that arrives
-  first, or a `LeaveQueue`, makes the answer late, and it is dropped. The
-  platform tells the members before it answers the leader, so a member who
-  leaves at once has the party taken out, and the leader told, while the
-  leader's answer may still be on its way; applied last, it would show the
-  leader queued in no queue, waiting for a match that cannot come. The other
-  way, a push already on its way when the player asked, shows "none" while
-  queued: the next tap is refused `already_queued` (`QueueRefusal`), which says
-  so, and a match found arrives anyway. A client whose
-  lobby reconnects fetches `GET /v1/party` and `GET /v1/queue` (`ApiClient.Party`
-  and `Queue`; the layer above's, not in the package's scripts yet): the pushes are
-  notifications, and one missed while away is not sent again. The core reads
-  the party's JSON in one place, `ApiClient.ReadParty`, tested with the other
-  messages; the rest is driven live: six players, three of them a party,
-  queued for team-vs-team, matched into one room with the party on one side.
-  A `matched` state is not undone by `evt.queue.update`: once matched, the
-  match is the member's own, and pushes from different threads can arrive out
-  of order.
-- **Tournaments** ([04 §6](04-platform-services.md#6-tournaments), designed
-  2026-09-30): `ApiClient.Tournaments()` and `Tournament(id)`, the bracket
-  among the rest, need no session; `EnterTournament` and
-  `WithdrawFromTournament` do. A match is pushed as `evt.tournament.match`,
-  which `LobbyClient` keeps as `TournamentMatch`, the last one pushed, and it
-  is joined as any grant. A client whose lobby reconnects asks
-  `ApiClient.TournamentMatch(token, id)`, which answers while the ticket lasts,
-  60 s. A player who never comes loses by walkover if the other came, and if
-  neither did, the higher seed goes through 270 s after the tickets. What to
-  show, the bracket and the countdown, is the Unity layer's.
-- **Team matches** ([04 §4's sixth slice](04-platform-services.md#the-sixth-slice-team-matches-designed-2026-09-30-plan-item-19),
-  designed 2026-09-30): the team's leader or a vice leader, leading a party of
-  three of its members, queues it as any queue, `JoinQueue("teams")`; a refusal
-  leaves `party_too_small`, `not_one_team` or `not_allowed` in `QueueRefusal`.
-  The match is found, asked about and joined as any. `TeamInfo` carries the
-  team's `Rating`, `Wins`, `Losses` and `Draws`.
-- **Teams' tournaments** ([04 §6's second slice](04-platform-services.md#the-second-slice-teams-tournaments-designed-2026-09-30-plan-item-20),
-  designed 2026-09-30): `TournamentInfo.Mode` is `teams`; an entry carries
-  `TeamId` and its `Roster`, a match `TeamA`, `TeamB` and `WinnerTeam`. A team's
-  leader or a vice leader, leading a party of three of it, calls
-  `EnterTournament`, as for a duel; the three are its roster. Each is pushed the
-  match as a duel's player is.
-- **Friends, blocks and the inbox** ([04 §9](04-platform-services.md#the-social-layers-first-slice-designed-2026-09-30-plan-item-21),
-  designed 2026-09-30): `ApiClient.Friends` (each friend's `Online`, and the
-  requests either way), `AskFriend` ("asked" or "friends"), `RemoveFriend`,
-  `DropFriendRequest`, `Blocks`, `Block`, `Unblock`, `Inbox` and `ReadInbox`.
-  The pushes `evt.friend.request`, `evt.friend.accepted` and `evt.inbox` reach
-  `LobbyClient.OnPush`; `evt.inbox` means read `Inbox` again. An inbox item is a
-  kind and an id, never words: the Unity layer writes them (FR-11).
-- **Guests** ([04 §1](04-platform-services.md#1-auth-and-sessions), designed
-  2026-09-30): `ApiClient.CreateGuest` answers a `Guest`, its `GuestKey` and
-  `DisplayName`; the key goes to the device's secure store (`AccountKeeper` over
-  `ISecureStore`, the package's `SecureStores`, §8), and `LoginGuest` takes it on every launch; the
-  session token is held in memory only (above). `UpgradeAccount`,
-  with the guest's session, a username, a password and a display name or none,
-  makes it a full account, the same player; from then `Login` by name, and the
-  key is refused.
+  ([D-27](../architecture/03-decision-log.md#d-27--a-match-found-asks-every-player-before-it-is-made)).
+  `evt.match.ready` puts `LobbyClient` in `confirming`, with `Ready` holding the match. `AcceptMatch()` or
+  `DeclineMatch()` answers it within its ten seconds; a refused answer leaves its code in `AnswerRefusal`. The match
+  itself still arrives as `evt.match.found`. A match that is called off arrives as `evt.queue.update`: queued again,
+  or "none" for whoever declined, who is then refused `queue_locked` for a minute.
+  - `Ready` is cleared when the match is found (`evt.match.found`), when the queue changes (`evt.queue.update`), and
+    when a decline is answered (`match.decline.ok`).
+  - `JoinQueue` starts a queue afresh: `QueueState` "none", and `Ready` cleared.
+  - `TakeGrant()`, which the layer above calls as it joins a grant, hands the grant over and gives the queue back to
+    the player as "none". So the next queue is not taken for the last match.
+  - What to show, and whether to accept on the player's behalf, is the Unity layer's choice.
+- **What a match paid** arrives as `evt.rewards` through `OnPush`, after `worker` applies the result
+  ([05 §6](05-worker-and-events.md#what-a-match-paid-pushed-designed-2026-10-01-plan-item-43)). It gives the place,
+  the coins, the experience, the rating change, the gems of a level milestone or of an achievement, each achievement
+  reached by id, and each daily goal met with its coins (04 §8). `ApiClient.Goals` lists today's three goals. A client
+  that missed the push reads its inventory, and `ApiClient.Achievements` lists every achievement with the player's
+  progress.
+
+### Parties, teams and tournaments
+
+- **A team** ([04 §2](04-platform-services.md#team-events-pushed-designed-2026-10-01-plan-item-39)).
+  `LobbyClient.Team` is the team as the last `evt.team.update` gave it: null for none, or before any came. The calls
+  are `ApiClient`'s (`MyTeam` and the rest).
+- **A party** ([04 §4](04-platform-services.md#parties), designed 2026-09-29). `LobbyClient` sends `party.invite`,
+  `party.accept`, `party.leave` and `party.kick`. It keeps:
+  - `Party`: the party, as the newest answer or `evt.party.update` gave it; null for none. `PartyState` decides which
+    state is the newest: an older state of the same party that arrives after a newer one is not applied, and neither
+    is a late state of a party it saw end (D-74);
+  - `Invitation`: the last `evt.party.invite`;
+  - `PartyRefusal`: the code of a refused request.
+
+  `SayToParty(id)` sends `party.say`. Each `evt.party.said` is told to `OnPartySaid`, one call each, since several can
+  arrive between polls ([01 §9](01-arena.md#phrases-designed-2026-09-29-plan-item-8)).
+
+  A member does not queue; the leader does. Each member's `QueueState` follows `evt.queue.update`, and the leader's
+  follows its own answer. **A join's answer is applied only while nothing has changed the queue since the join was
+  sent** ([T-61](../defects.md#4-concurrency)). An `evt.queue.update` that arrives first, or a `LeaveQueue`, makes the
+  answer late, and the answer is dropped. Here is why. The platform tells the members before it answers the leader.
+  So when a member leaves at once, the party is taken out of the queue and the leader is told, while the leader's
+  answer may still be on its way. Applied last, that answer would show the leader queued in no queue, waiting for a
+  match that cannot come. The other order can happen too: a push already on its way when the player asked shows
+  "none" while the party is queued. Then the next tap is refused `already_queued` (`QueueRefusal`), which says so, and
+  a match found arrives anyway.
+
+  A `matched` state is not undone by `evt.queue.update`: once matched, the match is the member's own, and pushes from
+  different threads can arrive out of order.
+
+  A client whose lobby reconnects fetches `GET /v1/party` and `GET /v1/queue` (`ApiClient.Party` and `Queue`; the
+  layer above's, not in the package's scripts yet). The pushes are notifications, and one missed while away is not
+  sent again.
+
+  The core reads the party's JSON in one place, `ApiClient.ReadParty`, which is tested with the other messages. The
+  rest is driven live: six players, three of them a party, queue for team against team and are matched into one
+  room, with the party on one side.
+- **Tournaments** ([04 §6](04-platform-services.md#6-tournaments), designed 2026-09-30). `ApiClient.Tournaments()`
+  and `Tournament(id)`, the bracket among the rest, need no session; `EnterTournament` and `WithdrawFromTournament`
+  do. A tournament match is pushed as `evt.tournament.match`. `LobbyClient` keeps the last one pushed as
+  `TournamentMatch`, and it is joined as any grant is. A client whose lobby reconnects asks
+  `ApiClient.TournamentMatch(token, id)`, which answers while the ticket lasts: 60 seconds. A player who never comes
+  loses by walkover if the other player came. If neither came, the higher seed goes through 270 seconds after the
+  tickets. What to show, the bracket and the countdown, is the Unity layer's.
+- **Team matches**
+  ([04 §4's sixth slice](04-platform-services.md#the-sixth-slice-team-matches-designed-2026-09-30-plan-item-19),
+  designed 2026-09-30). The team's leader or a vice leader, leading a party of three of the team's members, queues
+  the party as any queue: `JoinQueue("teams")`. A refusal leaves `party_too_small`, `not_one_team` or `not_allowed` in
+  `QueueRefusal`. The match is found, asked about and joined as any match. `TeamInfo` carries the team's `Rating`,
+  `Wins`, `Losses` and `Draws`.
+- **Teams' tournaments**
+  ([04 §6's second slice](04-platform-services.md#the-second-slice-teams-tournaments-designed-2026-09-30-plan-item-20),
+  designed 2026-09-30). `TournamentInfo.Mode` is `teams`. An entry carries `TeamId` and its `Roster`, and a match
+  carries `TeamA`, `TeamB` and `WinnerTeam`. A team's leader or a vice leader, leading a party of three of the team,
+  calls `EnterTournament`, as for a duel; the three are its roster. Each of them is pushed the match, as a duel's
+  player is.
+
+### Friends, guests and content
+
+- **Friends, blocks and the inbox**
+  ([04 §9](04-platform-services.md#the-social-layers-first-slice-designed-2026-09-30-plan-item-21), designed
+  2026-09-30). The calls are `ApiClient.Friends` (each friend's `Online`, and the requests both ways), `AskFriend`
+  (which answers "asked" or "friends"), `RemoveFriend`, `DropFriendRequest`, `Blocks`, `Block`, `Unblock`, `Inbox`
+  and `ReadInbox`. The pushes `evt.friend.request`, `evt.friend.accepted` and `evt.inbox` reach `LobbyClient.OnPush`;
+  `evt.inbox` means: read `Inbox` again. An inbox item is a kind and an id, never words: the Unity layer writes the
+  words (FR-11).
+- **Guests** ([04 §1](04-platform-services.md#1-auth-and-sessions), designed 2026-09-30). `ApiClient.CreateGuest`
+  answers a `Guest`, with its `GuestKey` and `DisplayName`. The key goes to the device's secure store (`AccountKeeper`
+  over `ISecureStore`, which the package's `SecureStores` implements, §8), and `LoginGuest` takes it on every launch.
+  The session token is held in memory only (above). `UpgradeAccount`, called with the guest's session, a username, a
+  password, and a display name or none, makes the guest a full account, the same player. From then on the player logs
+  in by name with `Login`, and the key is refused.
 - **The class table is fetched, not built in**
-  ([D-24](../architecture/03-decision-log.md#d-24--the-class-table-reaches-the-device-from-platform-versioned-by-its-content)):
-  `ApiClient.Classes()` reads `GET /v1/content/classes` into the core's own
-  `ClassTableInfo`, whose version is the one a `Welcome` names in
-  `contentVersion`. A client keeps the table it has until a `Welcome` names
-  another, then fetches again. What it draws with it is the Unity layer's.
-- **JSON is read and written by the core itself**, strictly (RFC 8259, depth
-  bounded): the messages are a few flat objects, and a package would be the
-  core's first dependency ([D-19](../architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer)).
+  ([D-24](../architecture/03-decision-log.md#d-24--the-class-table-reaches-the-device-from-platform-versioned-by-its-content)).
+  `ApiClient.Classes()` reads `GET /v1/content/classes` into the core's own `ClassTableInfo`, whose version is the one
+  a `Welcome` names in `contentVersion`. A client keeps the table it has until a `Welcome` names another version, then
+  fetches it again. What it draws with the table is the Unity layer's.
+- **JSON is read and written by the core itself**, strictly (RFC 8259, with the depth bounded). The messages are a few
+  flat objects, and a JSON package would be the core's first dependency
+  ([D-19](../architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer)).
 
 ## 6. Testing
 
 | What | How | Where |
 |---|---|---|
-| The wire and the world | every decoded field of every golden vector; unknown events stepped over; malformed frames refused | core tests, .NET SDK, this machine |
-| The maze | the walls for one seed against the server's golden vector (`backend/sim/src/test/resources/maze-2026.txt`); a bullet ending at a wall by the server's rule; live, the `maze` drill | core tests; the headless client |
-| Messages the client sends | encoded here, decoded by the real server | the headless client |
-| The whole path | a headless client driving the real stack from a release: register, log in, lobby, ticket, join, input, death, respawn, a dropped socket and a resume, `Leave`, the result in MySQL | this machine |
-| Prediction | the movement rule bit for bit against the trajectory the server's `Room` wrote (`motion-2026.txt`); stamping, matching, replay, corrections and jumps on a frozen clock; live, the `prediction` drill: each frame's predicted position against the server's | core tests; the headless client |
-| What a frame draws, the sticks, the account kept, the party's state (§8 (a), D-74) | the scene at a render tick and the render clock on a frozen clock; the sticks' sectors, dead zone and fire; a first launch and a key refused against a scripted API and a store in memory; older and ended parties' states refused | core tests |
-| The lobby client | against a scripted lobby on a loopback WebSocket: the queue "none" again after a match, a declined match forgotten, a message split inside a character read whole, a silent lobby found lost, reconnects spread; and live, the drills | core tests; the headless client |
-| The tests' own list | `Core.Tests/README.md`'s rows compared with the assembly by reflection, as the server's READMEs are by its build (DOC-29, DOC-31) | `ReadmeTestListTests`, every client test run |
-| The Unity package's scripts | compiled against stubs of the Unity API, for no platform, the editor, iOS and Android; the Android plugin against stubs of Android's | `client/unity-check.sh`, nothing run |
-| The core in Visual Studio 2019 (D-108) | built, warnings as errors, by VS 2019's own MSBuild and Roslyn (16.11, and 16.7), from Microsoft's .NET 5 and .NET Core 3.1 SDK images: the core's project (.NET Standard 2.0); its sources in a .NET Framework 4.7.1 library at C# 7.3 against Microsoft's 4.7.1 reference assemblies; a 4.7.1 app referencing it; Unity 2019.4's project as VS 2019 compiles it (4.7.1, `UnityEngine`, each platform branch); `Backend.Client.sln`, the client's one solution, VS 2019's, its four projects (Core.Tests and Headless at .NET Framework 4.7.1, D-109). A C# 8 operator and an API .NET Framework lacks each failed every build | `client/vs2019-check.sh`; not inside Visual Studio, nothing run on .NET Framework itself |
-| The core and the scripts in Unity 2019.4 (D-108, D-113) | compiled by Unity 2019.4.28f1's compiler (Roslyn 2.9.1, C# 7.3, warnings as errors): the core at .NET Standard 2.0 and at .NET 4.x (.NET Framework 4.7.1's references, as Visual Studio 2019 builds), the scripts against its own `UnityEngine` assemblies at both, each platform branch, with each level's default references and the package's `csc.rsp` as Unity reads it, and refused at .NET 4.x without it; then the core run on its Mono 5.11: certificates of `private-ca.sh` checked, an EC root refused saying why, JSON under a decimal comma, and the API, the lobby's `wss://` and a match each through TLS to a server there, accepted with the root's certificate and refused with another's; and the core's 194 tests, compiled by its compiler, run there by NUnitLite with `float32` (D-109, P-65) | `client/unity2019-check.sh`; not the editor (a licence), not Unity's TLS (the editor's and the player's; Mono's own here, TLS 1.0), not a phone |
-| The simple client, `client-simple/` (§9, D-111, D-112) | compiled by Unity 2019.4.28f1's compiler at C# 7.3, `Runtime/` against .NET Standard 2.0, .NET 4.x (with `csc.rsp`'s `System.Net.Http`, refused without it), .NET Framework 4.5 and .NET Standard 2.1, `Examples/` against its `UnityEngine` at both levels; offline on its Mono: JSON, every match message byte for byte the core's, the arena's answers read as the core reads them, frames, the WebSocket against RFC 6455's examples, the certificate check, the API's calls and the app's certificate check, HTTPS through `HttpClient`, the lobby's `wss://` and a match's TLS (its grant's name checked) against `openssl s_server` at TLS 1.0; live against the drill's stack, through nginx the three ways and straight to the processes: the API at `http://`, the lobby and a match, another root refused for the lobby and a match, every lobby and match callback on the thread calling `Update()` | `client-simple/check.sh`; `headless-drill.sh SIMPLE=1`; unencrypted on Unity's Mono, with TLS on .NET 8 (Mono's own TLS here stops at 1.0) |
-| Rendering, touch, lifecycle, secure storage, device TLS, frame time on a phone | the Unity editor and devices | **not on this machine** |
+| The wire and the world | every decoded field of every golden vector; unknown events stepped over; malformed frames refused | the core's tests, on the .NET SDK, on this machine |
+| The maze | the walls for one seed against the server's golden vector (`backend/sim/src/test/resources/maze-2026.txt`); a bullet ending at a wall by the server's rule; live, the `maze` drill | the core's tests; the headless client |
+| The messages the client sends | encoded here, decoded by the real server | the headless client |
+| The whole path | a headless client driving the real stack from a release: register, log in, the lobby, a ticket, join, input, a death, a respawn, a dropped socket and a resume, `Leave`, and the result in MySQL | this machine |
+| Prediction | the movement rule bit for bit against the trajectory that the server's `Room` wrote (`motion-2026.txt`); stamping, matching, replay, corrections and jumps on a frozen clock; live, the `prediction` drill: each frame's predicted position against the server's | the core's tests; the headless client |
+| What a frame draws, the sticks, the account kept, the party's state (§8 (a), D-74) | the scene at a render tick, and the render clock, on a frozen clock; the sticks' sectors, dead zone and fire; a first launch, and a key refused, against a scripted API and a store in memory; older and ended parties' states refused | the core's tests |
+| The lobby client | against a scripted lobby on a loopback WebSocket: the queue "none" again after a match, a declined match forgotten, a message split inside a character read whole, a silent lobby found lost, reconnects spread out; and live, the drills | the core's tests; the headless client |
+| The tests' own list | `Core.Tests/README.md`'s rows compared with the test assembly by reflection, as the server's READMEs are checked by its build (DOC-29, DOC-31) | `ReadmeTestListTests`, in every run of the client's tests |
+| The Unity package's scripts | compiled against stubs of the Unity API, for no platform, for the editor, for iOS and for Android; the Android plugin compiled against stubs of Android's API | `client/unity-check.sh`; nothing run |
+| The core in Visual Studio 2019 (D-108) | built with warnings as errors by Visual Studio 2019's own MSBuild and Roslyn (16.11, and 16.7), from Microsoft's .NET 5 and .NET Core 3.1 SDK images: the core's project (.NET Standard 2.0); its sources in a .NET Framework 4.7.1 library at C# 7.3, against Microsoft's 4.7.1 reference assemblies; a 4.7.1 app that references it; Unity 2019.4's project, as Visual Studio 2019 compiles it (4.7.1, `UnityEngine`, each platform branch); and `Backend.Client.sln`, the client's one solution, Visual Studio 2019's, with its four projects (Core.Tests and Headless at .NET Framework 4.7.1, D-109). A C# 8 operator, and an API that .NET Framework lacks, each failed every build | `client/vs2019-check.sh`; not inside Visual Studio, and nothing run on .NET Framework itself |
+| The core and the scripts in Unity 2019.4 (D-108, D-113) | compiled by Unity 2019.4.28f1's compiler (Roslyn 2.9.1, C# 7.3, warnings as errors): the core at .NET Standard 2.0 and at .NET 4.x (with .NET Framework 4.7.1's references, as Visual Studio 2019 builds it); the scripts against Unity's own `UnityEngine` assemblies at both levels, each platform branch, with each level's default references and the package's `csc.rsp` as Unity reads it, and refused at .NET 4.x without it. Then the core run on Unity's Mono 5.11: certificates made by `private-ca.sh` checked, an EC root refused with the reason, JSON under a decimal comma, and the API, the lobby's `wss://` and a match, each through TLS to a server there, accepted with the root's certificate and refused with another's. And the core's 185 tests, compiled by Unity's compiler, run there by NUnitLite with `float32` (D-109, P-65) | `client/unity2019-check.sh`; not the editor (a licence), not Unity's own TLS (the editor's and the player's; this is Mono's own, at TLS 1.0), not a phone |
+| The simple client, `client-simple/` (§9, D-111, D-112) | compiled by Unity 2019.4.28f1's compiler at C# 7.3: `Runtime/` against .NET Standard 2.0, .NET 4.x (with `csc.rsp`'s `System.Net.Http`, and refused without it), .NET Framework 4.5 and .NET Standard 2.1; `Examples/` against Unity's `UnityEngine` at both levels. Offline, on Unity's Mono: JSON; every match message byte for byte as the core writes it; the arena's answers read as the core reads them; frames; the WebSocket against RFC 6455's examples; the certificate check; the API's calls and the app's certificate check; HTTPS through `HttpClient`; and the lobby's `wss://` and a match's TLS (its grant's name checked) against `openssl s_server` at TLS 1.0. Live, against the drill's stack, through nginx in the three ways and straight to the processes: the API at `http://`, the lobby and a match, another root refused for the lobby and for a match, and every lobby and match callback run on the thread that calls `Update()` | `client-simple/check.sh`; `headless-drill.sh SIMPLE=1`; in clear on Unity's Mono, and with TLS on .NET 8 (Mono's own TLS here stops at 1.0) |
+| Rendering, touch, the app's lifecycle, secure storage, the device's TLS, frame time on a phone | the Unity editor and devices | **not on this machine** |
 
-The tests use NUnit, which Unity's test runner also runs, so the core's tests can
-run there unchanged.
+The tests use NUnit, which Unity's test runner also runs, so the core's tests can run there unchanged.
 
 ## 7. Order of work
 
-1. The core's wire and world, against the vectors. **Built 2026-09-27**: every
-   decoded field of every vector, the world against the server's reference down
-   to its rounding, eleven deliberate faults each caught.
-2. The match connection, and a headless client against the real arena: join,
-   input cadence, acknowledgement, ping, lifecycle, every kick, a resume.
-   **Built 2026-09-27.** Against the real stack from a release, plaintext and TLS
-   ([`client/headless-drill.sh`](../../client/headless-drill.sh)): joined; moved at
-   the top speed the server's rule allows, so every input was read; 15 frames a
-   second; its own bullets arrived at exactly 10 units a tick, as protocol 2
-   carries them, and a class it could not have yet was refused without closing
-   anything; a dropped socket resumed within a second to the same tank with a new
-   secret; a bad ticket was `Kick(1)`; the background stopped the frames and the
-   foreground restarted them; an arena whose certificate was not trusted was
-   refused. What the real arena cannot be made to do on demand (each kick
-   reason, a broken frame, resume backoff and its minute) is tested against a
-   scripted arena on a local socket.
-3. The API and the lobby; the headless client goes the whole path. **Built
-   2026-09-27.** Log in over the API, authenticate the lobby, ask it for a match,
-   play past the reward's minimum, leave, and the worker's reward is in the
-   inventory within a third of a second; a second sign-in replaces the first
-   lobby connection, which does not come back; a made-up token is refused and not
-   retried. Endpoint rotation, refusals and `Retry-After` against a scripted
-   HTTP handler. **And the queue** (2026-09-27): two players queue for a duel,
-   are matched by the push, play it in the room made for it, and are sent back
-   with `Kick(6)`; the result reaches MySQL
-   ([04 §4](04-platform-services.md#4-matchmaking); [client/](../../client/README.md)).
-   **And parties** (2026-09-29): six players in the lobby; one invites two, who
-   accept, and all three are told the party of three; a member's `queue.join`
-   is refused `in_party`, and the leader's for a duel `party_too_big`; the
-   leader queues it for team-vs-team and both members are told, a member's
-   leaving the queue takes it out and the others are told, and it queues again;
-   three more queue alone; all six are matched to one room, the party team 1
-   and the three alone team 2; the five minutes end it, all six paid, a rated
-   team match counted for each, and the party still stands. **And the confirm
-   step** (2026-09-29): every queued scenario is asked `evt.match.ready` and
-   accepts; in `decline`, one of two declines, the other is told it is queued
-   again, nobody is sent to a room, and the one who declined is refused
-   `queue_locked`. **And ranked free-for-all** (2026-09-29): eight queue alone,
-   are asked and accept, join one room each for themselves, team 0, and play
-   the four minutes out; each is paid, and counted a rated free-for-all.
-   **And co-op** (2026-09-29): a party of two and one alone are asked as one
-   team and accept; team 1 against the arena's waves, which come into view and
-   hunt all three down; the wipe ends it, and each is paid. **And tournaments**
-   (2026-09-30): an operator creates a duel tournament of four; the four enter,
-   are pushed their matches, and one side of each comes, winning by walkover,
-   round 1's second match waiting for the arena's one room
-   ([D-42](../architecture/03-decision-log.md#d-42--a-matchs-room-is-promised-in-the-store-when-its-arena-is-chosen));
-   the final a minute on, and the prizes in each wallet. **And team matches**
-   (2026-09-30): two teams of three, a party of each; a party led by a member is
-   refused `not_allowed` until the team makes them a vice leader; the match is
-   played out a team a side, and each team counts it. **And teams'
-   tournaments** (2026-09-30): two teams' parties entered as their rosters, the
-   final pushed to all six, one roster winning by walkover, each member paid. **And the social layer**
-   (2026-09-30): a friend request pushed and in the inbox, accepted by asking
-   back, presence online and offline, a block ending a friendship and silently
-   dropping the next request, the inbox read. **And guests** (2026-09-30): a
-   guest made, in again by its key, paid for a stay, upgraded, in by name as the
-   same player with the same coins, and its key refused. **And the operator's
-   figures** (2026-09-30, `stats`): a new guest's stay counted as one more player
-   active today and one more new, day 1 empty until tomorrow has ended; and two
-   new guests who made friends that day counted under `friend` by feature. **And
-   co-op's boss** (2026-09-30, in `play`): the class table a client fetches has
-   the Guardian, which no level opens. **And domination** (2026-10-01,
-   `domination`): six queue alone and are matched three a side; one drives to
-   the middle line and sees a neutral dominator; nobody takes one, and the five
-   minutes end in a draw, each paid. **And tag** (2026-10-01, `tag`): six matched
-   three a side; nobody fires, so nobody goes over, and the five minutes end in a
-   draw, each paid. The two share one routine, `Alone`, which the `maze`
-   scenario uses too.
-4. The own tank, predicted (§4; plan item 70, brought back by the owner on
-   2026-10-03). **Built 2026-10-03**: the movement rule bit for bit against the
-   room's own trajectory, and live, the `prediction` drill.
-5. The Unity layer: scenes, drawing, touch, lifecycle, secure storage. **Written
-   2026-10-04** as scripts over the core (§8), compiled against stubs; not run.
-6. Phase 0's last question, in Unity: does a bullet overshooting until its late
-   destroy look wrong in motion
+1. **The core's wire and world, against the vectors.** **Built 2026-09-27**: every decoded field of every vector, and
+   the world against the server's reference down to its rounding. Eleven deliberate faults were each caught.
+2. **The match connection, and a headless client against the real arena**: join, the input cadence, the
+   acknowledgement, the ping, the lifecycle, every kick, a resume. **Built 2026-09-27.** It ran against the real stack
+   from a release, in plain text and over TLS ([`client/headless-drill.sh`](../../client/headless-drill.sh)):
+   - it joined, and moved at the top speed that the server's rule allows, so every input was read;
+   - it received 15 frames a second;
+   - its own bullets arrived at exactly 10 units a tick, as protocol 2 carries them;
+   - a class it could not have yet was refused, without closing anything;
+   - a dropped socket resumed within a second, to the same tank, with a new secret;
+   - a bad ticket got `Kick(1)`;
+   - the background stopped the frames, and the foreground restarted them;
+   - an arena whose certificate was not trusted was refused.
+
+   What the real arena cannot be made to do on demand (each kick reason, a broken frame, the resume backoff and its
+   minute) is tested against a scripted arena on a local socket.
+3. **The API and the lobby; the headless client goes the whole path.** **Built 2026-09-27.** It logs in over the API,
+   authenticates the lobby, asks it for a match, plays past the reward's minimum and leaves; the worker's reward is in
+   the inventory within a third of a second. A second sign-in replaces the first lobby connection, which does not come
+   back. A made-up token is refused, and not retried. Endpoint rotation, refusals and `Retry-After` are tested against
+   a scripted HTTP handler. Then, scenario by scenario:
+   - **The queue** (2026-09-27): two players queue for a duel, are matched by the push, play it in the room made for
+     it, and are sent back with `Kick(6)`; the result reaches MySQL
+     ([04 §4](04-platform-services.md#4-matchmaking); [client/](../../client/README.md)).
+   - **Parties** (2026-09-29): six players are in the lobby. One invites two, who accept, and all three are told the
+     party of three. A member's `queue.join` is refused `in_party`, and the leader's for a duel `party_too_big`. The
+     leader queues the party for team against team, and both members are told. A member's leaving the queue takes the
+     party out, the others are told, and it queues again. Three more players queue alone. All six are matched into
+     one room: the party is team 1, and the three alone team 2. The five minutes end the match, all six are paid, a
+     rated team match is counted for each, and the party still stands.
+   - **The confirm step** (2026-09-29): every queued scenario is asked `evt.match.ready` and accepts. In `decline`,
+     one of two declines; the other is told it is queued again; nobody is sent to a room; and the one who declined is
+     refused `queue_locked`.
+   - **Ranked free-for-all** (2026-09-29): eight queue alone, are asked and accept, join one room each for
+     themselves (team 0), and play the four minutes out. Each is paid, and counted a rated free-for-all.
+   - **Co-op** (2026-09-29): a party of two and one player alone are asked as one team, and accept. Team 1 plays
+     against the arena's waves, which come into view and hunt all three down. The wipe ends the match, and each is
+     paid.
+   - **Tournaments** (2026-09-30): an operator creates a duel tournament of four. The four enter and are pushed their
+     matches. One side of each match comes, and wins by walkover; round 1's second match waits for the arena's one
+     room ([D-42](../architecture/03-decision-log.md#d-42--a-matchs-room-is-promised-in-the-store-when-its-arena-is-chosen)).
+     The final comes a minute later, and the prizes are in each wallet.
+   - **Team matches** (2026-09-30): two teams of three, a party for each. A party led by a plain member is refused
+     `not_allowed` until the team makes them a vice leader. The match is played out, a team on each side, and each
+     team counts it.
+   - **Teams' tournaments** (2026-09-30): two teams' parties are entered as their rosters. The final is pushed to all
+     six, one roster wins by walkover, and each member is paid.
+   - **The social layer** (2026-09-30): a friend request is pushed and is in the inbox; it is accepted by asking back;
+     presence shows online and offline; a block ends a friendship and silently drops the next request; the inbox is
+     read.
+   - **Guests** (2026-09-30): a guest is made, comes in again by its key, is paid for a stay, is upgraded, and comes in
+     by name as the same player with the same coins; its key is then refused.
+   - **The operator's figures** (2026-09-30, `stats`): a new guest's stay counts as one more player active today and
+     one more new player, with day 1 empty until tomorrow has ended; and two new guests who made friends that day are
+     counted under `friend`, by feature.
+   - **Co-op's boss** (2026-09-30, in `play`): the class table that a client fetches has the Guardian, which no level
+     opens.
+   - **Domination** (2026-10-01, `domination`): six queue alone, and are matched three a side. One drives to the
+     middle line and sees a neutral dominator. Nobody takes one, and the five minutes end in a draw; each is paid.
+   - **Tag** (2026-10-01, `tag`): six are matched three a side. Nobody fires, so nobody goes over to the other team,
+     and the five minutes end in a draw; each is paid.
+
+   The domination and tag scenarios share one routine, `Alone`, which the `maze` scenario uses too.
+4. **The own tank, predicted** (§4; plan item 70, brought back by the owner on 2026-10-03). **Built 2026-10-03**: the
+   movement rule bit for bit against the room's own trajectory, and live, the `prediction` drill.
+5. **The Unity layer**: scenes, drawing, touch, the lifecycle, secure storage. **Written 2026-10-04** as scripts over
+   the core (§8), compiled against stubs, and since 2026-11-05 by Unity 2019.4's compiler too (D-108); not run.
+6. **Phase 0's last question, in Unity**: does a bullet that overshoots until its late destroy look wrong in motion
    ([D-9](../architecture/03-decision-log.md#d-9--deterministic-entities-are-simulated-by-the-client),
    [protocol-spike](../../protocol-spike/README.md))?
 
-Steps 1–4 are verified on this machine; 5 and 6 need Unity.
+Steps 1 to 4 are verified on this machine; steps 5 and 6 need Unity.
 
 ## 8. The Unity layer, as scripts (designed 2026-10-04, plan item 77)
 
-On the owner's answer to Q-51: "could you make scripts as you can, as possible?
-to be used in Unity develop tools and environment". The layer of §1, written,
-in two parts
+The owner's answer to Q-51 was: "could you make scripts as you can, as possible? to be used in Unity develop tools and
+environment". This is the layer of §1, written, in two parts
 ([D-73](../architecture/03-decision-log.md#d-73--the-unity-layer-is-thin-scripts-over-the-built-core-what-can-be-engine-free-moves-into-the-core-first)):
 
-**(a) What can be engine-free moves into the core first, and is tested here.**
-Three things a Unity layer would otherwise work out for itself (**built
-2026-10-04**, `Scene`, `RenderClock`, `TouchSticks`, `AccountKeeper`):
+**(a) What can be engine-free moves into the core first, and is tested here.** These are three things that a Unity
+layer would otherwise work out for itself. **Built 2026-10-04**: `Scene`, `RenderClock`, `TouchSticks` and
+`AccountKeeper`.
 
-- **What is drawn where, at a render tick** (§4's rule, not built until now).
-  `ClientWorld` keeps, for each tank and unit, its sample before the newest and
-  the ticks of both. `RenderClock` turns the newest frame's tick, when it came,
-  and the time now into the render tick: the newest tick plus the ticks since it
-  came, less two frames' worth (twice the frames' tick delta, averaged, as at
-  15 frames a second of 25 ticks the deltas alternate one and two), never past
-  the newest and never back. `Scene` is the list a frame draws, reused and allocating nothing:
-  for each live entity its kind, handle, position in world units and angle in
-  radians at the render tick (a tank or unit between its two samples, the
-  shorter way round for the angle; a bullet extrapolated by `PredictedAt`; a
-  shape where it is), radius, class, team, skin, health as a fraction, flags and
-  name, and whether it is the player's own; the own tank from `OwnTank` while it
-  predicts, in the present.
-- **Two sticks to an input.** `TouchSticks`: a stick's offset, as a fraction of
-  its reach, to the move mask, eight directions by 45° sectors past a dead zone
-  of a fifth; the aim stick to the wire's aim, and fire while it is pushed past
-  half its reach. The same for a mouse and keys in the editor.
-- **Keeping the account across launches.** `ISecureStore`, three calls (get, set,
-  delete a string), which the device's keychain or keystore answers in the
-  Unity layer and memory in the tests. `AccountKeeper` makes the first launch a
-  guest (`POST /v1/guests`), keeps its key there, and signs in by it on every
-  launch after; a key refused is forgotten, and a new guest made only if asked.
-  Its continuations stay on the caller's context, so in Unity the store is
-  touched on the main thread, which `PlayerPrefs` requires.
+- **What is drawn where, at a render tick** (§4's rule, which was not built until then). `ClientWorld` keeps, for
+  each tank and unit, its sample before the newest one, and the ticks of both.
+  - `RenderClock` turns three things into the render tick: the newest frame's tick, when that frame came, and the time
+    now. The render tick is the newest tick, plus the ticks since it came, less two frames' worth. Two frames' worth is
+    twice the frames' tick delta, averaged, because at 15 frames a second of 25 ticks the deltas alternate between one
+    and two. The render tick never passes the newest tick, and never goes back.
+  - `Scene` is the list that a frame draws. It is reused, and allocates nothing. For each live entity it has: its
+    kind and handle; its position in world units and its angle in radians, at the render tick; its radius, class,
+    team and skin; its health as a fraction; its flags and name; and whether it is the player's own. A tank or a unit
+    is placed between its two samples, turning the shorter way round for the angle. A bullet is extrapolated by
+    `PredictedAt`. A shape is where it is. The own tank comes from `OwnTank` while it predicts, in the present.
+- **Two sticks to an input.** `TouchSticks` turns a stick's offset, as a fraction of its reach, into the move mask:
+  eight directions, by 45° sectors, past a dead zone of a fifth of the reach. It turns the aim stick into the wire's
+  aim, and fires while the aim stick is pushed past half its reach. It does the same for a mouse and keys in the
+  editor.
+- **Keeping the account across launches.** `ISecureStore` has three calls: get, set and delete a string. In the Unity
+  layer the device's keychain or keystore answers them; in the tests, memory does. `AccountKeeper` makes the first
+  launch a guest (`POST /v1/guests`), keeps the guest's key in the store, and signs in by it on every launch after. A
+  key that is refused is forgotten, and a new guest is made only if asked. Its continuations stay on the caller's
+  context, so in Unity the store is touched on the main thread, which `PlayerPrefs` requires.
 
-**(b) The Unity package** (**written 2026-10-04**, compiled against stubs as
-below, run nowhere), `client/Unity/com.backend.client`, a UPM package of
-thin scripts over the core, which reaches it as the library `dotnet build`
-makes (.NET Standard 2.0, D-108), copied in by `client/unity-package.sh`. Its
-`Runtime/csc.rsp`, beside the assembly definition, gives the scripts
-`System.Net.Http`, which Unity does not reference by default at the .NET 4.x API
-level (D-113):
+**(b) The Unity package** (**written 2026-10-04**; compiled as below, and run nowhere). It is
+`client/Unity/com.backend.client`, a UPM package (Unity's package format) of thin scripts over the core. The scripts
+reach the core as the library that `dotnet build` makes (.NET Standard 2.0, D-108), which `client/unity-package.sh`
+copies in. The package's `Runtime/csc.rsp`, beside the assembly definition, gives the scripts `System.Net.Http`,
+which Unity does not reference by default at the .NET 4.x API level (D-113):
 
 | Script | Does |
 |---|---|
-| `BackendClient` | the one object that owns the core's objects; `Update` completes the sign-in, pumps the lobby and the match, takes a grant (`TakeGrant`) and joins it, and builds the scene; a sign-in that fails, or a session that ends (`InvalidSession`), is reported (`Problem`) and signs the player out, so the screen offers to sign in again; `OnApplicationPause` is the lifecycle (02 §10) |
-| `WorldView` | draws `Scene`: a pooled `SpriteRenderer` a handle, its sprite by kind, class and skin from a `LookTable` asset |
-| `TouchControls` | two sticks where the thumbs land (keys and the mouse in the editor) into `TouchSticks`, then `SetInput` |
-| `FollowCamera` | on the own tank, the view's size as the arena's |
-| `LobbyScreen`, `Hud` | the least screens to play: play now, a duel's queue, its state, a match found to accept, the account deleted after a second ask (D-84); level and experience, the kill feed, respawn and leave |
-| `SecureStores` | the keychain on iOS (a small Objective-C plugin), the keystore on Android (a small Java plugin over `AndroidKeyStore`, no library), `PlayerPrefs` in the editor and any other build (a desktop's), named as not secure |
+| `BackendClient` | the one object that owns the core's objects. Its `Update` completes the sign-in, pumps the lobby and the match, takes a grant (`TakeGrant`) and joins it, and builds the scene. A sign-in that fails, or a session that ends (`InvalidSession`), is reported (`Problem`) and signs the player out, so the screen offers to sign in again. `OnApplicationPause` is the lifecycle (02 §10) |
+| `WorldView` | draws `Scene`: a pooled `SpriteRenderer` for each handle, its sprite chosen by kind, class and skin from a `LookTable` asset |
+| `TouchControls` | two sticks where the thumbs land (keys and the mouse in the editor), fed into `TouchSticks`, then `SetInput` |
+| `FollowCamera` | follows the own tank, with the view's size as the arena's |
+| `LobbyScreen`, `Hud` | the least screens to play. The lobby screen: play now, a duel's queue and its state, a match found to accept, and the account deleted after a second ask (D-84). The HUD: level and experience, the kill feed, respawn and leave |
+| `SecureStores` | the keychain on iOS (a small Objective-C plugin), the keystore on Android (a small Java plugin over `AndroidKeyStore`, with no library), and `PlayerPrefs` in the editor and any other build (a desktop's), which it names as not secure |
 
-**Checked here, and not.** The core's additions by its tests. The package's
-scripts are compiled on this machine against stubs of the Unity API they use,
-once with no platform defined, once for the editor and once each with
-`UNITY_IOS` and `UNITY_ANDROID`, so every branch compiles, and the Android
-plugin's Java against stubs of the Android API; that catches the C#'s own
-mistakes and the core's API misused, and **not** a wrong idea of Unity's API,
-which only Unity can. The check compiles against the core's project, not the
-library in the package, which `unity-package.sh` must copy in again whenever
-the core changes. Nothing here is run in Unity, drawn, touched or put on a
-phone: the package's README says so, and what the owner checks first in the
-editor.
+**Checked here, and not.** The core's additions are checked by its tests. The package's scripts are compiled on this
+machine in two ways:
+
+- **Against stubs** of the Unity API they use (`client/unity-check.sh`): once with no platform defined, once for the
+  editor, and once each with `UNITY_IOS` and `UNITY_ANDROID`, so every branch compiles. The Android plugin's Java is
+  compiled against stubs of the Android API.
+- **By Unity 2019.4.28f1's own compiler, against Unity's own `UnityEngine` assemblies** (`client/unity2019-check.sh`,
+  D-108; §6).
+
+These catch the C#'s own mistakes, the core's API misused, and a call that Unity's API does not have. They do **not**
+catch Unity behaving differently from what the scripts expect, which only the editor or a phone can show. The stub
+check compiles against the core's project, not the library in the package, so `unity-package.sh` must copy the
+library in again whenever the core changes. Nothing here is run in Unity, drawn, touched or put on a phone. The
+package's README says so, and says what the owner checks first in the editor.
 
 ### Not in the package's scripts yet
 
-What §3 and §5 say a client does, and the core makes possible, but the
-package's scripts do not do. Each is the layer above's, on calls the core has:
+These are things that §3 and §5 say a client does, and that the core makes possible, but that the package's scripts
+do not do yet. Each is the layer above's, on calls the core has:
 
 | What | Where it is specified | What the core gives |
 |---|---|---|
-| A cold resume: the secret written on the way to the background, a resume on launch | §3, D-51 | `MatchConnection.Resume(secret)`, `Welcome.ResumeSecret` |
+| A cold resume: the secret written on the way to the background, and a resume on launch | §3, D-51 | `MatchConnection.Resume(secret)`, `Welcome.ResumeSecret` |
 | What follows `Kick(2)`, `Kick(4)` and `Kick(5)`: another ticket after 2 s, a log, the jittered backoff | §3 | `MatchConnection.End` |
-| The session token kept, so a restart skips the login | §5 | `Session.Token`, `ISecureStore` |
+| The session token kept, so that a restart skips the login | §5 | `Session.Token`, `ISecureStore` |
 | The lobby's endpoints tried in turn | §5, D-13 | `LobbyClient` takes one address |
 | `Retry-After` honoured | §5 | `ApiResult.RetryAfterSeconds` |
 | The queue, the party and a tournament match fetched again after a lobby reconnect or `evt.resync` | §5 | `ApiClient.Queue`, `Party`, `TournamentMatch`; `LobbyClient.OnPush` |
@@ -599,43 +602,56 @@ package's scripts do not do. Each is the layer above's, on calls the core has:
 
 ## 9. The simple client (designed 2026-11-24, plan item 132)
 
-`client-simple/` ([D-111](../architecture/03-decision-log.md#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms),
-its API [D-112](../architecture/03-decision-log.md#d-112--the-simple-clients-api-over-httpclient-awaited-the-backends-root-as-the-apps-certificate-check)), for a UI team that wants to read the client in an hour and paste it into a project, beside the full client, which it
-does not replace. Its README is the guide; what it is, in short:
+`client-simple/`
+([D-111](../architecture/03-decision-log.md#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms);
+its API, [D-112](../architecture/03-decision-log.md#d-112--the-simple-clients-api-over-httpclient-awaited-the-backends-root-as-the-apps-certificate-check))
+is for a UI team that wants to read the client in an hour and paste it into a project. It sits beside the full
+client, and does not replace it. Its README is the guide. In short, it has these parts:
 
 | Part | What | Over |
 |---|---|---|
-| `BackendHttp` | the API: `GetAsync`, `PostAsync`, `PutAsync`, `DeleteAsync`, each awaited, an `HttpAnswer` each (status, body, the API's error code) | `HttpClient`, the root as the app's certificate check (`ServicePointManager`'s), the only one Unity 2019's `HttpClient` calls |
-| `LobbyClient` | the lobby: `Connect(token)` sends `auth` first; `Send(type, data, onReply)` matches the reply by id; pushes to `OnPush`; a ping every 25 s; `OnClosed` once | `WebSocketConnection`, RFC 6455's client side over `TcpClient` and `SslStream` |
-| `ArenaClient` | a match: `Connect` with a grant sends Join; `OnWelcome`, `OnSnapshot(bytes, tick)`, `OnPong`, `OnKick`, `OnClosed`; `SendInput` acknowledges the last tick; a Ping every 10 s; `SetBackground`, `Resume`, `Leave` | `TcpClient`, `SslStream` with the grant's `tlsName`, `ArenaMessages`' frames |
-| `TrustRoot`, `Json` | the core's certificate check, without its `HttpClient` handler; one field of a JSON object | |
+| `BackendHttp` | the API: `GetAsync`, `PostAsync`, `PutAsync` and `DeleteAsync`, each awaited, each giving an `HttpAnswer` (the status, the body, and the API's error code) | `HttpClient`, with the backend's root as the app's certificate check (`ServicePointManager`'s), the only check that Unity 2019's `HttpClient` calls |
+| `LobbyClient` | the lobby: `Connect(token)` sends `auth` first, and `OnAuthenticated` follows; `Send(type, data, onReply)` matches the reply by its id; pushes go to `OnPush`; a ping goes every 25 s; `OnClosed` is called once | `WebSocketConnection`, the client side of RFC 6455 (the WebSocket protocol) over `TcpClient` and `SslStream` |
+| `ArenaClient` | a match: `Connect` with a grant sends `Join`; the callbacks are `OnWelcome`, `OnSnapshot(bytes, tick)`, `OnPong`, `OnKick` and `OnClosed`; `SendInput` acknowledges the last tick; a `Ping` goes every 10 s; and `SetBackground`, `Resume` and `Leave` | `TcpClient`, and `SslStream` with the grant's `tlsName`; `ArenaMessages`' frames |
+| `TrustRoot`, `Json` | the core's certificate check, without its `HttpClient` handler; and reading one field of a JSON object | |
 
-**The main thread:** the API's calls are awaited, and Unity runs the code after an `await` on its main thread. The
-lobby and a match each work on their own thread and queue what happens; `Update()`, called from a script's `Update`,
-runs every callback on the main thread. No coroutine, no `UnityEngine` in `Runtime/`, so the same code runs here on
-Unity's Mono and on .NET 8. The API's HTTPS is checked on Unity's Mono alone: .NET 8's `HttpClient` does not call the
-app's certificate check (D-112). The lobby keeps its own WebSocket: .NET's `ClientWebSocket` has no certificate check
-to set at Unity's levels, and on Unity 2019's Mono ignores the app's too, refusing the backend's certificate (a probe,
-2026-11-25).
+**The main thread.** The API's calls are awaited, and Unity runs the code after an `await` on its main thread. The
+lobby and a match each work on their own thread, and queue what happens. `Update()`, called from a script's `Update`,
+runs every callback on the main thread. There is no coroutine, and no `UnityEngine` in `Runtime/`, so the same code
+runs here on Unity's Mono and on .NET 8.
 
-**What it leaves to the core:** a snapshot is handed over as its bytes with the server's tick; decoding it,
-predicting the own tank and drawing are §3 and §4's, in `SnapshotReader`, `ClientWorld` and `OwnTank`. A resume is one
-call, `Resume()`, which the example retries five times within the minute; the core's cold resume, `Retry-After`, the
-lobby's endpoints in turn and a purchase key kept on disk are not in it.
+- The API's HTTPS is checked on Unity's Mono alone, because .NET 8's `HttpClient` does not call the app's
+  certificate check (D-112).
+- The lobby keeps its own WebSocket. At Unity's API levels, .NET's `ClientWebSocket` has no certificate check to
+  set; and on Unity 2019's Mono it ignores the app's check too, and refuses the backend's certificate (a probe,
+  2026-11-25).
 
-**Its examples** are three scripts (`HttpExample`, `LobbyExample`, `ArenaExample`) and the `[Serializable]` classes
-`JsonUtility` maps; they connect the way they are set up, in any build (D-115).
+**What it leaves to the core.** A snapshot is handed over as its bytes, with the server's tick. Decoding it,
+predicting the own tank and drawing are §3's and §4's work, in `SnapshotDecoder`, `ClientWorld` and `OwnTank`. A resume
+is one call, `Resume()`, which the example retries five times within the minute. The core's cold resume,
+`Retry-After`, the lobby's endpoints in turn and a purchase key kept on disk are not in it.
 
-**Without TLS, `client-simple-no-tls/`** ([D-114](../architecture/03-decision-log.md#d-114--a-simple-client-without-tls-client-simple-no-tls-for-a-backend-run-plain)): the same three clients with no
-TLS at all, for a backend run plain (`PLAIN=1`, D-101) and the site's 80 (D-115), in any build. A grant of the site's
-asks for TLS; this client's `ArenaClient.ConnectThroughSite(apiUrl, tlsName, ticketId)` takes it to the API's own
-address instead, asks nginx for the arena by name (`GET /match/<tlsName>`, `Upgrade: backend-match`), reads the 101,
-and goes on as `Connect` does (a grant without TLS, a backend run plain's). `ArenaMessages` and `Json` are
-`client-simple`'s byte for byte; `client-simple/check.sh` checks it too (`NO_TLS=1`, the check program's TLS checks
-left out, a stand-in for nginx for the request and its refusal), and `SIMPLE=1` drills it live straight to the
-processes and through nginx's 80 in every way, its match through `/match/` where the grant asks for TLS. The full
-client and `client-simple` keep 9001 with TLS: `/match/` is this client's alone.
+**Its examples** are three scripts (`HttpExample`, `LobbyExample` and `ArenaExample`), and the `[Serializable]`
+classes that `JsonUtility` maps (`ApiModels.cs`). They connect the way they are set up, in any build (D-115).
 
-**A second client to keep in step:** a protocol version, a message or a field changes in both simple clients and the core. `headless-drill.sh
-SIMPLE=1` runs it against the drill's own stack, so a change that breaks it fails there.
+**Without TLS: `client-simple-no-tls/`**
+([D-114](../architecture/03-decision-log.md#d-114--a-simple-client-without-tls-client-simple-no-tls-for-a-backend-run-plain)).
+It is the same three clients with no TLS at all, in six files (no `TrustRoot`). It is for a backend run plain
+(`PLAIN=1`, D-101) and for the site's port 80 (D-115), in any build.
 
+- **A grant without TLS** (a backend run plain) is joined with `Connect(host, port, ticketId)`.
+- **A grant of the site's** asks for TLS. This client's `ArenaClient.ConnectThroughSite(apiUrl, tlsName, ticketId)`
+  takes it to the API's own address, `http://<address>`, instead. It asks nginx for the arena by name
+  (`GET /match/<tlsName>`, with `Connection: Upgrade` and `Upgrade: backend-match`), reads the `101`, and then goes on
+  as `Connect` does.
+- **A grant with TLS and no name** (an arena with TLS of its own, a drill's) it cannot reach, and it says so.
+
+`ArenaMessages` and `Json` are `client-simple`'s, byte for byte. `client-simple/check.sh` checks this client too
+(`NO_TLS=1`): the check program's TLS checks are left out, and a stand-in for nginx answers the request, and refuses
+it. `SIMPLE=1` drills it live, straight to the processes and through nginx's port 80 in every way, with its match
+going through `/match/` where the grant asks for TLS. The full client and `client-simple` keep port 9001 with TLS:
+`/match/` is for this client alone.
+
+**Three clients to keep in step.** A protocol version, a message or a field changes in both simple clients and in the
+core. `headless-drill.sh SIMPLE=1` runs the simple clients against the drill's own stack, so a change that breaks them
+fails there.

@@ -30,8 +30,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The arena's TCP front end: raw framed TCP, no WebSocket and no HTTP upgrade, because
- * there is no browser client (D-1).
+ * The arena's TCP front end: raw framed TCP, no WebSocket, because there is no browser
+ * client (D-1). Behind the front, a connection begins with nginx's PROXY line from 9001, or
+ * with its {@code GET /match/<name>} upgrade from 80, which {@link ProxyLine} reads and
+ * answers before the first frame (D-105, D-115).
  *
  * Hosts several rooms, one thread each; which room a join lands in is the registry's
  * business, not this class's.

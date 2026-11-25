@@ -116,8 +116,8 @@ public final class ArenaMain {
         if (keystore != null && !keystore.isBlank()) {
             Secrets.Secret keystorePassword = Secrets.read(System.getenv(), "BACKEND_ARENA_TLS_PASSWORD");
             if (keystorePassword == null) {
-                throw new RefusedConfiguration("BACKEND_ARENA_TLS_KEYSTORE is set but"
-                        + " BACKEND_ARENA_TLS_PASSWORD_FILE is not");
+                throw new RefusedConfiguration("BACKEND_ARENA_TLS_KEYSTORE is set but neither"
+                        + " BACKEND_ARENA_TLS_PASSWORD nor BACKEND_ARENA_TLS_PASSWORD_FILE is");
             }
             ArenaTls tls = ArenaTls.fromKeystore(Path.of(keystore), keystorePassword.value().toCharArray());
             if (!tls.covers(advertiseHost)) {

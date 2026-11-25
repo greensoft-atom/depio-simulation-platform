@@ -1,30 +1,32 @@
 # 07 — Deployment and operations
 
-How the backend is laid out on its one machine at launch and on its three, what a release holds, and how the operations
-that change it run: a rolling deploy, a store's failover, MySQL's failover, the backups with their
-timers, and a restore to a moment. The text these pictures follow is
-[operations/01-deploy](../operations/01-deploy.md) and the
-[runbook](../operations/02-runbook.md); the files are described in
+This file draws how the backend is laid out, on its one machine at launch and on its three machines,
+what a release holds, and how the operations that change it run: a rolling deploy, a store's
+failover, MySQL's failover, the backups with their timers, and a restore to a moment. It is for
+operators, and for engineers who change the release or the scripts. The text these pictures follow
+is [operations/01-deploy](../operations/01-deploy.md) and the
+[runbook](../operations/02-runbook.md). The files are described in
 [deploy/README](../../backend/deploy/README.md) and
-[scripts/README](../../backend/scripts/README.md), which also hold the catalogues of settings,
-ports and timers.
+[scripts/README](../../backend/scripts/README.md), which also hold the catalogues of settings, ports
+and timers. Every port is listed in [operations/05](../operations/05-ports-and-firewall.md).
 
 ## The launch's one machine
 
 At launch every role is on one machine, the front
 ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)),
-as the [install guide](../operations/03-install-guide.md) installs it: the three machines' processes, names and
-ports, on loopback but for nginx's 443 and 9001, with no replica. The backups' copies go to a disk of their
-own, so that they outlive MySQL's; nothing here outlives the machine but the copy off the site, once there is a
-host for it.
+as the [install guide](../operations/03-install-guide.md) installs it. It runs the three machines'
+processes, with their names and ports, on loopback; only nginx listens on the public side, on 80,
+443 and 9001. There is no replica. The backups' copies go to a disk of their own, so that they
+outlive MySQL's disk. Nothing here outlives the machine itself but the copy off the site, once
+there is a host for it.
 
 ```mermaid
 flowchart LR
     client["client device<br/>trusts the backend's root"]
-    forward["the site's public address<br/>443 and 9001, forwarded"]
+    forward["the site's public address<br/>80, 443 and 9001, forwarded"]
     offsite["off-site host, named by the owner (Q-53)"]
     subgraph M["The one machine, the front"]
-        nginx["nginx 443 and 9001, ends TLS<br/>backend-nginx"]
+        nginx["nginx<br/>443 and 9001, ends TLS<br/>80 in clear<br/>backend-nginx"]
         gw["gateway 127.0.0.1:8090"]
         pf["platform 127.0.0.1:8080"]
         ar["arenas a1, a2, a3<br/>127.0.0.1:9011 to 9013"]
@@ -34,11 +36,11 @@ flowchart LR
         my["MySQL primary 127.0.0.1:3306<br/>backend-mysql"]
         bk["backups: binlog copies and dumps on the second disk<br/>proofs onto scratch MySQL 127.0.0.1:3309"]
     end
-    client -->|"HTTPS, WSS, match TLS"| forward
+    client -->|"HTTPS, WSS and match TLS, or in clear on 80"| forward
     forward --> nginx
     nginx -->|"/v1/"| pf
     nginx -->|"/lobby"| gw
-    nginx -->|"9001, by the arena's name"| ar
+    nginx -->|"9001, or /match/name on 80, by the arena's name"| ar
     gw --> pf
     pf --> ses
     pf --> my
@@ -51,23 +53,27 @@ flowchart LR
 
 ## The three machines
 
-What runs where, with the ports each listener takes, as
-[01 §1](../operations/01-deploy.md#1-what-runs-where) and the `deploy/env/` examples set it. The site
-has one public address, which the provider forwards to one machine, the front, C here
-([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)).
-Its nginx ends TLS on 443 and 9001 and passes everything over the private network: the API and the
-lobby to every machine's platform and gateway, each match connection to the arena its handshake names.
-Every machine runs the same nginx, so any can be the front. Every process uses the `session` store's
-primary; the arenas and workers also use the `events` store's; `platform` and `worker` use the MySQL
-primary. Each process is given both addresses of a store and both MySQL hosts, so the replicas drawn
-here are where a failover moves those lines. nginx, MySQL and the stores are the release's own, not
-the distribution's, each run by its unit from `/opt/backend` (D-77,
-[09](../detailed-design/09-release-and-packaging.md)).
+What runs where, with the port each listener takes, as
+[01 §1](../operations/01-deploy.md#1-what-runs-where) and the `deploy/env/` examples set it.
+
+- The site has one public address, which the provider forwards to one machine, the front: C here
+  ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)).
+- Its nginx ends TLS on 443 and 9001, and serves the same routes in clear on 80
+  ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
+  It passes everything over the private network: the API and the lobby to every machine's platform
+  and gateway, and each match connection to the arena whose name the client gave.
+- Every machine runs the same nginx, so any machine can be the front.
+- Every process uses the `session` store's primary. The arenas and the workers also use the
+  `events` store's primary. `platform` and `worker` use the MySQL primary.
+- Each process is given both addresses of a store and both MySQL hosts. So the replicas drawn here
+  are where a failover moves those lines.
+- nginx, MySQL and the stores are the release's own, not the distribution's. Each is run by its
+  unit from `/opt/backend` (D-77, [09](../detailed-design/09-release-and-packaging.md)).
 
 ```mermaid
 flowchart LR
     client["client device<br/>trusts the backend's root"]
-    forward["the site's public address<br/>443 and 9001, forwarded"]
+    forward["the site's public address<br/>80, 443 and 9001, forwarded"]
     offsite["off-site host, named by the owner (Q-53)"]
     subgraph MA["Machine A, 10.0.0.1"]
         Agw["gateway 10.0.0.1:8090"]
@@ -84,7 +90,7 @@ flowchart LR
         Bev["j-redis events primary 6380<br/>backend-store@events"]
     end
     subgraph MC["Machine C, 10.0.0.3, the front"]
-        Cnginx["nginx 443 and 9001, ends TLS<br/>backend-nginx, on every machine"]
+        Cnginx["nginx<br/>443 and 9001, ends TLS<br/>80 in clear<br/>backend-nginx, on every machine"]
         Cgw["gateway 10.0.0.3:8090"]
         Cpf["platform 10.0.0.3:8080"]
         Car["arenas c1, c2<br/>10.0.0.3:9011, 9012"]
@@ -93,7 +99,7 @@ flowchart LR
         Cev["j-redis events replica 6380<br/>backend-store@events"]
         Cbk["backups: binlog stream, dumps, proofs<br/>scratch MySQL 127.0.0.1:3309, backend-scratch-mysql"]
     end
-    client -->|"HTTPS, WSS, match TLS"| forward
+    client -->|"HTTPS, WSS and match TLS, or in clear on 80"| forward
     forward --> Cnginx
     Cnginx -->|"/v1/, /lobby"| Apf
     Cnginx --> Agw
@@ -101,7 +107,7 @@ flowchart LR
     Cnginx --> Bgw
     Cnginx --> Cpf
     Cnginx --> Cgw
-    Cnginx -->|"9001, by the arena's name"| Aar
+    Cnginx -->|"9001, or /match/name on 80, by the arena's name"| Aar
     Cnginx --> Bar
     Cnginx --> Car
     Agw --> Apf
@@ -111,17 +117,24 @@ flowchart LR
     Ases -->|"replication"| Bses
     Bev -->|"replication"| Cev
     Amy -->|"binlogs as written, dumps"| Cbk
-    Cbk -->|"encrypted, rsync over SSH, hourly"| offsite
+    Cbk -.->|"encrypted, rsync over SSH, hourly, once Q-53 names a host"| offsite
 ```
 
 ## nginx's routes
 
-nginx on the front, the same on every machine: 443 for the API and the lobby, 9001 for match
-traffic, TLS ended on both with the one certificate from the backend's own CA
-([operations/06](../operations/06-certificates.md)); and 80 for the clients without TLS, the API, the lobby and matches by
-the arena's name (D-115). From `deploy/nginx/backend.conf`, its snippet `backend-platform.conf`,
-`backend-upstreams.conf`, `backend-stream.conf` and `backend-arenas.conf`, the arenas both maps read. Every route
-from the phone, file by file: [operations/11](../operations/11-phone-to-backend-routes.md).
+nginx on the front, the same on every machine:
+
+- **443** for the API and the lobby, over TLS;
+- **9001** for match traffic, over TLS;
+- **80** for clients without TLS: the API, the lobby, and matches, each asking for its arena by
+  name (D-115).
+
+TLS is ended on 443 and 9001 with the one certificate from the backend's own CA
+([operations/06](../operations/06-certificates.md)). The routes come from `deploy/nginx/backend.conf`,
+its snippet `backend-platform.conf`, `backend-upstreams.conf`, `backend-stream.conf`, and
+`backend-arenas.conf`, the list of arenas that both maps read. On the launch's one machine the
+upstreams are its one platform and one gateway, on loopback. Every route from the phone is
+described file by file in [operations/11](../operations/11-phone-to-backend-routes.md).
 
 ```mermaid
 flowchart LR
@@ -133,7 +146,7 @@ flowchart LR
     auth["= /v1/sessions, = /v1/accounts,<br/>= /v1/guests, = /v1/accounts/upgrade<br/>limit_req 2 a second, burst 30"]
     v1["/v1/, the rest"]
     other["anything else on 443 or 80<br/>404"]
-    m80["~ ^/match/name<br/>the request passed on, 101 back"]
+    m80["~ ^/match/name<br/>the request passed on, 101 back<br/>answered on 443 too, unused there"]
     gw["the three gateways, :8090<br/>least_conn, WebSocket, 150 s timeouts"]
     pf["the three platforms, :8080<br/>keepalive 32, 15 s read timeout"]
     map["backend-arenas.conf: a name<br/>to its machine and port"]
@@ -142,9 +155,11 @@ flowchart LR
     dev --> p9001
     dev --> p80
     p80 -->|"as 443"| lobby
+    p80 -->|"as 443"| auth
     p80 -->|"as 443"| v1
+    p80 -->|"as 443"| other
     p80 --> m80
-    m80 --> map
+    m80 -->|"the name in the path"| map
     p443 --> lobby
     p443 --> auth
     p443 --> v1
@@ -160,10 +175,12 @@ flowchart LR
 ## The release
 
 What `scripts/make-release.sh` builds, after j-redis and a clean build, and how it is installed
-([deploy/README](../../backend/deploy/README.md#the-release)). Each process has a `lib/` of its
-own, so the MySQL driver stays off the arena and the gateway. The release carries what the
-processes run on too: a Java runtime linked from `vendor/jdk-21`, j-redis, and MySQL and nginx from
-`vendor/` as committed ([09 §4](../detailed-design/09-release-and-packaging.md#4-the-release)).
+([deploy/README](../../backend/deploy/README.md#the-release)). Each process has a `lib/` of its own,
+so the MySQL driver stays off the arena and the gateway. The release also carries what the
+processes run on: a Java runtime linked from `vendor/jdk-21`, j-redis, and MySQL and nginx from
+`vendor/` as committed ([09 §4](../detailed-design/09-release-and-packaging.md#4-the-release)). The
+release itself holds no symbolic link (D-106). The install makes `/opt/backend` a link to the
+release in use, so that a rollback is the link put back.
 
 ```mermaid
 flowchart LR
@@ -181,7 +198,7 @@ flowchart LR
     sd["systemd/<br/>units, timers, drop-in examples"]
     ev["env/<br/>the six env examples"]
     mc["mysql-conf/<br/>backend.cnf.example, scratch-my.cnf.example"]
-    nc["nginx-conf/<br/>nginx.conf, backend.conf, backend-platform.conf,<br/>backend-upstreams.conf, backend-stream.conf"]
+    nc["nginx-conf/<br/>nginx.conf, backend.conf, backend-platform.conf,<br/>backend-upstreams.conf, backend-stream.conf,<br/>backend-arenas.conf"]
     sc["scripts/<br/>the fifteen operational scripts"]
     vs["VERSIONS.md<br/>what is inside, with versions"]
     cm["COMMIT<br/>the git commit"]
@@ -206,9 +223,15 @@ flowchart LR
 
 ## A rolling deploy
 
-The order of [01 §5](../operations/01-deploy.md#5-rolling-deployment), from the least visible to
-players to the most; no script drives it. Each restart is checked before the next: the platform's
-`/health`, the journal, the metrics.
+The order of [01 §5](../operations/01-deploy.md#5-rolling-deployment), from what players notice least
+to what they notice most. No script drives it. Each restart is checked before the next: the
+platform's `/health`, the journal, the metrics.
+
+- A unit or drop-in that changed is copied from the release's `systemd/`.
+- An nginx file that changed is merged into `/etc/backend/nginx/` by hand, keeping the site's own
+  `server_name`, upstreams and list of arenas, which a copy would overwrite.
+- MySQL and the stores (j-redis) are restarted only in a maintenance window, since promotion is
+  manual; MySQL last, and only when it changed.
 
 ```mermaid
 flowchart TD
@@ -216,7 +239,7 @@ flowchart TD
     jr{"needs a newer j-redis?"}
     jrup["each store upgraded in its window<br/>replica before primary"]
     unpack["on each machine, unpacked<br/>to /opt/backend-VERSION"]
-    units["changed units, drop-ins, nginx files copied<br/>systemctl daemon-reload, reload backend-nginx, which tests first"]
+    units["changed units and drop-ins copied, changed nginx files merged by hand<br/>systemctl daemon-reload, reload backend-nginx, which tests first"]
     link["ln -sfn /opt/backend-VERSION /opt/backend<br/>nothing restarts yet"]
     wk["backend-worker@ c1, c2 restarted<br/>Flyway migrates at the first start"]
     pf["backend-platform restarted<br/>one machine at a time"]
@@ -243,9 +266,18 @@ flowchart TD
 ## A store's failover
 
 `scripts/promote-store.sh`, run as root on the replica's machine
-([runbook §2](../operations/02-runbook.md#a-j-redis-store-built-2026-09-29-d-34)). The clients
-follow the highest epoch by themselves; the old primary's machine, when it is back, is made a
-replica before it starts.
+([runbook §2](../operations/02-runbook.md#a-j-redis-store-built-2026-09-29-d-34)). The script never
+promotes while the old primary may still take writes
+([D-95](../architecture/03-decision-log.md#d-95--a-promotion-refuses-an-old-primary-it-can-neither-rule-out-nor-fence-and-a-handover-closes-mysqls-last)):
+
+- With `--old-is-down` it refuses an old primary that still answers, as a primary or in any other
+  way but as a replica (one that refuses the password is up).
+- With `--demote-old` it makes the old primary a replica of this one first, and needs this
+  replica's address for that. It refuses an old primary that does not answer, since one it cannot
+  reach may still serve the clients that can.
+
+The clients follow the highest epoch by themselves. The old primary's machine, when it is back, is
+made a replica before it starts.
 
 ```mermaid
 sequenceDiagram
@@ -254,8 +286,8 @@ sequenceDiagram
     participant R as replica
     participant P as old primary
     participant K as processes
-    O->>S: sudo promote-store.sh with the config file, the old primary, and old-is-down or demote-old
-    S->>S: port and requirepass read from the config file
+    O->>S: sudo promote-store.sh with the config file, the old primary, and old-is-down, or demote-old and this replica's address
+    S->>S: port and requirepass read from the config file, which it must be able to rewrite
     S->>R: ROLE, on 127.0.0.1
     alt already a primary
         R-->>S: primary
@@ -263,13 +295,18 @@ sequenceDiagram
     else a replica
         R-->>S: replica
         S->>P: ROLE
-        alt old-is-down given, and P answers as primary
-            S-->>O: REFUSED, stop it, cut it off, or demote it (stops here)
-        else demote-old given, and P answers as primary
-            S->>P: REPLICAOF this replica
-            P-->>S: OK, it takes no writes now
-        else P does not answer as primary
+        alt old-is-down, and P answers as a primary or as neither role
+            S-->>O: REFUSED, it is up, stop it or cut it off (stops here)
+        else old-is-down, and P does not answer or is a replica
             S->>S: promoting
+        else demote-old, and P answers as a primary
+            S->>P: REPLICAOF this replica's address
+            P-->>S: OK, it takes no writes now
+            Note over S,P: any answer but OK is REFUSED (stops here)
+        else demote-old, and P is a replica already
+            S->>S: promoting
+        else demote-old, and P does not answer or answers as neither role
+            S-->>O: REFUSED, it cannot be demoted (stops here)
         end
         S->>R: REPLICAOF NO ONE
         R->>R: epoch raised and recorded in its data directory
@@ -282,10 +319,20 @@ sequenceDiagram
 
 ## MySQL's failover
 
-`scripts/promote-mysql.sh`, run as root on the replica's machine, C
-([runbook §2](../operations/02-runbook.md#mysql-built-2026-09-29-d-35)). It refuses before
-touching anything when the replica's last heartbeat from the primary is stale, and never promotes
-while the old primary may still serve.
+`scripts/promote-mysql.sh`, run as root on the replica's machine: C on three machines, B on two
+([runbook §2](../operations/02-runbook.md#mysql-built-2026-09-29-d-35)).
+
+- **It refuses before touching anything** when the replica's last heartbeat from the primary is
+  older than five minutes, or cannot be read, unless it is given `--stale-ok`.
+- **It never promotes while the old primary may still serve**
+  ([D-95](../architecture/03-decision-log.md#d-95--a-promotion-refuses-an-old-primary-it-can-neither-rule-out-nor-fence-and-a-handover-closes-mysqls-last)).
+  It asks the old primary a question, with a 20 s limit. The old primary is down only when nothing
+  answers (no connection, MySQL's errors 2002, 2003 and 2005, or no reply in time). A refusal of the
+  account or of TLS means the server is up.
+- **A handover (`--demote-old`) closes the old primary last.** It makes the old primary read-only
+  (`super_read_only`, persisted), waits until the replica has applied everything the old primary
+  executed, and only then sets `offline_mode`, which closes every connection but an
+  administrator's, the replica's own link among them.
 
 ```mermaid
 sequenceDiagram
@@ -303,14 +350,22 @@ sequenceDiagram
     alt older than 300 s or unreadable, and no stale-ok
         S-->>O: REFUSED before touching anything (stops here)
     end
-    S->>P: read_only, to see whether it answers
-    alt old-is-down given, and P answers
-        S-->>O: REFUSED, it still answers (stops here)
-    else demote-old given, and P answers
-        S->>P: SET PERSIST super_read_only ON, SET GLOBAL offline_mode ON
-        P-->>S: fenced, writes stopped, connections closed but administrators
-    else P does not answer
+    S->>P: SELECT read_only, within 20 s, to see whether it answers
+    alt old-is-down, and P answers, or refuses the account or TLS
+        S-->>O: REFUSED, it is up (stops here)
+    else old-is-down, and P does not answer
         S->>S: promoting
+    else demote-old, and P does not answer, or refuses the account or TLS
+        S-->>O: REFUSED, it cannot be fenced (stops here)
+    else demote-old, and P answers
+        S->>P: SET PERSIST super_read_only ON, and read what it executed
+        P-->>S: read-only, writes stopped
+        S->>R: WAIT_FOR_EXECUTED_GTID_SET of what P executed, 60 s
+        alt not applied within 60 s
+            S-->>O: REFUSED, P left read-only (stops here)
+        end
+        S->>P: SET GLOBAL offline_mode ON
+        P-->>S: fenced, connections closed but administrators'
     end
     S->>R: WAIT_FOR_EXECUTED_GTID_SET of what it received, 60 s
     S->>R: STOP REPLICA, RESET REPLICA ALL
@@ -322,11 +377,13 @@ sequenceDiagram
 
 ## The backups
 
-The backup machine's units and timers ([01 §10](../operations/01-deploy.md#10-copies-off-the-databases-machine)):
-`backend-binlog-stream`, `backend-mysql-backup`, `backend-backup-offsite`,
-`backend-restore-proof` and `backend-restore-proof-offsite`, each running its script from
-`/opt/backend/scripts/`. Every step but the stream records its outcome in `backup_run`, which every
-worker reports.
+The backups' units and timers ([01 §10](../operations/01-deploy.md#10-copies-off-the-databases-machine)).
+They run on the backup machine: C on three machines, beside MySQL's primary on the launch's one
+machine, and on A on two machines (D-96). The units are `backend-binlog-stream`,
+`backend-mysql-backup`, `backend-backup-offsite`, `backend-restore-proof` and
+`backend-restore-proof-offsite`, and each runs its script from `/opt/backend/scripts/`. Every step
+but the stream records its outcome in the table `backup_run`, which every worker reports in its
+metrics.
 
 ```mermaid
 flowchart LR
@@ -377,15 +434,16 @@ flowchart LR
     br --> wm
 ```
 
-The two proofs never run at the same time. The binlog stream records nothing, so a stopped stream
-shows only in the next copy off the site or the next proof; `systemctl status
-backend-binlog-stream` is in the daily checks ([runbook §6](../operations/02-runbook.md#6-routine)).
+The two proofs never run at the same time. The binlog stream records nothing in `backup_run`, so a
+stopped stream shows only in the next copy off the site or the next proof. That is why
+`systemctl status backend-binlog-stream` is in the daily checks
+([runbook §6](../operations/02-runbook.md#6-routine)).
 
 ## A restore to a moment
 
 `scripts/restore-drill.sh` with `STOP_AT`, run by hand on the backup machine
-([runbook](../operations/02-runbook.md#recovering-to-a-moment)): the copy is made on the scratch
-server, never on the primary, and what the mistake changed is written back from it.
+([runbook](../operations/02-runbook.md#recovering-to-a-moment)). The copy is made on the scratch
+server, never on the primary. What the mistake changed is then written back from it, by hand.
 
 ```mermaid
 flowchart TD
@@ -422,6 +480,6 @@ flowchart TD
     ok --> back
 ```
 
-With no server holding the database left, the same script runs with `NO_SOURCE=1` from the copy
-off the site, fetched back by `fetch-offsite.sh`
+With no server holding the database left, the same script runs with `NO_SOURCE=1` from the copy off
+the site, fetched back by `fetch-offsite.sh`
 ([runbook](../operations/02-runbook.md#a-last-resort-restore-with-no-source-left)).

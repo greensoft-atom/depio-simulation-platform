@@ -52,7 +52,7 @@ class StoreClientsTest {
         JRedisClient c = store.newClient();
         assertThatThrownBy(() -> StoreClients.refuseIfUnauthenticated(c, "embedded"))
                 .isInstanceOf(RefusedConfiguration.class)
-                .hasMessageContaining("BACKEND_STORE_PASSWORD_FILE");
+                .hasMessageContaining("set BACKEND_STORE_PASSWORD or BACKEND_STORE_PASSWORD_FILE");
     }
 
     @Test
@@ -189,7 +189,7 @@ class StoreClientsTest {
     void theEventsStoresRefusalNamesItsSetting() {
         JRedisClient c = store.newClient();
         assertThatThrownBy(() -> StoreClients.refuseIfUnauthenticated(c, "embedded", "BACKEND_EVENTS_STORE_PASSWORD"))
-                .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("BACKEND_EVENTS_STORE_PASSWORD_FILE");
+                .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("set BACKEND_EVENTS_STORE_PASSWORD or BACKEND_EVENTS_STORE_PASSWORD_FILE");
     }
 
     @Test

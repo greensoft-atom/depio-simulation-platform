@@ -1,11 +1,15 @@
 # Backend documentation
 
-Backend for a diep.io-style realtime multiplayer arena with a Unity mobile
-client, self-hosted. Launch target **up to about 5 000 concurrent players on one machine**
-(the owner, 2026-11-01, D-93); the architecture is sized to grow to 50 000 on three.
+This is the index of the backend's documentation. It is for everyone who works on the backend: developers,
+operators, and the owner. It lists every document, says what each one answers, and gives an order to read them in.
 
-Documents are grouped by **what kind of document they are**, because they answer
-different questions and change at different rates.
+The backend serves a diep.io-style realtime multiplayer arena, played from a Unity app on Android, and it is
+self-hosted. The launch target is **up to about 5 000 concurrent players on one machine** (the owner, 2026-11-01,
+D-93). The architecture is sized to grow to 50 000 on three machines. Players reach the site at one public IP
+address, through nginx on ports 443 and 9001 with TLS, and on port 80 in clear (D-82, D-115).
+
+The documents are grouped by **what kind of document they are**, because each kind answers a different question
+and changes at a different rate.
 
 | Folder                                 | Answers                            | Changes when                       |
 | -------------------------------------- | ---------------------------------- | ---------------------------------- |
@@ -19,100 +23,107 @@ different questions and change at different rates.
 
 ## Start here
 
-New to the project, in this order:
+If you are new to the project, read these in this order:
 
-1. [The project's front page](../README.md) — what it is, its parts, and how to build and run it.
-2. The three words under [Vocabulary](#vocabulary) below, then the [glossary](glossary.md) as you go — the words that used to collide.
-3. [Requirements and scope](requirements/01-scope-and-nfrs.md), §1 to §6 — the targets, constraints and non-goals. §7 is the record of every open question, read as needed.
-4. [System topology](architecture/01-system-topology.md) and its [diagrams](diagrams/01-system.md) — four process types, three machines, where the capacity budget comes from.
-5. [Availability](architecture/02-availability.md) — what breaks when something fails.
-6. [Plan and status](plan.md), §1 — what actually exists today. The items below it are the history of how it was built.
-7. [Decision log](architecture/03-decision-log.md) — why it is shaped that way: D-1 to D-19 shape the system; the rest are per feature, best read beside their design document.
-8. [Defect register](defects.md) — what was found wrong and what closed it.
+1. [The project's front page](../README.md): what the project is, its parts, and how to build and run it.
+2. The three words under [Vocabulary](#vocabulary) below. Then keep the [glossary](glossary.md) open as you read:
+   it defines every term, including the words that used to collide.
+3. [Requirements and scope](requirements/01-scope-and-nfrs.md), §1 to §6: the targets, the constraints and what is
+   out of scope. §7 is the record of every open question; read it as needed.
+4. [System topology](architecture/01-system-topology.md) and its [diagrams](diagrams/01-system.md): the four
+   process types, the three machines (and the launch on one, D-93), and where the capacity budget comes from.
+5. [Availability](architecture/02-availability.md): what breaks when something fails.
+6. [Plan and status](plan.md), §1: what actually exists today. The items below it are the history of how it was
+   built.
+7. [Decision log](architecture/03-decision-log.md): why the system is shaped the way it is. D-1 to D-19 shape the
+   system; the rest are per feature, and are best read beside their design document.
+8. [Defect register](defects.md): what was found wrong, and what fixed it.
 
-Then the detailed design of whatever you are working on.
+Then read the detailed design of whatever you are working on. To build and run the backend, go to
+[development/03](development/03-build-and-run.md); to install it on a server, to the
+[install guide](operations/03-install-guide.md).
 
 ## Contents
 
 ### Requirements
 
-| Document                                                 | Content                                                                                                                                                                                                   |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [01 — Scope and NFRs](requirements/01-scope-and-nfrs.md) | Product scope, functional requirements (FR-1…FR-11), constraints (C-1…C-8), measurable NFRs (NFR-1a…NFR-10), capacity targets, non-goals, open questions Q-1…Q-54 with their recommendations and outcomes |
+| Document                                                 | Content                                                                                                                                                                                                                                                              |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [01 — Scope and NFRs](requirements/01-scope-and-nfrs.md) | Product scope, the functional requirements (FR-1…FR-11), the constraints (C-1…C-11), the measurable non-functional requirements (NFR-1a…NFR-10), the capacity targets, what is out of scope, and the open questions Q-1…Q-64 with their recommendations and outcomes |
 
 ### Architecture
 
-| Document                                                   | Content                                                                                                                                                              |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [01 — System topology](architecture/01-system-topology.md) | The four process types, machine layout (and the launch on one machine, D-93), capacity derivation, client flow, data and control plane, technology, core principles |
-| [02 — Availability](architecture/02-availability.md)       | Failure table, degradation tiers, failover policy, what is not covered, the gaps left, failover rehearsed under load, a replica's health measured                    |
-| [03 — Decision log](architecture/03-decision-log.md)       | D-1…D-75: every significant choice, its reasoning and its cost, and what later revisited it                                                                          |
+| Document                                                   | Content                                                                                                                                                                                            |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [01 — System topology](architecture/01-system-topology.md) | The four process types, the machine layout (and the launch on one machine, D-93), how the capacity is derived, the client's flow, the data and control planes, the technology, the core principles |
+| [02 — Availability](architecture/02-availability.md)       | The failure table, the degradation tiers, the failover policy, what is not covered, the gaps left, failover rehearsed under load, a replica's health measured                                      |
+| [03 — Decision log](architecture/03-decision-log.md)       | D-1…D-115: every significant choice, its reasoning and its cost, and what later revisited it                                                                                                       |
 
 ### Detailed design
 
-| Document                                                                            | Content                                                                                                                                                                                                                                                                             | State                                                                                                       |
-| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| [01 — Arena](detailed-design/01-arena.md)                                           | Room model, tick loop, entities, wire classification, stats, the tank tree, physics, collisions, deaths and respawn, the ten match modes, in-room events, determinism                                                                                                               | current; what is not built marked in place                                                                  |
-| [02 — Networking](detailed-design/02-networking.md)                                 | Transport, wire protocol, snapshot format, client-side simulation, interest management, traffic profiles, reconnect                                                                                                                                                                 | current                                                                                                     |
-| [03 — Gateway](detailed-design/03-gateway.md)                                       | Position, lobby protocol, connection lifecycle, push routing, rate limiting, backpressure, failure behaviour                                                                                                                                                                        | current                                                                                                     |
-| [04 — Platform services](detailed-design/04-platform-services.md)                   | Module layout, auth and guests, teams, rooms and tickets, matchmaking and every queued mode, tournaments, leaderboards and seasons, the economy (shop, items, gems, payments, the season pass, skins, achievements, daily goals), notifications and the social layer, the admin API | current                                                                                                     |
-| [05 — Worker and events](detailed-design/05-worker-and-events.md)                   | Streams, consumer loop, failure handling, the result pipeline, leaderboard rebuild, scheduled jobs, analytics and the funnel                                                                                                                                                        | current                                                                                                     |
-| [06 — Persistence (MySQL)](detailed-design/06-persistence-mysql.md)                 | Boundaries, schema, the three transactions, idempotency, concurrency, pooling, migrations, retention, backups                                                                                                                                                                       | current                                                                                                     |
-| [07 — Threading and performance](detailed-design/07-threading-and-performance.md)   | Thread model, allocation discipline, data structures, tick budget, JVM and Linux tuning                                                                                                                                                                                             | current                                                                                                     |
-| [08 — Client](detailed-design/08-client.md)                                         | The Unity app: an engine-free core tested against the real server, a thin Unity layer, threads, recovery, testing, the Unity scripts                                                                                                                                                | current: the core built, own-tank prediction included; the Unity layer written as scripts, not run in Unity |
-| [09 — The release and what it runs on](detailed-design/09-release-and-packaging.md) | The platform (RHEL 9; every binary glibc 2.28's, D-100), `vendor/` (the JDK, Maven, MySQL 8.4, nginx), the build with no network, the release's runtime, MySQL and nginx, how it is verified                                                                                                              | designed 2026-10-05 (plan item 80)                                                                          |
+| Document                                                                            | Content                                                                                                                                                                                                                                                                                 | State                                                                                                       |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| [01 — Arena](detailed-design/01-arena.md)                                           | The room model, the tick loop, entities, wire classification, stats, the tank tree, physics, collisions, deaths and respawn, the ten match modes, in-room events, determinism                                                                                                           | current; what is not built is marked in place                                                               |
+| [02 — Networking](detailed-design/02-networking.md)                                 | The transport, the wire protocol, the snapshot format, client-side simulation, interest management, traffic profiles, reconnect                                                                                                                                                         | current                                                                                                     |
+| [03 — Gateway](detailed-design/03-gateway.md)                                       | Its position, the lobby protocol, the connection's lifecycle, push routing, rate limiting, backpressure, failure behaviour                                                                                                                                                              | current                                                                                                     |
+| [04 — Platform services](detailed-design/04-platform-services.md)                   | The module layout, auth and guests, teams, rooms and tickets, matchmaking and every queued mode, tournaments, leaderboards and seasons, the economy (shop, items, gems, payments, the season pass, skins, achievements, daily goals), notifications and the social layer, the admin API | current                                                                                                     |
+| [05 — Worker and events](detailed-design/05-worker-and-events.md)                   | Streams, the consumer loop, failure handling, the result pipeline, the leaderboard rebuild, scheduled jobs, analytics and the funnel                                                                                                                                                    | current                                                                                                     |
+| [06 — Persistence (MySQL)](detailed-design/06-persistence-mysql.md)                 | Boundaries, the schema, the three transactions, idempotency, concurrency, pooling, migrations, retention, backups                                                                                                                                                                       | current                                                                                                     |
+| [07 — Threading and performance](detailed-design/07-threading-and-performance.md)   | The thread model, allocation discipline, data structures, the tick budget, JVM and Linux tuning                                                                                                                                                                                         | current                                                                                                     |
+| [08 — Client](detailed-design/08-client.md)                                         | The Unity app: an engine-free core tested against the real server, a thin Unity layer, threads, recovery, testing, the Unity scripts                                                                                                                                                    | current: the core built, own-tank prediction included; the Unity layer written as scripts, not run in Unity |
+| [09 — The release and what it runs on](detailed-design/09-release-and-packaging.md) | The platform (RHEL 9; every binary built for glibc 2.28, D-100), `vendor/` (the JDK, Maven, MySQL 8.4, nginx), the build with no network, the release's runtime, MySQL and nginx, how it is verified                                                                                    | designed 2026-10-05 (plan item 80)                                                                          |
 
 ### Development
 
-| Document                                              | Content                                                                                                                                          | State                                                                   |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| [01 — Code patterns](development/01-code-patterns.md) | Module layout, dependency set, patterns, coding rules, error handling, testing                                                                   | current; each pattern says where the code differs from the first design |
-| [02 — Working here](development/02-working-here.md)   | How a unit of work is done, the owner's standing decisions, the development machine and its traps                                                | current                                                                 |
-| [03 — Build and run](development/03-build-and-run.md) | A guide: build, test, run and debug the backend from a clone, offline, everything inside its folder (`work/`, D-80); the drills and the RHEL 9 checks | tested as written in UBI 9 with no network, 2026-10-17; §5's scripts (D-92) run on the development VM, 2026-11-01 |
-| [04 — Cryptography](development/04-crypto.md)         | What Java 21 and BouncyCastle give, the rules and traps, and the tested examples in `backend/crypto-examples`                                     | 35 tests, checked against `openssl` both ways, 2026-10-05               |
-| [05 — VS Code](development/05-vscode.md)              | The Java extensions installed offline, and each committed setting in `.vscode/` with its reason: import, JDK, tests, debugging | the import proved offline with the language server, 2026-10-17; VS Code's window not run |
-| [06 — Questions and answers](development/06-questions-and-answers.md) | The owner's questions setting up an offline machine, each answered in full: the plugin errors, the `/opt` and `/tmp` paths, `dev-env.sh` line by line, the MySQL, exceptions in tests, testing each interface, VS Code | each command run as written, 2026-10-17 to 2026-10-19; the run by hand's outputs again 2026-11-01 (D-92) |
-| [07 — After a code change](development/07-after-a-code-change.md) | Which processes a change to each module reaches; building, releasing and trying it on a development machine; shipping it to the servers and restarting in order; what old and new must share during the restarts; a change to the schema (Flyway, expand then contract) or to the wire |
+| Document                                                              | Content                                                                                                                                                                                                                                                                                | State                                                                                                             |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [01 — Code patterns](development/01-code-patterns.md)                 | The module layout, the dependency set, the patterns, the coding rules, error handling, testing                                                                                                                                                                                         | current; each pattern says where the code differs from the first design                                           |
+| [02 — Working here](development/02-working-here.md)                   | How a unit of work is done, the owner's standing decisions, the development machine and its traps                                                                                                                                                                                      | current                                                                                                           |
+| [03 — Build and run](development/03-build-and-run.md)                 | A guide: build, test, run and debug the backend from a clone, offline, with everything inside its folder (`work/`, D-80); a run by hand behind nginx, with TLS or plain; the drills and the RHEL 9 checks                                                                              | tested as written in UBI 9 with no network, 2026-10-17; §5's scripts (D-92) run on the development VM, 2026-11-01 |
+| [04 — Cryptography](development/04-crypto.md)                         | What Java 21 and BouncyCastle give, the rules and traps, and the tested examples in `backend/crypto-examples`                                                                                                                                                                          | 35 tests, checked against `openssl` both ways, 2026-10-05                                                         |
+| [05 — VS Code](development/05-vscode.md)                              | The Java extensions installed offline, and each committed setting in `.vscode/` with its reason: import, JDK, tests, debugging                                                                                                                                                         | the import proved offline with the language server, 2026-10-17; VS Code's window not run                          |
+| [06 — Questions and answers](development/06-questions-and-answers.md) | The owner's questions from setting up an offline machine, each answered in full: the plugin errors, the `/opt` and `/tmp` paths, `dev-env.sh` line by line, the MySQL, exceptions in tests, testing each interface, VS Code                                                            | each command run as written, 2026-10-17 to 2026-10-19; the run by hand's outputs again 2026-11-01 (D-92)          |
+| [07 — After a code change](development/07-after-a-code-change.md)     | Which processes a change to each module reaches; building, releasing and trying it on a development machine; shipping it to the servers and restarting in order; what old and new must share during the restarts; a change to the schema (Flyway, expand then contract) or to the wire | written 2026-10-23 (plan item 96), current to D-115; its commands are those of 03 and operations/01               |
 
 ### API
 
-| Document | Content | State |
-| --- | --- | --- |
-| [API — index](api/README.md) | The four interfaces, the Postman collection and how to run it, how the examples were made | run 2026-10-06 |
-| [01 — The player API](api/01-http-api.md) | Every `/v1/` route: body, answer, errors, a real example of each | run 2026-10-06 |
-| [02 — The lobby WebSocket](api/02-lobby-websocket.md) | Frames, authentication, messages, pushes, errors, limits, a whole session | run 2026-10-06 |
-| [03 — The admin API](api/03-admin-api.md) | Every `/admin/` call, with real examples | run 2026-10-06 |
+| Document                                              | Content                                                                                   | State          |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------- |
+| [API — index](api/README.md)                          | The four interfaces, the Postman collection and how to run it, how the examples were made | run 2026-10-06 |
+| [01 — The player API](api/01-http-api.md)             | Every `/v1/` route: its body, its answer, its errors, and a real example of each          | run 2026-10-06 |
+| [02 — The lobby WebSocket](api/02-lobby-websocket.md) | Frames, authentication, messages, pushes, errors, limits, a whole session                 | run 2026-10-06 |
+| [03 — The admin API](api/03-admin-api.md)             | Every `/admin/` call, with real examples                                                  | run 2026-10-06 |
 
 ### Operations
 
-| Document                                             | Content                                                                                                                                                                                                               |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| [01 — Deploy](operations/01-deploy.md)               | What runs where, conventions and secrets, j-redis and its replicas, nginx, rolling deployment, installing a machine, TLS for match traffic, MySQL and its replica, copies off the database's machine, the certificate |
-| [02 — Runbook](operations/02-runbook.md)             | Triage, stateful failover, per-component procedures, whole-machine loss, what to watch, routine, the admin API, restores                                                                                              |
-| [03 — Install guide](operations/03-install-guide.md) | Step by step: a fresh RHEL 9 server and a clone of the repository to every process running, with nothing installed; then operating it, and three machines                                                             | run as written by `check-install-guide-el9.sh` |
-| [04 — Scaling and performance](operations/04-scaling-and-performance.md) | How each part grows and how to add capacity (rooms, arenas on their own ports, machines); every performance figure measured, dated; what 10 000 and 50 000 players would take | measured 2026-10-06 |
-| [05 — Ports and the firewall](operations/05-ports-and-firewall.md) | The site behind one public address and the front's nginx; every port on each of the three machines: what listens, on which address, who connects and from where, what names it; the app's three routes end to end, TLS and plain (§4); the arenas' names; each machine's firewalld commands; checking; changing a port; development's and the drills' ports apart | run as written by `check-ports-el9.sh` |
-| [06 — Certificates](operations/06-certificates.md) | The backend's own CA, for a site with no domain: making the root, issuing the site's certificate, installing it on every machine, the app trusting the root alone, renewing, adding an arena, a leaked or lost key, testing, what goes wrong | run by `check-certificates.sh` and `check-ports-el9.sh` |
-| [07 — Start, stop, restart](operations/07-start-stop-restart.md) | Each service's unit, where it runs, its settings and what a change of them takes; nginx reloaded, MySQL or a store restarted alone, an arena drained; every machine stopped and started in order; the same on a development machine | run as written by `check-units-el9.sh` |
-| [08 — Monitoring](operations/08-monitoring.md) | The watch in every platform: what it reads and alerts on, where alerts go, reading and silencing them; the backend's own, no third-party service |
-| [09 — The rehearsal](operations/09-rehearsal.md) | The readiness rehearsal on the owner's three machines as a checklist: each step, its expected outcome, what to record; what it cannot prove |
-| [10 — Two machines](operations/10-two-machines.md) | A second machine as the launch machine's standby (D-96): MySQL's and the stores' replicas made from the running primaries, the rest of A installed on it and stopped; the steps on each machine, the firewall, operating two | run as written by `check-two-machines-el9.sh` |
-| [11 — Phone-to-backend routes](operations/11-phone-to-backend-routes.md) | Every connection from the app to the backend, the site's over TLS and development's TLS and plain: the three routes drawn, a session in order, the limits and timeouts; nginx file by file, each setting and why, the numbers that must agree, the one machine's changes, its logs, running it; the phone's address behind nginx; checking it | its routes run by `check-ports-el9.sh`, `check-units-el9.sh` and `dev-backend.sh test` |
+| Document                                                                 | Content                                                                                                                                                                                                                                                                                                                                                                | State                                                                                  |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [01 — Deploy](operations/01-deploy.md)                                   | What runs where, conventions and secrets, j-redis and its replicas, nginx, rolling deployment, installing a machine, TLS for match traffic, MySQL and its replica, copies off the database's machine, the certificate                                                                                                                                                  |                                                                                        |
+| [02 — Runbook](operations/02-runbook.md)                                 | Triage, stateful failover, per-component procedures, whole-machine loss, what to watch, routine, the admin API, restores                                                                                                                                                                                                                                               |                                                                                        |
+| [03 — Install guide](operations/03-install-guide.md)                     | Step by step: from a fresh RHEL 9 server and a clone of the repository to every process running, with nothing installed; then operating it, and three machines                                                                                                                                                                                                         | run as written by `check-install-guide-el9.sh`                                         |
+| [04 — Scaling and performance](operations/04-scaling-and-performance.md) | How each part grows and how to add capacity (rooms, arenas on their own ports, machines); every performance figure measured, with its date; what 10 000 and 50 000 players would take                                                                                                                                                                                  | measured 2026-10-06                                                                    |
+| [05 — Ports and the firewall](operations/05-ports-and-firewall.md)       | The site behind one public address and the front's nginx; every port on each of the three machines: what listens, on which address, who connects and from where, what names it; the app's three routes end to end, TLS and plain (§4); the arenas' names; each machine's firewalld commands; checking; changing a port; the ports of development and of the drills     | run as written by `check-ports-el9.sh`                                                 |
+| [06 — Certificates](operations/06-certificates.md)                       | The backend's own CA, for a site with no domain: making the root, issuing the site's certificate, installing it on every machine, the app trusting the root alone, renewing, adding an arena, a leaked or lost key, testing, what goes wrong                                                                                                                           | run by `check-certificates.sh` and `check-ports-el9.sh`                                |
+| [07 — Start, stop, restart](operations/07-start-stop-restart.md)         | Each service's unit, where it runs, its settings and what a change to them takes; nginx reloaded, MySQL or a store restarted alone, an arena drained; every machine stopped and started in order; the same on a development machine                                                                                                                                    | run as written by `check-units-el9.sh`                                                 |
+| [08 — Monitoring](operations/08-monitoring.md)                           | The watch in every platform: what it reads and alerts on, where alerts go, reading and silencing them; the backend's own code, no third-party service                                                                                                                                                                                                                  |                                                                                        |
+| [09 — The rehearsal](operations/09-rehearsal.md)                         | The readiness rehearsal on the owner's three machines, as a checklist: each step, its expected outcome, what to record; what it cannot prove                                                                                                                                                                                                                           |                                                                                        |
+| [10 — Two machines](operations/10-two-machines.md)                       | A second machine as the launch machine's standby (D-96): MySQL's and the stores' replicas made from the running primaries, the rest of A installed on it and stopped; the steps on each machine, the firewall, operating two                                                                                                                                           | run as written by `check-two-machines-el9.sh`                                          |
+| [11 — Phone-to-backend routes](operations/11-phone-to-backend-routes.md) | Every connection from the app to the backend, the site's (TLS on 443 and 9001, in clear on 80) and development's (TLS and plain): the routes drawn, a session in order, the limits and timeouts; nginx file by file, each setting and why, the numbers that must agree, the one machine's changes, its logs, running it; the phone's address behind nginx; checking it | its routes run by `check-ports-el9.sh`, `check-units-el9.sh` and `dev-backend.sh test` |
 
 ### Project
 
 | Document                      | Content                                                                                                                                                                        |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [Plan and status](plan.md)    | What exists, every plan item with its outcome, the phased roadmap with effort estimates, documentation as a per-phase deliverable, j-redis roadmap, risks                      |
+| [Plan and status](plan.md)    | What exists, every plan item with its outcome, the phased roadmap with effort estimates, documentation as a per-phase deliverable, the j-redis roadmap, the risks              |
 | [Defect register](defects.md) | Every defect found, by area (protocol P, data D, simulation M, concurrency T, security S, operations O, documentation DOC): what was wrong, how it was verified, what fixed it |
-| [Glossary](glossary.md)       | Every term in the system — code, schema, wire and prose — with what it means and where it appears                                                                              |
+| [Glossary](glossary.md)       | Every term in the system (code, schema, wire and prose), with what it means and where it appears                                                                               |
 
 ### Diagrams
 
 | Document                                                           | Content                                                                                                                                                    |
 | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Index](diagrams/README.md)                                        | Every diagram, and where each comes from                                                                                                                   |
-| [01 — System](diagrams/01-system.md)                               | System context, the processes and stores with protocols and ports, the Maven modules, the main runtime flow, high availability                             |
+| [01 — System](diagrams/01-system.md)                               | The system's context, the processes and stores with their protocols and ports, the Maven modules, the main runtime flow, high availability                 |
 | [02 — Arena and wire](diagrams/02-arena-and-wire.md)               | A room's lifecycle, the tick, join and resume, snapshot encoding, the collision broadphase, a made match, draining, every message on the match connection  |
 | [03 — Lobby and store](diagrams/03-lobby-and-store.md)             | The lobby's connect and auth, pushes across gateways, tickets, a room reserved for a match, the store's failover, slow clients, who writes each key family |
 | [04 — Platform](diagrams/04-platform.md)                           | Accounts and guests, the arena seat, the queue and confirm, parties, teams, tournaments, payments, the season pass, the shop, the admin API                |
@@ -122,14 +133,14 @@ Then the detailed design of whatever you are working on.
 
 ### Research
 
-| Document                                                   | Content                                                                             |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| [iohao framework study](research/iohao-framework-study.md) | What the third-party framework does, what to borrow, why it cannot be used directly |
-| [articles/](research/articles/)                            | 73 reference articles on backend architecture                                       |
+| Document                                                   | Content                                                                                 |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [iohao framework study](research/iohao-framework-study.md) | What the third-party framework does, what to borrow, and why it cannot be used directly |
+| [articles/](research/articles/)                            | 73 reference articles on backend architecture                                           |
 
 ### Archive
 
-Superseded, kept for history. Where these disagree with anything above, they lose.
+These documents are superseded, and kept for history. Where they disagree with anything above, they lose.
 
 | Document                                                                | Replaced by                                                                                            |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -139,15 +150,17 @@ Superseded, kept for history. Where these disagree with anything above, they los
 
 ## Related
 
+These are outside `docs/`, beside the code they describe.
+
 | Document                                                                        | Content                                                                                                                         |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| [The project's front page](../README.md)                                        | What the project is, its components, the repository's layout, status, a developer's quickstart                                  |
-| [backend/](../backend/README.md)                                                | The code's layout, build, the wire contract, benchmarks, bots; each module has a README of its own                              |
+| [The project's front page](../README.md)                                        | What the project is, its components, the repository's layout, its status, a developer's quickstart                              |
+| [backend/](../backend/README.md)                                                | The code's layout, the build, the wire contract, benchmarks, bots; each module has a README of its own                          |
 | [client/](../client/README.md)                                                  | The C# core, its tests, the headless driver and the live drill                                                                  |
 | [client/Unity/com.backend.client](../client/Unity/com.backend.client/README.md) | The Unity package: what was and was not checked, setup, the scripts                                                             |
 | [client-simple](../client-simple/README.md)                                     | The simple client for a UI team: which Unity, what to copy, the three clients, the examples                                     |
 | [client-simple-no-tls](../client-simple-no-tls/README.md)                       | The simple client without TLS: what it reaches (the site's 80, a backend run plain), what to copy, moving to TLS                |
-| [protocol-spike](../protocol-spike/README.md)                                   | The golden vectors and the spike that wrote them                                                                                |
+| [protocol-spike](../protocol-spike/README.md)                                   | The golden vectors, and the spike that wrote them                                                                               |
 | [j-redis-service](../j-redis-service/README.md)                                 | The data store, a project of its own, built and documented: server, client library, CLI, tools, guides and its own decision log |
 
 ## Naming
@@ -194,9 +207,9 @@ The system is called **`backend`** wherever a namespace is needed:
 | Install root               | `/opt/backend/`, symlinked to `/opt/backend-<version>/`                              |
 | Configuration              | `/etc/backend/`                                                                      |
 | State and logs             | `/var/lib/backend/`, `/var/log/backend/`                                             |
-| systemd units              | `backend-arena@<name>`, `backend-worker@<id>`, `backend-gateway`, `backend-platform` |
+| systemd units              | `backend-arena@<name>`, `backend-worker@<id>`, `backend-gateway`, `backend-platform`; `backend-store@<name>`, `backend-mysql`, `backend-nginx`; the backups' and the logs' `backend-*` services and timers |
 | Java packages              | `com.backend.arena.*`, `com.backend.platform.*`, …                                   |
-| C# namespaces (the client) | `Backend.Client.Core`, `Backend.Client.Unity`                                        |
+| C# namespaces (the client) | `Backend.Client.Core`, `Backend.Client.Unity`, `Backend.Client.Headless`; `Backend.Client.Simple` (both simple clients) |
 | OS user                    | `backend`                                                                            |
 
 The four process types are **`arena`**, **`gateway`**, **`platform`** and
@@ -206,23 +219,17 @@ no domain nouns at all there, because it is a general-purpose store.
 
 ## Conventions
 
-- **Requirements are numbered and testable.** C-_n_ for constraints, FR-_n_ for
-  functional requirements, NFR-_n_ for measurable targets, Q-_n_ for open
-  questions. Other documents refer to them by number.
-- **Decisions are numbered D-_n_** and never rewritten in place. A superseded
-  decision keeps its entry and names its replacement, marked **Superseded** or
-  **Revisited**. Data defects in
-  [defects.md](defects.md) §3 also use D-_n_, for historical reasons (commit
-  messages cite them): write "defect D-_n_" for those.
-- **A document marked "stale" describes the old target** (one machine, browser
-  client, MongoDB, Java 8). Read it for the parts that have not changed —
-  usually the simulation logic — and trust the architecture documents where they
-  disagree.
-- **The schema is one baseline** since 2026-10-04: `V1__schema.sql` and
-  `V2__seed.sql` under `backend/persistence/src/main/resources/db/migration`
+- **Requirements are numbered and testable.** C-_n_ is a constraint, FR-_n_ a functional requirement, NFR-_n_ a
+  measurable target, and Q-_n_ an open question. Other documents refer to them by number.
+- **Decisions are numbered D-_n_, and are never rewritten in place.** A superseded decision keeps its entry and
+  names its replacement, marked **Superseded** or **Revisited**. The data defects in [defects.md](defects.md) §3
+  also use D-_n_, for historical reasons (commit messages cite them): write "defect D-_n_" for those.
+- **A document marked "stale" describes the old target** (one machine, a browser client, MongoDB, Java 8). Read it
+  for the parts that have not changed, usually the simulation logic, and trust the architecture documents where
+  they disagree.
+- **The schema is one baseline** since 2026-10-04: `V1__schema.sql` and `V2__seed.sql`, under
+  `backend/persistence/src/main/resources/db/migration`
   ([D-75](architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)).
-  A `V`-number above 2 in a document names a step of the history it was
-  squashed from, kept in git.
-- **Measured numbers say so.** Anything derived rather than measured is marked,
-  because almost nothing in here has been run on the production hardware yet
-  (Q-3).
+  A `V`-number above 2 in a document names a step of the history the baseline was squashed from, which git keeps.
+- **Measured numbers say so.** Anything derived rather than measured is marked, because almost nothing in here has
+  been run on the production hardware yet (Q-3).

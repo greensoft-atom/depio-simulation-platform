@@ -69,7 +69,7 @@ done
 "$JDK/bin/jlink" --module-path "$JDK/jmods" --add-modules "$modules" \
     --strip-java-debug-attributes --no-man-pages --no-header-files --compress zip-6 --output "$OUT/runtime"
 
-# MySQL and nginx as committed: binaries for RHEL 9's glibc (09 §1).
+# MySQL and nginx as committed: binaries for glibc 2.28, RHEL 8 and 9 (D-100, 09 §1).
 cp -a "$VENDOR/mysql-8.4" "$OUT/mysql"
 cp -a "$VENDOR/nginx-1.30" "$OUT/nginx"
 

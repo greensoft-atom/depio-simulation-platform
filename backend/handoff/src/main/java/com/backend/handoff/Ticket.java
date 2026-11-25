@@ -11,7 +11,7 @@ import java.util.Map;
  * The arena has no database connection and never gets one, so everything it needs about a
  * player has to arrive in here: identity and side; for a match the matcher made, which match
  * and its mode, the arena making the match's room from the first of its tickets (D-20); the
- * boost worn, as a bonus per stat (04 §8, D-37); and the skin worn, which changes nothing in the
+ * equipment worn, as a bonus per stat (04 §8, D-37); and the skin worn, which changes nothing in the
  * simulation and is told with the tank's create to whoever sees it (D-70).
  *
  * The id is the credential — anyone holding it joins as this player — so it is 128 bits

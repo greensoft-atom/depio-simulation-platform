@@ -160,8 +160,9 @@ below was confirmed by watching the test fail first.
 | **P-64** | M | **FOUND 2026-11-05 (plan item 129, Unity 2019.4.28f1's compiler), FIXED the same day (D-108).** The core and the package's scripts did not compile in Unity 2019.4 or Visual Studio 2019 on .NET Framework: written for .NET Standard 2.1 and C# 9 (Unity 2022.3 and 6), they used `ReadOnlySpan<byte>` (twelve places), a conditional typed by its target (C# 9), `BitConverter.Int32BitsToSingle`, `ClientWebSocketOptions.RemoteCertificateValidationCallback` and, in the iOS store, `Marshal.PtrToStringUTF8`. **Fixed:** .NET Standard 2.0 and C# 7.3; a frame an `ArraySegment<byte>`. Compiled by Unity's compiler, warnings as errors, at both API levels, the scripts against its own `UnityEngine`, every platform branch. | tested |
 | **P-65** | L | **FOUND 2026-11-05 (plan item 130, the core's tests on Unity 2019.4.28f1's Mono), OPEN.** On that Mono run as its editor's `mono` binary is, a `float` is computed in double: the own tank's step differed from the room's in its last bits (`TankMotionTests`, the three recordings: `-0.674724936` where the room has `-0.6747249`), so the prediction would correct what it should not need to (02 §9). With `--optimize=float32`, which Unity's own fork turns on by default ("[jit] Enable float32 by default", Unity-Technologies/mono #1258), bit for bit, and the check runs the tests so. Not seen here: whether Unity 2019.4's editor and player run Mono that way, and IL2CPP's C++ on ARM. To do, by the team: `TankMotionTests` in Unity 2019's Test Runner, in the editor and in a player. | tested here |
 | **P-66** | M | **FOUND 2026-11-24 (the owner: the client's HTTP classes do not compile in the team's Unity; plan item 132), FIXED 2026-11-25 (plan item 134, D-113).** The core speaks to the API through `HttpClient` (`ApiClient`, `WebRequestTransport`, `TrustRoot.HttpHandler`), which is in `System.Net.Http.dll`. At Unity's .NET 4.x level that assembly is not referenced unless the project's `Assets/csc.rsp` names it (Unity's own advice for `HttpClient`), so the core's sources do not compile there: compiled here by Unity 2019.4.28f1's compiler against its .NET 4.x references without it, it fails: `HttpClient`, `HttpMessageHandler`, `HttpRequestMessage` and `HttpMethod` not found. Nor do the package's scripts against the core's DLL: `BackendClient`'s `new ApiClient(..., HttpHandler())` names `HttpMessageHandler` (CS0012). `unity2019-check.sh` gives the compiler `System.Net.Http.dll` at that level, so it never showed, and D-108's "compiles at either API level" held only with that reference. At .NET Standard 2.0 and 2.1 the types are in `netstandard.dll` and it compiles. Not seen in the editor itself (none here). `client-simple/` uses `HttpClient` since D-112 and ships the `csc.rsp` line; its check compiles it at .NET 4.x with the line and sees it refused without (CS1069). **Fixed:** the package ships `Runtime/csc.rsp`, `-r:System.Net.Http.dll`, beside its assembly definition, which Unity 2019.4 reads for that assembly (its editor's `ResponseFileProvider`, read in `UnityEditor.dll`), finding the name in the level's own folders: `4.7.1-api`'s at .NET 4.x, a shim .NET Standard 2.0 already references there. `unity2019-check.sh` compiles the scripts with Unity's default references and the file's: test first, without the file the package's scripts failed with CS0012 (`BackendClient.cs`, `HttpMessageHandler`); with it they compile at both levels, and without it at .NET 4.x they are refused, which the check requires. Five mutants caught. Not seen in an editor. | compiled here |
+| **P-67** | L | **FOUND 2026-11-25 (plan item 138, the arena's design read against the Unity layer), OPEN.** `LookTable`'s `tankRadius` defaults to 25 world units where the server's tank is 30 (`Room.TANK_RADIUS`), so a tank is drawn at five sixths of the size it collides at; and `TankRadius(classId)` returns that one number for every class, although its tooltip says it comes from the class table, where a Mega Smasher's body, the Guardian's and the Dominator's are bigger. Read in the code; nothing drawn here (no editor). | read |
 
-**Open in this section: P-65.** P-66, found when the owner's Unity would not compile the client (item 132), was fixed the next day (item 134). P-60, found by the review of 2026-11-01, was fixed the same day (plan item 112); P-61 and P-62, found by item 128's review of every route, were fixed the same day; P-63 and P-64, found when the client was taken to Unity 2019.4 (item 129), too.
+**Open in this section: P-65, P-67.** P-66, found when the owner's Unity would not compile the client (item 132), was fixed the next day (item 134). P-60, found by the review of 2026-11-01, was fixed the same day (plan item 112); P-61 and P-62, found by item 128's review of every route, were fixed the same day; P-63 and P-64, found when the client was taken to Unity 2019.4 (item 129), too.
 P-55 to P-59, five small inconsistencies found in writing
 the API reference (2026-10-06), were fixed the same day (plan item 86). P-38 to P-54 were found and fixed by the review of 2026-10-04 (plan item 79); P-35 and P-36 were found and fixed 2026-10-01; P-32, seen once, was fixed 2026-09-30; P-34 was found and fixed 2026-09-30; P-31 was fixed 2026-09-29 and is watched; P-33 was found and fixed building phrases in the client. P-6 and P-13 were fixed on 2026-09-25; P-9,
 P-11 and P-14 on 2026-09-26, when the rest of P-12 was closed as not a defect.
@@ -247,6 +248,7 @@ decision D-16. Elsewhere a data defect is written "defect D-*n*" and links here.
 | **D-49** | L | **FOUND AND FIXED 2026-10-04 (the review, plan item 79). One failing retention step skipped the rest for a day.** And its duration was recorded only on success. **Fixed:** each step on its own, the duration in `finally`. Same test, failing first. | tested |
 | **D-50** | L | **FOUND AND FIXED 2026-10-04 (the review, plan item 79). No open season was retried for ever.** `SeasonPassRepository.current()` read an empty result as an SQL error (S1000), which the caller retries. **Fixed:** said as such. Test `noOpenSeasonIsSaid`. | tested |
 | **D-51** | L | **FOUND AND FIXED 2026-10-04 (the review, plan item 79). The daily "rated" goal counted walkovers.** It read `result.rated()`, true for a walkover whose ratings do not move. **Fixed:** a rated match played against someone: ratings moved, or a team match with both teams. Test `aWalkoverIsNotARatedMatch`, written with the fix and mutation-checked. | tested |
+| **D-52** | L | **FOUND 2026-11-25 (plan item 138, j-redis's documents read against its code), OPEN.** j-redis's `HELLO` answers `role master` on every server, a replica too (`ConnectionCommands.java`, `hello`): a client that read the role from it would take a replica for the primary. Nothing here reads it: the client library sends `HELLO` and does not look at the role, and `promote-store.sh` asks `ROLE`, which is right. | read |
 
 ~~**New, found while fixing the above:** `MatchResultQueue` waits on the store with no
 timeout, so a push to a store that accepts the connection and never answers blocks for
@@ -374,10 +376,11 @@ collision *reach* fix is mutation-proven; determinism holds and is not vacuous.
 | **T-62** | L | **FOUND 2026-10-24 (plan item 100's full build), FIXED the same day (item 101). A co-op test depended on finishing before the arena's idle rule.** `ArenaServerTest.theDeadComeBackAtTheNextWave` erred once, `closed while reading a frame length` after 30.04 s, and passed alone. Its two clients read frames until both see the match over and send nothing meanwhile; the arena closes a client silent for 30 s (`MatchFrameHandler.Limits`, the second figure), so on a build loaded enough for ten co-op waves to take over half a minute the arena cuts the test's client as dead. A real client pings every 10 s. To close it: the test's clients ping while they wait, as `MatchConnection` does, or the match made to end within the limit by construction. **Fixed:** the test runs its arena with a four-second idle limit, so a client that only reads is cut by construction (seen: cut at 4 s, twice, before the fix), and its clients ping every second and a half on their own clock, whatever they receive, reading in two-second waits; a first fix that pinged only when a read found nothing was cut too, since a client receiving snapshots never waits, and it is its sending the rule judges. Passed three times, 19 s each, and in a full build. | tested |
 | **T-63** | M | **FOUND 2026-10-27 (the owner's full build on their VM, as a user who is not root), FIXED the same day (item 107). A sandbox's first power, asked for as soon as the Welcome came, could be lost.** `ArenaServerTest.aSandboxSummonsOneGuardian` failed there, `condition not met within 30 s`: the player joined, asked for a Guardian, none came, and the arena cut the client as idle at 30 s. A sandbox's room starts its match on the tick that admits its first player; that tick sends the Welcome at the admit, takes each connection's pending sandbox request before the step, and makes the `Sandbox` only at the start, after the step. `applySandbox` took the request first and asked for the `Sandbox` after, so one in the slot between the admit and the take was taken and dropped without a word. The test's client sends its request the moment the Welcome arrives, a round trip the room thread won here on twelve cores in every build and lost there; a real client that sends a power with its join, before the Welcome, lost it anywhere, every time. Severity M: a lost power is a tap repeated, and the mechanism is the kind that passes every build on one machine. **Fixed** ([D-89](architecture/03-decision-log.md#d-89--a-sandboxs-request-made-before-its-sandbox-plays-waits-for-it)): the request waits in its slot while the room's `Sandbox` does not exist, and the first tick after the start honours it; a room that is no sandbox never reads the slot, as before in effect. Test first: a power sent with the join, before the Welcome, is honoured once the player is in; it failed before the fix for the reason, 30 s and no Guardian, and passes after. Mutants: the take before the check restored, and the `Sandbox` made at the room's birth, applied then wiped by the start's reset: each caught. The owner's test pinned to one CPU here, with and without two busy loops beside it: thirty runs passed, so their interleaving was not reproduced on this machine; the window is the code's, and the new test puts a request in it by construction. | tested |
 | **T-64** | L | **FOUND 2026-11-02 (plan item 115 (b), the two-machine check's mutant runs), WORKED AROUND the same day. The headless client's `play` missed its own timed checks on a loaded host.** It checks that the tank moved at its top speed for 3 s (70 to 108 units), 30 to 50 frames in that time, and that its bullets arrive as predicted creates; with two stacks of the check running at once on this VM, "moved right at its top speed" failed in one run and "bullets arrive as predicted creates" in another, two of nine, each passing in the others and alone. Not changed: those timings are what `play` is for, a server that reads every input and sends 15 frames a second. The two-machine check plays `lobby` instead, a match from the lobby to its reward, whose checks are the pipeline's and not timed; `check-ports-el9.sh` still plays `play`, alone on the host as it runs. |
-| **T-65** | M | **FOUND 2026-11-05 (plan item 128, the owner asking that every route be checked through nginx), FIXED the same day.** No check ran every route through nginx: the drills went to each process's own port, and the checks through the front (`check-ports-el9.sh`, the units', the install guide's, the two machines') ran sixteen of the client's scenarios and one registration; the Postman collection, every HTTP route with its body, had run against the platform alone. **Fixed** (D-107): `headless-drill.sh FRONT=https|http|plain NEWMAN=1` puts the release's nginx, as `dev-nginx.sh` configures it, in front of the drill's stack and runs the collection and then every scenario through it. Its first run found the drill's arena short of a room when the collection had opened a sandbox before the duels: one more room with `NEWMAN=1`. |
+| **T-65** | M | **FOUND 2026-11-05 (plan item 128, the owner asking that every route be checked through nginx), FIXED the same day.** No check ran every route through nginx: the drills went to each process's own port, and the checks through the front (`check-ports-el9.sh`, the units', the install guide's, the two machines') ran sixteen of the client's scenarios and one registration; the Postman collection, every HTTP route with its body, had run against the platform alone. **Fixed** (D-107): `headless-drill.sh FRONT=https\|http\|plain NEWMAN=1` puts the release's nginx, as `dev-nginx.sh` configures it, in front of the drill's stack and runs the collection and then every scenario through it. Its first run found the drill's arena short of a room when the collection had opened a sandbox before the duels: one more room with `NEWMAN=1`. |
 | **T-66** | L | **FOUND 2026-11-05 (plan item 128, the drills through nginx), OPEN.** `maze`'s check that the scout's bullets end at a wall the client made failed in two runs of four, the scout seeing no bullet at all (none in flight, none removed), every other check of the match passing; the maze's seed differed each run (3020403322 failed, 3558685142 passed), and with it the walls and where the tanks spawn. Read, not yet shown, as the scenario's: probably T-57's family, a shot whose way the check (points 5 units apart, 10 wide) finds clear clipping a wall all the same and ending inside its first tick, before a snapshot carries it. Not nginx's: its stream passes the match's bytes as they come, and a frame lost there would break the connection, not one bullet. To do: the shot chosen so that its path is clear for the bullet's own radius, and a test that puts a failing seed's geometry in by construction. |
 | **T-67** | L | **FOUND 2026-11-05 (plan item 128, the plain way through nginx; again in item 130's `check-ports-el9.sh`), FIXED the same day (plan item 130).** `decline`'s check that the player who declined may not queue again failed in two runs of eight: the lobby had the platform's refusal, `queue_locked`, as its last error, and `QueueRefusal`, which the check reads, was empty. The client's: the decliner joins again while its called-off match is still being told, the push (`evt.queue.update`) comes between the join and its refusal, and T-61's rule, that a queue push outdates a join's answer, took the join's id, so its refusal came back under no join. **Fixed:** the last join's id kept for its refusal, cleared by a new join or a leave and not by a push; an answer a push outdates is still dropped (T-61). Test first, the window by construction: the push written between the join and its refusal, which was lost, then recorded; and a refusal after a leave not; two mutants caught. |
 | **T-68** | M | **FOUND 2026-11-05 (plan item 130), FIXED the same day (D-109).** The client's tests had run on .NET 8 alone, never on a runtime the team's app has: on Unity 2019's Mono, 10 of 193 failed, seven by the tests' own lobby (`HttpListener`'s WebSocket server, which Mono does not implement) and three by P-65; and neither they nor the headless driver compiled in Visual Studio 2019 (C# 9, .NET 8). **Fixed:** both C# 7.3 on .NET Framework 4.7.1 and .NET 8; the tests' certificates files (`Pki/make.sh`), their servers their own; the tests compiled by Unity 2019's compiler and run on its Mono by `unity2019-check.sh`, 193 of 193 (with `float32`), and built with the driver by VS 2019's MSBuild in `vs2019-check.sh`. |
+| **T-69** | L | **FOUND 2026-11-25 (plan item 138, the driver's README read against it), OPEN.** The headless driver's `NeedsLobby` holds `removed`, which opens no lobby connection (it uses the admin API alone), so the driver run by hand without `--lobby` drops it for no reason. The drill always passes `--lobby`, so no drill skipped it. | read |
 
 **Sound, and checked rather than assumed:** the `active` list is genuinely room-thread
 confined; the join/leave handshake is correct under the Java memory model in both
@@ -1377,6 +1380,12 @@ runs. **Fixed:** the statements on standard input. By the install guide's check,
 anything, and its failure is said as the release's nginx not running on this machine, glibc 2.28 named. Test first,
 with a stub failing as the loader does: the old line, then the new; the check skipped, the old line again.
 
+**O-101 (L), found 2026-11-25, OPEN** (plan item 138, the common module's README read against the code).
+`BACKEND_METRICS_ADDR` with a port outside 0 to 65535, `127.0.0.1:70000`, ends the process with exit 1 and a stack
+trace, not the refused configuration's exit 2 and its line: `MetricsServer.startIfConfigured` parses the number, and
+`new InetSocketAddress` throws `IllegalArgumentException`, which only `IOException`'s catch would have turned into a
+refusal. Read in the code, not run. The common README says what happens today.
+
 **O-100 (L), found 2026-11-13, FIXED the same day** (plan item 131, while `vendor/update.sh` was run whole to add
 O-99's library). The pinned zlib download, `https://zlib.net/zlib-1.3.2.tar.gz`, answered 404, and `update.sh`
 stopped before its last step. zlib.net keeps only the newest release at its top level (1.4 now) and moves older ones
@@ -1561,6 +1570,111 @@ Each read in the code or tried; corrected in 01 §0, §4, §5, §6 and §10.
 **DOC-46, found 2026-11-25, FIXED the same day** (plan item 137, the scripts' README read for D-115). `private-ca.sh`'s
 section said its keys were EC P-256, which D-108 replaced with RSA (the root's 3072 bits, a certificate's 2048) on
 2026-11-05: the script's own header said RSA, the README had not followed. Now it says RSA.
+
+**DOC-47, found 2026-11-25, FIXED the same day** (plan item 138, the module READMEs read against their tests).
+`ReadmeTestListsTest` counted a test by its annotation written bare, `@Test`, and missed one written with its
+package, `@org.junit.jupiter.api.Test`: `LobbyHandlerRaceTest` was counted 2 while JUnit runs 3, `PasswordHasherTest`
+8 while it runs 9, and their READMEs said 2 and 8, so the check passed on two wrong rows. **Fixed:** the pattern takes
+the package too. Test first: the rows set to 3 and 9, the check failed on those two alone ("has 2 tests, its README
+says 3"); with the pattern, it passes. The old pattern, put back, fails on both rows.
+
+**DOC-48, found 2026-11-25, FIXED the same day** (plan item 138). The PROXY line's example,
+`PROXY TCP4 198.51.100.7 10.0.0.1 51234 9011`, gave the arena's port as the destination. Seen on the release's
+nginx (a stream server with `proxy_protocol on`, its first line read by a listener): the destination is nginx's own
+address and port, where it took the connection, so on the site 9001. Nothing read it wrong (the arena uses the source
+alone). Corrected in 02-networking §1, operations/11, the glossary, the arena's README, `ProxyLine`'s and
+`backend-stream.conf`'s comments; the tests' lines and D-105's record are left as written.
+
+**DOC-49, found 2026-11-25, FIXED the same day** (plan item 138, every guide read again). D-115 had not reached
+every page: port 80 was said closed, or missing where the front's ports are listed, in operations/01, 02, 05, 07 and
+09 (the provider's forwarding, the expected firewall services `dhcpv6-client http https`, the `ss` rows), the
+gateway's design (§1, §2: "the client uses `https://` and `wss://` only"), the client's design (§5), architecture/01
+and 02, the requirements' C-9, the glossary's **front** and **`backend` zone**, the diagrams, and the backend's and
+the deploy READMEs (no row for 80; `backend-nginx.service` "binds 443 and 9001"). Each now says what 80 serves: the
+API, the lobby and matches in clear, a match by `/match/<the arena's name>`.
+
+**DOC-50, found 2026-11-25, FIXED the same day** (plan item 138). Since D-115 the arenas' names are in
+`backend-arenas.conf`, which both of nginx's maps include, but pages still said `backend-stream.conf`'s map: operations/01
+§4, §5 and §7, 04 §2.4 (whose step appended to the wrong file), 06 §4, release 09 §5, the diagrams' release, the
+deploy README (`install-certificate.sh`'s setting named `STREAM_CONF`; it reads `ARENAS_CONF`), and
+`arena.env.example`'s comment; and "five files" of `nginx-conf/` where there are six, also in `backend-nginx.service`.
+
+**DOC-51, found 2026-11-25, FIXED the same day** (plan item 138). D-102 had not reached every page: the `_FILE` form
+given as the setting or as "preferred" (operations/01 §3 `BACKEND_EVENTS_STORE_PASSWORD_FILE`; the persistence
+README), the admin API's secret said to come with a drop-in `platform-admin.conf.example` that D-102 removed
+(operations/05 §2), a credential given as a drop-in's example (04 §2.4), and two refusals naming the `_FILE` form
+alone: a store that wants a password ("set BACKEND_STORE_PASSWORD_FILE", `StoreClients`) and an arena's keystore
+without its password (`ArenaMain`). Both now name the plain variable and the file. Test first for the store's:
+`StoreClientsTest`'s two refusals asked for both names and failed, then passed (13 of 13). The arena's message is in
+`main` and no test reaches it.
+
+**DOC-52, found 2026-11-25, FIXED the same day** (plan item 138). Counts and states behind the code: plan.md's opening
+at item 90 and its §1 (62 questions, D-1 to D-75, 1 064 and 178 tests, the Unity layer "not yet run in Unity"); the
+front page dated 2026-10-05, a launch "5 000–10 000 on two", ten modules; the backend's README at 2026-10-04 and
+1 020 tests; docs/README's ranges (C-1…C-8, Q-1…Q-54, D-1…D-75); the requirements' status (Q-61, a launch on two
+machines); architecture/01's "launch's 10 000" (D-93: 5 000 on one); the arena's README (19 classes, 223 tests; 20 and
+239); the client's design (194 tests; 185); the diagrams' count (67; there were 68); release 09 §4's `mysql/` (251 MB;
+292 since D-106's copies); java21-offline's README (245 jars, 244 MB; 300 jars, about 250 MB).
+
+**DOC-53, found 2026-11-25, FIXED the same day** (plan item 138). Designs written as if built, or built otherwise,
+and not marked: in 01-arena, spectating, `BotBrain` and bots filling rooms (not built), the world's capacity and
+kinds (16 384 slots; tank, bullet, shape), equipment and boosts as "Phase 5" (D-37, D-38), the Unity layer "deferred",
+the result "through the result queue" (the stream, D-33), tag and domination in the public arena (timed, made modes);
+in 04, the tournament's state sketch (fees, `RUNNING` and `WALKOVER`; matches are `PENDING`, `READY`, `DONE`), matches
+"rescheduled" when an arena's key expires, platform to arena "room create, notice, reload" (`close` and `kick` alone),
+"tournaments do not exist", a room's fill by room (one total an arena), "one class a rule"; in 07, `IntIntMap`,
+fastutil, `StatModifier` and JMH (none used), virtual threads in the worker (the platform alone), pinning by
+`taskset` (`CPUAffinity=` drop-ins); in 08, `https://` and `wss://` only (D-115), and "compiled against stubs" alone
+(Unity 2019.4's own compiler too, D-108).
+
+**DOC-54, found 2026-11-25, FIXED the same day** (plan item 138). Statements about the code that the code
+contradicts: `TEAM` "defined, never sent" (sent when a team changes in place); Java's readers "trusting length
+fields" (`WireReader.lengthOf` refuses one past the frame, P-51); a gateway's registration "SET … EX 60" (`MULTI`,
+`GETSET`, `EXPIRE 60`, `EXEC`) and a second login "leaving the first connection open" (closed since T-60);
+`account.status` without 3, deleted; the stream trimmed at "24 h" (`BACKEND_RESULT_RETENTION_HOURS`); the client
+sending "20 inputs a second, two coalesced in each packet" (one every 100 ms, `InputEveryMs`), also in
+architecture/01's table and three code comments, whose 24-bit seq lasts about 19 days, not nine; a kick by one not
+the leader answering `not_leader` (`not_member`); the core's `SnapshotReader` (`SnapshotDecoder`), also in the simple
+clients' examples; `client/headless-drill.sh SIMPLE=1` (an environment variable before the script; after it, it is
+read as a scenario); the simple READMEs' samples not compilable (`var` fields); the core's tests "C# 9" (7.3) and the
+solution "the core and UnityCheck" (all four, D-109), also in `vs2019-check.sh`'s header; the driver's scenario order
+and its lobby list without `erase`; architecture/01's uplink "at 85 % of line rate" (the table gives 77 % at 70 % in
+battle, and more than the line at 100 %).
+
+**DOC-55, found 2026-11-25, FIXED the same day** (plan item 138). Operations' facts: the drills' ports without 9193,
+9194 and `FRONT`'s 8095, 8096 and 9095 (also in CLAUDE.md); nginx's refusals said for `127.0.0.1` (`dev-nginx.sh`
+checks `0.0.0.0`); the scratch MySQL's option file under `/etc/backend/credentials/` (`/etc/backend/backup/`); the
+arenas' ports "9110 onwards" (9110, 9111 and 9113; 9112 is the second worker's); every admin call "audited" (api/03
+§2 lists those that are not); the log rotation's scripts and unit pointing to 01 §7 (§4); `backend-nginx.service` and
+`make-release.sh` "built for RHEL 9" (glibc 2.28, D-100); the root put into Unity "as a text asset" (renamed
+`ca.pem.txt`, or Unity does not take it as one); `mvn -o` in the crypto examples' command (03 §2: never `-o`);
+`ha_heartbeat` said to be V21 (V1 since D-75; also the glossary); both promotions' diagrams drawn before D-95; 80's
+`/lobby` drawn to the platform (operations/11 §1; the gateway); the app said to accept a chain "byte for byte" (its RSA
+signature checked with the root's key, D-108).
+
+**DOC-56, found 2026-11-25, FIXED the same day** (plan item 138). Pages that did not render as written: docs/README's
+Operations table (a header of two columns over rows of three), 04 §10's statistics table (cut by a blank line),
+operations/11 §10.1's three empty headings `#### ## …` over empty tables (from c2b550f), a row of operations/05 §4's
+table without its port cell, T-65's row in this register cut at the pipes in its code, two sequence diagrams' text
+in diagrams/03 (a `#` and a `;`, which Mermaid reads as syntax), and broken inline code in development/07.
+
+**DOC-57, found 2026-11-25, OPEN (L)** (plan item 138). `java21-offline/manifest.json` and `ARTIFACTS.txt` list the 244
+jars of 2026-09-22; `repository/` holds 300, 56 added on 2026-09-23 for `netty-codec-http` and j-redis's own build.
+`describe.py` would list them, but under `ARTIFACTS.txt`'s header that every jar passed the enforcer's build, which
+those did not. The bundle's README now says what holds which; the files are left until the enforcer is run on them.
+
+**DOC-58, found 2026-11-25, FIXED the same day** (plan item 138, j-redis's README, design pages and guides read
+against its code, which has not changed since it came into this repository). Behind the code: paths, the ready line
+and jar names at 2.1.0 (2.2.1); 137 and 138 tests (227, and 229 with the slow tier, where `ReplicationCrashTest` is
+too); Java 1.8 in the setup guide (21); the guide's shortest path run from the wrong directory and building again
+with `-o`; durable data "in MongoDB" (MySQL); streams and replication "left out" (built), G1 (ZGC), a CRC on the AOF
+(the base file alone), three tools (one program, `j-redis-tools`). Statements the code contradicts: thread and class
+names that do not exist (`RespDecoder`, `ReplyWriter`, `CommandThread`, `Db.overwrite`), a `HashMap` for the commands
+(an open-addressing table), a 30 s shutdown (60), the AOF's "SPSC" queue (MPSC), a 48-byte key entry (56 or 64), the
+`HGETALL` example's `$5` (`$7`), the model test's keys and interval; and incomplete lists: the commands refused inside
+`MULTI`, the DENYOOM commands, `CLIENT KILL`'s filters, `DEBUG`'s, `INFO`'s fields and sections, the client builder's
+settings, the replica's output limit, the shipped configuration and systemd unit. Each read in the code and corrected
+in place.
 
 ## 7. Documentation
 

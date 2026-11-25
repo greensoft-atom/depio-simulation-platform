@@ -1,94 +1,114 @@
 # Installing on a RHEL 9 server, from a clone of the repository
 
-A step-by-step guide: from a fresh RHEL 9.x server and this repository to every
-process running and a player registering through nginx, with nothing installed
-from the operating system but `git` (and that only to clone). Every command is
-here; the reasons are in [01 — Deployment](01-deploy.md) and
-[09](../detailed-design/09-release-and-packaging.md).
+This guide installs the backend on one fresh RHEL 9.x server, from a clone of this repository. It is for the operator
+who sets up the site's machine. It starts from an empty server and ends with every process running and a player
+registered through nginx. Nothing is installed from the operating system's packages except `git`, and that only to
+clone the repository. Every command is here, in the order you run it. The reasons behind the steps are in
+[01 — Deployment](01-deploy.md) and [09](../detailed-design/09-release-and-packaging.md); the words this project uses
+(front, arena, store, TLS name, grant) are defined in the [glossary](../glossary.md).
 
-**Tested as written.** `backend/scripts/check-install-guide-el9.sh` runs every
-`bash` block of the steps below, in order, in Red Hat's UBI 9.5 image with
-systemd and **no network**, on a plain copy of the repository; it ends with a
-registration through nginx; then it checks the launch's one machine (D-93): every unit
-active and enabled, each arena reached by its name through 9001 and passed to its own port, every
-metrics port watched, the result stream on its own store, each store's `maxmemory` under half its
-heap, the first dump and proof recorded and seen by both workers. It does it again after restarting
-the container, as a reboot, a session from before still served; then loses the database's disk and
-runs the [runbook's restore on one machine](02-runbook.md#on-the-launchs-one-machine-d-93) as written:
-an account registered after the dump logs in after the restore, and the next proof passes. Last run
-2026-11-01, in UBI 9.5: every check passed, about eleven minutes; eleven mutants of the guide and the
-runbook, each caught (plan item 113). With two more such checks and a build on the same machine at once, a start
-could take minutes ([O-61](../defects.md#6-operations)); since a start waits for its database in the same process
-and an arena for its store (D-94, O-61, O-62), three such checks and the full build with its tests at once passed,
-no platform, worker or arena restarted (plan item 114); and again with every script's review (plan item 116), the
-accounts' passwords given on standard input, not on a command line (O-89): every check passed. Run 2026-10-05 for the guide of the time: every unit
-`active`, the registration `201`, about twenty-five minutes. Also run the same day
-in Rocky Linux 9 with the system's own Java 8 and MySQL 8.0 installed and running
-(`MYSQL_PORT=3307`, §1): the same result, the system's MySQL still running beside
-ours. Running it found four faults, fixed before this text (O-32 to O-35 in the
-[defect register](../defects.md)). The blocks marked `console` are not run by it
-(the clone, stopping the system's MySQL, the firewall).
+**Tested as written.** `backend/scripts/check-install-guide-el9.sh` runs this guide exactly as it is written here:
 
-The steps install **the launch's machine**: one machine with every role, for up to about 5 000
-players ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)): nginx in front, a platform, a gateway, three arenas, two workers, both
-stores, MySQL and its backups. It serves for a trial too, and is the first of the three when the
-site grows: a second machine, its standby, is [10](10-two-machines.md) (D-96), and [Three machines](#three-machines) says what differs.
+- It runs every `bash` block of the steps below, in order, in Red Hat's UBI 9.5 image with systemd and **no
+  network**, on a plain copy of the repository. The last step registers an account through nginx.
+- Then it checks the launch's one machine (D-93): every unit active and enabled; each arena reached by its name
+  through 9001 and passed to its own port, and reached by the same name through 80 in clear (D-115); every metrics
+  port watched; the result stream on its own store; each store's `maxmemory` under half its heap; the first dump
+  and the first proof recorded, and seen by both workers.
+- It restarts the container, as a reboot would, and checks all of that again. A session made before the restart is
+  still served after it.
+- Last, it loses the database's disk and runs the [runbook's restore on one
+  machine](02-runbook.md#on-the-launchs-one-machine-d-93) as written. An account registered after the dump logs in
+  after the restore, and the next proof passes.
+
+What its runs found:
+
+- **2026-11-25**, after D-115: no check failed, at the install, after the restart or after the restore, and 80 was
+  listening (plan item 137).
+- **2026-11-01**, in UBI 9.5: every check passed, in about eleven minutes. Eleven mutants of the guide and the
+  runbook (each a copy with one rule broken on purpose) were each caught (plan item 113).
+- With two more such checks and a build running on the same machine at once, a start could take minutes
+  ([O-61](../defects.md#6-operations)). Since then a start waits for its database in the same process, and an arena
+  waits for its store (D-94, O-61, O-62). Three such checks and the full build with its tests then passed at once,
+  and no platform, worker or arena restarted (plan item 114). They passed again after every script was reviewed
+  (plan item 116), now with the accounts' passwords given on standard input, not on a command line (O-89).
+- **2026-10-05**, on the guide of that time: every unit `active`, the registration `201`, in about twenty-five
+  minutes. It was also run that day in Rocky Linux 9 with the system's own Java 8 and MySQL 8.0 installed and running
+  (`MYSQL_PORT=3307`, §1): the same result, and the system's MySQL still running beside the backend's. That run found
+  four faults, fixed before this text was written (O-32 to O-35 in the [defect register](../defects.md)).
+
+The check does not run the blocks marked `console`: formatting the second disk, the clone, stopping the system's
+MySQL, and the firewall.
+
+**What the steps install** is **the launch's machine**: one machine with every role, for up to about 5 000 players
+([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)).
+It runs nginx in front, a platform, a gateway, three arenas, two workers, both stores, and MySQL with its backups. The
+same steps serve for a trial machine. When the site grows, this machine becomes the first of three: a second
+machine, its standby, is [10](10-two-machines.md) (D-96), and [Three machines](#three-machines) says what differs.
 
 ## 1. What the server needs
 
-- RHEL 9.x on x86-64 (checked with 9.5), as root. A system derived from it needs at least what the release takes of
-  the system ([09 §4.2](../detailed-design/09-release-and-packaging.md#42-what-the-host-still-provides)), not checked
-  elsewhere: `uname -m` saying `x86_64`, `ldd --version` a glibc of 2.28 or later, `systemctl --version` a systemd of
-  245 or later (every sandbox setting of the units applied; 239 starts them, 09 §1), `openssl version` 1.1.1 or later
-  (D-103), and `libstdc++` and `ncurses-libs` installed, as on every RHEL 9.
-- What any RHEL 9 server installation has: systemd, bash, coreutils, util-linux,
-  `tar`, `gzip`, `findutils`, `sed`, `openssl`, `curl`. Nothing else: the JDK,
-  Maven, MySQL, nginx and every library are in the repository (`vendor/`,
-  `java21-offline/`).
-- **For the launch** (D-93): 32 cores, 64 GB, and **two disks**. The second holds the backups'
-  copies, mounted at `/var/lib/backend` before step 5: on the database's own disk they would be lost
-  with it, and they are what a lost disk is restored from
-  ([availability](../architecture/02-availability.md#on-one-machine-the-launch-d-93)).
+- **The system**: RHEL 9.x on x86-64 (checked with 9.5), and a root login. A system derived from RHEL 9 needs at
+  least what the release takes from the system
+  ([09 §4.2](../detailed-design/09-release-and-packaging.md#42-what-the-host-still-provides)). Nothing else checks
+  that for you, so run these first:
+
+  | Run | It must show |
+  |---|---|
+  | `uname -m` | `x86_64` |
+  | `ldd --version` | glibc 2.28 or later |
+  | `systemctl --version` | systemd 245 or later, so that every sandbox setting of the units applies; 239 also starts them (09 §1) |
+  | `openssl version` | OpenSSL 1.1.1 or later (D-103) |
+
+  `libstdc++` and `ncurses-libs` must be installed, as they are on every RHEL 9.
+- **What any RHEL 9 server installation has**, and nothing more: systemd, bash, coreutils, util-linux, `tar`, `gzip`,
+  `findutils`, `sed`, `openssl` and `curl`. The JDK, Maven, MySQL, nginx and every library are in the repository
+  (`vendor/`, `java21-offline/`).
+- **For the launch** (D-93): 32 cores, 64 GB of memory, and **two disks**. The second disk holds the backups' copies,
+  mounted at `/var/lib/backend` before step 5. They must not be on the database's own disk: they would be lost with
+  it, and they are what a lost disk is restored from
+  ([availability](../architecture/02-availability.md#on-one-machine-the-launch-d-93)). To prepare it, with the second
+  disk's own device name in place of `/dev/sdb`:
   ```console
   mkfs.xfs /dev/sdb                        # the second disk, whatever its name is here
   mkdir -p /var/lib/backend && echo '/dev/sdb /var/lib/backend xfs defaults 0 0' >> /etc/fstab
   mount /var/lib/backend
   ```
-- Memory: step 8 sizes the Java processes' heaps and the stores for one machine of 64 GB, and §2's
-  `MYSQL_BUFFER_POOL` and `SCRATCH_BUFFER_POOL` size MySQL's: 48 GB allocated in all (D-93's table).
-  Under 48 GB, step 8 gives each Java process and store 1 GB by itself; set `MYSQL_BUFFER_POOL` to
-  about a quarter of the memory and `SCRATCH_BUFFER_POOL` to `512M`.
-- Disk: about 2 GB for the repository and the build, and what the data takes; on the second, a
+- **Memory**: step 8 sizes the Java processes' heaps and the stores for one machine of 64 GB. §2's
+  `MYSQL_BUFFER_POOL` and `SCRATCH_BUFFER_POOL` size MySQL's two servers. In all, 48 GB is allocated (D-93's table).
+  On a machine with less than 48 GB, step 8 gives each Java process and each store 1 GB by itself; then set
+  `MYSQL_BUFFER_POOL` to about a quarter of the memory, and `SCRATCH_BUFFER_POOL` to `512M`.
+- **Disk**: about 2 GB for the repository and the build, plus what the data takes. On the second disk, room for a
   week of dumps and binlog copies (01 §10).
 
 ### A Java or a MySQL already on the server
 
-Neither is used, and neither is in the way, except MySQL's port.
+The backend uses neither of them, and neither is in its way, except for MySQL's port.
 
-- **Java**, any version, from the operating system's packages: nothing to do. The
-  units run the release's own runtime (`/opt/backend/runtime/bin/java`) and the
-  build the committed JDK; `alternatives`, the `PATH` and a `JAVA_HOME` reach
-  neither. By hand, `java` or `jcmd` is still the old one: type
-  `/opt/backend/runtime/bin/jcmd`.
-- **MySQL or MariaDB**, from the operating system's packages (RHEL 9 has MySQL
-  8.0 and MariaDB): it holds port 3306, which the backend's MySQL would take.
-  Everything else is apart already: the unit (`mysqld` or `mariadb`, ours
-  `backend-mysql`), the data (`/var/lib/mysql`, ours `/var/lib/backend-mysql`),
-  the socket and the configuration (ours reads only `/etc/backend/mysql/`); the
-  `mysql` user is shared, which step 5 allows for. Then either:
-  - **nothing else uses it**: stop it before step 6; its data is kept.
+- **Java**, any version, from the operating system's packages: nothing to do. The units run the release's own
+  runtime (`/opt/backend/runtime/bin/java`), and the build runs the committed JDK. `alternatives`, the `PATH` and
+  `JAVA_HOME` change neither of them. In a shell, though, `java` or `jcmd` is still the system's one: type
+  `/opt/backend/runtime/bin/jcmd` to use the release's.
+- **MySQL or MariaDB**, from the operating system's packages (RHEL 9 has MySQL 8.0 and MariaDB): it holds port 3306,
+  which the backend's MySQL would take. Everything else is separate already: the unit (theirs `mysqld` or `mariadb`,
+  ours `backend-mysql`), the data (theirs `/var/lib/mysql`, ours `/var/lib/backend-mysql`), the socket, and the
+  configuration (ours reads only `/etc/backend/mysql/`). The `mysql` user is shared, and step 5 allows for that.
+  Then choose one of these:
+  - **Nothing else uses it**: stop it before step 6. Its data is kept.
     ```console
     systemctl disable --now mysqld          # or mariadb
     ```
-  - **another application uses it**: leave it, and give the backend's MySQL
-    another port, `MYSQL_PORT` below (3307, say).
+  - **Another application uses it**: leave it running, and give the backend's MySQL another port, with `MYSQL_PORT`
+    in §2 (3307, for example).
 
-  Never the backend on that server: it runs on MySQL 8.4 alone (Q-56), and 8.0
-  is out of support since April 2026. The `mysql` on the `PATH` is that
-  package's client: ours is `/opt/backend/mysql/bin/mysql`, which the scripts
-  use.
+  Never put the backend's database on that server: the backend runs on MySQL 8.4 alone (Q-56), and 8.0 has been out
+  of support since April 2026. The `mysql` command on the `PATH` is that package's client. The backend's client is
+  `/opt/backend/mysql/bin/mysql`, which the scripts use.
 
 ## 2. The repository
+
+Clone the repository onto the server. It is private, so the clone needs a token or a deploy key. You can also copy a
+tarball of the repository to the server instead.
 
 ```console
 dnf install -y git                       # only to clone; or copy a tarball of the repository instead
@@ -97,7 +117,8 @@ git clone https://github.com/greensoft-atom/depio-simulation-platform.git /srv/d
 
 <!-- guide-steps -->
 
-Your values, set once in the shell every later step runs in:
+Set your values once, in the shell that runs every later step. Every later block reads them, so a new shell (after a
+new login, for example) needs them again:
 
 ```bash
 export SRC=/srv/depio-simulation-platform   # where the repository is
@@ -107,12 +128,21 @@ export SCRATCH_BUFFER_POOL=2G            # the backups' scratch server's, which 
 export MYSQL_PORT=3306                   # another if the server's own MySQL keeps 3306 (§1)
 ```
 
+| Value | What to put there |
+|---|---|
+| `SRC` | the directory the repository was cloned or unpacked into |
+| `ADDRESS` | the site's public IP address: the one players' devices dial, which the provider forwards to this machine. The site has no domain (D-82) |
+| `MYSQL_BUFFER_POOL` | the database's buffer pool: `8G` on the launch's machine of 64 GB (D-93); see §1 for a smaller machine |
+| `SCRATCH_BUFFER_POOL` | the buffer pool of the backups' scratch server, which the weekly proof restores onto |
+| `MYSQL_PORT` | `3306`, or another port when the system's own MySQL keeps 3306 (§1) |
+
 ## 3. Build
 
-The committed JDK and Maven, the committed libraries, no network
-(`build-offline.sh`, 09 §3). About fifteen minutes; `SKIP_TESTS=1` because the
-tests, an hour more on their own MySQL, belong on the machine the release is made on
-([build and run](../development/03-build-and-run.md#3-the-tests)), not on a server.
+The build uses the committed JDK and Maven and the committed libraries, with no network (`build-offline.sh`, 09 §3).
+It takes about fifteen minutes. `SKIP_TESTS=1` leaves the tests out: they take an hour more, on a MySQL of their own,
+and belong on the machine the release is made on
+([build and run](../development/03-build-and-run.md#3-the-tests)), not on a server. `WORK=` names the directory the
+build writes in, outside the repository. The release lands in `backend/target/release/` inside the repository.
 
 ```bash
 cd "$SRC"
@@ -121,6 +151,9 @@ SKIP_TESTS=1 WORK=/var/tmp/backend-build ./build-offline.sh
 
 ## 4. The release in /opt
 
+The block unpacks the release into `/opt`, points the link `/opt/backend` at the newest release there, and prints the
+last three lines of its `VERSIONS.md`: the backend's version and commit, j-redis's version, and the runtime's.
+
 ```bash
 tar -xzf "$SRC"/backend/target/release/backend-*.tar.gz -C /opt
 ln -sfn "$(ls -d /opt/backend-*/ | sort | tail -1 | sed 's:/$::')" /opt/backend
@@ -128,6 +161,20 @@ tail -3 /opt/backend/VERSIONS.md
 ```
 
 ## 5. Users, directories, secrets, units
+
+The block does four things:
+
+1. **The system users**, each without a home or a login shell: `backend` (the Java processes), `nginx` (nginx's
+   workers), `jredis` (the stores) and `backend-backup` (the backups). And `mysql`, with `/var/lib/backend-mysql` as
+   its home, unless the system's MySQL made it already (§1).
+2. **The directories** in `/etc/backend/`: `tls`, `mysql` and `nginx`, readable by all, and `credentials`, root's
+   alone (0700).
+3. **Six secrets**, each 24 random bytes written in hex, made here and never typed: the database account's
+   (`db-password`), the stores' (`store-password`), MySQL root's (`mysql-root`), the backups' two accounts'
+   (`backup-password`, `binlog-password`), and the scratch server root's (`scratch-root`). A secret already there is
+   kept. Only root can read them. Steps 6 and 8 then write each one where its process reads it (D-102).
+4. **The units**: the release's services and timers copied into `/etc/systemd/system/`, and systemd told to read
+   them.
 
 ```bash
 for u in backend nginx jredis backend-backup; do
@@ -147,8 +194,21 @@ systemctl daemon-reload
 
 ## 6. MySQL
 
-The release's MySQL 8.4 (01 §9), on loopback: on one machine nothing crosses the
-network, so TLS is not required here; on three, it is (01 §9).
+This is the release's MySQL 8.4 (01 §9), listening on loopback alone. On one machine nothing crosses the network, so
+the server does not require TLS here: the block sets `require_secure_transport = OFF` and removes the `ssl_` lines.
+On three machines it is required (01 §9). Step 8's database URL still asks for TLS (`sslMode=REQUIRED`), without
+checking the certificate.
+
+The block:
+
+1. writes `/etc/backend/mysql/backend.cnf` from the release's example: bound to `127.0.0.1`, on `MYSQL_PORT`, with
+   `MYSQL_BUFFER_POOL`;
+2. makes the data and log directories, owned by `mysql`, and initialises the data;
+3. enables and starts `backend-mysql`;
+4. sets root's password through MySQL's socket, and writes it into `/etc/backend/credentials/mysql-root.cnf`
+   (root's alone) for the commands that follow;
+5. makes the application's database, `backend`, and three users, each on `127.0.0.1` alone with 01 §9's grants:
+   `backend` for the processes, and `backup` and `binlog` for the backups.
 
 ```bash
 sed -e "s/^bind-address .*/bind-address               = 127.0.0.1/" \
@@ -176,16 +236,32 @@ SQL
 SQL
 ```
 
-The schema is made by `platform` at its first start (Flyway: `V1` the tables,
-`V2` the first rows); nothing else to load.
+The tables are made by the platform at its first start (Flyway: `V1` makes the tables, `V2` adds the first rows), so
+there is nothing else to load.
 
 ### Its backups, on this machine
 
-As on C ([01 §10](01-deploy.md#10-copies-off-the-databases-machine)), here: the binlogs copied as they are
-written, a dump every night at 03:30 UTC, and every Sunday a proof that the newest dump and the copies
-restore, onto a scratch server of their own. As `backend-backup`, whose files the `backend` processes
-cannot read, into `/var/lib/backend`, the second disk (§1). They are started with the rest (§10); the
-copy off the site waits for its host (Q-53).
+The backups run on this machine as they run on C in the three-machine layout
+([01 §10](01-deploy.md#10-copies-off-the-databases-machine)):
+
+- the binary logs copied as MySQL writes them (`backend-binlog-stream`);
+- a dump every night at 03:30 UTC (`backend-mysql-backup.timer`);
+- every Sunday, a proof that the newest dump and the copies restore, onto a scratch MySQL server of their own
+  (`backend-restore-proof.timer`).
+
+They run as the user `backend-backup`, whose files the `backend` processes cannot read, and they write into
+`/var/lib/backend`, the second disk (§1). They are started with the rest in §10. The copy off the site waits until
+its host is chosen (Q-53).
+
+The block:
+
+1. writes the option files of the two backup accounts, which reach MySQL over loopback, into `/etc/backend/backup/`
+   (the backup user's alone): `mysql-backup.cnf` and `mysql-binlog.cnf`. The backups' scripts read them (D-102);
+2. writes the scratch server's configuration, `/etc/backend/scratch-my.cnf`, with `SCRATCH_BUFFER_POOL`: its own
+   data, its own socket, and port 3309 on loopback;
+3. initialises the scratch server, starts `backend-scratch-mysql`, sets its root's password, and writes that
+   password into `/etc/backend/backup/mysql-scratch.cnf`;
+4. gives the three option files to `backend-backup`.
 
 ```bash
 # The two accounts' option files, over loopback, for the backups' units alone: the backup user's, read by its
@@ -211,9 +287,15 @@ chown backend-backup:backend-backup /etc/backend/backup/*.cnf
 
 ## 7. The stores
 
-Two j-redis instances, as on three machines (01 §3, D-7): `session` on 6379, and `events` on 6380 for
-the result stream, so that a backlog of results never evicts a session. On loopback alone, with no
-replica; their heaps and `maxmemory` are step 8's.
+The stores are two j-redis instances, as on three machines (01 §3, D-7): `session` on 6379, and `events` on 6380
+for the result stream. They are kept apart so that a backlog of results can never push sessions out of memory. Both
+listen on loopback alone, with no replica. Step 8 sets their heaps and their `maxmemory`.
+
+For each store, the block writes `/etc/backend/store-<name>.conf` from the release's `jredis/conf/j-redis.conf`: its
+port, `bind 127.0.0.1`, the store password from §5 (`requirepass`), and its data directory,
+`/var/lib/backend-store/<name>`. The file belongs to `root`, group `jredis`, mode 0640, since it holds the password.
+The block also copies the release's `store.env.example` to `/etc/backend/store-<name>.env`, which sets the store's
+heap.
 
 ```bash
 for s in session:6379 events:6380; do
@@ -229,7 +311,38 @@ done
 
 ## 8. The processes' settings
 
-From the release's examples (`env/`), pointed at this machine.
+Each process reads its settings from its own file in `/etc/backend/`. The block writes those files from the
+release's examples (`env/`) and points them at this machine. This machine is its own front: its nginx reaches its
+processes on loopback (D-82), so everything here is on `127.0.0.1`.
+
+1. **`platform.env`, `gateway.env` and `worker.env`**, each file taking the lines it has: the session store and MySQL
+   on `127.0.0.1`; the platform and the gateway bound to `127.0.0.1`; the gateway's platform at
+   `http://127.0.0.1:8080`; no trusted proxy but loopback (`BACKEND_TRUSTED_PROXIES` empty); in `worker.env`, the
+   events store at `127.0.0.1:6380`. For the platform's watch: every process's metrics port on this machine as a
+   target (the platform, the gateway, the three arenas and the two workers: D-93, O-59), and no peer machine.
+2. **`worker-c1.env` and `worker-c2.env`**: each worker's own metrics port, 9102 and 9112. The watch also reads the
+   backups' state there.
+3. **`arena-a1.env` to `arena-a3.env`**, for the three arenas behind nginx. Each listens on loopback, on a port of
+   its own, with a TLS name and a metrics port of its own. Each reaches both stores on `127.0.0.1` (the events store
+   on 6380), and announces this machine's address (`ADDRESS`) and 9001 to the players:
+
+   | Arena | Listens on | TLS name | Metrics |
+   |---|---|---|---|
+   | `a1` | `127.0.0.1:9011` | `a1.arena.internal` | `127.0.0.1:9110` |
+   | `a2` | `127.0.0.1:9012` | `a2.arena.internal` | `127.0.0.1:9111` |
+   | `a3` | `127.0.0.1:9013` | `a3.arena.internal` | `127.0.0.1:9113` |
+
+4. **The secrets**, as plain variables in each process's own file (D-102). First every settings file is made root's
+   alone (0600), because systemd reads it as root before the process starts. Then the values §5 made are added: the
+   database password to `platform.env` and `worker.env`, and the store password to those two, to `gateway.env` and to
+   the three arenas' files. No secret ever goes into a unit's `Environment=`.
+5. **The heaps for one machine** (D-93): a systemd drop-in for each unit, `heap.conf`, which sets `_JAVA_OPTIONS`;
+   and each store's heap, with its `maxmemory` at 40 % of it:
+
+   | The machine's memory | Platform, gateway | Each worker | Each arena | Each store: heap, `maxmemory` |
+   |---|---|---|---|---|
+   | 48 GB or more | 2 GB each | 1 GB | 4 GB | 4 GB, 1 600 MB |
+   | under 48 GB | 512 MB, growing to 1 GB (`-XX:-AlwaysPreTouch`) | the same | the same | 1 GB, 400 MB (O-60) |
 
 ```bash
 local_db="jdbc:mysql://127.0.0.1:$MYSQL_PORT/backend?sslMode=REQUIRED"
@@ -287,12 +400,26 @@ systemctl daemon-reload
 
 ## 9. nginx and the certificate
 
-The release's nginx (01 §4), this machine's front: it ends TLS on 443 and 9001, serves 80 in clear
-for a client without TLS ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)), and passes
-requests and match connections to this machine's processes ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)). Its certificate comes from
-the backend's own CA, since the site has no domain ([06](06-certificates.md)): a root made once,
-whose certificate the app ships, and from it the certificate nginx serves, naming this machine's
-address and its arenas' names.
+The release's nginx (01 §4) is this machine's front. It ends TLS on 443 and on 9001, serves 80 in clear for a client
+without TLS ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)),
+and passes requests and match connections on to this machine's processes
+([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)).
+The site has no domain, so no public certificate authority (CA) can certify it. Its certificate comes from the
+backend's own CA instead ([06](06-certificates.md)): a root, made once, whose certificate the app ships; and from that
+root, the certificate nginx serves, which names this machine's address and its arenas' names.
+
+The block:
+
+1. copies the release's nginx files into `/etc/backend/nginx/`, and puts `ADDRESS` in place of the example's address
+   in `backend.conf` (its `server_name`);
+2. writes `backend-upstreams.conf` for one machine: one gateway, `127.0.0.1:8090`, and one platform,
+   `127.0.0.1:8080`;
+3. writes `backend-arenas.conf`, the list of arenas that both of nginx's maps read (9001's, by the TLS name, and
+   80's, by `/match/<name>`): `a1.arena.internal` to `a3.arena.internal`, at `127.0.0.1:9011` to `9013`;
+4. makes nginx's log directory, `/var/log/backend-nginx`;
+5. makes the root in `/root/backend-ca` (06 §2); issues the certificate into `/root/backend-certificate`, for
+   `ADDRESS` and every name in the list (06 §3); copies the root's certificate to `/etc/backend/tls/ca.pem`; and
+   installs the certificate with `install-certificate.sh`, which checks it first (06 §4).
 
 ```bash
 cp /opt/backend/nginx-conf/*.conf /etc/backend/nginx/
@@ -313,16 +440,29 @@ install -m 0644 /root/backend-ca/ca.pem /etc/backend/tls/ca.pem
 /opt/backend/scripts/install-certificate.sh /root/backend-certificate/fullchain.pem /root/backend-certificate/privkey.pem
 ```
 
-**`/root/backend-ca/ca.key` is the root's key.** Whoever holds it can pass for the backend to every
-player. Move it off this machine now, to where you keep secrets, with a copy apart. It is needed
-again only to issue the next certificate, in a year (06 §4). `ca.pem` beside it is the app's: it
-goes into the client (06 §5).
+**`/root/backend-ca/ca.key` is the root's key.** Whoever holds it can pretend to be the backend to every player.
+Move it off this machine now, to where you keep secrets, and keep a second copy in another place. It is needed again
+only to issue a new certificate: the yearly renewal (06 §6), or a certificate with a new arena's name (06 §7). The
+file `ca.pem` beside it is the root's certificate, not a secret: it goes into the app (06 §5).
 
 ## 10. Start everything
 
-In this order; each unit also starts by itself at boot from now on. Should the grant say `Table
-'backend.backup_run' doesn't exist`, the platform has not finished its first start: `journalctl -u
-backend-platform` says how far it is; run the grant again once it answers, then the rest.
+The block starts the units in this order, and enables each one, so that it also starts by itself at every boot from
+now on:
+
+1. both stores;
+2. the platform, which makes the tables in the empty database at its first start. The block waits until the
+   platform answers on `/health`, up to five minutes on a slow machine;
+3. a grant to the backups' account: `INSERT` on `backend.backup_run`, the table where each backup step records its
+   outcome, which the platform's first start made (01 §9);
+4. the gateway, both workers, every arena this machine has a settings file for (`a1` to `a3` here, from step 8; on a
+   standby with arenas of its own, B's, [10 §10](10-two-machines.md#10-arenas-on-b)), and nginx;
+5. the binlog stream, and the timers of the nightly dump and of the weekly proof;
+6. the timer that rotates nginx's logs every night and keeps 14 days of them (D-85).
+
+If the grant fails with `Table 'backend.backup_run' doesn't exist`, the platform has not finished its first start.
+`journalctl -u backend-platform` shows how far it has got. Once it answers, run the grant again, then the rest of the
+block.
 
 ```bash
 systemctl enable --now backend-store@session backend-store@events
@@ -340,6 +480,18 @@ systemctl enable --now backend-nginx-logs.timer     # nginx's logs rotated night
 ```
 
 ## 11. Check it
+
+The block:
+
+1. waits for the platform's `/health`, then ten seconds more;
+2. prints the state of every unit;
+3. registers an account through nginx on 443, as a device would, trusting the backend's root alone. (`--connect-to`
+   sends the request to this machine's own 443 while it still names `ADDRESS`, as a device does);
+4. opens a TLS connection to 9001 for each arena's TLS name, and checks the certificate against the root for that
+   name;
+5. runs `install-certificate.sh --check`, which connects to each port as a device would;
+6. takes the first dump and its proof now, instead of waiting for the night and for Sunday, and lists the rows of
+   `backend.backup_run`.
 
 ```bash
 for i in $(seq 90); do curl -s -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
@@ -364,25 +516,37 @@ systemctl start backend-mysql-backup && systemctl start backend-restore-proof
     -e "SELECT kind, ok, finished_at FROM backend.backup_run"
 ```
 
-Every unit `active`, `201`, a `subject=` line for each arena, three here, naming `backend`, each with `Verify return code: 0 (ok)`,
-the certificate's check naming both ports, and two rows of `backup_run`, kind 1 (the dump) and 2 (the
-proof), `ok` 1 each. The subject matters: on a port that speaks no TLS,
-`openssl s_client` finds no certificate and still prints `Verify return code: 0 (ok)`. Each unit's log: `journalctl -u backend-platform`
-(and so on); their metrics on loopback (01 §7).
+**What you should see:**
 
-A unit that is not active, and whose journal says `Permission denied` on its port: a policy of this
-machine keeps the port from its user, and `runuser -u backend -- /opt/backend/scripts/check-bind.sh 8080`
-(the unit's user and port) names it, with what lifts it
-([D-88](../architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts));
-the [rehearsal's first table](09-rehearsal.md#1-install-the-three-machines) looks before it happens.
+- every unit `active`;
+- `a registration through nginx: 201`;
+- for each arena (three here), a `subject=` line naming `backend`, then `Verify return code: 0 (ok)`;
+- the certificate check naming both ports, 443 and 9001;
+- two rows of `backup_run`: kind 1 (the dump) and kind 2 (the proof), each with `ok` 1.
+
+Look for the `subject=` line, not only for the return code. On a port that speaks no TLS, `openssl s_client` gets
+no certificate and still prints `Verify return code: 0 (ok)`.
+
+Each unit's log is `journalctl -u backend-platform` (and so on for the others), and each process's metrics are on
+loopback (01 §7). This block does not try 80. To check 80 in clear by hand, the API's health and an arena by its name,
+use the commands of [11 §9](11-phone-to-backend-routes.md#9-checking-it).
+
+**A unit that is not active**, and whose journal says `Permission denied` on its port: a policy of this machine
+keeps that port from the unit's user. `runuser -u backend -- /opt/backend/scripts/check-bind.sh 8080`, with the
+unit's user and port, names the policy and what lifts it
+([D-88](../architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)).
+The [rehearsal's first table](09-rehearsal.md#1-install-the-three-machines) looks for such a policy on each machine
+(SELinux's denials, the lowest port a user may bind) before it causes a failure.
 
 <!-- /guide-steps -->
 
 ## 12. Open the firewall
 
-Players reach nginx's 80, 443 and 9001, and nothing else; SSH comes from the internal network alone
-([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)). Run it from that network, or from the console: a session from elsewhere goes on, but is
-the last (05 §5).
+Players reach nginx's 80, 443 and 9001, and nothing else. SSH comes from the internal network alone
+([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)).
+Run these commands from that network, or from the machine's console. They do not cut an SSH session from anywhere
+else, but that session is the last one: once it ends, SSH from there is refused (05 §5). Put your internal network
+in place of `10.0.0.0/24`.
 
 <!-- firewall one machine -->
 ```console
@@ -395,31 +559,33 @@ firewall-cmd --reload
 ```
 <!-- /firewall -->
 
-Services and ports go in separate commands: firewalld refuses `--add-service` and `--add-port` in
-one, and applies none of it. Cockpit's 9090, which RHEL allows, is closed: it is not the backend's.
-80 is open for the clients without TLS (D-115): what crosses it is readable on the way. On three machines, each one's firewall also opens its private ports to the other
-two, and to no one else: [05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9) has each
-machine's commands, and every port is in [05](05-ports-and-firewall.md).
+Each command prints `success`. Services and ports are in separate commands on purpose: firewalld refuses
+`--add-service` and `--add-port` in one command, and then applies none of it. Cockpit's 9090, which RHEL allows by
+default, is closed: it is not the backend's. 80 is open for the clients without TLS (D-115). Anyone on the way can
+read what crosses it, passwords and session tokens too (Q-64). On three machines, each machine's firewall also opens
+its private ports to the other two machines, and to no one else:
+[05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9) has each machine's commands, and
+[05](05-ports-and-firewall.md) lists every port.
 
 ## Operating it
 
 | To | Where |
 |---|---|
 | Start, stop or restart one service, or reload nginx after a change | [07](07-start-stop-restart.md) |
-| Deploy a new version | build again (§3), then [01 §5](01-deploy.md#5-rolling-deployment): unpack beside, switch the symlink, restart in order |
-| Back up the database, and prove the backups | on this machine since §6 and §10; [01 §10](01-deploy.md#10-copies-off-the-databases-machine) says what each step does, and restores from them |
-| Handle a failure | the [runbook](02-runbook.md): triage, the store's and MySQL's failover, restores |
-| Add a second machine, its standby: the replicas, and a front ready to start | [10](10-two-machines.md) (D-96) |
-| Act as an operator (kick, ban, notices, tournaments) | the admin API: `BACKEND_ADMIN_ADDR` and `BACKEND_ADMIN_TOKEN` in `platform.env`, as its example says, then [04 §10](../detailed-design/04-platform-services.md#10-admin-api) |
+| Deploy a new version | build again (§3), then [01 §5](01-deploy.md#5-rolling-deployment): unpack the new release beside the old, switch the `/opt/backend` link, restart in order |
+| Back up the database, and prove the backups | running on this machine since §6 and §10; [01 §10](01-deploy.md#10-copies-off-the-databases-machine) says what each step does, and how to restore from them |
+| Handle a failure | the [runbook](02-runbook.md): triage, the stores' and MySQL's failover, restores |
+| Add a second machine as its standby: the replicas, and a front ready to start | [10](10-two-machines.md) (D-96) |
+| Act as an operator (kick, ban, notices, tournaments) | the admin API: set `BACKEND_ADMIN_ADDR` and `BACKEND_ADMIN_TOKEN` in `platform.env`, as its example says, then [04 §10](../detailed-design/04-platform-services.md#10-admin-api) |
 | Watch it | each process's metrics (01 §7); what to watch, the [runbook §5](02-runbook.md#5-what-to-watch) |
 | Take security fixes for Java, MySQL, nginx and OpenSSL | the [runbook](02-runbook.md#6-routine)'s monthly routine; how a version moves, [vendor/README](../../vendor/README.md) |
-| Read a log | `journalctl -u <unit>`; GC logs in `/var/log/backend`, MySQL's in `/var/log/backend-mysql`, nginx's in `/var/log/backend-nginx` |
+| Read a log | `journalctl -u <unit>`; the Java processes' GC logs in `/var/log/backend`, each store's in `/var/log/backend-store/<name>`, MySQL's in `/var/log/backend-mysql`, nginx's in `/var/log/backend-nginx` |
 
 ## Three machines
 
-The steps above install every role on one machine. On three, each machine takes the roles of its
-column alone (01 §1, architecture/01 §2), with the three machines' heaps as the units ship them (step 8's
-drop-ins and the stores' sizes are one machine's):
+The steps above install every role on one machine. On three machines, each machine takes only the roles of its
+column below (01 §1, architecture/01 §2). Leave out step 8's heap drop-ins and store sizes, which are for one machine:
+on three machines the heaps are the ones the units ship with.
 
 | | A | B | C |
 |---|---|---|---|
@@ -430,21 +596,24 @@ drop-ins and the stores' sizes are one machine's):
 | worker | | | yes |
 | Backups and their proof | | | yes (01 §10) |
 
-Each machine's `platform.env` names that machine's processes and peers for the watch
-(`BACKEND_WATCH_TARGETS`, `_PEERS`, `_MACHINE`: the example's are A's, and its comment gives B's and
-C's). Each machine keeps the shipped examples' private addresses rather than step 8's loopback ones: the
-platform, the gateway and the arenas listen on its private address, and reach the stores and MySQL
-on theirs (`STORE_HOST`, `BACKEND_STORE_ADDRESSES`, `BACKEND_DB_URL`, with MySQL's TLS settings,
-01 §9). nginx keeps the shipped `backend-upstreams.conf` and `backend-arenas.conf`, the same files on
-every machine, for all three machines' processes. One certificate serves the whole site: issued once
-for the site's address and every arena's name, and installed on every machine
-([06](06-certificates.md)). Each arena's and worker's instance name is unique across the three
-(01 §2), each arena's TLS name too (05 §3), and the units are pinned to their cores (01 §7).
+What else differs on three machines:
+
+- **The watch**: each machine's `platform.env` names that machine's processes and its peers for the watch
+  (`BACKEND_WATCH_TARGETS`, `BACKEND_WATCH_PEERS`, `BACKEND_WATCH_MACHINE`). The example file's values are A's, and
+  its comment gives B's and C's.
+- **The addresses**: each machine keeps the shipped examples' private addresses, not step 8's loopback ones. The
+  platform, the gateway and the arenas listen on the machine's private address, and reach the stores and MySQL on
+  theirs (`STORE_HOST`, `BACKEND_STORE_ADDRESSES`, `BACKEND_DB_URL` with MySQL's TLS settings, 01 §9).
+- **nginx** keeps the shipped `backend-upstreams.conf` and `backend-arenas.conf`, which name all three machines'
+  processes. They are the same files on every machine.
+- **The certificate**: one certificate serves the whole site. It is issued once, for the site's address and every
+  arena's name, and installed on every machine ([06](06-certificates.md)).
+- **Names and cores**: each arena's and each worker's instance name is unique across the three machines (01 §2), and
+  so is each arena's TLS name (05 §3). The units are pinned to their cores (01 §7).
 
 ## What this guide does not do
 
-- **The copy off the site** (01 §10, Q-53): its host is not chosen.
-- **The client**: the .NET SDK and its packages are not in the repository (the
-  owner's choice); the client is built on a developer's machine.
-- **The checks that use Docker** (`check-release-el9.sh` and the others) run on a
-  build machine, not on a server.
+- **The copy off the site** (01 §10, Q-53): its host is not chosen yet.
+- **The client**: the .NET SDK and its packages are not in the repository (the owner's choice), so the client is
+  built on a developer's machine.
+- **The checks that use Docker** (`check-release-el9.sh` and the others) run on a build machine, not on a server.
