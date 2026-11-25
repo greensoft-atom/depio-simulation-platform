@@ -57,18 +57,19 @@ another.
 
 ## 3. Issuing the site's certificate
 
-With the root, for the site's address and every arena's name. The names come from nginx's map,
-so the certificate and the routing cannot disagree:
+With the root, for the site's address and every arena's name. The names come from nginx's list
+of arenas, which both of its maps read, so the certificate and the routing cannot disagree:
 
 ```bash
 backend/scripts/private-ca.sh issue ~/backend-ca ~/backend-certificate 203.0.113.10 \
-    $(backend/scripts/private-ca.sh names backend/deploy/nginx/backend-stream.conf)
+    $(backend/scripts/private-ca.sh names backend/deploy/nginx/backend-arenas.conf)
 backend/scripts/private-ca.sh show ~/backend-certificate/fullchain.pem
 ```
 
 - Put the site's public address in place of `203.0.113.10`.
-- Give `names` the map the machines use: the release's `nginx-conf/backend-stream.conf`, or a
-  machine's `/etc/backend/nginx/backend-stream.conf`.
+- Give `names` the list the machines use: the release's `nginx-conf/backend-arenas.conf`, or a
+  machine's `/etc/backend/nginx/backend-arenas.conf` (D-115; before, the names were in
+  `backend-stream.conf`'s map).
 - `show` lists what it names: `IP Address:203.0.113.10, DNS:a1.arena.internal, …`.
 - The certificate is valid 398 days (`DAYS` changes it), and never past its root: one that would
   outlive the root is refused (O-73), since a device refuses the chain once the root has expired;
@@ -166,8 +167,8 @@ routine's date, not on the alert ([02 §6](02-runbook.md#6-routine)).
 ## 7. Adding an arena, or changing the address
 
 - **An arena added**, `c3` say:
-  1. its line in `backend-stream.conf`'s map, on every machine (05 §3);
-  2. a certificate issued with the new name (§3: `names` reads the map) and installed (§4);
+  1. its line in `backend-arenas.conf`, on every machine (05 §3);
+  2. a certificate issued with the new name (§3: `names` reads the list) and installed (§4);
   3. then the arena started.
 
   Until its name is in the certificate, the client refuses the arena's matches.
@@ -215,9 +216,9 @@ routine's date, not on the alert ([02 §6](02-runbook.md#6-routine)).
 |---|---|
 | The client: the remote certificate is invalid, its chain untrusted | the app's root is not the one that issued nginx's certificate: compare `private-ca.sh show` of both, issuer and fingerprint |
 | The client: the name does not match | the certificate lacks the address dialled or the arena's name: `private-ca.sh show`, then issue again with `names` (§3) |
-| A match connection closed at once, `stream.log` with the name and no upstream | the name is not in `backend-stream.conf`'s map on the front (05 §3) |
+| A match connection closed at once, `stream.log` with the name and no upstream; or a 404 on 80's `/match/<name>` | the name is not in `backend-arenas.conf` on the front (05 §3) |
 | `install-certificate.sh`: `does not verify` | `/etc/backend/tls/ca.pem` is not the root that signed it |
-| `install-certificate.sh`: `does not name …` | issued before a name was added to the map or the address changed: issue again |
+| `install-certificate.sh`: `does not name …` | issued before a name was added to the list or the address changed: issue again |
 | Expired | renew (§6); `CertificateExpiring` should have fired 14 days before (08 §3) |
 | By hand, what 443 serves | `openssl s_client -connect 203.0.113.10:443 -verify_ip 203.0.113.10 -CAfile ca.pem </dev/null` |
 | By hand, what 9001 serves for an arena | `openssl s_client -connect 203.0.113.10:9001 -servername a1.arena.internal -verify_hostname a1.arena.internal -CAfile ca.pem </dev/null` |

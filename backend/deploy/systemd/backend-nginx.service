@@ -11,7 +11,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-# The master runs as root to bind 443 and 9001; its workers run as nginx (nginx.conf's user).
+# The master runs as root to bind 80, 443 and 9001; its workers run as nginx (nginx.conf's user).
 Type=forking
 PIDFile=/run/backend-nginx/nginx.pid
 RuntimeDirectory=backend-nginx

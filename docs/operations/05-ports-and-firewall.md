@@ -43,19 +43,18 @@ are set up the same.
 |---|---|
 | 443/tcp | nginx: HTTPS, the API (`/v1/`) and the lobby (`/lobby`) |
 | 9001/tcp | nginx's `stream`: match traffic, TLS ended there and each connection passed to its arena |
+| 80/tcp | nginx in clear, for a client without TLS: the API and the lobby as on 443, and matches, each asking for its arena by name (`/match/<name>`) ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)) |
 
 Nothing else, over IPv4 or IPv6:
-- **80**, the third of the owner's ports, stays closed, and nothing listens on it. It served only a
-  public CA's challenge, and the site has no domain for one.
 - **22**, SSH, is open to the internal network alone.
 - **9090**, cockpit, which RHEL's default zone allows, is closed.
 - `dhcpv6-client`, the default zone's third service, takes DHCPv6 replies on UDP 546 from
   link-local addresses alone, which no other network can send.
 - ICMP stays allowed, so a machine answers ping; it is not a port.
 
-**The provider forwards 443 to 443 and 9001 to 9001**, on the front. The arenas announce 9001,
-and players dial it: a forwarding that changed the number would send them to the wrong port. The
-same two ports on another machine are what a failover forwards to.
+**The provider forwards 80 to 80, 443 to 443 and 9001 to 9001**, on the front. The arenas announce
+9001, and players dial it: a forwarding that changed the number would send them to the wrong port.
+The same three ports on another machine are what a failover forwards to.
 
 ## 2. Every port in production
 
@@ -66,11 +65,12 @@ Every machine runs nginx, so that any can be the front; only the front's is reac
 | Port | What listens | Bound to | Who connects | Set in |
 |---|---|---|---|---|
 | **443**/tcp | nginx (`backend-nginx`): HTTPS, ends TLS. `/v1/` to the platforms, `/lobby` to the gateways, of all three machines | every address, IPv4 and IPv6 | players | `listen 443 ssl` in `/etc/backend/nginx/backend.conf`; the upstreams in `backend-upstreams.conf` |
-| **9001**/tcp | nginx's `stream`: ends match traffic's TLS and passes each connection to the arena its handshake named (SNI) | every address, IPv4 and IPv6 | players | `listen 9001 ssl` and the names' map in `/etc/backend/nginx/backend-stream.conf` |
+| **9001**/tcp | nginx's `stream`: ends match traffic's TLS and passes each connection to the arena its handshake named (SNI) | every address, IPv4 and IPv6 | players | `listen 9001 ssl` and its map in `/etc/backend/nginx/backend-stream.conf`, which reads the list of arenas, `backend-arenas.conf` |
+| **80**/tcp | nginx in clear (D-115): 443's server, the same locations, and `/match/<name>` to the arena by the same list | every address, IPv4 and IPv6 | players without TLS | `listen 80` in `backend.conf` |
 | **22**/tcp | sshd, the system's own | every address | operators, from the internal network alone (§5) | the system |
 | 8080 | the platform (`backend-platform`): the API, plain HTTP | the machine's private address | the front's nginx; this machine's gateway | `PLATFORM_BIND`, `PLATFORM_PORT` in `platform.env`; `PLATFORM_URL` in `gateway.env`; `backend-upstreams.conf` |
 | 8090 | the gateway (`backend-gateway`): the lobby, plain WebSocket | the machine's private address | the front's nginx | `GATEWAY_BIND`, `GATEWAY_PORT` in `gateway.env`; `backend-upstreams.conf` |
-| 9011, 9012, and 9013 on B | the arenas (`backend-arena@<name>`): match traffic, plain TCP behind nginx. One port each, §3 | the machine's private address | the front's nginx | `ARENA_PORT`, `ARENA_BIND` in `arena-<name>.env`; `backend-stream.conf`'s map |
+| 9011, 9012, and 9013 on B | the arenas (`backend-arena@<name>`): match traffic, plain TCP behind nginx. One port each, §3 | the machine's private address | the front's nginx | `ARENA_PORT`, `ARENA_BIND` in `arena-<name>.env`; `backend-arenas.conf` |
 | 9120 | the platform's admin API, only when it is named (unset, there is none) | loopback, enforced: any other address and the platform refuses to start (exit 2) | an operator on the machine, or over SSH: `ssh -L 9120:127.0.0.1:9120 <machine>` ([api/03](../api/03-admin-api.md)) | `BACKEND_ADMIN_ADDR` in `platform.env`, with the drop-in `platform-admin.conf.example` for its secret |
 | 9101 | the platform's metrics, `GET /metrics` | `127.0.0.1` | this machine's platform's watch ([08](08-monitoring.md)) | `BACKEND_METRICS_ADDR` in `platform.env` |
 | 9103 | the gateway's metrics | `127.0.0.1` | the watch | `BACKEND_METRICS_ADDR` in `gateway.env` |
@@ -115,7 +115,6 @@ A's watch reads them. Nothing of A's opens for them: they reach A's stores on th
 
 ### What does not listen, and is sometimes looked for
 
-- **80**: nothing, on any machine (§1).
 - **33060**, MySQL's X Protocol: `mysqlx = OFF` in both MySQL configurations. On, it would
   listen on every address, whatever `bind-address` says.
 - **33062**, MySQL's administrative port: not configured (`admin_address` is not set).
@@ -130,7 +129,8 @@ A's watch reads them. Nothing of A's opens for them: they reach A's stores on th
 ## 3. The arenas: their ports and their names
 
 Players all dial the site's 9001; the front's nginx tells the arenas apart by the name the
-client's TLS handshake gives, which the platform handed it with its grant (`tlsName`). Each
+client's TLS handshake gives, which the platform handed it with its grant (`tlsName`). A client
+without TLS sends the same name in its request on 80, `/match/<name>` (D-115). Each
 arena announces:
 - the site's address, `ADVERTISE_HOST=203.0.113.10`;
 - the site's port, `BACKEND_ADVERTISE_PORT=9001`;
@@ -148,12 +148,12 @@ It listens on a private port of its own, since 9001 is nginx's on every machine:
   sends the name. `.internal` is the suffix reserved for such private use.
 - **Three places name an arena, and must agree**:
   - its `BACKEND_ADVERTISE_TLS_NAME`;
-  - its line in `backend-stream.conf`'s map, the name to its machine's private address and
-    `ARENA_PORT`, the same file on every machine;
+  - its line in `backend-arenas.conf`, the name to its machine's private address and
+    `ARENA_PORT`, the same file on every machine, which 9001's map and 80's read;
   - the site's certificate, which names every arena ([06](06-certificates.md)).
 
-  A name missing from the map is closed by nginx; one missing from the certificate is refused by
-  the client.
+  A name missing from the list is closed by nginx on 9001 and a 404 on 80; one missing from the
+  certificate is refused by the client with TLS.
 - **9112 is skipped** for an arena's metrics because it is the second worker's on C, so that a third
   arena on C could not take it. A port in use stops the process that comes second, with exit 2, which
   systemd does not restart.
@@ -198,9 +198,9 @@ firewall allows both, because each machine opens its ports to both of the others
 
 ### From the internet
 
-Players connect to the front's 443 and 9001, nothing else. The app opens three connections, each to the site's one
-public address and each through nginx, which ends their TLS: the API, the lobby and a match. On the launch's one
-machine:
+Players connect to the front's 443 and 9001, or 80 without TLS, nothing else. The app opens three connections, each
+to the site's one public address and each through nginx: the API, the lobby and a match, over TLS, which nginx ends,
+or all three in clear on 80 ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)). On the launch's one machine:
 
 ```
  the app                                 the front (one public address, 203.0.113.10)
@@ -208,6 +208,8 @@ machine:
  ② lobby  wss://203.0.113.10/lobby     ─▶ :443  nginx, TLS ended ──▶ gateway   127.0.0.1:8090 ──▶ platform
  ③ match  TLS to 203.0.113.10:9001     ─▶ :9001 nginx, TLS ended ──▶ arena a1  127.0.0.1:9011
           (name given: a1.arena.internal)       the arena by that name        a2 :9012, a3 :9013
+ in clear: ① http://…/v1/  ② ws://…/lobby  ─▶ :80 nginx, as 443's
+           ③ GET /match/a1.arena.internal  ─▶ :80 nginx, the arena by that name ──▶ arena a1, which answers 101
 ```
 
 | Route | The app dials | Its TLS checks | nginx | Then | Limits and waits |
@@ -215,6 +217,7 @@ machine:
 | ① the API | `https://203.0.113.10/v1/…` | the address, in the certificate | `backend.conf`: `/v1/` to the platforms, anything else 404 | the platform (`backend_platform`) | 4 KiB a body, nginx's and the platform's; `POST` to `/v1/sessions`, `/v1/accounts`, `/v1/guests`, `/v1/accounts/upgrade` 2 a second an address, 30 at once, then 429; the app waits 10 s, nginx 15 s |
 | ② the lobby | `wss://203.0.113.10/lobby` | the address | `location = /lobby`, the WebSocket's upgrade passed on | the gateway with the fewest (`backend_gateway`), which calls its machine's platform | the session token within 5 s; a ping every 30 s; the gateway closes a lobby silent for 120 s, nginx at 150 s |
 | ③ a match | TCP to `203.0.113.10:9001`, TLS giving the grant's `tlsName` | `tlsName` (`a1.arena.internal`), in the certificate | `backend-stream.conf`: the arena the name maps to; a name not mapped, or none, closed | the arena, plaintext, with the grant's single-use ticket | 5 s to dial; the arena drops a connection after 30 s without a frame, nginx at 60 s |
+| ①②③ in clear | `http://203.0.113.10/v1/…`, `ws://203.0.113.10/lobby`, and TCP to `203.0.113.10:80` with `GET /match/<tlsName>` | nothing: no TLS | the same server on 80; `/match/` to the arena the name maps to, the request passed on, 404 for a name not in the list | as above; the arena answers the request 101, then takes the ticket | as above; the arena reads 1 KiB of request at most |
 
 **The order of a session.** A guest made on the first launch (`POST /v1/guests`), then a login (`POST /v1/sessions`),
 gives the token; every other call takes it. The lobby opens with it. A match found arrives on the lobby (`evt.match.found`), or answers
@@ -227,21 +230,25 @@ tickets. The app trusts the root it ships alone (`TrustRoot`), and checks the na
 plaintext on loopback, or on the private network with three machines. A build connects the way it is set up,
 encrypted or not, a players' build too ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
 
-**What fails closed.** Port 80 has nothing listening, the firewall closing it; any other path on 443 is 404; 9001
-without a mapped name, or without TLS, is closed; a certificate from another root is refused by the app.
+**What travels in clear.** On 80, whatever a client without TLS sends: its password, its session token, its join
+tickets, readable and usable by anyone on the way. The owner chose to serve it (Q-64).
+
+**What fails closed.** Any other path on 443 or 80 is 404, and `/match/` with a name not in the list; 9001 without a
+mapped name, or without TLS, is closed; a certificate from another root is refused by the app.
 
 **The app's address behind nginx.** The platform and the gateway read it from `X-Forwarded-For`, from nginx alone
 (loopback, or `BACKEND_TRUSTED_PROXIES`): the platform's limits on logins go by it. An arena reads it from the line
 nginx begins each match connection with, the PROXY protocol's (`proxy_protocol on`, [D-105](../architecture/03-decision-log.md#d-105--an-arena-behind-the-front-knows-the-phones-address-nginxs-proxy-line-read-once)), and names it where
-it logs a player: `player 123 joined from 198.51.100.7:51234`. Nothing an arena decides goes by an address.
+it logs a player: `player 123 joined from 198.51.100.7:51234`; a match through 80, from the `X-Forwarded-For` of
+nginx's request, without the port. Nothing an arena decides goes by an address.
 
 **More machines.** The routes stay; nginx's targets change. On two machines, B's arenas have names of their own,
 which A's nginx sends to B's private address ([10](10-two-machines.md)). On three, the API and the lobby are spread
 over the three platforms and gateways, and each arena's name points at its machine (`backend-upstreams.conf`,
-`backend-stream.conf`).
+`backend-arenas.conf`).
 
 **A run by hand** keeps the shape ([development/03 §5](../development/03-build-and-run.md#5-running-it-by-hand)): by default the same three routes over
-TLS, with a root of its own (`work/nginx/ca/ca.pem`), 80 the API and the lobby in clear as well ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)), the platform on 8080, the gateway on 8081
+TLS, with a root of its own (`work/nginx/ca/ca.pem`), and 80 in clear as on the site, the platform on 8080, the gateway on 8081
 and the arena on 9021; with `PLAIN=1` the API and the lobby on 80 as `http://` and `ws://`, and 9001 without TLS to
 its one arena (D-101).
 
@@ -260,8 +267,8 @@ untouched, players reach SSH, and cockpit's 9090 where cockpit runs, and nothing
 and the other two machines reach neither store, nor MySQL (seen in §9).
 
 **What these commands do.** Two zones, on each machine:
-- **`public`**, for players and anyone not named below: 443 and 9001, the same on every machine,
-  since any may be the front. Cockpit and SSH are taken out of it, and SSH comes back for the
+- **`public`**, for players and anyone not named below: 80, 443 and 9001, the same on every machine,
+  since any may be the front; 80 for the clients without TLS (D-115). Cockpit and SSH are taken out of it, and SSH comes back for the
   internal network alone, by a rule for its addresses.
 - **`backend`**, a new zone holding the other two machines' private addresses as its sources,
   with the ports they reach on this one, and SSH. firewalld decides a connection from those
@@ -282,8 +289,8 @@ refused. `echo "${SSH_CONNECTION%% *}"` shows where this one comes from.
 
 <!-- firewall A -->
 ```bash
-# The public side, the same on every machine since any may be the front: 443 and 9001 alone
-firewall-cmd --permanent --zone=public --add-service=https
+# The public side, the same on every machine since any may be the front: 80, 443 and 9001 alone
+firewall-cmd --permanent --zone=public --add-service=https --add-service=http
 firewall-cmd --permanent --zone=public --add-port=9001/tcp
 firewall-cmd --permanent --zone=public --remove-service=cockpit --remove-service=ssh
 # SSH from the internal network alone (10.0.0.0/24 stands for it)
@@ -302,8 +309,8 @@ firewall-cmd --reload
 
 <!-- firewall B -->
 ```bash
-# The public side, the same on every machine since any may be the front: 443 and 9001 alone
-firewall-cmd --permanent --zone=public --add-service=https
+# The public side, the same on every machine since any may be the front: 80, 443 and 9001 alone
+firewall-cmd --permanent --zone=public --add-service=https --add-service=http
 firewall-cmd --permanent --zone=public --add-port=9001/tcp
 firewall-cmd --permanent --zone=public --remove-service=cockpit --remove-service=ssh
 # SSH from the internal network alone (10.0.0.0/24 stands for it)
@@ -324,8 +331,8 @@ listen on loopback.
 
 <!-- firewall C -->
 ```bash
-# The public side, the same on every machine since any may be the front: 443 and 9001 alone
-firewall-cmd --permanent --zone=public --add-service=https
+# The public side, the same on every machine since any may be the front: 80, 443 and 9001 alone
+firewall-cmd --permanent --zone=public --add-service=https --add-service=http
 firewall-cmd --permanent --zone=public --add-port=9001/tcp
 firewall-cmd --permanent --zone=public --remove-service=cockpit --remove-service=ssh
 # SSH from the internal network alone (10.0.0.0/24 stands for it)
@@ -447,14 +454,15 @@ other.
 |---|---|---|
 | The platform's, 8080 | `PLATFORM_PORT` in `platform.env`; `PLATFORM_URL` in `gateway.env`; the three `server …:8080` lines in `backend-upstreams.conf`, on every machine; this machine's entry in `BACKEND_WATCH_PEERS` in the other two machines' `platform.env` ([08 §2](08-monitoring.md)); the `backend` zone's port on every machine | restart the platform and the gateway, then the other two machines' platforms; reload nginx |
 | The gateway's, 8090 | `GATEWAY_PORT` in `gateway.env`; the three `server …:8090` lines in `backend-upstreams.conf`, on every machine; the `backend` zone's port | restart the gateway; reload nginx |
-| An arena's, 9011 to 9013 | its `ARENA_PORT`; its line in `backend-stream.conf`'s map, on every machine; the `backend` zone's port on its machine | restart that arena (it drains first: 01 §5); reload nginx |
-| An arena's name | its `BACKEND_ADVERTISE_TLS_NAME`; its line in the map, on every machine; the site's certificate, issued again with it ([06](06-certificates.md)) | install the certificate; restart that arena; reload nginx |
+| An arena's, 9011 to 9013 | its `ARENA_PORT`; its line in `backend-arenas.conf`, on every machine; the `backend` zone's port on its machine | restart that arena (it drains first: 01 §5); reload nginx |
+| An arena's name | its `BACKEND_ADVERTISE_TLS_NAME`; its line in `backend-arenas.conf`, on every machine; the site's certificate, issued again with it ([06](06-certificates.md)) | install the certificate; restart that arena; reload nginx |
 | A metrics port | its `BACKEND_METRICS_ADDR` alone, unique on the machine; and `BACKEND_WATCH_TARGETS` in `platform.env`, whose watch reads it ([08](08-monitoring.md)), with a platform restart | restart that process |
 | The admin API's | `BACKEND_ADMIN_ADDR`, loopback only; and the port in the SSH tunnel | restart the platform |
 | A store's, 6379 or 6380 | `port` in that store's configuration on both machines, primary and replica; the replica's `replicaof`; on every machine, `STORE_PORT` and `BACKEND_STORE_ADDRESSES` (6379) or `BACKEND_EVENTS_STORE` (6380) in every `.env` file that has them; the `backend` zone's port on both store machines; the port argument of the store's scripts (`backup-store.sh`'s third, the restore drill's second, the old primary's `host:port` given to `promote-store.sh`) | restart the stores, then every process |
 | MySQL's, 3306 | a `port` line in `backend.cnf`, on A and C; every `BACKEND_DB_URL`; a `port=` line in the backups' option files (`mysql-backup.cnf`, `mysql-binlog.cnf`); the replica's `SOURCE_PORT` and `clone_valid_donor_list`; the old primary's `host:port` given to `promote-mysql.sh`; the `backend` zone's port on A and C | restart MySQL, then the platforms and the workers |
 | The public 9001 | `listen 9001` and `listen [::]:9001` in `backend-stream.conf`; every arena's `BACKEND_ADVERTISE_PORT`; `install-certificate.sh`'s `STREAM_PORT`; the `public` zone's port; the provider's forwarding | reload nginx; restart the arenas |
 | The public 443 | `listen 443` and `listen [::]:443` in `backend.conf`; the app's endpoints (`https://203.0.113.10:<port>`), a client release; `install-certificate.sh`'s `EDGE_PORT`; the `public` zone (its `https` service becomes an `--add-port`); the provider's forwarding | reload nginx |
+| The public 80 | `listen 80` and `listen [::]:80` in `backend.conf`; the endpoints of an app without TLS (`http://203.0.113.10:<port>`), which its matches go through too, a client release; the `public` zone (its `http` service becomes an `--add-port`); the provider's forwarding | reload nginx |
 
 ## 8. Ports that are not production
 
@@ -464,7 +472,7 @@ These are on a developer's machine, not on A, B or C. All of them are bound to `
 |---|---|---|
 | 3314 | the development MySQL (`backend_test`, `backend_dev`), `vendor/`'s 8.4 | `dev-mysql.sh`, and `build-offline.sh` for the tests (D-80) |
 | 6380, 8080, 8081, 9021 | the store, the platform, the gateway, the arena | `dev-jredis.sh`, `dev-backend.sh`, or `run-local.sh start` ([development/03](../development/03-build-and-run.md), D-92) |
-| 80, 443, 9001, every IPv4 address | the release's nginx in front of them: the API and the lobby on 80 in clear and on 443 over TLS, matches; with `PLAIN=1` 80 and 9001 alone, the API and the lobby on 80, without TLS (D-101) | `dev-nginx.sh`, as root |
+| 80, 443, 9001, every IPv4 address | the release's nginx in front of them, as on the site: the API and the lobby on 80 in clear and on 443 over TLS, matches on 9001 and on 80 by name; with `PLAIN=1` 80 and 9001 alone, the API and the lobby on 80, matches on 9001, without TLS (D-101) | `dev-nginx.sh`, as root |
 | 5005 to 5009 | the debugger, one per process | `DEBUG=1 ./run-local.sh start` ([development/05](../development/05-vscode.md)) |
 | 6390, 6392, 8093, 8094, 9011, 9195 to 9199, 3307, 3308 | the live drill's processes, MySQL servers and metrics | `client/headless-drill.sh` |
 | 3307, 3309 | the backup drill's MySQL servers | `backup-drill.sh` |
@@ -482,7 +490,7 @@ stopping at nginx's 443.
 
 **Run as written on 2026-10-19** by
 [`backend/scripts/check-ports-el9.sh`](../../backend/scripts/README.md#check-ports-el9sh): 156
-checks, none failing.
+checks, none failing; **again on 2026-11-25** with 80 open (D-115): 181, none failing.
 - **Where**: Rocky Linux 9.5, rebuilt from RHEL 9's sources, with RHEL 9's firewalld (1.3.4),
   systemd as its first process, and no network.
 - **What ran**, from a release built from the code as it is now, each process with the settings
@@ -496,7 +504,7 @@ checks, none failing.
 
   They ran as root, with small heaps, which changes nothing about where they listen.
 - **The certificate**: a root and the site's certificate made by `private-ca.sh`, for
-  `198.51.100.1` and the map's seven names, and installed by `install-certificate.sh` before
+  `198.51.100.1` and the list's seven names, and installed by `install-certificate.sh` before
   nginx had ever started, as [06](06-certificates.md) says.
 - **Who connected**: C (`10.0.0.3`), a machine of the internal network (`10.0.0.50`) and a player
   (`198.51.100.7`), each in a namespace of its own. The player came over IPv6 as well, and also
@@ -504,7 +512,8 @@ checks, none failing.
   could.
 
 **What listens**: §2's ports on §2's addresses, and nothing else: §6's listing is the check's.
-Nothing on 80, 33060 or 33062. `a1` announced `198.51.100.1:9001, TLS as a1.arena.internal`.
+Nothing on 33060 or 33062; 80 on every address, IPv4 and IPv6, since 2026-11-25. `a1` announced
+`198.51.100.1:9001, TLS as a1.arena.internal`.
 
 **The firewall**, three times: stopped, as RHEL 9 has it, and after §5's commands for A, taken
 from this page.
@@ -513,7 +522,8 @@ from this page.
 |---|---|---|---|---|
 | a player | 443, 9001 (over IPv6 too) | open | refused | open |
 | a player | 22 | open | open | refused (IPv6 too) |
-| a player | 80, 9090 | `Connection refused`: nothing listens | 80 refused, 9090 let through | refused |
+| a player | 80 (over IPv6 too) | open (2026-10-19, before D-115: `Connection refused`, nothing listened) | refused | open (before D-115: refused) |
+| a player | 9090 | `Connection refused`: nothing listens | let through | refused |
 | a player | 8080, 9011, 9120 on the public address | `Connection refused`: bound elsewhere | refused | refused |
 | a player routing to `10.0.0.1` | 6379, 3306, 8080, 9011 | **open** | refused | refused |
 | B | 6379, 3306, 8080, 8090, 9011 | open | refused | open |
@@ -531,7 +541,9 @@ refused. A player's ping was answered.
 
 **Through the front, as a player trusting the backend's root alone:**
 - four registrations by HTTPS to the address, `201` each, and the lobby, `101 Switching Protocols`;
-- port 80: nothing;
+- port 80 (2026-11-25, D-115): the API's health in clear, `200`; `/match/a1.arena.internal` and
+  `/match/b1.arena.internal`, each answered `101 Switching Protocols` by A's arena and by B's, through nginx by
+  the list; `/match/nope.arena.internal`, `404`;
 - 9001 as `a1.arena.internal` and as `b1.arena.internal`: `Verify return code: 0 (ok)`. As a name
   the certificate does not hold: `62 (hostname mismatch)`. Trusting another root: `21`, refused;
 - `install-certificate.sh --check`: 443 for the address and 9001 for each of the seven names,
@@ -542,7 +554,7 @@ refused. A player's ping was answered.
   `replaced`, `badsession`, `phrase`, `decline`, `party` and `prediction`. `replaced` failed in the
   first run, and that is [T-60](../defects.md#4-concurrency), fixed;
 - `stream.log`: every connection reached the arena its name gives, 14 to `a1` (`10.0.0.1:9011`)
-  and 13 to `b1` (`10.0.0.2:9011`); a name not in the map, none;
+  and 13 to `b1` (`10.0.0.2:9011`); a name not in the list, none;
 - `access.log`: requests served by both machines' platforms and gateways, and C's, which ran
   none, passed over (`10.0.0.3:8080, 10.0.0.1:8080`);
 - the login limits' keys in the store named the player's address, `198.51.100.7`, and never the
@@ -553,7 +565,7 @@ refused. A player's ping was answered.
 - the rules held after a restart of firewalld;
 - A's commands run a second time printed §5's messages and changed nothing;
 - B's and C's commands, each on a firewall as RHEL 9 has it, made the zones §5 says;
-- the install guide's §12, likewise: 443 and 9001 open, 22 to the internal network alone. Its
+- the install guide's §12, likewise: 80, 443 and 9001 open, 22 to the internal network alone. Its
   old single command was refused, and nothing of it applied (O-42).
 
 The kernel gives outgoing connections local ports from 32768 to 60999, its default, read in the
@@ -562,7 +574,9 @@ check: above every port here.
 **Mutation-checked** (each mutant run on its own and caught), in earlier runs of this page's
 layout: A's SSH line removed; C left out of A's sources; the install guide's old command put back;
 `mysqlx` on; the example's rooms back to 4; the line closing cockpit removed; 9001 without TLS in
-the release's nginx (nine checks failed, the C# client's matches among them). The code's own rules,
+the release's nginx (nine checks failed, the C# client's matches among them); and on 2026-11-25 `http` left out of
+A's commands (seven failed: 80 refused to the player over IPv4 and IPv6, the public zone short of `http`, every
+probe of 80). The code's own rules,
 in their tests: `BACKEND_TRUSTED_PROXIES`, `BACKEND_ADVERTISE_PORT`, `BACKEND_ADVERTISE_TLS_NAME`,
 the grants' `tlsName`, the client's `TrustRoot`, and T-60's replacement across gateways.
 

@@ -14,6 +14,7 @@ Postman collection's run of 2026-10-06 against a stack built from this repositor
 | Where | Base URL |
 |---|---|
 | Production, through the front's nginx (TLS) | `https://<the site's address>/v1/...`, for example `https://203.0.113.10/v1/shop`; the certificate is the backend's own CA's, so a client trusts its root, `ca.pem` (`curl --cacert ca.pem`; [operations/06](../operations/06-certificates.md)) |
+| Production in clear, for a client without TLS ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)) | `http://<the site's address>/v1/...`, the same routes on 80: what crosses it is readable on the way |
 | One machine, straight to `platform` (tests, the examples below) | `http://127.0.0.1:8080/v1/...` (`PLATFORM_PORT`; the examples ran on 8180) |
 | A run by hand, through `dev-nginx.sh`'s nginx ([D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)) | `https://<address>/v1/...`, trusting `work/nginx/ca/ca.pem` (`curl --cacert work/nginx/ca/ca.pem`; [development/03 §5.0](../development/03-build-and-run.md#50-clients-on-other-machines-the-front)); or `http://<address>/v1/...` in clear, on 80 ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)) |
 
@@ -601,8 +602,10 @@ valid 60 seconds, and whether to use TLS. The client then opens TCP (TLS if `tls
 certificate against, in place of `arenaHost`. Behind the site's front
 ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)) every grant has it: `arenaHost` is the site's
 public address and `arenaPort` 9001, the front's nginx, which ends TLS and passes the connection
-to the arena that name is. A grant without it, a drill's or an arena reached directly, is checked
-against `arenaHost`, as before:
+to the arena that name is. A client without TLS takes the same grant to 80 instead, through the API's own
+address: `GET /match/<tlsName> HTTP/1.1` with `Connection: Upgrade` and `Upgrade: backend-match`, and the match once
+the answer `101` is read ([02-networking §1](../detailed-design/02-networking.md#1-transport), D-115). A grant without
+it, a drill's or an arena reached directly, is checked against `arenaHost`, as before:
 
 ```
 200 {"arenaHost":"203.0.113.10","arenaPort":9001,"ticketId":"<22 characters>","tls":true,"tlsName":"b1.arena.internal"}

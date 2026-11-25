@@ -5,10 +5,10 @@ collection that runs all of the HTTP ones in order.
 
 | Interface | Who calls it | Where | Reference |
 |---|---|---|---|
-| The player API, HTTP | the client | `https://<name>/v1/...` (nginx to `platform`) | [01 — the player API](01-http-api.md) |
-| The lobby, WebSocket | the client, between matches | `wss://<name>/lobby` (nginx to `gateway`) | [02 — the lobby WebSocket](02-lobby-websocket.md) |
+| The player API, HTTP | the client | `https://<name>/v1/...` (nginx to `platform`), or `http://<name>/v1/...` on 80 without TLS (D-115) | [01 — the player API](01-http-api.md) |
+| The lobby, WebSocket | the client, between matches | `wss://<name>/lobby` (nginx to `gateway`), or `ws://<name>/lobby` on 80 without TLS | [02 — the lobby WebSocket](02-lobby-websocket.md) |
 | The admin API, HTTP | operators | `http://127.0.0.1:9120/admin/...` on the machine, over SSH | [03 — the admin API](03-admin-api.md) |
-| A match, binary over TCP | the client, in a match | `<arenaHost>:<arenaPort>`, from a grant, TLS with the grant's `tlsName` behind the front (D-82) | [02-networking](../detailed-design/02-networking.md) |
+| A match, binary over TCP | the client, in a match | `<arenaHost>:<arenaPort>`, from a grant, TLS with the grant's `tlsName` behind the front (D-82); without TLS, 80's `GET /match/<tlsName>`, then the same frames (D-115) | [02-networking](../detailed-design/02-networking.md) |
 | Metrics, Prometheus text | monitoring | `GET /metrics` on each process's loopback port | [operations/01 §7](../operations/01-deploy.md#7-installing-a-machine) |
 
 A small C# client for Unity that makes these calls, with examples: [`client-simple/`](../../client-simple/README.md)

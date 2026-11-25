@@ -2,7 +2,7 @@
 # Checks private-ca.sh and install-certificate.sh (docs/operations/06-certificates.md, D-82) on this machine, with
 # openssl alone and nginx stood in for: what each must make, and each refusal each promises. The root made once and
 # never overwritten, its key private; a certificate for the site's address and the seven names in the shipped
-# stream map; refused before anything is installed: a certificate short of an arena's name or of the address, one
+# list of arenas (backend-arenas.conf); refused before anything is installed: a certificate short of an arena's name or of the address, one
 # from another root, and a key that is not the certificate's; installed, with the key private; and when nginx
 # refuses the new files, the previous ones put back. With no root in TLS_DIR, the system's roots are the trust,
 # and the backend's certificate is refused.
@@ -39,8 +39,8 @@ same() { [ "$(sha256sum < "$1")" = "$(sha256sum < "$2")" ]; }   # cmp is not in 
 
 # ---- private-ca.sh ----
 
-NAMES=$("$CA" names "$DEPLOY/nginx/backend-stream.conf")
-[ "$(echo $NAMES | wc -w)" = 7 ] && pass "names: the map's seven, $(echo $NAMES)" || fail "names: '$(echo $NAMES)'"
+NAMES=$("$CA" names "$DEPLOY/nginx/backend-arenas.conf")
+[ "$(echo $NAMES | wc -w)" = 7 ] && pass "names: the list's seven, $(echo $NAMES)" || fail "names: '$(echo $NAMES)'"
 expect_ok "root" "$CA" root "$T/ca"
 expect_refused "root again" "already holds a root" "$CA" root "$T/ca"
 [ "$(stat -c %a "$T/ca/ca.key")" = 600 ] && pass "ca.key 0600" || fail "ca.key $(stat -c %a "$T/ca/ca.key")"
@@ -63,9 +63,9 @@ expect_ok "issue a second" "$CA" issue "$T/ca" "$T/site2" 203.0.113.10 $NAMES
 # ---- install-certificate.sh, on the shipped nginx configuration, nginx stood in for by NT ----
 
 mkdir -p "$T/etc/tls" "$T/etc/credentials" "$T/etc/cfg"
-install_with() {   # NC and SC name another nginx and stream configuration
+install_with() {   # NC and AC name another nginx configuration and list of arenas
     TLS_DIR=$T/etc/tls CREDENTIALS_DIR=$T/etc/credentials CONFIG_DIR=$T/etc/cfg \
-    NGINX_CONF=${NC:-$DEPLOY/nginx/backend.conf} STREAM_CONF=${SC:-$DEPLOY/nginx/backend-stream.conf} \
+    NGINX_CONF=${NC:-$DEPLOY/nginx/backend.conf} ARENAS_CONF=${AC:-$DEPLOY/nginx/backend-arenas.conf} \
     NGINX_TEST="${NT:-true}" NGINX_RELOAD=true NGINX_RUNNING=false "$IC" "$@"
 }
 expect_refused "install with no root in TLS_DIR: the system's roots" "does not verify" \
@@ -100,7 +100,7 @@ expect_ok "install a file that holds the key as well as the certificate" install
 [ ! -e "$T/etc/tls/fullchain.pem.previous" ] && [ ! -e "$T/etc/credentials/privkey.pem.previous" ] \
     && pass "the replaced certificate and key not kept once nginx accepts the new (O-76)" || fail "a .previous left"
 sed 's/^\([[:space:]]*\)server_name .*;/\1server_name _;/' "$DEPLOY/nginx/backend.conf" > "$T/underscore.conf"
-NC=$T/underscore.conf expect_refused "install with server_name _ and the arenas' map" "no server_name" \
+NC=$T/underscore.conf expect_refused "install with server_name _ and the arenas' list" "no server_name" \
     install_with "$T/site/fullchain.pem" "$T/site/privkey.pem"
 leaf() {   # leaf <dir> <subject CN> <subjectAltName> <days> <root dir>: as another CA might make one
     mkdir -p "$1"
@@ -110,10 +110,9 @@ leaf() {   # leaf <dir> <subject CN> <subjectAltName> <days> <root dir>: as anot
     openssl x509 -req -in "$1/csr" -CA "$5/ca.pem" -CAkey "$5/ca.key" -set_serial 7 -days "$4" -extfile "$1/ext" \
         -out "$1/fullchain.pem" 2> /dev/null
 }
-printf 'map $ssl_server_name $backend_arena {\n    a1.arena.internal 127.0.0.1:9011;\n    default 127.0.0.1:9;\n}\n' \
-    > "$T/one-name.conf"
+printf '# one arena\na1.arena.internal 127.0.0.1:9011;\n' > "$T/one-name.conf"
 leaf "$T/cn" a1.arena.internal IP:203.0.113.10 30 "$T/ca"
-SC=$T/one-name.conf expect_refused "install one naming an arena in its subject alone" "does not name a1.arena.internal" \
+AC=$T/one-name.conf expect_refused "install one naming an arena in its subject alone" "does not name a1.arena.internal" \
     install_with "$T/cn/fullchain.pem" "$T/cn/privkey.pem"
 ROOT_DAYS=30 expect_ok "a root of 30 days" "$CA" root "$T/brief30"
 expect_refused "issue a certificate that outlives its root" "the root expires" "$CA" issue "$T/brief30" "$T/past" 203.0.113.10

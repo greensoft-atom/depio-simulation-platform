@@ -20,9 +20,11 @@ and is specified with the gateway.
 ## 1. Transport
 
 **Raw TCP with TLS**, ended by the front's nginx on the site (D-82), or in Netty
-by an arena reached directly (below). There is no WebSocket framing and no
-HTTP upgrade, because there is no browser client
-([D-1](../architecture/03-decision-log.md#d-1--unity-native-mobile-client-no-browser-build)).
+by an arena reached directly (below). There is no WebSocket framing, because there
+is no browser client
+([D-1](../architecture/03-decision-log.md#d-1--unity-native-mobile-client-no-browser-build)). A client without TLS reaches
+its arena through the site's 80 instead, by one HTTP upgrade naming it, and the same
+raw frames after it ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included), below).
 Unity's `System.Net.Sockets` speaks this directly on Android (C-10).
 
 ```
@@ -34,7 +36,8 @@ RoomThreads          (N threads) simulation; encode and write snapshots
 Pipeline per connection, as built:
 
 ```
-ProxyLine                           nginx's PROXY line, the phone's address; behind the front alone, then removed (D-105)
+ProxyLine                           nginx's PROXY line (D-105) or 80's request for a match (D-115), the phone's
+                                    address; behind the front alone, then removed
 SslHandler                          TLS 1.3 or 1.2, the JDK's provider; only with a keystore
   → VarintFrameDecoder(max 8 KiB)
   → IdleStateHandler(reader 30 s)   after the decoder: only whole frames are activity
@@ -53,6 +56,20 @@ so no frame after it is touched. A connection that begins otherwise, or with a l
 protocol's 107 bytes, is closed and counted as `proxy_line`: only nginx reaches an arena behind the
 front. An arena with no TLS name reads no line. What follows is the arena's own TLS, for an arena
 reached directly.
+
+**A match without TLS goes through 80** ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)). 9001 tells arenas
+apart by the name in the handshake, which a client without TLS has not got, so it dials the API's own
+address, 80, and asks for the arena by the grant's `tlsName`:
+`GET /match/a1.arena.internal HTTP/1.1`, `Connection: Upgrade`, `Upgrade: backend-match`. nginx maps
+the name to the arena by the same list as 9001 (`backend-arenas.conf`) and passes the request on,
+with `X-Forwarded-For` the phone's address and none of the phone's headers. `ProxyLine` takes either
+first: a request line `GET /match/<name> HTTP/1.1` and headers to the blank line, 1 KiB at most,
+the address from the one `X-Forwarded-For`; it answers `HTTP/1.1 101 Switching Protocols`, which
+nginx passes back, and steps out as after the line. Then the frames as on 9001: the client sends
+`Join` once it has read the 101. Anything else first is closed and counted as `proxy_line`, as
+before. The log names the address without a port (`player 123 joined from 198.51.100.7`): nginx's
+HTTP proxy sends no PROXY line. The grant is unchanged: the client without TLS reads its `tlsName`
+as the arena's name.
 
 **TLS in the arena is built** (2026-09-26, [S-6](../defects.md#5-security-and-input)). An arena
 given a keystore serves TLS on every connection from the first byte, and says so

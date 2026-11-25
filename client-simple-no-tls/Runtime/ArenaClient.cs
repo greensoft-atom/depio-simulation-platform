@@ -3,13 +3,15 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 
 namespace Backend.Client.Simple
 {
     /// <summary>
-    /// A match: a TCP connection to the arena a grant names, without TLS (a grant with <c>tls</c> false), binary messages in frames
-    /// (<see cref="ArenaMessages"/>). <c>Connect(grant...)</c> sends Join with the ticket; the arena answers a Welcome,
+    /// A match: a TCP connection to the arena a grant names, without TLS, binary messages in frames
+    /// (<see cref="ArenaMessages"/>): <c>Connect</c> for a grant with <c>tls</c> false, a backend run plain;
+    /// <c>ConnectThroughSite</c> for the site's, which ask for TLS, through its 80. Either sends Join with the ticket; the arena answers a Welcome,
     /// then snapshots 10 to 15 a second. Send inputs ten times a second while playing, which acknowledge the snapshots;
     /// a Ping goes every 10 s by itself.
     /// Call <see cref="Update"/> every frame: every callback runs inside it, on Unity's main thread.
@@ -41,17 +43,41 @@ namespace Backend.Client.Simple
         private readonly object _writing = new object();
         private string _host;
         private int _port;
+        private string _request;                        // through the site's 80: the request for the arena by name
         private bool _over;
         private TcpClient _tcp;
         private Stream _stream;
         private int _seq;
         private long _nextPingAt;
 
-        /// <summary>Joins the match a grant names: its arenaHost, arenaPort and ticketId. A grant with tls true needs client-simple.</summary>
+        /// <summary>Joins the match a grant with tls false names, a backend run plain's: its arenaHost, arenaPort and ticketId.</summary>
         public void Connect(string host, int port, string ticketId)
+        {
+            Join(host, port, null, ticketId);
+        }
+
+        /// <summary>
+        /// Joins the match a grant of the site's names, one with tls true and a tlsName, through the site's 80 (D-115):
+        /// the API's address, <c>http://203.0.113.10</c>, and the grant's tlsName and ticketId. 9001 speaks TLS alone,
+        /// so the connection asks nginx on 80 for the arena by its name, <c>GET /match/&lt;tlsName&gt;</c>, and the match
+        /// goes on once nginx has answered 101.
+        /// </summary>
+        public void ConnectThroughSite(string apiUrl, string tlsName, string ticketId)
+        {
+            if (!apiUrl.StartsWith("http://", StringComparison.Ordinal))
+                throw new ArgumentException("the API's http:// address: this client has no TLS (" + apiUrl + ")");
+            if (string.IsNullOrEmpty(tlsName))
+                throw new ArgumentException("the grant names no arena: an arena with TLS of its own, which this client cannot reach");
+            var site = new Uri(apiUrl);
+            Join(site.Host, site.Port, "GET /match/" + tlsName + " HTTP/1.1\r\nHost: " + site.Authority
+                + "\r\nConnection: Upgrade\r\nUpgrade: backend-match\r\n\r\n", ticketId);
+        }
+
+        private void Join(string host, int port, string request, string ticketId)
         {
             _host = host;
             _port = port;
+            _request = request;
             _over = false;
             Welcome = null;
             Start(ArenaMessages.Join(ticketId, Profile));
@@ -113,11 +139,12 @@ namespace Backend.Client.Simple
             Close();
             var tcp = new TcpClient { NoDelay = true };
             _tcp = tcp;
-            new Thread(() => Run(tcp, admission)) { IsBackground = true, Name = "arena" }.Start();
+            string request = _request;
+            new Thread(() => Run(tcp, request, admission)) { IsBackground = true, Name = "arena" }.Start();
         }
 
-        /// <summary>The connection's own thread: it connects, sends Join or Resume, then reads frames until the end.</summary>
-        private void Run(TcpClient tcp, byte[] admission)
+        /// <summary>The connection's own thread: it connects, asks for the arena through the site, sends Join or Resume, then reads frames until the end.</summary>
+        private void Run(TcpClient tcp, string request, byte[] admission)
         {
             string why;
             try
@@ -127,6 +154,7 @@ namespace Backend.Client.Simple
                 tcp.EndConnect(connecting);
                 tcp.ReceiveTimeout = 30000;            // snapshots come many times a second: 30 s of nothing is a dead line
                 Stream stream = tcp.GetStream();
+                if (request != null) AskForArena(stream, request);
                 stream.Write(admission, 0, admission.Length);
                 stream.Flush();
                 _events.Enqueue(() => { if (_tcp == tcp) _stream = stream; });
@@ -147,6 +175,23 @@ namespace Backend.Client.Simple
             }
             try { tcp.Close(); } catch (Exception) { }
             _events.Enqueue(() => End(tcp, why));
+        }
+
+        /// <summary>Through the site's 80: the request for the arena, and nginx's answer read to its blank line, 101 or the refusal.</summary>
+        private static void AskForArena(Stream stream, string request)
+        {
+            byte[] bytes = Encoding.ASCII.GetBytes(request);
+            stream.Write(bytes, 0, bytes.Length);
+            var answer = new StringBuilder();
+            while (!answer.ToString().EndsWith("\r\n\r\n", StringComparison.Ordinal))
+            {
+                int b = stream.ReadByte();
+                if (b < 0) throw new IOException("the site closed the connection before answering");
+                if (answer.Length == 4096) throw new IOException("the site's answer is too long");
+                answer.Append((char)b);
+            }
+            string status = answer.ToString(0, answer.ToString().IndexOf('\r'));
+            if (!status.StartsWith("HTTP/1.1 101 ", StringComparison.Ordinal)) throw new IOException("the site refused the match: " + status);
         }
 
         private void Dispatch(byte[] message)

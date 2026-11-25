@@ -201,9 +201,9 @@ while read -r what arg rest; do
     n=$((n + 1))
     case $what in
         copy-arenas)
-            # The page's copy for B's arenas: nginx's map and the certificate issued again for their names.
+            # The page's copy for B's arenas: nginx's list of arenas and the certificate issued again for their names.
             mark "step $n: the arenas' copy to B"
-            on "$A" sh -c 'cd / && tar -cf - etc/backend/nginx/backend-stream.conf root/backend-certificate-b' \
+            on "$A" sh -c 'cd / && tar -cf - etc/backend/nginx/backend-arenas.conf root/backend-certificate-b' \
                 | docker exec -i "$B" sh -c 'cat > /root/from-a.tar' || { fail "the arenas' copy to B"; break; }
             ;;
         copy)

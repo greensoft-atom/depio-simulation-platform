@@ -60,7 +60,8 @@
 #                                                     line, the metric, its key refused at login, the row erased
 #   SIMPLE=1 client/headless-drill.sh play            client-simple's live check before the scenarios (D-111, D-112): the API, the
 #                                                     lobby and a match on Unity 2019's Mono, through FRONT's nginx when set;
-#                                                     client-simple-no-tls's after it where nothing is encrypted (D-114)
+#                                                     client-simple-no-tls's after it, straight or through nginx's 80, its
+#                                                     match by /match/ when the grant asks for TLS (D-114, D-115)
 #
 # Needs: the backend release (backend/scripts/make-release.sh; RELEASE= for a copy of one), the
 # headless client built (dotnet build), python3 and the development MySQL (dev-mysql.sh, 127.0.0.1:3314
@@ -339,10 +340,13 @@ if [ "${SIMPLE:-0}" = 1 ]; then
   SIMPLE_RC=$?
   sed 's/^/  /' "$D/simple.log"
   [ "$SIMPLE_RC" = 0 ] || echo "CLIENT-SIMPLE FAILED (exit $SIMPLE_RC): $D/simple.log"
-  # client-simple-no-tls (D-114) where nothing is encrypted: plain through nginx, or straight to the processes.
-  if [ "${TLS:-0}" != 1 ] && { [ -z "${FRONT:-}" ] || [ "$FRONT" = plain ]; }; then
-    echo "--- client-simple-no-tls through $SIMPLE_API and $LOBBY ($(date +%T))"
-    "$B/client-simple-no-tls/check.sh" live "$SIMPLE_API" "$LOBBY" > "$D/simple-no-tls.log" 2>&1
+  # client-simple-no-tls (D-114, D-115) wherever its addresses are in clear: straight to the processes, or nginx's 80,
+  # where a grant of the TLS way's, which asks for TLS, is reached through /match/ by the arena's name.
+  if [ "${TLS:-0}" != 1 ]; then
+    NOTLS_API=$API NOTLS_LOBBY=$LOBBY
+    [ -n "${FRONT:-}" ] && NOTLS_API=http://127.0.0.1:8095 NOTLS_LOBBY=ws://127.0.0.1:8095/lobby
+    echo "--- client-simple-no-tls through $NOTLS_API and $NOTLS_LOBBY ($(date +%T))"
+    "$B/client-simple-no-tls/check.sh" live "$NOTLS_API" "$NOTLS_LOBBY" > "$D/simple-no-tls.log" 2>&1
     NOTLS_RC=$?
     sed 's/^/  /' "$D/simple-no-tls.log"
     [ "$NOTLS_RC" = 0 ] || echo "CLIENT-SIMPLE-NO-TLS FAILED (exit $NOTLS_RC): $D/simple-no-tls.log"

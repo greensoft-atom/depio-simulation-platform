@@ -146,7 +146,7 @@ namespace Backend.Client.Simple.Examples
         private void StartMatch(Grant grant)
         {
             Debug.Log("A seat at " + grant.arenaHost + ":" + grant.arenaPort);
-            if (arena != null) arena.Play(grant);
+            if (arena != null) arena.Play(grant, apiUrl);
         }
     }
 }

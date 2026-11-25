@@ -7,7 +7,7 @@
 #   private-ca.sh root  <ca-dir>                        the root, once: ca-dir/ca.key (0600) and ca-dir/ca.pem
 #   private-ca.sh issue <ca-dir> <out-dir> <name>...    a key and a certificate for those addresses and names,
 #                                                       signed by the root: out-dir/privkey.pem, fullchain.pem
-#   private-ca.sh names <backend-stream.conf>           the arenas' names in nginx's map, for issue
+#   private-ca.sh names <backend-arenas.conf>           the arenas' names in nginx's list (D-115), for issue
 #   private-ca.sh show  <certificate.pem>               what a certificate names, by whom, until when
 #
 # Each name is an IP address (the site's public one) or a host name (an arena's, a1.arena.internal). Keys are RSA,
@@ -108,9 +108,8 @@ EOF
 names)
     [ $# -eq 2 ] || usage
     [ -r "$2" ] || refuse "cannot read $2"
-    # The map's names, its default left out: lines "    a1.arena.internal  10.0.0.1:9011;".
-    awk '/^map \$ssl_server_name/ { on = 1; next } on && /^}/ { exit }
-         on && $1 != "default" && $1 !~ /^#/ && NF >= 2 { print $1 }' "$2"
+    # The list's names: lines "a1.arena.internal  10.0.0.1:9011;", the comments left out.
+    awk '$1 !~ /^#/ && NF >= 2 { print $1 }' "$2"
     ;;
 show)
     [ $# -eq 2 ] || usage

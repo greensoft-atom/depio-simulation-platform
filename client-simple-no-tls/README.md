@@ -4,7 +4,8 @@
 
 - **the API**: HTTP calls such as logging in, the shop or the inventory, through `HttpClient`, at `http://`;
 - **the lobby**: a WebSocket that stays open between matches, at `ws://`;
-- **a match**: a plain TCP socket to the arena.
+- **a match**: a plain TCP socket to the arena, through the site's 80 by the arena's name, or straight to a backend
+  run plain.
 
 There is no certificate, no root to ship and no TLS code at all
 ([D-114](../docs/architecture/03-decision-log.md#d-114--a-simple-client-without-tls-client-simple-no-tls-for-a-backend-run-plain)).
@@ -14,9 +15,16 @@ The calls, the callbacks and the examples are `client-simple`'s otherwise.
 
 | Backend | API | Lobby | Matches | This client |
 |---|---|---|---|---|
-| Run plain by hand, through nginx (`PLAIN=1`, [development/03 §5](../docs/development/03-build-and-run.md#5-running-it-by-hand)) | `http://<address>` | `ws://<address>/lobby` | from the grant, plain, on 9001 | **yes** |
-| The processes straight, without nginx (a drill's way) | `http://<address>:<platform's port>` | `ws://<address>:<gateway's port>/lobby` | from the grant, plain | **yes** |
-| The site | `https://` only | `wss://` only | TLS only | **no**: the site has no way in without TLS |
+| The site, on its 80 ([D-115](../docs/architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)) | `http://<the site's address>` | `ws://<the site's address>/lobby` | through 80 by the arena's name, `ConnectThroughSite` | **yes** |
+| A run by hand, the TLS way: its 80 is the site's | `http://<address>` | `ws://<address>/lobby` | through 80 by the arena's name, `ConnectThroughSite` | **yes** |
+| Run plain by hand, through nginx (`PLAIN=1`, [development/03 §5](../docs/development/03-build-and-run.md#5-running-it-by-hand)) | `http://<address>` | `ws://<address>/lobby` | from the grant, plain, on 9001, `Connect` | **yes** |
+| The processes straight, without nginx (a drill's way) | `http://<address>:<platform's port>` | `ws://<address>:<gateway's port>/lobby` | from the grant, plain, `Connect` | **yes** |
+
+**A match.** The site's grants ask for TLS (`tls` true) and name the arena (`tlsName`): its 9001 speaks TLS alone, so
+`ArenaClient.ConnectThroughSite(apiUrl, grant.tlsName, grant.ticketId)` dials the API's own address, asks nginx for
+the arena by that name (`GET /match/<tlsName>`), and plays once nginx has answered 101. A grant with `tls` false,
+from a backend run plain, goes straight: `ArenaClient.Connect(grant.arenaHost, grant.arenaPort, grant.ticketId)`.
+`ArenaExample.Play(grant, apiUrl)` picks the one the grant needs.
 
 To run a backend plain, give every command `PLAIN=1`:
 
@@ -151,7 +159,8 @@ The requests, the pushes and what to do after `OnClosed` are in
 ## 3. A match: `ArenaClient`
 
 A grant from the lobby (`match.request`'s reply, `evt.match.found`) names the arena and holds a ticket for it, good for
-60 seconds. A backend run plain gives grants with `tls` false; one with `tls` true needs `client-simple`.
+60 seconds. The site's grants have `tls` true and a `tlsName`: take them through the site's 80 with
+`ConnectThroughSite`. A backend run plain gives grants with `tls` false: `Connect` goes straight.
 
 ```csharp
 var arena = new ArenaClient();
@@ -159,7 +168,8 @@ arena.OnWelcome = welcome => Debug.Log("in the match, mode " + welcome.Mode);
 arena.OnSnapshot = (bytes, tick) => { /* the world's changes: decode and draw */ };
 arena.OnKick = reason => Debug.Log("sent away: " + reason);
 arena.OnClosed = why => Debug.Log("match closed: " + why);
-arena.Connect(grant.arenaHost, grant.arenaPort, grant.ticketId);
+if (grant.tls) arena.ConnectThroughSite(apiUrl, grant.tlsName, grant.ticketId);   // the site's, through its 80
+else arena.Connect(grant.arenaHost, grant.arenaPort, grant.ticketId);            // a backend run plain
 
 // ten times a second, while in the match:
 arena.SendInput(ArenaMessages.MoveUp | ArenaMessages.MoveRight, aimRadians, fire ? ArenaMessages.FlagFire : 0);
@@ -167,6 +177,7 @@ arena.SendInput(ArenaMessages.MoveUp | ArenaMessages.MoveRight, aimRadians, fire
 
 | Step | What happens |
 |---|---|
+| `ConnectThroughSite(apiUrl, tlsName, ticketId)` | TCP to the API's address, `GET /match/<tlsName>` to nginx, its answer read: 101, then `Join` with the ticket. Another answer (a 404 for a name nginx has not) ends it, `OnClosed` saying which |
 | `Connect(host, port, ticketId)` | TCP, then `Join` with the ticket |
 | `OnWelcome(welcome)` | in the match: the map's size, the mode, the player's entity, and a secret to resume with |
 | `OnSnapshot(bytes, tick)` | 10 to 15 a second: the world's changes ([02-networking §4](../docs/detailed-design/02-networking.md#4-the-snapshot)) |
@@ -186,13 +197,13 @@ drawing. The snapshot is handed over as its bytes, with the server's tick.
 |---|---|
 | `HttpExample` | the API, each step awaited: a guest made once and kept in `PlayerPrefs`, logged in, the shop and the inventory read; `Register` and `LogOut` |
 | `LobbyExample` | the lobby: logged in, connected, a seat in the public arena asked for, a duel accepted, pushes handled, reconnecting |
-| `ArenaExample` | a match from a grant: inputs ten a second, snapshots counted, pause, resume, kicks, `LeaveMatch`; a grant asking for TLS refused, saying so |
+| `ArenaExample` | a match from a grant, through the site's 80 or straight as the grant needs: inputs ten a second, snapshots counted, pause, resume, kicks, `LeaveMatch` |
 | `ApiModels` | the `[Serializable]` classes `JsonUtility` reads and writes |
 
 To try them:
 1. Add `LobbyExample` and `ArenaExample` to one object in a scene.
 2. Drag the `ArenaExample` onto the `LobbyExample`'s `Arena` field.
-3. Set the two addresses of a backend run plain.
+3. Set the two addresses: the site's in clear (`http://`, `ws://`), or a backend run plain's.
 4. Press Play. The Console shows each step.
 
 ## When TLS becomes possible
@@ -204,7 +215,7 @@ Copy `client-simple/Runtime/` in place of this `Runtime/`. The names are the sam
 | `new BackendHttp(url)` | `new BackendHttp(url, rootCertificate.text)`, `https://` |
 | `new LobbyClient(url)` | `new LobbyClient(url, rootCertificate.text)`, `wss://` |
 | `new ArenaClient()` | `new ArenaClient(rootCertificate.text)` |
-| `arena.Connect(host, port, ticketId)` | `arena.Connect(host, port, grant.tls, grant.tlsName, ticketId)` |
+| `arena.Connect(host, port, ticketId)`, `arena.ConnectThroughSite(apiUrl, tlsName, ticketId)` | `arena.Connect(host, port, grant.tls, grant.tlsName, ticketId)`, on 9001 with TLS |
 
 The root is the backend's `ca.pem`, renamed `ca.pem.txt` for Unity
 ([client-simple's README](../client-simple/README.md#what-to-copy)).
@@ -222,15 +233,18 @@ The same check as `client-simple`'s, over this folder (`check.sh`, which runs `.
     TLS type, of which there is none.
 - **Offline, on Unity 2019's own Mono:** `client-simple`'s checks but its TLS ones: JSON, every match message byte
   for byte the full client's, the arena's answers, frames, the WebSocket's parts, the API's calls (back at once,
-  given up after 15 s), and an `https://` or `wss://` address refused.
-- **Live**, by `client/headless-drill.sh SIMPLE=1` against a real backend, on Unity 2019's Mono, through nginx run
-  plain and straight to the processes: the API, the lobby (kept open 125 s by its heartbeat, replaced by a second
-  connection), a match (snapshots while sending inputs, a Pong, the app paused and back, a lost connection resumed,
-  Leave), every lobby and match callback on the thread that calls `Update()`.
+  given up after 15 s), and an `https://` or `wss://` address refused; a match through the site's 80 against a
+  stand-in for nginx: the request exact, `Join` once the 101 is read, nginx's 404 said in `OnClosed`, an address not
+  `http://` and a grant without a name refused. 52 checks.
+- **Live**, by `client/headless-drill.sh SIMPLE=1` against a real backend, on Unity 2019's Mono: through nginx's 80
+  in its TLS way, the site's, the match through `/match/` by the grant's name; through nginx run plain; and straight
+  to the processes: the API, the lobby (kept open 125 s by its heartbeat, replaced by a second connection), a match
+  (snapshots while sending inputs, a Pong, the app paused and back, a lost connection resumed, Leave), every lobby
+  and match callback on the thread that calls `Update()`.
 
 ```bash
 client-simple-no-tls/check.sh                              # compiled at every level, the offline checks
-SIMPLE=1 FRONT=plain client/headless-drill.sh play         # live through nginx run plain (also: no FRONT)
+SIMPLE=1 FRONT=https client/headless-drill.sh play         # live through nginx's 80, as the site's (also: http, plain, no FRONT)
 ```
 
 `check.sh` needs Unity 2019.4.28f1 in `work/unity`, which `client/unity2019-check.sh` unpacks once.

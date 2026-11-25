@@ -4450,23 +4450,57 @@ client's and the API's READMEs, 03 §9, 07 §5, working-here, CLAUDE.md.
 #### 137. A players' build without TLS, and the site serving it on 80 (the owner, 2026-11-25, Q-64, D-115)
 
 The owner answered Q-64: yes, a players' build may connect without TLS; the site serves it on 80, matches through it
-too, by an HTTP request naming the arena; and the full client may go without TLS as well. In three parts, each
+too, by an HTTP request naming the arena; and the full client may go without TLS as well. In two parts, each
 committed on its own:
 
 - **(a) No build refuses a way in clear.** ~~D-104's `EncryptedOnly` and its two calls in the Unity layer go, with its
   tests and the stubs' `isDebugBuild`; so do the Development Build guards of both simple clients' examples.~~ —
-  **done 2026-11-25**: `BackendClient` as it was before D-104 (an `ApiClient` always made, a grant always dialled);
-  `EncryptedOnly.cs`, `EncryptedOnlyTests.cs` (nine tests) and the stubs' `Debug` gone; the five guards of the
-  examples gone. Nothing new to test: a rule removed. Checked: the core's 185 tests on .NET 8 and on Unity 2019's
+  **done 2026-11-25** (26477b7): `BackendClient` as it was before D-104 (an `ApiClient` always made, a grant always
+  dialled); `EncryptedOnly.cs`, `EncryptedOnlyTests.cs` (nine tests) and the stubs' `Debug` gone; the five guards of
+  the examples gone. Nothing new to test: a rule removed. Checked: the core's 185 tests on .NET 8 and on Unity 2019's
   Mono (`unity2019-check.sh`, which compiles the package's scripts at both levels against Unity's own `UnityEngine`);
   the package against the stubs for every platform (`unity-check.sh`); VS 2019's build of the solution; both simple
   clients' checks, 70 and 48 offline, their examples compiled. Not run: the package in the editor or on a phone.
-- **(b) The site's 80 serves the API and the lobby**: 443's server listens on 80 too; the front's firewall opens 80;
-  `dev-nginx.sh`'s TLS way takes production's 80 as it is; the checks that run nginx as written expect 80 to answer.
-- **(c) A match through 80.** The arenas' names in `backend-arenas.conf`, included by 9001's map and by 80's new
-  `/match/`; the arena behind the front reads nginx's request as it reads the PROXY line, and answers 101;
-  `client-simple-no-tls`'s `ArenaClient` goes through the API's address for a grant with a name; the drill runs the
-  no-TLS client's live check through the front's TLS ways too, its match through 80.
+- **(b) The site's 80: the API, the lobby and matches in clear.** ~~443's server on 80 too, the front's firewall open
+  to it; the arenas' names in a list both maps read; a match through 80 by its arena's name.~~ — **done 2026-11-25**:
+  - **nginx**: `backend.conf`'s server listens on 80 too, its locations the same, and `~ ^/match/<name>` passes a
+    match's request to the arena that name maps to (`proxy_pass_request_headers off`, `X-Forwarded-For
+    $remote_addr`, 60 s), a name not there 404. The arenas' names out of 9001's map into `backend-arenas.conf`,
+    which both maps include. Seen first on the bundled nginx 1.30.5, against a stand-in arena: the arena got the
+    request's line and the four headers alone, the 101 came back, bytes went both ways, an unknown name was 404.
+  - **The arena**: `ProxyLine` reads either first, the PROXY line or 80's request (`GET /match/<name> HTTP/1.1` to
+    the blank line, 1 KiB at most, the address from its one `X-Forwarded-For`), answers 101 and steps out. **Test
+    first**: `ProxyLineTest`'s five new tests against stubs that accepted nothing, five failing (the request refused,
+    the address null); the refusals passing before and after. Then a socket test through the whole pipeline,
+    `aMatchThroughEighty`. 36 and 2 passing; the arena's 264.
+  - **`client-simple-no-tls`**: `ArenaClient.ConnectThroughSite(apiUrl, tlsName, ticketId)`, the request, the
+    answer read to its blank line, 101 or the refusal in `OnClosed`; `ArenaExample.Play(grant, apiUrl)` picks it for
+    a grant with TLS. **Test first**: four offline checks against a stand-in for nginx, failing on a stub that sent
+    no request, then passing: 52 offline.
+  - **The scripts**: `private-ca.sh names` and `install-certificate.sh` (`ARENAS_CONF`) read the list;
+    `dev-nginx.sh`'s TLS way takes production's 80 as it is, and its `test` asks `/match/` for the arena; the install
+    guide, the two-machine guide and the ports page write the list and open 80 (`--add-service=http`); the checks
+    that run them expect 80 to serve; the drill runs the no-TLS client through 80 in every way of nginx.
+  - **Checked live**: `SIMPLE=1` drills of `play`, each `ALL PASSED`: `FRONT=https` (client-simple 32, the no-TLS
+    client 30, its match through `/match/a1.arena.internal`, the arena logging the join without a port), `FRONT=http`
+    (31 and 30), `FRONT=plain` (30 and 30), straight (30 and 30); a run by hand, `dev-nginx.sh test` with the
+    arena's 101 through 80, and `dev-backend.sh test`'s bots. On RHEL 9's images: `check-certificates.sh` 43, 0
+    failed; `check-units-el9.sh`, 0 failed, 80's health and `/match/` among them, and `/match/` with 2 KiB of the
+    phone's headers still a 101; `check-ports-el9.sh` 181, 0 failed (80 open after the page's commands and refused
+    before, the API on it, A's and B's arenas by name, an unknown name 404); `check-install-guide-el9.sh`, 0 failed at
+    the install, after the restart and after the restore, 80 listening (the binlog stream's one restart, item 114's,
+    again); `check-two-machines-el9.sh`, 0 failed, B's arenas added to the list and the list copied to B.
+  - **Mutation-checked**, each mutant on its own and caught: the arena's six (no 101; an empty name or a slash
+    taken; HTTP/1.0 taken; two `X-Forwarded-For` taken; none named `unknown`; a request past 1 KiB waited for); the
+    client's five (no `Upgrade`; `Host` without its port; any answer taken; an `https://` address taken; `Join`
+    before the answer); the ports page's A without `http` (seven failed); nginx's: `listen 80` left out (three
+    failed, `check-units-el9.sh`), `proxy_pass_request_headers off` left out (the 2 KiB probe a 502, the arena
+    refusing it), the 404 for an unknown name left out (a 500, `check-ports-el9.sh`). The header mutant first
+    survived: the probe's padding was empty, its `tr '\0' x` inside the single-quoted script ending the quoting, so
+    no header was sent. Fixed (`printf %02048d 0`, 2 061 bytes), then the probe passed as written and caught the
+    mutant.
+  - **Not checked**: the editor or a phone, Android's rules for sockets in clear among them; nginx's HTTP tunnel's
+    cost against the stream's, not measured (the frames and the tick unchanged; one round trip more at a join).
 
 ---
 

@@ -367,22 +367,22 @@ The certificate needs the root: its directory, moved off A by the install guide'
 <!-- two-machine-arenas -->
 
 ```bash
-# On A, the root's directory back in /root/backend-ca: B's arenas in nginx's map, the certificate issued again with their names
-grep -q '^    b1\.arena\.internal ' /etc/backend/nginx/backend-stream.conf || sed -i \
-    "s/^    default .*/    b1.arena.internal  $B_PRIVATE:9011;\n    b2.arena.internal  $B_PRIVATE:9012;\n    b3.arena.internal  $B_PRIVATE:9013;\n&/" \
-    /etc/backend/nginx/backend-stream.conf
+# On A, the root's directory back in /root/backend-ca: B's arenas in nginx's list, the certificate issued again with their names
+grep -q '^b1\.arena\.internal ' /etc/backend/nginx/backend-arenas.conf || printf '%s\n' "b1.arena.internal  $B_PRIVATE:9011;" \
+    "b2.arena.internal  $B_PRIVATE:9012;" "b3.arena.internal  $B_PRIVATE:9013;" >> /etc/backend/nginx/backend-arenas.conf
 /opt/backend/scripts/private-ca.sh issue /root/backend-ca /root/backend-certificate-b "$ADDRESS" \
-    $(/opt/backend/scripts/private-ca.sh names /etc/backend/nginx/backend-stream.conf)
+    $(/opt/backend/scripts/private-ca.sh names /etc/backend/nginx/backend-arenas.conf)
 /opt/backend/scripts/install-certificate.sh /root/backend-certificate-b/fullchain.pem /root/backend-certificate-b/privkey.pem
 ```
 
-nginx reloads with the map and the certificate at once, dropping nothing; a device is sent to B's arenas only once
+nginx reloads with the list and the certificate at once, dropping nothing, both of its maps reading the list (9001's
+and 80's, D-115); a device is sent to B's arenas only once
 they announce themselves. The same two files to B, which is the front once A is lost:
 
 <!-- the arenas' copy to B -->
 ```console
 # On B, as root, in a shell with the values (§2)
-ssh "root@$A_PRIVATE" "cd / && tar -cf - etc/backend/nginx/backend-stream.conf root/backend-certificate-b" > /root/from-a.tar
+ssh "root@$A_PRIVATE" "cd / && tar -cf - etc/backend/nginx/backend-arenas.conf root/backend-certificate-b" > /root/from-a.tar
 ```
 
 On B, its firewall opened to A's nginx and A's watch first: the arenas' ports and their metrics, from A alone, in
@@ -401,7 +401,7 @@ them, and the runbook starts the arenas a machine has settings for. B's platform
 is given now what it will read then, B's front on loopback and B's arenas: the one setting of B's not A's.
 
 ```bash
-# On B: the map and the certificate with B's arenas' names; B's three arenas on its address, started and enabled
+# On B: the list and the certificate with B's arenas' names; B's three arenas on its address, started and enabled
 tar -xpf /root/from-a.tar -C / && rm /root/from-a.tar
 /opt/backend/scripts/install-certificate.sh /root/backend-certificate-b/fullchain.pem /root/backend-certificate-b/privkey.pem
 rm -rf /root/backend-certificate-b

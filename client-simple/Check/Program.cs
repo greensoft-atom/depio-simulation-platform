@@ -165,8 +165,88 @@ namespace Backend.Client.Simple.Check
                 "the API: an https:// address refused, an http:// one taken");
             Check(Throws(() => new LobbyClient("wss://127.0.0.1/lobby")) && !Throws(() => new LobbyClient("ws://127.0.0.1/lobby")),
                 "the lobby: a wss:// address refused, a ws:// one taken");
+
+            Section("a match through the site's 80, by its arena's name (D-115)");
+            MatchThroughEighty();
 #endif
         }
+
+#if NO_TLS
+        /// <summary>
+        /// A match through the site's 80, against a stand-in for nginx: the request for the arena by name, then Join once
+        /// the 101 is read; nginx's refusal said in OnClosed; an address not http://, or a grant without a name, refused.
+        /// </summary>
+        private static void MatchThroughEighty()
+        {
+            const string ticket = "FOtirryJy3sDqQntfNTLlg";
+            string head = null;
+            byte[] admission = null;
+            int port;
+            Thread nginx = StandIn("HTTP/1.1 101 Switching Protocols\r\nServer: nginx\r\nConnection: upgrade\r\nUpgrade: backend-match\r\n\r\n",
+                (h, s) =>
+                {
+                    head = h;
+                    byte[] join = ArenaMessages.Join(ticket, ArenaMessages.ProfileMobile);
+                    admission = new byte[join.Length];
+                    for (int n = 0, r; n < join.Length; n += r)
+                        if ((r = s.Read(admission, n, join.Length - n)) <= 0) { admission = null; break; }
+                }, out port);
+            string closed = null;
+            var arena = new ArenaClient { OnClosed = w => closed = w };
+            arena.ConnectThroughSite("http://127.0.0.1:" + port, "a1.arena.internal", ticket);
+            nginx.Join(10000);
+            Check(head == "GET /match/a1.arena.internal HTTP/1.1\r\nHost: 127.0.0.1:" + port + "\r\nConnection: Upgrade\r\nUpgrade: backend-match\r\n\r\n",
+                "the request: the arena's name, the site's address, the upgrade asked for (" + (head ?? "none").Replace("\r\n", " | ") + ")");
+            Check(Same(admission, ArenaMessages.Join(ticket, ArenaMessages.ProfileMobile)), "then Join, after the 101");
+            arena.Close();
+            Pump(() => closed != null, 2000, arena.Update);
+
+            closed = null;
+            nginx = StandIn("HTTP/1.1 404 Not Found\r\nServer: nginx\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", (h, s) => { }, out port);
+            arena = new ArenaClient { OnClosed = w => closed = w };
+            arena.ConnectThroughSite("http://127.0.0.1:" + port, "nope.arena.internal", ticket);
+            Pump(() => closed != null, 10000, arena.Update);
+            Check(closed != null && closed.Contains("HTTP/1.1 404 Not Found"), "nginx's refusal, a name it has not: said in OnClosed (" + closed + ")");
+
+            Check(Throws(() => new ArenaClient().ConnectThroughSite("https://127.0.0.1", "a1.arena.internal", ticket))
+                  && Throws(() => new ArenaClient().ConnectThroughSite("http://127.0.0.1", null, ticket)),
+                "an address not http://, and a grant without an arena's name: refused");
+        }
+
+        /// <summary>One connection on a loopback port: its request read to the blank line, the answer given, then what follows.</summary>
+        private static Thread StandIn(string answer, Action<string, Stream> then, out int port)
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    using (TcpClient c = listener.AcceptTcpClient())
+                    {
+                        Stream s = c.GetStream();
+                        var head = new StringBuilder();
+                        while (!head.ToString().EndsWith("\r\n\r\n", StringComparison.Ordinal))
+                        {
+                            int b = s.ReadByte();
+                            if (b < 0) return;
+                            head.Append((char)b);
+                        }
+                        byte[] bytes = Encoding.ASCII.GetBytes(answer);
+                        s.Write(bytes, 0, bytes.Length);
+                        then(head.ToString(), s);
+                    }
+                }
+                finally
+                {
+                    listener.Stop();
+                }
+            }) { IsBackground = true };
+            thread.Start();
+            return thread;
+        }
+#endif
 
         private static void ApiCalls(string pki)
         {
@@ -407,14 +487,10 @@ namespace Backend.Client.Simple.Check
             int port = (int)r.GetLong("arenaPort");
             bool tls = r.GetBool("tls");
 
-            Section("a match: " + host + ":" + port + (tls ? " over TLS, " + (tlsName ?? host) : ", plain"));
 #if NO_TLS
-            if (tls)
-            {
-                Fail("the grant asks for TLS, which this client has not: the backend run plain (PLAIN=1) gives plain grants");
-                return;
-            }
+            Section("a match: " + (tls ? "the site's, through " + api + "/match/" + tlsName + " (D-115)" : host + ":" + port + ", plain"));
 #else
+            Section("a match: " + host + ":" + port + (tls ? " over TLS, " + (tlsName ?? host) : ", plain"));
             if (wrong != null && tls)
             {
                 var fooled = new ArenaClient(wrong);
@@ -446,7 +522,7 @@ namespace Backend.Client.Simple.Check
             arena.OnPong = ms => { OnMain("OnPong"); rtt = ms; };
             arena.OnKick = reason => { OnMain("OnKick"); kicked = reason; };
             arena.OnClosed = why => { OnMain("the arena's OnClosed"); arenaClosed = why; };
-            Join(arena, host, port, tls, tlsName, ticket);
+            Join(arena, api, host, port, tls, tlsName, ticket);
             Pump(() => welcome != null || arenaClosed != null, 20000, arena.Update, lobby.Update);
             Check(welcome != null && welcome.Mode == 0 && welcome.MapWidth > 0 && !string.IsNullOrEmpty(welcome.ResumeSecret),
                 "Join: a Welcome to the public arena, with a resume secret (" + arenaClosed + " " + kicked + ")");
@@ -530,12 +606,17 @@ namespace Backend.Client.Simple.Check
         private static BackendHttp NewHttp(string api, string ca) => new BackendHttp(api);
         private static LobbyClient NewLobby(string url, string ca) => new LobbyClient(url);
         private static ArenaClient NewArena(string ca) => new ArenaClient();
-        private static void Join(ArenaClient arena, string host, int port, bool tls, string tlsName, string ticket) => arena.Connect(host, port, ticket);
+        // A grant asking for TLS is the site's: through its 80, by the arena's name (D-115).
+        private static void Join(ArenaClient arena, string api, string host, int port, bool tls, string tlsName, string ticket)
+        {
+            if (tls) arena.ConnectThroughSite(api, tlsName, ticket);
+            else arena.Connect(host, port, ticket);
+        }
 #else
         private static BackendHttp NewHttp(string api, string ca) => new BackendHttp(api, ca);
         private static LobbyClient NewLobby(string url, string ca) => new LobbyClient(url, ca);
         private static ArenaClient NewArena(string ca) => new ArenaClient(ca);
-        private static void Join(ArenaClient arena, string host, int port, bool tls, string tlsName, string ticket) => arena.Connect(host, port, tls, tlsName, ticket);
+        private static void Join(ArenaClient arena, string api, string host, int port, bool tls, string tlsName, string ticket) => arena.Connect(host, port, tls, tlsName, ticket);
 #endif
 
         /// <summary>Ten inputs a second, as a script's Update sends them, for the given time; the lobby kept too.</summary>

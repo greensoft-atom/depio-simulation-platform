@@ -287,7 +287,8 @@ systemctl daemon-reload
 
 ## 9. nginx and the certificate
 
-The release's nginx (01 §4), this machine's front: it ends TLS on 443 and 9001, and passes
+The release's nginx (01 §4), this machine's front: it ends TLS on 443 and 9001, serves 80 in clear
+for a client without TLS ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)), and passes
 requests and match connections to this machine's processes ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)). Its certificate comes from
 the backend's own CA, since the site has no domain ([06](06-certificates.md)): a root made once,
 whose certificate the app ships, and from it the certificate nginx serves, naming this machine's
@@ -300,15 +301,14 @@ sed -i "s/203\.0\.113\.10/$ADDRESS/" /etc/backend/nginx/backend.conf
 printf '%s\n' 'upstream backend_gateway {' '    least_conn;' '    server 127.0.0.1:8090;' '}' \
     'upstream backend_platform {' '    server 127.0.0.1:8080;' '    keepalive 32;' '    keepalive_timeout 20s;' '}' \
     > /etc/backend/nginx/backend-upstreams.conf
-sed -i -e '/^    [a-c][0-9]\.arena\.internal /d' \
-    -e 's/^    default .*/    a1.arena.internal  127.0.0.1:9011;\n    a2.arena.internal  127.0.0.1:9012;\n    a3.arena.internal  127.0.0.1:9013;\n    default            "";/' \
-    /etc/backend/nginx/backend-stream.conf
+printf '%s\n' 'a1.arena.internal  127.0.0.1:9011;' 'a2.arena.internal  127.0.0.1:9012;' 'a3.arena.internal  127.0.0.1:9013;' \
+    > /etc/backend/nginx/backend-arenas.conf
 install -d -m 0755 /var/log/backend-nginx
 # The root, once: its key belongs off this machine afterwards (06 §2). Then the certificate, for this
 # machine's address and its arenas' names, installed for nginx.
 /opt/backend/scripts/private-ca.sh root /root/backend-ca
 /opt/backend/scripts/private-ca.sh issue /root/backend-ca /root/backend-certificate "$ADDRESS" \
-    $(/opt/backend/scripts/private-ca.sh names /etc/backend/nginx/backend-stream.conf)
+    $(/opt/backend/scripts/private-ca.sh names /etc/backend/nginx/backend-arenas.conf)
 install -m 0644 /root/backend-ca/ca.pem /etc/backend/tls/ca.pem
 /opt/backend/scripts/install-certificate.sh /root/backend-certificate/fullchain.pem /root/backend-certificate/privkey.pem
 ```
@@ -380,14 +380,14 @@ the [rehearsal's first table](09-rehearsal.md#1-install-the-three-machines) look
 
 ## 12. Open the firewall
 
-Players reach nginx's 443 and 9001, and nothing else; SSH comes from the internal network alone
+Players reach nginx's 80, 443 and 9001, and nothing else; SSH comes from the internal network alone
 ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)). Run it from that network, or from the console: a session from elsewhere goes on, but is
 the last (05 §5).
 
 <!-- firewall one machine -->
 ```console
 LAN=10.0.0.0/24                          # the internal network operators come from
-firewall-cmd --permanent --add-service=https
+firewall-cmd --permanent --add-service=https --add-service=http
 firewall-cmd --permanent --add-port=9001/tcp
 firewall-cmd --permanent --remove-service=cockpit --remove-service=ssh
 firewall-cmd --permanent --add-rich-rule="rule family=\"ipv4\" source address=\"$LAN\" service name=\"ssh\" accept"
@@ -396,8 +396,8 @@ firewall-cmd --reload
 <!-- /firewall -->
 
 Services and ports go in separate commands: firewalld refuses `--add-service` and `--add-port` in
-one, and applies none of it. Cockpit's 9090, which RHEL allows, is closed, and so is 80: neither is
-the backend's. On three machines, each one's firewall also opens its private ports to the other
+one, and applies none of it. Cockpit's 9090, which RHEL allows, is closed: it is not the backend's.
+80 is open for the clients without TLS (D-115): what crosses it is readable on the way. On three machines, each one's firewall also opens its private ports to the other
 two, and to no one else: [05 §5](05-ports-and-firewall.md#5-the-firewall-on-rhel-9) has each
 machine's commands, and every port is in [05](05-ports-and-firewall.md).
 
@@ -435,7 +435,7 @@ Each machine's `platform.env` names that machine's processes and peers for the w
 C's). Each machine keeps the shipped examples' private addresses rather than step 8's loopback ones: the
 platform, the gateway and the arenas listen on its private address, and reach the stores and MySQL
 on theirs (`STORE_HOST`, `BACKEND_STORE_ADDRESSES`, `BACKEND_DB_URL`, with MySQL's TLS settings,
-01 §9). nginx keeps the shipped `backend-upstreams.conf` and `backend-stream.conf`, the same file on
+01 §9). nginx keeps the shipped `backend-upstreams.conf` and `backend-arenas.conf`, the same files on
 every machine, for all three machines' processes. One certificate serves the whole site: issued once
 for the site's address and every arena's name, and installed on every machine
 ([06](06-certificates.md)). Each arena's and worker's instance name is unique across the three

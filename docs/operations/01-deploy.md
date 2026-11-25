@@ -290,7 +290,7 @@ and the file says which:
 | `limit_req` 2/s, burst 30 on the four that make or open an account (`/v1/sessions`, `/v1/accounts`, `/v1/guests`, `/v1/accounts/upgrade`, each matched exactly, as platform matches them: S-18) | a cheap outer guard in front of Java; the precise per-address and per-account limits are the platform's ([04 §1](../detailed-design/04-platform-services.md#1-auth-and-sessions)) |
 | `client_max_body_size 4k` | the platform reads at most 4 KiB |
 | `X-Forwarded-For $proxy_add_x_forwarded_for` | the platform believes the last entry, from a peer on this machine or one in `BACKEND_TRUSTED_PROXIES`, the front's nginx (D-82) |
-| nothing on port 80 | no public CA's challenge to answer (D-82), and no redirect: a login sent to `http://` has already crossed in the clear, and a client that follows a 301 turns the POST into a GET. A misconfigured client should fail in testing |
+| port 80: the same server, in clear, and `/match/<name>` to the arena by `backend-arenas.conf` | for the clients without TLS, the owner's choice ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included), Q-64): what they send crosses in clear. No redirect to 443: a login sent to `http://` has already crossed, and a client that follows a 301 turns the POST into a GET |
 | the platforms' and gateways' upstreams, all three machines | the front passes requests over the private network; one that fails is passed over (`max_fails`, 10 s) |
 | `stream` on 9001: TLS ended, `proxy_timeout 60s` | longer than the arena's own 30 s without a frame, so the arena decides a connection is dead |
 | `worker_rlimit_nofile` and the unit's `LimitNOFILE` 262 144 | the front holds every player's lobby and match connection, two descriptors each |
@@ -1014,7 +1014,7 @@ and served by nginx on 443 and 9001. The site has no domain, so a public CA cann
 
 `install-certificate.sh` still works as certbot's deploy hook (`RENEWED_LINEAGE`), and with any
 CA's PEM files. A public CA's certificate would need a domain, its names in DNS, and port 80 open
-for the HTTP-01 challenge (05 §1 keeps 80 closed). How that was built and run before D-82 is in
+for the HTTP-01 challenge (80 serves the backend in clear since D-115, and has no such path). How that was built and run before D-82 is in
 this file's history (git).
 
 **Watching it.** nginx exports nothing, so the gateway reports the certificate file nginx serves,

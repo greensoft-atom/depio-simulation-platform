@@ -118,8 +118,9 @@ flowchart LR
 
 nginx on the front, the same on every machine: 443 for the API and the lobby, 9001 for match
 traffic, TLS ended on both with the one certificate from the backend's own CA
-([operations/06](../operations/06-certificates.md)). From `deploy/nginx/backend.conf`, its snippet
-`backend-platform.conf`, `backend-upstreams.conf` and `backend-stream.conf`. Nothing listens on 80. Every route
+([operations/06](../operations/06-certificates.md)); and 80 for the clients without TLS, the API, the lobby and matches by
+the arena's name (D-115). From `deploy/nginx/backend.conf`, its snippet `backend-platform.conf`,
+`backend-upstreams.conf`, `backend-stream.conf` and `backend-arenas.conf`, the arenas both maps read. Every route
 from the phone, file by file: [operations/11](../operations/11-phone-to-backend-routes.md).
 
 ```mermaid
@@ -127,16 +128,23 @@ flowchart LR
     dev["client device"]
     p443["port 443, TLS 1.2 and 1.3<br/>the site's address on the certificate"]
     p9001["port 9001, TLS 1.2 and 1.3<br/>every arena's name on the certificate"]
+    p80["port 80, in clear (D-115)<br/>443's locations, and /match/"]
     lobby["= /lobby"]
     auth["= /v1/sessions, = /v1/accounts,<br/>= /v1/guests, = /v1/accounts/upgrade<br/>limit_req 2 a second, burst 30"]
     v1["/v1/, the rest"]
-    other["anything else on 443<br/>404"]
+    other["anything else on 443 or 80<br/>404"]
+    m80["~ ^/match/name<br/>the request passed on, 101 back"]
     gw["the three gateways, :8090<br/>least_conn, WebSocket, 150 s timeouts"]
     pf["the three platforms, :8080<br/>keepalive 32, 15 s read timeout"]
-    map["the map: the handshake's name<br/>to its machine and port"]
-    arena["that arena, plaintext, after a PROXY line<br/>naming the phone's address (D-105)<br/>a name not in the map: closed"]
+    map["backend-arenas.conf: a name<br/>to its machine and port"]
+    arena["that arena, plaintext, after a PROXY line (D-105)<br/>or 80's request (D-115), naming the phone's address<br/>a name not in the list: closed, or 404 on 80"]
     dev --> p443
     dev --> p9001
+    dev --> p80
+    p80 -->|"as 443"| lobby
+    p80 -->|"as 443"| v1
+    p80 --> m80
+    m80 --> map
     p443 --> lobby
     p443 --> auth
     p443 --> v1
@@ -145,7 +153,7 @@ flowchart LR
     auth --> pf
     v1 --> pf
     gw -->|"PLATFORM_URL, its own machine's"| pf
-    p9001 --> map
+    p9001 -->|"the handshake's name"| map
     map --> arena
 ```
 

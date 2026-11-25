@@ -234,7 +234,7 @@ To try them:
 
 | Where | API | Lobby | Matches |
 |---|---|---|---|
-| The site | `https://<the site's address>` | `wss://<the site's address>/lobby` | from the grant, over TLS |
+| The site | `https://<the site's address>`, or `http://<the site's address>` in clear (D-115) | `wss://<the site's address>/lobby`, or `ws://…/lobby` in clear | from the grant, over TLS on 9001 |
 | A run by hand, through nginx ([development/03 §5](../docs/development/03-build-and-run.md#5-running-it-by-hand)) | `https://<address>`, or `http://<address>` | `wss://<address>/lobby`, or `ws://<address>/lobby` | from the grant, over TLS, its root `work/nginx/ca/ca.pem` |
 | The same, nothing encrypted (`PLAIN=1`, D-101) | `http://<address>` | `ws://<address>/lobby` | from the grant, plain |
 

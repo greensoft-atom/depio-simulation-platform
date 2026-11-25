@@ -249,7 +249,7 @@ TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]
 # Over TLS, where "untrusted" is a scenario too (without TLS=1 it fails: it needs a certificate)
 TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted
 # client-simple's live check before the scenarios (D-111), through FRONT's nginx: https, http or plain (none: straight);
-# with plain or none, client-simple-no-tls's after it (D-114)
+# client-simple-no-tls's after it, through nginx's 80 or straight, its match by /match/ in the TLS ways (D-114, D-115)
 SIMPLE=1 FRONT=https TMPDIR=<scratchpad> client/headless-drill.sh play
 # The watch on, a webhook receiver of the drill's: the worker killed after the scenarios, TargetDown listed and sent (08)
 WATCH=1 TMPDIR=<scratchpad> client/headless-drill.sh play

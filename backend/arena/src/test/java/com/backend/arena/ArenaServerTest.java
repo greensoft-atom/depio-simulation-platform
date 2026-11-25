@@ -5051,6 +5051,43 @@ class ArenaServerTest {
         assertThat(lines).anyMatch(m -> m.matches("player \\d+ joined from /127\\.0\\.0\\.1:\\d+"));
     }
 
+    @Test
+    @Timeout(60)
+    @DisplayName("behind the front, a match without TLS through 80: nginx's request answered 101, then a join, named by "
+            + "the phone's address from X-Forwarded-For (D-115)")
+    void aMatchThroughEighty() throws Exception {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(MatchFrameHandler.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> told =
+                new ch.qos.logback.core.read.ListAppender<>();
+        told.start();
+        logger.addAppender(told);
+        try (ArenaServer server = newServer(2_000f, 2_048, 20, 30, 1)) {
+            server.behindFront();
+            int port = server.start(0);
+            try (TestClient client = new TestClient(port)) {
+                client.out.write(("GET /match/a1.arena.internal HTTP/1.1\r\nUpgrade: backend-match\r\n"
+                        + "Connection: upgrade\r\nX-Forwarded-For: 198.51.100.7\r\nHost: 203.0.113.10\r\n\r\n")
+                        .getBytes(StandardCharsets.US_ASCII));
+                StringBuilder answer = new StringBuilder();
+                while (answer.indexOf("\r\n\r\n") < 0) {
+                    int b = client.in.read();
+                    assertThat(b).as("the answer, before the connection's end").isNotNegative();
+                    answer.append((char) b);
+                }
+                assertThat(answer).startsWith("HTTP/1.1 101 Switching Protocols\r\n").contains("Upgrade: backend-match\r\n");
+                client.join(issueTicket(0));
+                assertThat(client.readFrame()[0] & 0xFF).as("joined").isEqualTo(Wire.MSG_WELCOME);
+                waitUntil(() -> told.list.stream().anyMatch(e -> e.getFormattedMessage().startsWith("player ")));
+            }
+            assertThat(server.dropped().get("proxy_line")).isZero();
+        } finally {
+            logger.detachAppender(told);
+        }
+        assertThat(told.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage))
+                .anyMatch(m -> m.matches("player \\d+ joined from 198\\.51\\.100\\.7"));
+    }
+
     /**
      * Waits for a condition, and fails if it never comes. This used to give up silently after
      * five seconds, so a test waiting longer carried on as if the condition held: one of them

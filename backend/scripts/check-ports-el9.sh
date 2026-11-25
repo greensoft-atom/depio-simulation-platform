@@ -1,7 +1,8 @@
 #!/bin/bash
 # Checks docs/operations/05-ports-and-firewall.md and 06-certificates.md as written (D-82): the site behind one
-# public address, nginx on the front ending TLS on 443 and 9001, two machines' platforms, gateways and arenas
-# behind it on the private network, and the C# client playing through it, trusting the backend's own root alone.
+# public address, nginx on the front ending TLS on 443 and 9001 and serving 80 in clear (D-115), two machines'
+# platforms, gateways and arenas behind it on the private network, and the C# client playing through it, trusting
+# the backend's own root alone.
 # In Rocky Linux 9.5 (RHEL 9's firewalld), systemd its first process, with no network:
 #   - A, the front here (10.0.0.1, and the public 198.51.100.1): MySQL with TLS (01 §9), the session store, the
 #     platform, the gateway, the arena a1 and nginx, from a release with the settings it ships; and two of C's,
@@ -218,14 +219,14 @@ wait_for 10.0.0.1:8080 "$L/platform.log"
 (arena /etc/backend/arena-a1.env a1) > "$L/arena-a1.log" 2>&1 &
 
 # The certificate, as 06 §2 to §4 make and install it: the root, a certificate for the site's address and every
-# arena in nginx's map, installed before nginx has ever started. Another root, for the client to refuse.
+# arena in nginx's list, installed before nginx has ever started. Another root, for the client to refuse.
 cp "$R"/nginx-conf/*.conf /etc/backend/nginx/
 sed -i "s/203\.0\.113\.10/$PUB/" /etc/backend/nginx/backend.conf
 install -d -o nginx -g nginx /run/backend-nginx /var/log/backend-nginx /var/cache/backend-nginx
 bash /check/private-ca.sh root "$CA" > "$L/ca.log" 2>&1 || { cat "$L/ca.log"; fail "private-ca.sh root"; }
 bash /check/private-ca.sh root /root/another-ca > /dev/null 2>&1 || fail "private-ca.sh root, a second"
 bash /check/private-ca.sh issue "$CA" /root/backend-certificate "$PUB" \
-    $(bash /check/private-ca.sh names /etc/backend/nginx/backend-stream.conf) > "$L/issue.log" 2>&1 \
+    $(bash /check/private-ca.sh names /etc/backend/nginx/backend-arenas.conf) > "$L/issue.log" 2>&1 \
     || { cat "$L/issue.log"; fail "private-ca.sh issue"; }
 install -m 0644 "$CA/ca.pem" /etc/backend/tls/ca.pem
 export NGINX_RUNNING="pgrep -x nginx" NGINX_RELOAD="$R/nginx/sbin/nginx -s reload"
@@ -237,11 +238,11 @@ grep -q 'not running; the files are installed' "$L/install-certificate.log" \
 nohup ncat -lk 22 --exec /bin/cat > /dev/null 2>&1 &         # the stand-in for sshd: it echoes
 nohup ip netns exec player ncat -lk 198.51.100.7 4444 > /dev/null 2>&1 &    # somewhere outside, for A to reach
 
-EXPECTED=(0.0.0.0:443 [::]:443 0.0.0.0:9001 [::]:9001 0.0.0.0:22 [::]:22 10.0.0.1:3306 10.0.0.1:6379 127.0.0.1:6379
+EXPECTED=(0.0.0.0:80 [::]:80 0.0.0.0:443 [::]:443 0.0.0.0:9001 [::]:9001 0.0.0.0:22 [::]:22 10.0.0.1:3306 10.0.0.1:6379 127.0.0.1:6379
           10.0.0.1:8080 10.0.0.1:8090 10.0.0.1:9011 127.0.0.1:9101 127.0.0.1:9103 127.0.0.1:9110 127.0.0.1:9120
           127.0.0.1:9102 127.0.0.1:3309)
 for a in "${EXPECTED[@]}"; do
-    wait_for "$a" "$L/$(case $a in *:443|*:9001) echo ../../var/log/backend-nginx/error ;; *:9011|*:9110) echo arena-a1 ;;
+    wait_for "$a" "$L/$(case $a in *:80|*:443|*:9001) echo ../../var/log/backend-nginx/error ;; *:9011|*:9110) echo arena-a1 ;;
         *:3306) echo backend.cnf ;; *:3309) echo scratch-my.cnf ;; *:6379) echo store ;; *:8090|*:9103) echo gateway ;;
         *:9102) echo worker ;; *) echo platform ;; esac).log"
 done
@@ -269,13 +270,13 @@ probe() {   # probe <namespace, or - for A itself> <host> <port>: open, or what 
 O=open; N="No route to host"; N6="Permission denied"; C="Connection refused"
 MATRIX=(
     "player $PUB 443|$O|$N|$O"            "player $PUB 9001|$O|$N|$O"
-    "player $PUB 80|$C|$N|$N"             "player $PUB 22|$O|$O|$N"
+    "player $PUB 80|$O|$N|$O"             "player $PUB 22|$O|$O|$N"
     "player $PUB 9090|$C|$C|$N"           "player $PUB 8080|$C|$N|$N"
     "player $PUB 9011|$C|$N|$N"           "player $PUB 9120|$C|$N|$N"
     "player 10.0.0.1 6379|$O|$N|$N"       "player 10.0.0.1 3306|$O|$N|$N"
     "player 10.0.0.1 8080|$O|$N|$N"       "player 10.0.0.1 9011|$O|$N|$N"
     "player fd00:51::1 443|$O|$N6|$O"     "player fd00:51::1 9001|$O|$N6|$O"
-    "player fd00:51::1 22|$O|$O|$N6"
+    "player fd00:51::1 22|$O|$O|$N6"      "player fd00:51::1 80|$O|$N6|$O"
     "b 10.0.0.1 6379|$O|$N|$O"            "b 10.0.0.1 3306|$O|$N|$O"
     "b 10.0.0.1 8080|$O|$N|$O"            "b 10.0.0.1 8090|$O|$N|$O"
     "b 10.0.0.1 9011|$O|$N|$O"            "b 10.0.0.1 22|$O|$O|$O"
@@ -321,7 +322,7 @@ matrix 3 "after §5's commands for A"
 echo "--- the zones:"
 firewall-cmd --get-active-zones | sed 's/^/      /'
 firewall-cmd --zone=backend --list-all | sed 's/^/      /'
-expect "the public zone's services" "$(words dhcpv6-client https)" "$(words $(firewall-cmd --zone=public --list-services))"
+expect "the public zone's services" "$(words dhcpv6-client http https)" "$(words $(firewall-cmd --zone=public --list-services))"
 expect "the public zone's ports" "9001/tcp" "$(firewall-cmd --zone=public --list-ports)"
 firewall-cmd --zone=public --list-rich-rules | grep -q 'source address="10.0.0.0/24" service name="ssh" accept' \
     && ok "SSH from the internal network alone, by a rule" || fail "no rule for SSH from 10.0.0.0/24"
@@ -346,7 +347,15 @@ done
 lobby=$(curlp --http1.1 --max-time 3 -i -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
     -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "https://$PUB/lobby" 2> /dev/null | head -1 | tr -d '\r')
 expect "the lobby through nginx" "HTTP/1.1 101 Switching Protocols" "$lobby"
-expect "nothing on 80" "000" "$(ip netns exec player curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://$PUB/")"
+# 80 in clear (D-115): the API, and a match asking for its arena by name, nginx sending it by the list 9001 uses.
+expect "80 in clear: the API's health" 200 "$(ip netns exec player curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://$PUB/v1/health")"
+match80() {   # match80 <name>: the first line of the answer to a match's request through 80, from the player
+    ip netns exec player timeout 5 bash -c 'exec 3<> "/dev/tcp/$1/80" && printf "GET /match/%s HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: backend-match\r\n\r\n" "$2" "$1" >&3 && head -1 <&3' \
+        _ "$PUB" "$1" 2>&1 | tr -d '\r'
+}
+expect "80 in clear: /match/a1.arena.internal, A's arena" "HTTP/1.1 101 Switching Protocols" "$(match80 a1.arena.internal)"
+expect "80 in clear: /match/b1.arena.internal, B's" "HTTP/1.1 101 Switching Protocols" "$(match80 b1.arena.internal)"
+expect "80 in clear: /match/nope.arena.internal, a name not in the list" "HTTP/1.1 404 Not Found" "$(match80 nope.arena.internal)"
 # s_client prints "Verify return code: 0 (ok)" when no certificate came at all, a port speaking no TLS: the verdict
 # counts only beside the certificate's subject.
 # (The subject's spacing is OpenSSL's version's: "CN = backend" in 3.0, "CN=backend" in 3.2.)
@@ -391,7 +400,7 @@ for pair in "a1.arena.internal 10.0.0.1:9011" "b1.arena.internal 10.0.0.2:9011";
     [ "$n" -gt 0 ] && ok "${pair% *}: $n connections to ${pair#* }" || fail "${pair% *}: no connection to ${pair#* }"
 done
 grep -q '"nope.arena.internal" ' "$STREAM" && ! grep '"nope.arena.internal" ' "$STREAM" | grep -q ' 10\.0\.0\.' \
-    && ok "a name not in the map: no arena" || fail "a name not in the map reached one"
+    && ok "a name not in the list: no arena" || fail "a name not in the list reached one"
 # The arenas know the player's address, from nginx's PROXY line (D-105): the player's namespace's, never nginx's.
 a=$(grep -c 'joined from 198\.51\.100\.7:' "$L/arena-a1.log"); b=$(grep -c 'joined from 198\.51\.100\.7:' "$L/b-arena.log")
 other=$(cat "$L/arena-a1.log" "$L/b-arena.log" | grep 'joined from ' | grep -v 'joined from 198\.51\.100\.7:' | head -1)
@@ -441,7 +450,7 @@ for m in B C; do
     expect "$m: its ports" "$(words $want_ports)" "$(words $(firewall-cmd --zone=backend --list-ports))"
     expect "$m: its services" "ssh" "$(firewall-cmd --zone=backend --list-services)"
     expect "$m: the public zone's ports" "9001/tcp" "$(firewall-cmd --zone=public --list-ports)"
-    expect "$m: the public zone's services" "$(words dhcpv6-client https)" "$(words $(firewall-cmd --zone=public --list-services))"
+    expect "$m: the public zone's services" "$(words dhcpv6-client http https)" "$(words $(firewall-cmd --zone=public --list-services))"
 done
 
 echo "--- the install guide's §12, for one machine, on a firewall as RHEL 9 has it:"
@@ -450,9 +459,10 @@ firewall-cmd -q --reload
 block "one machine" /check/install.md > "$L/firewall-one.sh"
 [ -s "$L/firewall-one.sh" ] || fail "no firewall block in the install guide"
 bash "$L/firewall-one.sh" 2>&1 | sort | uniq -c | sed 's/^/      /'
-expect "one machine: the public zone's services" "$(words dhcpv6-client https)" "$(words $(firewall-cmd --zone=public --list-services))"
+expect "one machine: the public zone's services" "$(words dhcpv6-client http https)" "$(words $(firewall-cmd --zone=public --list-services))"
 expect "one machine: its ports" "9001/tcp" "$(firewall-cmd --zone=public --list-ports)"
 expect "one machine: a player to 443" open "$(probe player "$PUB" 443)"
+expect "one machine: a player to 80" open "$(probe player "$PUB" 80)"
 expect "one machine: a player to 22" "No route to host" "$(probe player "$PUB" 22)"
 expect "one machine: the internal network to 22" open "$(probe stranger 10.0.0.1 22)"
 
@@ -470,7 +480,7 @@ for m in B A; do
     expect "two machines, $m: its ports" "$(words $want_ports)" "$(words $(firewall-cmd --zone=backend --list-ports))"
     expect "two machines, $m: its services" "ssh" "$(firewall-cmd --zone=backend --list-services)"
     expect "two machines, $m: the public zone's ports" "9001/tcp" "$(firewall-cmd --zone=public --list-ports)"
-    expect "two machines, $m: the public zone's services" "$(words dhcpv6-client https)" "$(words $(firewall-cmd --zone=public --list-services))"
+    expect "two machines, $m: the public zone's services" "$(words dhcpv6-client http https)" "$(words $(firewall-cmd --zone=public --list-services))"
 done
 expect "two machines, A: B to MySQL" open "$(probe b 10.0.0.1 3306)"
 expect "two machines, A: B to the session store" open "$(probe b 10.0.0.1 6379)"

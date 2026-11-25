@@ -627,9 +627,14 @@ lobby's endpoints in turn and a purchase key kept on disk are not in it.
 `JsonUtility` maps; they connect the way they are set up, in any build (D-115).
 
 **Without TLS, `client-simple-no-tls/`** ([D-114](../architecture/03-decision-log.md#d-114--a-simple-client-without-tls-client-simple-no-tls-for-a-backend-run-plain)): the same three clients with no
-TLS at all, for a backend run plain (`PLAIN=1`, D-101) and the site's 80 (D-115), in any build.
-`ArenaMessages` and `Json` are `client-simple`'s byte for byte; `client-simple/check.sh` checks it too (`NO_TLS=1`, the
-check program's TLS checks left out), and `SIMPLE=1` drills it live in the plain ways.
+TLS at all, for a backend run plain (`PLAIN=1`, D-101) and the site's 80 (D-115), in any build. A grant of the site's
+asks for TLS; this client's `ArenaClient.ConnectThroughSite(apiUrl, tlsName, ticketId)` takes it to the API's own
+address instead, asks nginx for the arena by name (`GET /match/<tlsName>`, `Upgrade: backend-match`), reads the 101,
+and goes on as `Connect` does (a grant without TLS, a backend run plain's). `ArenaMessages` and `Json` are
+`client-simple`'s byte for byte; `client-simple/check.sh` checks it too (`NO_TLS=1`, the check program's TLS checks
+left out, a stand-in for nginx for the request and its refusal), and `SIMPLE=1` drills it live straight to the
+processes and through nginx's 80 in every way, its match through `/match/` where the grant asks for TLS. The full
+client and `client-simple` keep 9001 with TLS: `/match/` is this client's alone.
 
 **A second client to keep in step:** a protocol version, a message or a field changes in both simple clients and the core. `headless-drill.sh
 SIMPLE=1` runs it against the drill's own stack, so a change that breaks it fails there.

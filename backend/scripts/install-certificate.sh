@@ -26,12 +26,12 @@
 #     while it works in a desktop browser
 #   - valid now; a warning when fewer than WARN_DAYS remain
 #   - it names every host this machine serves, by subject alternative name, which is all a
-#     device checks: nginx's server_name (the site's address), every name in the stream's map
-#     (the arenas'), and the ADVERTISE_HOST of each arena that ends TLS itself
+#     device checks: nginx's server_name (the site's address), every name in nginx's list of
+#     arenas (backend-arenas.conf, D-115), and the ADVERTISE_HOST of each arena that ends TLS itself
 # If nginx then refuses the files, the previous ones are put back.
 #
 # Settings, for a machine laid out differently or a drill: TLS_DIR, CREDENTIALS_DIR,
-# CONFIG_DIR (the arena-*.env files), NGINX_CONF, STREAM_CONF, NGINX_TEST, NGINX_RELOAD, NGINX_RUNNING,
+# CONFIG_DIR (the arena-*.env files), NGINX_CONF, ARENAS_CONF, NGINX_TEST, NGINX_RELOAD, NGINX_RUNNING,
 # EDGE_PORT, STREAM_PORT, CA_FILE (trust only this root instead of the system's: by default
 # TLS_DIR/ca.pem, the backend's own root, when it is there), WARN_DAYS.
 set -euo pipefail
@@ -41,7 +41,7 @@ TLS_DIR=${TLS_DIR:-/etc/backend/tls}
 CREDENTIALS_DIR=${CREDENTIALS_DIR:-/etc/backend/credentials}
 CONFIG_DIR=${CONFIG_DIR:-/etc/backend}
 NGINX_CONF=${NGINX_CONF:-/etc/backend/nginx/backend.conf}
-STREAM_CONF=${STREAM_CONF:-/etc/backend/nginx/backend-stream.conf}
+ARENAS_CONF=${ARENAS_CONF:-/etc/backend/nginx/backend-arenas.conf}
 # nginx -t writes its pid file, makes its temporary directories and opens its logs, in the directories
 # its unit makes (RuntimeDirectory, CacheDirectory, LogsDirectory): on a machine where the unit has not
 # run, they are made here (O-49).
@@ -86,11 +86,10 @@ edge_names() {
         | tr ' ' '\n' | grep -v -e '^$' -e '^_$' -e '^~' | sort -u
 }
 
-# The names nginx's stream routes by, its map's, the default left out (D-82).
+# The names nginx routes matches by, its list of arenas', the comments left out (D-82, D-115).
 stream_names() {
-    [ -f "$STREAM_CONF" ] || return 0
-    awk '/^map \$ssl_server_name/ { on = 1; next } on && /^}/ { exit }
-         on && $1 != "default" && $1 !~ /^#/ && NF >= 2 { print $1 }' "$STREAM_CONF" | sort -u
+    [ -f "$ARENAS_CONF" ] || return 0
+    awk '$1 !~ /^#/ && NF >= 2 { print $1 }' "$ARENAS_CONF" | sort -u
 }
 
 is_ip() { [[ $1 =~ ^[0-9.]+$ || $1 == *:* ]]; }
@@ -314,11 +313,11 @@ for f in $(arena_files); do
     OWN_TLS_ARENAS+=("$f")
 done
 mapfile -t NAMES < <(printf '%s\n' "${EDGE_NAMES[@]}" "${STREAM_NAMES[@]}" "${ARENA_NAMES[@]}" | grep -v '^$' | sort -u)
-[ ${#NAMES[@]} -gt 0 ] || refuse "this machine serves no name: no server_name in $NGINX_CONF, no name in $STREAM_CONF's map and no arena of its own TLS in $CONFIG_DIR/arena-*.env"
+[ ${#NAMES[@]} -gt 0 ] || refuse "this machine serves no name: no server_name in $NGINX_CONF, no name in $ARENAS_CONF and no arena of its own TLS in $CONFIG_DIR/arena-*.env"
 # nginx serves 443 and 9001 with one certificate: the arenas' names without the site's address would leave the
 # address unchecked, and nothing installed for nginx at all (O-77).
 [ ${#STREAM_NAMES[@]} -eq 0 ] || [ ${#EDGE_NAMES[@]} -gt 0 ] \
-    || refuse "no server_name in $NGINX_CONF, the site's address devices check; $STREAM_CONF names arenas for nginx"
+    || refuse "no server_name in $NGINX_CONF, the site's address devices check; $ARENAS_CONF names arenas for nginx"
 
 if [ "${1:-}" = "--check" ]; then
     failed=0

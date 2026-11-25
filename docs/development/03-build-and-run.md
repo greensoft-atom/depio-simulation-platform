@@ -335,8 +335,8 @@ site's ports and every IPv4 address.
 | | Here | On the site |
 |---|---|---|
 | The player API and the lobby | `https://<address>/v1/...`, `wss://<address>/lobby` | the same, 443 |
-| Plain HTTP | `http://<address>/v1/...`, `ws://<address>/lobby`: the same routes in clear ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)); a development build alone | closed (D-82) |
-| Matches | `<address>:9001`, TLS, routed by the arena's name to 127.0.0.1:9021 | 9001, to each machine's arenas |
+| Plain HTTP | `http://<address>/v1/...`, `ws://<address>/lobby`: the same routes in clear ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)) | the same, 80 ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)) |
+| Matches | `<address>:9001`, TLS, routed by the arena's name to 127.0.0.1:9021; or in clear through 80, `/match/<the arena's name>` | 9001, and 80's `/match/`, to each machine's arenas |
 | The configuration | the release's `nginx-conf/`, rewritten into `work/nginx/conf` | `/etc/backend/nginx` |
 | The certificate | `work/nginx/tls`, naming the address, 127.0.0.1 and the arena's name, from a root of its own, `work/nginx/ca/ca.pem` | operations/06 |
 
@@ -387,7 +387,7 @@ sudo PLAIN=1 PUBLIC_ADDRESS=192.168.1.20 ./dev-nginx.sh start    # or nginx by s
 | The player API | `http://<address>/v1/...` (80) | `https://<address>/v1/...` (443) |
 | The lobby | `ws://<address>/lobby` (80) | `wss://<address>/lobby` (443) |
 | Matches | `<address>:9001`, plain, to the one arena | `<address>:9001`, TLS, routed by the arena's name |
-| The firewall | 80 and 9001 | 443 and 9001 (80 too here, in clear: open it only to a network you trust; on the site closed) |
+| The firewall | 80 and 9001 | 80, 443 and 9001 (80 in clear: here, open it only to a network you trust; on the site, open, the owner's choice, D-115) |
 | What the app is given | those two URLs, no root certificate | those two URLs and `ca.pem` |
 
 **The app goes from one to the other by its settings alone**: `BackendClient`'s API endpoints and lobby URL, and its
@@ -599,7 +599,7 @@ The engine-free core, its tests and the headless driver, with the .NET 8 SDK:
 reads it, the core and its tests on Unity's Mono (D-108, D-113); nothing here runs the editor.
 [client/README](../../client/README.md). The simple client: `client-simple/check.sh`, and live
 `SIMPLE=1 client/headless-drill.sh play` ([client-simple/README](../../client-simple/README.md)); without TLS,
-`client-simple-no-tls/check.sh`, which the same drill runs when nothing is encrypted
+`client-simple-no-tls/check.sh`, which the same drill runs after it, through nginx's 80 or straight (D-115)
 ([client-simple-no-tls/README](../../client-simple-no-tls/README.md)).
 
 ## 10. When something fails

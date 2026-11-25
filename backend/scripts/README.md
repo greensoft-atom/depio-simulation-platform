@@ -134,7 +134,8 @@ own. Every listener must be where 05 §2 says, and nowhere else. Then B, C, a ma
 network and a player, each in a namespace, try every port that matters: with the firewall stopped,
 as RHEL 9 has it, and after 05 §5's commands for A, which it takes from the page. As a player
 trusting the backend's root alone: registrations and the lobby through 443, match TLS through 9001
-by each arena's name (a wrong name and a wrong root refused), and the C# headless driver, published
+by each arena's name (a wrong name and a wrong root refused); 80 in clear (D-115), the API's health on it and A's
+and B's arenas by name through `/match/`, answered 101, an unknown name 404; and the C# headless driver, published
 for Linux, playing sixteen scenarios through the front. Then what nginx's logs say it routed, the
 player's address in the login limits' keys, A's platform stopped and B's serving, the rules after a
 restart of firewalld, the commands run twice, B's and C's commands, and the install guide's §12. It
@@ -477,13 +478,14 @@ The backend's own certificate authority (D-82): the site has no domain, so no pu
 it. `root` makes the root once, `ca.key` (0600) and `ca.pem`; the app ships `ca.pem` and trusts it
 alone, and the key never goes on a server. `issue` makes a key and a certificate signed by it for
 the names given, each an IP address (the site's public one) or a host name in lower case (an
-arena's TLS name); `names` lists the TLS names in nginx's stream map, for `issue`; `show` prints
-what a certificate names, by whom, until when. EC P-256 keys, SHA-256. Nothing is overwritten: a
+arena's TLS name); `names` lists the TLS names in nginx's list of arenas, `backend-arenas.conf`, for `issue`; `show` prints
+what a certificate names, by whom, until when. RSA keys, the root's 3072 bits and a certificate's 2048, SHA-256
+(D-108; DOC-46). Nothing is overwritten: a
 root already there, or a key or certificate already in the output directory, refuses the run.
 
 ```
 private-ca.sh root  <ca-dir>
-private-ca.sh issue <ca-dir> <out-dir> <address> $(private-ca.sh names /etc/backend/nginx/backend-stream.conf)
+private-ca.sh issue <ca-dir> <out-dir> <address> $(private-ca.sh names /etc/backend/nginx/backend-arenas.conf)
 private-ca.sh show  <out-dir>/fullchain.pem
 ```
 
@@ -502,8 +504,8 @@ install-certificate.sh <fullchain.pem> <privkey.pem> | --check | --placeholder
 Checks a certificate the way a device will, then installs it for nginx and reloads it, which drops
 nothing: the key matches, the chain reaches the backend's root (`/etc/backend/tls/ca.pem`, when it
 is there) through the file alone, it is valid now, and it names the site's address (`server_name`)
-and every TLS name in the stream's map, each by its SAN (O-74), the address required when the map
-names arenas (O-77); the root's end counts with the chain's (O-73). It installs the certificates the file
+and every TLS name in nginx's list of arenas (`backend-arenas.conf`, D-115), each by its SAN (O-74), the address
+required when the list names arenas (O-77); the root's end counts with the chain's (O-73). It installs the certificates the file
 holds and nothing else, a key in it left out (O-75), both files written before either replaces its own. If
 nginx refuses them, the previous files are put back, or none left where there were none; once nginx
 accepts, the replaced key and certificate are not kept (O-76). Before
@@ -514,7 +516,7 @@ keystore and its password in `TLS_DIR`, the `backend` group's to read, since the
 
 | | |
 |---|---|
-| Environment | for the release's nginx: `NGINX_CONF` (default `/etc/backend/nginx/backend.conf`), `STREAM_CONF` (default `/etc/backend/nginx/backend-stream.conf`), `NGINX_TEST` (default `/opt/backend/nginx/sbin/nginx -t -q`, after making the directories its unit would), `NGINX_RELOAD` (default `systemctl reload backend-nginx`), `NGINX_RUNNING` (default `systemctl is-active --quiet backend-nginx`), `CA_FILE` (default `TLS_DIR/ca.pem` when it is there; else the system's roots). The rest are in its header |
+| Environment | for the release's nginx: `NGINX_CONF` (default `/etc/backend/nginx/backend.conf`), `ARENAS_CONF` (default `/etc/backend/nginx/backend-arenas.conf`), `NGINX_TEST` (default `/opt/backend/nginx/sbin/nginx -t -q`, after making the directories its unit would), `NGINX_RELOAD` (default `systemctl reload backend-nginx`), `NGINX_RUNNING` (default `systemctl is-active --quiet backend-nginx`), `CA_FILE` (default `TLS_DIR/ca.pem` when it is there; else the system's roots). The rest are in its header |
 | Needs | root; `openssl` 1.1.1 or later, refused below it (D-103); the release's nginx |
 | Runs | on every machine, the same certificate on each ([06 §4](../../docs/operations/06-certificates.md#4-installing-it-on-every-machine)) |
 
@@ -522,7 +524,7 @@ keystore and its password in `TLS_DIR`, the `backend` group's to read, since the
 
 Checks the two scripts above on this machine, with openssl alone and nginx stood in for: the root
 made once and never overwritten, its key private; a certificate for the site's address and the
-seven names in the shipped stream map; refused before anything is installed, a certificate short
+seven names in the shipped list of arenas; refused before anything is installed, a certificate short
 of an arena's name or of the address, one from another root, and a key that is not the
 certificate's; with no root in `TLS_DIR`, the backend's certificate refused against the system's
 roots; installed, the key private; and when nginx refuses the new files, the previous ones put

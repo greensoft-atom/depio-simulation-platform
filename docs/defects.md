@@ -1558,6 +1558,10 @@ default); a missing queue `mode` not among the 400s (`unknown_mode`); an order i
 anything else `no_such_route`); and `GET /v1/tournaments` shown as one tournament (it is `{"tournaments":[...]}`).
 Each read in the code or tried; corrected in 01 §0, §4, §5, §6 and §10.
 
+**DOC-46, found 2026-11-25, FIXED the same day** (plan item 137, the scripts' README read for D-115). `private-ca.sh`'s
+section said its keys were EC P-256, which D-108 replaced with RSA (the root's 3072 bits, a certificate's 2048) on
+2026-11-05: the script's own header said RSA, the README had not followed. Now it says RSA.
+
 ## 7. Documentation
 
 The audit found the documents have drifted from the code in ~60 places. The six

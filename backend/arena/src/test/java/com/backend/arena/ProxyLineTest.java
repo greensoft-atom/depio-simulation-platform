@@ -16,10 +16,15 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-/** The line nginx sends an arena behind the front before the phone's bytes (D-105). */
+/** What nginx sends an arena behind the front before the phone's bytes: 9001's PROXY line (D-105), 80's request (D-115). */
 class ProxyLineTest {
 
     private static final String LINE = "PROXY TCP4 198.51.100.7 10.0.0.1 51234 9011\r\n";
+    /** What nginx's /match/ sends, as it sent it to a stand-in arena: its own headers alone, the phone's address. */
+    private static final String REQUEST = "GET /match/a1.arena.internal HTTP/1.1\r\nUpgrade: backend-match\r\n"
+            + "Connection: upgrade\r\nX-Forwarded-For: 198.51.100.7\r\nHost: 203.0.113.10\r\n\r\n";
+    private static final String ANSWER = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\n"
+            + "Upgrade: backend-match\r\n\r\n";
 
     private final Metrics.LabeledCounter dropped = new Metrics.LabeledCounter();
 
@@ -54,6 +59,92 @@ class ProxyLineTest {
         assertThat(received(channel)).as("later bytes untouched").containsExactly(2, 7, 7);
         assertThat(channel.isOpen()).isTrue();
         assertThat(dropped.get("proxy_line")).isZero();
+    }
+
+    private static String written(EmbeddedChannel channel) {
+        StringBuilder all = new StringBuilder();
+        for (ByteBuf b; (b = channel.readOutbound()) != null; b.release()) {
+            all.append(b.toString(StandardCharsets.US_ASCII));
+        }
+        return all.toString();
+    }
+
+    @Test
+    @DisplayName("80's request for a match without TLS: read, its address kept, 101 answered, then the phone's bytes")
+    void aRequestThenTheFrames() {
+        EmbeddedChannel channel = new EmbeddedChannel(new ProxyLine(dropped));
+        channel.writeInbound(bytes(REQUEST, 3, 1, 2, 3));
+        assertThat(channel.attr(ProxyLine.PHONE).get()).isEqualTo("198.51.100.7");
+        assertThat(written(channel)).isEqualTo(ANSWER);
+        assertThat(received(channel)).containsExactly(3, 1, 2, 3);
+        assertThat(channel.pipeline().get(ProxyLine.class)).as("out of the pipeline once read").isNull();
+        channel.writeInbound(bytes("", 2, 7, 7));
+        assertThat(received(channel)).as("later bytes untouched").containsExactly(2, 7, 7);
+        assertThat(channel.isOpen()).isTrue();
+        assertThat(dropped.get("proxy_line")).isZero();
+    }
+
+    @Test
+    @DisplayName("a request that arrives in pieces is waited for to its blank line, nothing answered or passed before")
+    void aRequestInPieces() {
+        EmbeddedChannel channel = new EmbeddedChannel(new ProxyLine(dropped));
+        channel.writeInbound(bytes(REQUEST.substring(0, 5)));
+        channel.writeInbound(bytes(REQUEST.substring(5, REQUEST.length() - 1)));
+        assertThat(channel.attr(ProxyLine.PHONE).get()).isNull();
+        assertThat(written(channel)).isEmpty();
+        assertThat(received(channel)).isEmpty();
+        assertThat(channel.isOpen()).isTrue();
+        channel.writeInbound(bytes(REQUEST.substring(REQUEST.length() - 1), 9));
+        assertThat(written(channel)).isEqualTo(ANSWER);
+        assertThat(received(channel)).containsExactly(9);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "X-Forwarded-For: 198.51.100.7|198.51.100.7",
+        "x-forwarded-for:198.51.100.7 |198.51.100.7",
+        "X-Forwarded-For: 2001:db8::7|[2001:db8::7]",
+    })
+    @DisplayName("80's request: the address as a log names it, from nginx's X-Forwarded-For")
+    void theRequestsAddressRead(String header, String address) {
+        String head = "GET /match/a1.arena.internal HTTP/1.1\r\nUpgrade: backend-match\r\n" + header + "\r\n\r\n";
+        assertThat(ProxyLine.requestAddress(head)).isEqualTo(address);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "GET /lobby HTTP/1.1\r\nX-Forwarded-For: 198.51.100.7\r\n\r\n",                         // not a match's
+        "POST /match/a1.arena.internal HTTP/1.1\r\nX-Forwarded-For: 198.51.100.7\r\n\r\n",
+        "GET /match/a1.arena.internal HTTP/1.0\r\nX-Forwarded-For: 198.51.100.7\r\n\r\n",
+        "GET /match/ HTTP/1.1\r\nX-Forwarded-For: 198.51.100.7\r\n\r\n",                         // no name
+        "GET /match/a1/x HTTP/1.1\r\nX-Forwarded-For: 198.51.100.7\r\n\r\n",
+        "GET /match/a1.arena.internal HTTP/1.1\r\nHost: 203.0.113.10\r\n\r\n",                  // no address
+        "GET /match/a1.arena.internal HTTP/1.1\r\nX-Forwarded-For: 198.51.100.x\r\n\r\n",
+        "GET /match/a1.arena.internal HTTP/1.1\r\nX-Forwarded-For: 198.51.100.7, 10.0.0.1\r\n\r\n",
+        "GET /match/a1.arena.internal HTTP/1.1\r\nX-Forwarded-For: 198.51.100.7\r\n"
+            + "X-Forwarded-For: 10.0.0.1\r\n\r\n",                                                  // two: not nginx's
+        "get /match/a1.arena.internal HTTP/1.1\r\nX-Forwarded-For: 198.51.100.7\r\n\r\n",
+    })
+    @DisplayName("anything but nginx's request for a match, refused: closed and counted, nothing answered or passed")
+    void notAMatchRequestRefused(String first) {
+        EmbeddedChannel channel = new EmbeddedChannel(new ProxyLine(dropped));
+        channel.writeInbound(bytes(first, 5, 5));
+        assertThat(channel.isOpen()).isFalse();
+        assertThat(written(channel)).isEmpty();
+        assertThat(received(channel)).isEmpty();
+        assertThat(channel.attr(ProxyLine.PHONE).get()).isNull();
+        assertThat(dropped.get("proxy_line")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a request longer than 1 KiB, refused before its end comes")
+    void aRequestTooLongRefused() {
+        EmbeddedChannel channel = new EmbeddedChannel(new ProxyLine(dropped));
+        channel.writeInbound(bytes("GET /match/a1.arena.internal HTTP/1.1\r\nX-Padding: "
+                + "x".repeat(ProxyLine.MAX_REQUEST)));
+        assertThat(channel.isOpen()).isFalse();
+        assertThat(written(channel)).isEmpty();
+        assertThat(dropped.get("proxy_line")).isEqualTo(1);
     }
 
     @Test

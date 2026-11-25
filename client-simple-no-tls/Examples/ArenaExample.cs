@@ -5,7 +5,8 @@ namespace Backend.Client.Simple.Examples
     /// <summary>
     /// A match, from a grant (LobbyExample hands it over): joined; the player's input sent ten times a second; each
     /// snapshot handed on; the app's pause told to the arena; a lost connection resumed; a kick read; left on request.
-    /// Set moveMask, aimRadians and fire from your controls. Without TLS: a grant from a backend run plain.
+    /// Set moveMask, aimRadians and fire from your controls. Without TLS: a grant of the site's, which asks for TLS, goes
+    /// through the site's 80 by its arena's name (D-115); one from a backend run plain, straight to the arena.
     /// </summary>
     public class ArenaExample : MonoBehaviour
     {
@@ -19,13 +20,9 @@ namespace Backend.Client.Simple.Examples
         private float _nextInputAt, _resumeAt = -1, _logAt;
         private int _resumes, _snapshots;
 
-        public void Play(Grant grant)
+        /// <param name="apiUrl">the API's address, http://..., which a grant of the site's is reached through</param>
+        public void Play(Grant grant, string apiUrl)
         {
-            if (grant.tls)
-            {
-                Debug.LogError("The grant asks for TLS, which this client has not: run the backend plain (PLAIN=1), or use client-simple");
-                return;
-            }
             _arena?.Close();
             _arena = new ArenaClient();
             _arena.OnWelcome = OnWelcome;
@@ -34,7 +31,8 @@ namespace Backend.Client.Simple.Examples
             _arena.OnKick = OnKick;
             _arena.OnClosed = OnClosed;
             _resumes = 0;
-            _arena.Connect(grant.arenaHost, grant.arenaPort, grant.ticketId);
+            if (grant.tls) _arena.ConnectThroughSite(apiUrl, grant.tlsName, grant.ticketId);
+            else _arena.Connect(grant.arenaHost, grant.arenaPort, grant.ticketId);
         }
 
         /// <summary>Leaves for good; the arena closes the connection.</summary>

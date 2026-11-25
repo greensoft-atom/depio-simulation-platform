@@ -2,16 +2,16 @@
 # nginx in front of a run by hand (decision D-92, docs/development/03-build-and-run.md §5): the release's own nginx
 # with the release's own configuration (nginx-conf/) rewritten into work/nginx for this machine, on the site's ports
 # and every address. The player API and the lobby over HTTPS on NGINX_HTTPS_PORT (443) and in clear on
-# NGINX_HTTP_PORT (80, D-107), and matches over TLS on NGINX_MATCH_PORT (9001), routed by ARENA_TLS_NAME to the arena on
-# 127.0.0.1:ARENA_PORT (dev-backend.sh). The certificate names PUBLIC_ADDRESS, 127.0.0.1 and the arena's name, from a
+# NGINX_HTTP_PORT (80), as on the site (D-115), and matches over TLS on NGINX_MATCH_PORT (9001), routed by ARENA_TLS_NAME
+# to the arena on 127.0.0.1:ARENA_PORT (dev-backend.sh), and in clear on 80 by that name, /match/<name>. The certificate names PUBLIC_ADDRESS, 127.0.0.1 and the arena's name, from a
 # root of the backend's own CA (private-ca.sh) made once in work/nginx/ca and kept: clients trust
 # work/nginx/ca/ca.pem, and nothing else. 80 and 443 need root, or a lowered threshold; the workers run as nobody.
 # PLAIN=1 (D-101), for development alone: the same without TLS, the API and the lobby on NGINX_HTTP_PORT, matches on
 # NGINX_MATCH_PORT passed to the arena; no 443, no certificate.
 #
 #   ./dev-nginx.sh start | stop | restart | status
-#   ./dev-nginx.sh test      its configuration, 80 and 443's certificate with the platform behind them, 9001's;
-#                            plain: its configuration and the platform behind 80
+#   ./dev-nginx.sh test      its configuration, 80 and 443's certificate with the platform behind them, 9001's, and
+#                            the arena behind 80's /match/; plain: its configuration and the platform behind 80
 set -euo pipefail
 . "$(dirname "$0")/dev-env.sh"
 # NGINX_DIR: the drill's nginx in front of its own processes (headless-drill.sh FRONT, D-107).
@@ -68,33 +68,34 @@ certificate() {
 }
 
 # The release's configuration for this machine (D-92): its paths to work/nginx and the release, its upstreams to
-# this run's ports (each group's first server kept, the others dropped), its stream map to the arena's name alone,
-# to the local arena, its listen ports, server_name, what needs root or IPv6; and 443's server on 80 too, without
-# TLS: the API and the lobby on both (D-107). Plain (D-101): 443's server on 80 alone and 9001, without TLS, passed
-# to the one arena (no name to route by) without the PROXY line (D-105).
+# this run's ports (each group's first server kept, the others dropped), its list of arenas to the arena's name
+# alone, to the local arena, its listen ports, server_name, what needs root or IPv6. 80 serves as on the site
+# (D-115). Plain (D-101): 443's server on 80 alone and 9001, without TLS, passed to the one arena (no name to route
+# by) without the PROXY line (D-105); 80's /match/ left, unused, since the plain way's grants ask for no TLS.
 rewrite() {
     local out=$F/conf.new f user_line= what plain=()
-    local https_listen="$NGINX_HTTPS_PORT ssl;\\n\\1listen $NGINX_HTTP_PORT" match_listen="$NGINX_MATCH_PORT ssl"
+    local match_listen="$NGINX_MATCH_PORT ssl"
     [ "$(id -u)" = 0 ] && user_line="user nobody $(id -gn nobody);"   # a user's nginx ignores the directive
-    what="443's server on $NGINX_HTTP_PORT too, without TLS (D-107)"
+    what=
     if [ "$PLAIN" = 1 ]; then
-        https_listen=$NGINX_HTTP_PORT match_listen=$NGINX_MATCH_PORT what="TLS taken out (D-101)"
+        match_listen=$NGINX_MATCH_PORT what=", and TLS taken out (D-101)"
         # No PROXY line either: the plain way's arena has no TLS name, and reads none (D-105).
-        plain=(-e '/^[[:space:]]*ssl_/d' -e '/^[[:space:]]*proxy_protocol on;/d' \
+        plain=(-e '/^[[:space:]]*listen 443 ssl;/d' -e '/^[[:space:]]*ssl_/d' -e '/^[[:space:]]*proxy_protocol on;/d' \
             -e "s|^\([[:space:]]*\)proxy_pass \$backend_arena;|\1proxy_pass 127.0.0.1:$ARENA_PORT;|")
     fi
     rm -rf "$out"; mkdir -p "$out" "$F/logs" "$F/temp"
     for f in "$R"/nginx-conf/*.conf; do
         { echo "# Written by dev-nginx.sh from the release's nginx-conf/${f##*/}, for this machine (D-92): paths,"
-          echo "# addresses and ports rewritten, and $what; the rest, the comments too, is production's."
+          echo "# addresses and ports rewritten$what; the rest, the comments too, is production's."
           sed -e "s|/etc/backend/nginx/|$F/conf/|g" \
               -e "s|/etc/backend/tls/fullchain\.pem|$F/tls/fullchain.pem|g" \
               -e "s|/etc/backend/credentials/privkey\.pem|$F/tls/privkey.pem|g" \
               -e "s|/var/log/backend-nginx/|$F/logs/|g" \
               -e "s|/run/backend-nginx/nginx\.pid|$F/nginx.pid|g" \
               -e "s|/opt/backend/nginx/conf/mime\.types|$R/nginx/conf/mime.types|g" \
-              -e "s|^\([[:space:]]*\)listen 443 ssl;|\1listen $https_listen;|" \
-              -e "s|^\([[:space:]]*\)listen 9001 ssl;|\1listen $match_listen;|" "${plain[@]}" \
+              "${plain[@]}" -e "s|^\([[:space:]]*\)listen 443 ssl;|\1listen $NGINX_HTTPS_PORT ssl;|" \
+              -e "s|^\([[:space:]]*\)listen 80;|\1listen $NGINX_HTTP_PORT;|" \
+              -e "s|^\([[:space:]]*\)listen 9001 ssl;|\1listen $match_listen;|" \
               -e '/^[[:space:]]*listen \[::\]:/d' \
               -e "s|^\([[:space:]]*\)server_name 203\.0\.113\.10;|\1server_name $PUBLIC_ADDRESS;|" \
               -e '/^[[:space:]]*worker_rlimit_nofile /d' \
@@ -109,10 +110,8 @@ rewrite() {
                   if (!(up in port)) { print file ": upstream " up ": not one this script knows" > "/dev/stderr"; bad = 1 }
                   else if (first) { match($0, /^[ \t]*/); print substr($0, 1, RLENGTH) "server 127.0.0.1:" port[up] ";"; first = 0 }
                   next }
-              /^[ \t]*map[ \t]+\$ssl_server_name/ { inmap = 1; mfirst = 1; print; next }
-              inmap && /^[ \t]*}/ { inmap = 0; print; next }
-              inmap && /^[ \t]*[A-Za-z0-9.-]+[ \t]+[^;]+;/ && $1 != "default" {
-                  if (mfirst) { match($0, /^[ \t]*/); print substr($0, 1, RLENGTH) tls "  127.0.0.1:" arena ";"; mfirst = 0 }
+              file == "backend-arenas.conf" && /^[ \t]*[A-Za-z0-9.-]+[ \t]+[^;]+;/ {
+                  if (!listed) { print tls "  127.0.0.1:" arena ";"; listed = 1 }
                   next }
               { print }
               END { exit bad }'
@@ -189,9 +188,10 @@ start)
         echo "  matches          $PUBLIC_ADDRESS:$NGINX_MATCH_PORT, plain, to the arena on 127.0.0.1:$ARENA_PORT"
         echo "  in clear         for a network you trust alone: passwords, tokens and tickets cross it readable (D-101)"
     else
-        echo "  the player API   $https_url/v1/, and $http_url/v1/ in clear (D-107)"
+        echo "  the player API   $https_url/v1/, and $http_url/v1/ in clear, as on the site (D-115)"
         echo "  the lobby        wss://${https_url#https://}/lobby, and ws://${http_url#http://}/lobby"
         echo "  matches          $PUBLIC_ADDRESS:$NGINX_MATCH_PORT, TLS as $ARENA_TLS_NAME, to the arena on 127.0.0.1:$ARENA_PORT"
+        echo "                   and without TLS through $http_url/match/$ARENA_TLS_NAME (D-115)"
         echo "  clients trust    $CA, and nothing else: copy it to them"
     fi
     echo "  the firewall     $(firewall_line)" ;;
@@ -257,7 +257,15 @@ test)
     got=$(openssl s_client -connect "127.0.0.1:$NGINX_MATCH_PORT" -servername "$ARENA_TLS_NAME" -verify_hostname "$ARENA_TLS_NAME" \
         -CAfile "$CA" -verify_return_error < /dev/null 2>&1) \
         || { echo "FAILED  $NGINX_MATCH_PORT: the handshake for $ARENA_TLS_NAME:"; tail -3 <<< "$got" | sed 's/^/        /'; exit 1; }
-    echo "ok      $NGINX_MATCH_PORT: the certificate verifies for $ARENA_TLS_NAME" ;;
+    echo "ok      $NGINX_MATCH_PORT: the certificate verifies for $ARENA_TLS_NAME"
+    # 80's /match/, for a client without TLS (D-115): nginx passes the request to the arena by its name, which answers 101.
+    got=$(timeout 10 bash -c 'exec 3<> "/dev/tcp/127.0.0.1/$1" && printf "GET /match/%s HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: backend-match\r\n\r\n" "$2" "$3" >&3 && head -1 <&3' \
+        _ "$NGINX_HTTP_PORT" "$ARENA_TLS_NAME" "$PUBLIC_ADDRESS" 2>&1 | tr -d '\r' || true)
+    case $got in
+        "HTTP/1.1 101 "*) echo "ok      $NGINX_HTTP_PORT: /match/$ARENA_TLS_NAME, the arena answers through it (101)" ;;
+        "HTTP/1.1 502 "*|"HTTP/1.1 504 "*) echo "FAILED  $NGINX_HTTP_PORT: /match/$ARENA_TLS_NAME, but the arena behind it does not answer: ./dev-backend.sh start"; exit 1 ;;
+        *) echo "FAILED  $NGINX_HTTP_PORT: /match/$ARENA_TLS_NAME: ${got:-no answer}"; exit 1 ;;
+    esac ;;
 *)
     echo "usage: $0 start | stop | restart | status | test" >&2; exit 2 ;;
 esac

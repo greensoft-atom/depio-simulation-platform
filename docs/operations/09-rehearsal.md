@@ -58,7 +58,7 @@ From the fourth machine, the site's public address alone:
 | `openssl s_client -connect 203.0.113.10:443 -verify_ip 203.0.113.10 -CAfile ca.pem < /dev/null` | `Verify return code: 0 (ok)`, `subject=CN = backend`; the names by piping the same to `openssl x509 -noout -ext subjectAltName -enddate` ([06 §4](06-certificates.md#4-installing-it-on-every-machine)) | the certificate's `notAfter` |
 | the same on `9001 -servername a1.arena.internal -verify_hostname a1.arena.internal`, for each arena's name | `0 (ok)` each | |
 | `curl -sv --cacert ca.pem https://203.0.113.10/health` | 404: `/health` is for the machines, not the internet ([05 §1](05-ports-and-firewall.md#1-three-kinds-of-port)) | |
-| `curl http://203.0.113.10/` | nothing answers on 80 | |
+| `curl http://203.0.113.10/v1/health`, and 80's `/match/a1.arena.internal` ([11 §9](11-phone-to-backend-routes.md#9-checking-it)) | `200`, in clear; `HTTP/1.1 101 Switching Protocols` from the arena (D-115) | |
 | the Postman collection with `baseUrl=https://203.0.113.10` and `--ssl-extra-ca-certs ca.pem` ([api/README](../api/README.md)) | every request as on the development machine; the admin folders skipped (the admin API is not public) | the run's summary |
 | the app, or the headless driver: a registration, a login, a match played | a match, with `tlsName` in the grant and the connection on 9001 | |
 

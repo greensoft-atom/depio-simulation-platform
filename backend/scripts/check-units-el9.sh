@@ -5,7 +5,8 @@
 # database's configuration from its example, initialised as its header says), then starts
 # backend-mysql, backend-store@session, backend-platform, backend-gateway, backend-worker@c1,
 # backend-arena@a1 and backend-nginx, as one machine's front (D-82): registers an account through nginx
-# over HTTPS, opens a match connection through its 9001 to the arena, reloads nginx, and stops them
+# over HTTPS, opens a match connection through its 9001 to the arena, asks 80 for the API's health and the
+# arena by name, in clear (D-115), reloads nginx, and stops them
 # all. The secrets are in the settings files (D-102), and an arena of its own TLS takes its keystore from
 # this repository's install-certificate.sh. Smaller heaps than production's, by a drop-in: this is a
 # check, not a machine.
@@ -168,9 +169,7 @@ cp /deploy/nginx/*.conf /etc/backend/nginx/
 printf '%s\n' 'upstream backend_gateway {' '    least_conn;' '    server 127.0.0.1:8090;' '}' \
     'upstream backend_platform {' '    server 127.0.0.1:8080;' '    keepalive 32;' '    keepalive_timeout 20s;' '}' \
     > /etc/backend/nginx/backend-upstreams.conf
-sed -i -e '/^    [a-c][0-9]\.arena\.internal /d' \
-    -e 's/^    default .*/    a1.arena.internal  127.0.0.1:9011;\n    default            "";/' \
-    /etc/backend/nginx/backend-stream.conf
+printf '%s\n' 'a1.arena.internal  127.0.0.1:9011;' > /etc/backend/nginx/backend-arenas.conf
 # The certificate from a root of its own, for this machine's address and the arena's name (06 §2, §3).
 $R/scripts/private-ca.sh root /tmp/ca > /dev/null
 $R/scripts/private-ca.sh issue /tmp/ca /tmp/site 127.0.0.1 a1.arena.internal > /dev/null
@@ -183,7 +182,14 @@ code=$(curl -s --cacert /tmp/ca/ca.pem -o /tmp/reg -w "%{http_code}" -X POST \
     -H 'Content-Type: application/json' -d '{"username":"unitsnine","password":"hunter2-hunter2"}' https://127.0.0.1/v1/accounts)
 [ "$code" = 201 ] && ok "a registration through nginx over HTTPS, its root trusted alone: 201" \
     || bad "a registration through nginx: $code $(head -c 200 /tmp/reg)"
-curl -s -o /dev/null --max-time 5 http://127.0.0.1/ && bad "something answers on port 80" || ok "nothing on port 80 (D-82)"
+# 80 in clear (D-115): the API, and a match asking for its arena by name, which the arena answers 101.
+code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" http://127.0.0.1/v1/health)
+[ "$code" = 200 ] && ok "80 in clear: the API's health, 200" || bad "80 in clear: the API's health, $code"
+v=$(timeout 5 bash -c 'exec 3<> /dev/tcp/127.0.0.1/80 && printf "GET /match/a1.arena.internal HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: backend-match\r\n\r\n" >&3 && head -1 <&3' | tr -d '\r')
+[[ $v == "HTTP/1.1 101 "* ]] && ok "80 in clear: /match/a1.arena.internal, the arena's answer: $v" || bad "80's /match/a1.arena.internal: ${v:-nothing}"
+# The phone's own headers stay with nginx: 2 KiB of them, past the arena's 1 KiB for the request, still a 101.
+v=$(timeout 5 bash -c 'exec 3<> /dev/tcp/127.0.0.1/80 && printf "GET /match/a1.arena.internal HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: backend-match\r\nX-Padding: %s\r\n\r\n" "$(printf %02048d 0)" >&3 && head -1 <&3' | tr -d '\r')
+[[ $v == "HTTP/1.1 101 "* ]] && ok "80's /match/ with 2 KiB of the phone's headers: nginx passes none of them, $v" || bad "80's /match/ with 2 KiB of the phone's headers: ${v:-nothing}"
 # s_client says "Verify return code: 0 (ok)" with no certificate at all, on a port that speaks no TLS: the
 # certificate's subject must be there too.
 v=$(openssl s_client -connect 127.0.0.1:9001 -servername a1.arena.internal -verify_hostname a1.arena.internal \

@@ -3,7 +3,7 @@
 # markers, in order, in Red Hat's UBI 9 init image (systemd its first process) with NO network, on a
 # plain copy of the repository's files (what a clone has: tracked and new, nothing ignored). From the
 # build with build-offline.sh to a registration through nginx; then the launch's one machine as D-93 lays
-# it out (every unit, each arena by its name through nginx, every process's metrics watched, the result
+# it out (every unit, each arena by its name through nginx's 9001 and 80, every process's metrics watched, the result
 # stream on its own store, a dump and its proof recorded and seen by the worker); all of it again
 # after the container is restarted, as the machine at a reboot; and the database's disk lost, then the
 # runbook's restore on one machine run as written (operations/02 §4), nothing committed lost.
@@ -99,6 +99,10 @@ launch_checks() {
         f=/etc/backend/arena-$a.env; n=$(setting "$f" BACKEND_ADVERTISE_TLS_NAME); up=$(setting "$f" ARENA_BIND):$(setting "$f" ARENA_PORT)
         grep -q "\"$n\" $up 200 " /var/log/backend-nginx/stream.log \
             || fail "$n not passed to its arena, $up: $(grep "\"$n\"" /var/log/backend-nginx/stream.log | tail -1)"
+        # And through 80 in clear, by the same name (D-115): the arena itself answers 101.
+        v=$(timeout 5 bash -c 'exec 3<> /dev/tcp/127.0.0.1/80 && printf "GET /match/%s HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: backend-match\r\n\r\n" "$1" >&3 && head -1 <&3' \
+            _ "$n" | tr -d '\r')
+        [[ $v == "HTTP/1.1 101 "* ]] || fail "$n through 80's /match/: ${v:-nothing}"
     done
     # Every process's metrics are watched: each one's address, from its settings, listening from 9100 to 9119 and a
     # target, and nothing else there; no other target on this machine's addresses (another machine's are its own, a

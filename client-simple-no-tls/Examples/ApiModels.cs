@@ -33,7 +33,7 @@ namespace Backend.Client.Simple.Examples
 
     // ---- The lobby's d
 
-    /// <summary>A seat in a match: match.request's reply, evt.match.found. ArenaClient.Connect takes it.</summary>
+    /// <summary>A seat in a match: match.request's reply, evt.match.found. ArenaExample.Play takes it.</summary>
     [Serializable] public class Grant { public string arenaHost; public int arenaPort; public string ticketId; public bool tls; public string tlsName; public string mode; }
 
     /// <summary>queue.join's d: "duel", "teams", "ranked"...</summary>

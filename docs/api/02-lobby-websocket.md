@@ -14,6 +14,7 @@ protocol ([02-networking](../detailed-design/02-networking.md)).
 | Where | URL |
 |---|---|
 | Production, through the front's nginx (TLS) | `wss://<the site's address>/lobby`, for example `wss://203.0.113.10/lobby`, the backend's root trusted ([operations/06](../operations/06-certificates.md)) |
+| Production in clear, for a client without TLS ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)) | `ws://<the site's address>/lobby`, on 80 |
 | One machine, straight to `gateway` | `ws://127.0.0.1:8081/lobby` (`GATEWAY_PORT`: 8090 under systemd; the examples ran on 8181) |
 | A run by hand, through `dev-nginx.sh`'s nginx ([D-92](../architecture/03-decision-log.md#d-92--a-script-for-each-service-of-a-run-by-hand-and-nginx-on-the-sites-ports-in-front-of-it)) | `wss://<address>/lobby`, trusting `work/nginx/ca/ca.pem` |
 
