@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds the core and puts it into the Unity package (docs 08 §8, D-73): Backend.Client.Core.dll, .NET Standard 2.1,
+# Builds the core and puts it into the Unity package (docs 08 §8, D-73): Backend.Client.Core.dll, .NET Standard 2.0 (D-108),
 # into Unity/com.backend.client/Runtime/Plugins, where the package's assembly definition names it. One source: the
 # core the drills run is the core the app runs. Run it before opening the package in Unity, and after the core changes.
 set -euo pipefail

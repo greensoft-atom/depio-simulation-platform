@@ -4358,6 +4358,35 @@ assemblies, against which `Runtime/` failed only on `TrustRoot`'s `GetRSAPublicK
 
 Docs: D-112, P-66's note, 08 §6 and §9, the glossary, the client's README, working-here (a standing decision),
 CLAUDE.md, `client-simple/README.md`.
+
+#### 134. ~~The Unity package takes `System.Net.Http` by its own `csc.rsp`: P-66 (the owner, 2026-11-25, D-113).~~ — **done 2026-11-25**
+
+The owner: the full client's package fixed as `client-simple`'s was, and the READMEs and guides kept current.
+
+**Found first, in Unity 2019.4.28f1's own editor code** (`UnityEditor.dll`, its IL read with a small
+`System.Reflection.Metadata` program): `MicrosoftCSharpCompiler.GenerateResponseFile` asks a `ResponseFileProvider`
+for the assembly's `OriginPath`; its `Get` takes a `csc.rsp` in that folder, then `Assets/csc.rsp`; and
+`TryGetReference` finds each `-r:` name in the API level's system folders, an error when none has it.
+
+**Done** (D-113):
+- `client/Unity/com.backend.client/Runtime/csc.rsp`, `-r:System.Net.Http.dll`, beside `Backend.Client.Unity.asmdef`.
+- `unity2019-check.sh`: Unity's default references alone at each level (no `System.Net.Http` at .NET 4.x, which had
+  hidden P-66), then the names in the package's `csc.rsp`, found in the level's folders as Unity finds them
+  (`4.7.1-api` at .NET 4.x, `compat/2.0.0/shims/netstandard` at .NET Standard 2.0); at .NET 4.x the scripts once
+  without the file, which must be refused. The core and the programs there keep their own reference.
+- Test first: with the check changed and no file, the package's scripts failed at .NET 4.x with P-66's own error,
+  CS0012 for `HttpMessageHandler` in `BackendClient.cs`; with the file, every level and platform branch compiled, and
+  the core's 194 tests passed on Unity's Mono.
+- Mutation-checked, five mutants, each caught: the file empty, a name no folder has, Unity's .NET 4.x given
+  `System.Net.Http` by default again, the .NET Standard shims not searched, the file not read.
+- Not seen here: the editor reading the file; that it does is read from its code.
+
+**Docs brought up to date** (the owner asked for every README and guide): the package's README (the file, the
+level, its checks table, which had not named `unity2019-check.sh`), the client's and the core's READMEs, 08 §6 (the
+core's tests are 194; `client-simple`'s live row as D-112 left it) and §8, 03 §9 and 07 §5 (`unity2019-check.sh`, and
+`client-simple` taking a wire change too), the front page and the docs index (`client-simple` had no row in either),
+the glossary, `client-simple`'s README (the file harmless at .NET Standard, beside an `.asmdef` when there is one),
+`unity-package.sh`'s comment (.NET Standard 2.0, not 2.1), CLAUDE.md. P-66 fixed in the register.
 ---
 
 ### Completed 2026-09-23

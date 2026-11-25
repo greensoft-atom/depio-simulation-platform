@@ -229,7 +229,8 @@ target/release/backend-*/runtime/bin/java -cp crypto-examples/target/classes com
 
 # The Unity package: the core built into it, then its scripts compiled against stubs (nothing run)
 client/unity-package.sh && client/unity-check.sh
-# Unity 2019.4.28f1's compiler on the core and the scripts against its UnityEngine, the core run on its Mono (D-108)
+# Unity 2019.4.28f1's compiler on the core and the scripts against its UnityEngine, the package's csc.rsp as Unity reads it
+# (D-113), the core run on its Mono (D-108)
 TMPDIR=<scratchpad> client/unity2019-check.sh
 # Visual Studio 2019's MSBuild and Roslyn (16.11, 16.7) on the core, .NET Framework 4.7.1, Unity's project, the solution
 client/vs2019-check.sh

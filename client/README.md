@@ -77,7 +77,7 @@ export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 /opt/dotnet/dotnet test Core.Tests -f net8.0 --logger "console;verbosity=normal"   # the core's tests: read "Total tests:"
 ./unity-package.sh                                                # the core, Release, into the Unity package
 ./unity-check.sh                                                  # the package compiled against stubs
-./unity2019-check.sh                                              # Unity 2019.4.28f1's compiler and Mono (D-108)
+./unity2019-check.sh                                              # Unity 2019.4.28f1's compiler and Mono (D-108; csc.rsp, D-113)
 ./vs2019-check.sh                                                 # Visual Studio 2019's MSBuild and Roslyn, in docker (D-108)
 ```
 
@@ -89,7 +89,10 @@ prints `Total tests:`, which reads `Unknown` after such a crash.
 `unity-package.sh` builds `Core` in Release and copies
 `Backend.Client.Core.dll` into `Unity/com.backend.client/Runtime/Plugins/`,
 which git ignores: run it before opening the package in Unity, and again
-whenever the core changes. `unity-check.sh` compiles against the core's
+whenever the core changes. The package's `Runtime/csc.rsp` gives its assembly
+`System.Net.Http`, which Unity does not reference by default at the .NET 4.x
+API level (D-113); `unity2019-check.sh` compiles the scripts as Unity does,
+with that file and refused without it. `unity-check.sh` compiles against the core's
 project, not that copy, so it cannot tell a stale copy. Both take `DOTNET`, and
 the check `JAVAC`, from the environment.
 

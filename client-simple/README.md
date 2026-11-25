@@ -24,7 +24,9 @@ The code uses:
 
 **At the .NET 4.x level, copy `csc.rsp` into `Assets/`.** Unity does not give a script `System.Net.Http`, where
 `HttpClient` lives, at that level; the file's one line, `-r:System.Net.Http.dll`, adds it. Without it, Unity reports
-error CS1069 (or CS0234) for `HttpClient`. The .NET Standard levels need nothing.
+error CS1069 (or CS0234) for `HttpClient`. The .NET Standard levels need nothing, and the file does no harm there,
+so it can stay if you change levels. If you put `Runtime/` in an assembly definition of its own, put `csc.rsp` beside
+the `.asmdef` instead: Unity 2019.4 reads one there for that assembly alone (D-113).
 
 `Runtime/` does not use `UnityEngine` at all; only the examples do.
 
@@ -33,7 +35,7 @@ error CS1069 (or CS0234) for `HttpClient`. The .NET Standard levels need nothing
 | From | To | What it is |
 |---|---|---|
 | `Runtime/` | `Assets/Backend/Runtime/` | the client, seven files; needed |
-| `csc.rsp` | `Assets/csc.rsp` | at the .NET 4.x level only: gives scripts `System.Net.Http` |
+| `csc.rsp` | `Assets/csc.rsp` | for the .NET 4.x level: gives scripts `System.Net.Http`; harmless at .NET Standard |
 | `Examples/` | `Assets/Backend/Examples/` | three example scripts and the JSON classes they use; optional |
 | the backend's `ca.pem` | `Assets/Backend/ca.pem.txt` | the backend's own root certificate, renamed `.txt` so Unity takes it as a `TextAsset`; needed for `https://`, `wss://` and matches over TLS ([operations/06](../docs/operations/06-certificates.md)) |
 

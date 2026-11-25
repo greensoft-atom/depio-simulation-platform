@@ -7,7 +7,9 @@ Framework 4.7.1, and Unity 2022.3 and 6 too (D-108; `../unity2019-check.sh` comp
 compiler and runs it on its Mono); no package references, so it drops into a Unity project as one library
 (`../unity-package.sh`) and runs with the .NET SDK here, where its tests and the headless drills drive it against
 the real server. No spans, which .NET Standard 2.0 lacks: a frame is an `ArraySegment<byte>`. The TLS check is its
-own (`TrustRoot`, D-108): the API through `HttpWebRequest`, the lobby through a WebSocket of its own over `SslStream`.
+own (`TrustRoot`, D-108): the API through `HttpWebRequest` under `HttpClient`, the lobby through a WebSocket of its
+own over `SslStream`. `HttpClient` is in `System.Net.Http`, which a Unity project references by default at .NET
+Standard 2.0 and not at .NET 4.x: the package's `csc.rsp` gives it there (D-113).
 
 Its structure, and the lifecycles below, are drawn in
 [docs/diagrams/06-client.md](../../docs/diagrams/06-client.md).

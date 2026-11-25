@@ -145,6 +145,7 @@ Superseded, kept for history. Where these disagree with anything above, they los
 | [backend/](../backend/README.md)                                                | The code's layout, build, the wire contract, benchmarks, bots; each module has a README of its own                              |
 | [client/](../client/README.md)                                                  | The C# core, its tests, the headless driver and the live drill                                                                  |
 | [client/Unity/com.backend.client](../client/Unity/com.backend.client/README.md) | The Unity package: what was and was not checked, setup, the scripts                                                             |
+| [client-simple](../client-simple/README.md)                                     | The simple client for a UI team: which Unity, what to copy, the three clients, the examples                                     |
 | [protocol-spike](../protocol-spike/README.md)                                   | The golden vectors and the spike that wrote them                                                                                |
 | [j-redis-service](../j-redis-service/README.md)                                 | The data store, a project of its own, built and documented: server, client library, CLI, tools, guides and its own decision log |
 

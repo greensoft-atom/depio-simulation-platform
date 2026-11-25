@@ -3669,3 +3669,36 @@ Framework 4.5, .NET Standard 1.1, .NET Core 1.0). It changes D-111 for the API a
 after `BackendHttp` is made replaces it, and the backend's HTTPS calls then get that code's verdict. The README says
 so. The API's HTTPS path is checked against a TLS 1.0 server, not nginx's 1.2; in the editor and the player, Unity's
 TLS runs it, below the same callback.
+
+### D-113 — The Unity package's assembly takes `System.Net.Http` from a `csc.rsp` beside its assembly definition
+
+**Decided 2026-11-25** (plan item 134; the owner, after D-112: the full client's package fixed the same way). It fixes
+P-66.
+
+**Decision.**
+- **`client/Unity/com.backend.client/Runtime/csc.rsp`**, one line, `-r:System.Net.Http.dll`, beside
+  `Backend.Client.Unity.asmdef`. Unity 2019.4 reads a `csc.rsp` in an assembly definition's own folder for that
+  assembly, and then `Assets/csc.rsp`: its editor's `MicrosoftCSharpCompiler.GenerateResponseFile` asks a
+  `ResponseFileProvider` for the assembly's `OriginPath`, whose `Get` looks for `csc.rsp` there and then under
+  `Assets` (read here in `UnityEditor.dll`'s IL). Each `-r:` name is looked up in the API level's own reference
+  folders, and a name not there is an error. At .NET 4.x the name finds `4.7.1-api`'s `System.Net.Http.dll`, which the
+  package's scripts need for `BackendClient`'s `HttpHandler()` (CS0012 without it). At .NET Standard 2.0 it finds
+  `compat/2.0.0/shims/netstandard/System.Net.Http.dll`, a shim that level already references, so the line does no
+  harm. The team copies nothing.
+- **`unity2019-check.sh` compiles the package's scripts as Unity does:** each level's default references alone, then
+  the names in the shipped `csc.rsp`, each found in that level's folders or the check fails, as Unity's "could not be
+  found as a system library". At .NET 4.x it compiles them once without the file, which must be refused. The core is
+  a library built with its own references, and keeps `System.Net.Http`.
+- **`client-simple`** keeps `Assets/csc.rsp`: its `Runtime/` has no assembly definition, so `Assets/` is where Unity
+  looks. The same line is harmless at .NET Standard 2.0, and a team that puts `Runtime/` in an assembly definition
+  puts the file beside the `.asmdef` instead.
+
+**Why.** The owner asked. The file beside the assembly definition is the package's own and applies to its assembly
+alone, at every level.
+
+**Not chosen:**
+- **The core's API over `HttpWebRequest` alone,** as `client-simple`'s was before D-112: the core's `HttpClient`
+  pipeline, its endpoints tried in turn and its tests would all change for one reference.
+- **`Assets/csc.rsp` for the package:** a file for the team to copy, which touches the whole project.
+
+**Cost.** That Unity reads the file is read from its editor's code, not seen in an editor (none here).

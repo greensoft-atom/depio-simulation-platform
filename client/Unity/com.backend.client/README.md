@@ -14,15 +14,21 @@ references the core as the precompiled `Backend.Client.Core.dll` in
 `Runtime/Plugins/`, which `client/unity-package.sh` builds and copies in and
 git does not keep.
 
+`Runtime/csc.rsp`, beside the assembly definition, gives the package's assembly `System.Net.Http` (one line,
+`-r:System.Net.Http.dll`), which its scripts need at Unity's .NET 4.x API level, where Unity does not reference it by
+default, and which does no harm at .NET Standard 2.0. Unity reads a `csc.rsp` in an assembly definition's folder for
+that assembly alone, so there is nothing to copy into `Assets/` (D-113, P-66).
+
 ## What was checked, and what was not
 
-**Nothing here has been run in Unity, drawn, touched, or put on a phone.** The
-development machine has no Unity.
+**Nothing here has been run in the Unity editor, drawn, touched, or put on a phone.** The
+development machine has no Unity editor (it needs a licence); Unity 2019.4's own compiler and Mono are there.
 
 | Checked | How |
 |---|---|
 | The core: the scene at a render tick, the sticks, the account kept, and all it already did | its tests (`client/Core.Tests`) and the live drills against the real servers |
 | These scripts compile, in each platform branch | `client/unity-check.sh`: the C# against stubs of the Unity API they use, written to Unity's signatures, for no platform, the editor, iOS and Android; the Android plugin's Java against stubs of the Android API ([UnityCheck](../../UnityCheck/README.md)) |
+| These scripts and the core in Unity 2019.4's own terms | `client/unity2019-check.sh`: Unity 2019.4.28f1's compiler against its own `UnityEngine` and references, at .NET Standard 2.0 and .NET 4.x, each platform branch, with `Runtime/csc.rsp` as Unity reads it, and refused at .NET 4.x without it; the core and its tests run on Unity's Mono (D-108, D-113) |
 
 **Not checked:** Unity's API as the stubs believe it (a wrong belief compiles
 here and fails in Unity); anything run (`Update`, `OnGUI`, touches, the camera,
@@ -44,7 +50,8 @@ frame time.
    `Backend.Client.Core.dll` into `Runtime/Plugins/`, where the assembly
    definition names it. Again whenever the core changes.
 2. Unity 2019.4 LTS or later: Package Manager, Add package from disk, this
-   folder's `package.json`.
+   folder's `package.json`. Either API compatibility level works: the package's
+   `Runtime/csc.rsp` gives its scripts `System.Net.Http` at .NET 4.x by itself.
 3. A scene with:
    - an object with **BackendClient**: the API's endpoints, tried in turn, and
      the lobby's `wss://` address, whose path is `/lobby`;

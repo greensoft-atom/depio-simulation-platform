@@ -595,8 +595,11 @@ And `vendor/build-nginx.sh` compiles nginx again ([vendor/README](../../vendor/R
 
 The engine-free core, its tests and the headless driver, with the .NET 8 SDK:
 `cd client && dotnet test Core.Tests -f net8.0` (read `Total tests:`); the Unity package:
-`client/unity-package.sh && client/unity-check.sh` (compiled against stubs; nothing
-here runs Unity). [client/README](../../client/README.md).
+`client/unity-package.sh && client/unity-check.sh` (compiled against stubs), and
+`client/unity2019-check.sh`: Unity 2019.4.28f1's own compiler at both API levels, the package's `csc.rsp` as Unity
+reads it, the core and its tests on Unity's Mono (D-108, D-113); nothing here runs the editor.
+[client/README](../../client/README.md). The simple client: `client-simple/check.sh`, and live
+`SIMPLE=1 client/headless-drill.sh play` ([client-simple/README](../../client-simple/README.md)).
 
 ## 10. When something fails
 
