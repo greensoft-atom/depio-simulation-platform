@@ -235,7 +235,7 @@ TMPDIR=<scratchpad> client/unity2019-check.sh
 # Visual Studio 2019's MSBuild and Roslyn (16.11, 16.7) on the core, .NET Framework 4.7.1, Unity's project, the solution
 client/vs2019-check.sh
 # client-simple (D-111, D-112): compiled by Unity 2019.4's compiler at its levels, .NET Framework 4.5 and .NET Standard 2.1,
-# its offline checks on its Mono (the API's HTTPS against openssl s_server at TLS 1.0)
+# its offline checks on its Mono (the API's HTTPS, the lobby's wss:// and a match's TLS against openssl s_server at TLS 1.0)
 client-simple/check.sh
 
 # Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice erase

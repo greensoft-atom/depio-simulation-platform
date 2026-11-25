@@ -6,7 +6,8 @@
 #     .NET Standard 2.1 where its reference is here (/opt/dotnet's pack); Examples/ against Unity's own UnityEngine at
 #     both of Unity's levels.
 #   - Offline: its pieces checked against the core's (client/Core) and certificates made by private-ca.sh, on Unity's
-#     Mono; the API's HTTPS against openssl s_server at TLS 1.0, which Mono's own TLS outside the editor speaks.
+#     Mono; the API's HTTPS, the lobby's wss:// and a match's TLS against openssl s_server at TLS 1.0, which Mono's
+#     own TLS outside the editor speaks.
 #   - live: the three clients against a running stack (headless-drill.sh SIMPLE=1 runs it), on Unity's Mono when
 #     nothing is encrypted. With TLS, on .NET 8 (/opt/dotnet): Mono's own TLS outside the editor stops at TLS 1.0
 #     and the site's nginx takes 1.2 and 1.3; in the editor and the player, Unity's TLS speaks 1.2 (08 §6). The API

@@ -148,6 +148,13 @@ lobby.Connect(session.token);
 A `LobbyMessage` has `Type`, `Data` (its `d` as JSON text, for `JsonUtility.FromJson`), `IsError`, `ErrorCode`, and
 `GetString`, `GetLong` and `GetBool` for a single field.
 
+**Why not .NET's `ClientWebSocket`:** on Unity 2019 it cannot connect to the backend's `wss://`. It has no
+certificate check of its own to set at either API level, and on Unity 2019's runtime it ignores the app's check that
+`HttpClient` uses, refusing the backend's certificate because no public authority issued it (tried here). So the
+lobby has a small WebSocket of its own, `WebSocketConnection`, over `TcpClient` and `SslStream`, whose check on each
+connection does work, as a match's does. Both use only `System.dll`, which every API level references: no
+`csc.rsp` for them.
+
 | Request | `d` | Does |
 |---|---|---|
 | `ping` | | keeps the connection; `Update()` sends it |
@@ -253,7 +260,9 @@ editor or on a phone. What did run:
   - the API: a call returns at once and gives up after 15 s;
   - the app's certificate check for every case: the backend's address, another site, a check set before it;
   - a real HTTPS call through `HttpClient` against a test server: the root's certificate taken, another root's
-    refused.
+    refused;
+  - the lobby's `wss://` and a match's TLS against the same test server: the root's certificate taken, another
+    root's refused, and for a match a certificate without the grant's TLS name refused.
 - **Live**, by `client/headless-drill.sh SIMPLE=1` against a real backend, through nginx as the site runs it, over
   HTTPS, over HTTP, unencrypted, and straight to the processes:
   - the API over `http://`: health, register, log in, a token used and refused, a guest, a route that does not
@@ -266,10 +275,10 @@ editor or on a phone. What did run:
   - every lobby and match callback on the thread that calls `Update()`.
 - **Each rule broken on purpose**, each caught by the check written for it.
 
-Unity 2019's Mono outside the editor has only its own old TLS, which stops at TLS 1.0. So the API's HTTPS was
-checked against a test server speaking 1.0. The lobby and matches over TLS were checked on .NET 8, because nginx
-speaks only 1.2 and 1.3. .NET 8's `HttpClient` ignores the app's certificate check that Unity's uses, so the live API
-calls are over `http://`. In the editor and on a phone, Unity's own TLS speaks 1.2
+Unity 2019's Mono outside the editor has only its own old TLS, which stops at TLS 1.0. So on it, the API's HTTPS,
+the lobby's `wss://` and a match's TLS were checked against a test server speaking 1.0. Through nginx, which speaks
+only 1.2 and 1.3, the lobby and matches over TLS ran on .NET 8. .NET 8's `HttpClient` ignores the app's certificate
+check that Unity's uses, so the live API calls are over `http://`. In the editor and on a phone, Unity's own TLS speaks 1.2
 ([08 §6](../docs/detailed-design/08-client.md#6-testing)).
 
 ```bash

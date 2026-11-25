@@ -152,6 +152,9 @@ namespace Backend.Client.Simple.Check
 
             Section("the API over HttpClient (D-112)");
             ApiCalls(pki);
+
+            Section("the lobby and a match over TLS, each connection checked by the root (D-108)");
+            LobbyAndMatchOverTls(pki);
         }
 
         private static void ApiCalls(string pki)
@@ -193,19 +196,12 @@ namespace Backend.Client.Simple.Check
                 "another site, with a check set before: that check's verdict");
             Check(!app(to("127.0.0.1"), stranger, null, untrusted) && asked.Count == 1, "the backend's host, with a check set before: the root's alone");
 
-            // A real round over TLS on Unity's Mono, whose own TLS outside the editor is 1.0: openssl's test server. It
-            // keeps no session: Mono resumes one with the same server, which sends no certificate to check again.
+            // A real round over TLS on Unity's Mono, through HttpClient.
             ServicePointManager.ServerCertificateValidationCallback = null;
-            var free = new TcpListener(IPAddress.Loopback, 0);
-            free.Start();
-            int port = ((IPEndPoint)free.LocalEndpoint).Port;
-            free.Stop();
-            Process server = Process.Start(new ProcessStartInfo("openssl",
-                "s_server -accept 127.0.0.1:" + port + " -tls1 -cipher DEFAULT:@SECLEVEL=0 -no_cache -no_ticket -www -quiet -cert " + Path.Combine(pki, "web/fullchain.pem")
-                + " -key " + Path.Combine(pki, "web/privkey.pem")) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true });
+            int port;
+            Process server = TestServer(pki, out port);
             try
             {
-                for (int i = 0; i < 50 && !Accepting(port); i++) Thread.Sleep(100);
                 HttpAnswer a = Wait(new BackendHttp("https://127.0.0.1:" + port, rootPem).GetAsync("/"));
                 Check(a.Status == 200, "over TLS: the root's certificate taken, 200 (" + a.Status + " " + a.Error + ")");
                 a = Wait(new BackendHttp("https://127.0.0.1:" + port, otherPem).GetAsync("/"));
@@ -216,6 +212,81 @@ namespace Backend.Client.Simple.Check
                 server.Kill();
                 ServicePointManager.ServerCertificateValidationCallback = null;
             }
+        }
+
+        /// <summary>
+        /// The lobby's WebSocket and a match's socket over TLS on Unity's Mono, each checking the certificate on its own
+        /// connection (SslStream's callback): the same test server, which answers HTTP, so the lobby's opening is
+        /// refused once TLS is through, and a match waits for frames that never come.
+        /// </summary>
+        private static void LobbyAndMatchOverTls(string pki)
+        {
+            string rootPem = File.ReadAllText(Path.Combine(pki, "root/ca.pem"));
+            string otherPem = File.ReadAllText(Path.Combine(pki, "other/ca.pem"));
+            int port;
+            Process server = TestServer(pki, out port);
+            try
+            {
+                string why = LobbyEnd(new LobbyClient("wss://127.0.0.1:" + port + "/lobby", rootPem));
+                Check(why != null && why.StartsWith("the server refused the WebSocket: HTTP/1.0 200", StringComparison.Ordinal),
+                    "the lobby over TLS: the root's certificate taken, the server's answer read (" + why + ")");
+                why = LobbyEnd(new LobbyClient("wss://127.0.0.1:" + port + "/lobby", otherPem));
+                Check(why != null && !why.StartsWith("the server refused", StringComparison.Ordinal),
+                    "the lobby over TLS: another root's refused in the handshake (" + why + ")");
+
+                string closed = null;
+                var arena = new ArenaClient(rootPem) { OnClosed = w => closed = w };
+                arena.Connect("127.0.0.1", port, true, "site.internal", "FOtirryJy3sDqQntfNTLlg");
+                Pump(() => closed != null, 2000, arena.Update);
+                Check(closed == null, "a match over TLS: the root's certificate taken for the grant's TLS name, the connection kept (" + closed + ")");
+                arena.Close();
+                Pump(() => closed != null, 2000, arena.Update);
+                Check(MatchEnd(otherPem, port, "site.internal"), "a match over TLS: another root's refused");
+                Check(MatchEnd(rootPem, port, "a2.arena.internal"), "a match over TLS: the root's certificate for another TLS name refused");
+            }
+            finally
+            {
+                server.Kill();
+            }
+        }
+
+        private static string LobbyEnd(LobbyClient lobby)
+        {
+            string why = null;
+            lobby.OnClosed = w => why = w;
+            lobby.Connect(new string('A', 43));
+            Pump(() => why != null, 15000, lobby.Update);
+            return why;
+        }
+
+        /// <summary>Whether a match's connection ends by itself, in its TLS handshake, before 10 s.</summary>
+        private static bool MatchEnd(string caPem, int port, string tlsName)
+        {
+            string closed = null;
+            var arena = new ArenaClient(caPem) { OnClosed = w => closed = w };
+            arena.Connect("127.0.0.1", port, true, tlsName, "FOtirryJy3sDqQntfNTLlg");
+            Pump(() => closed != null, 10000, arena.Update);
+            if (closed == null) arena.Close();
+            Console.WriteLine("    (" + tlsName + ": " + (closed ?? "still open after 10 s") + ")");
+            return closed != null && closed != "closed by the client";
+        }
+
+        /// <summary>
+        /// openssl's test server at TLS 1.0, which Unity's Mono outside the editor speaks, with the root's certificate
+        /// for 127.0.0.1 and site.internal. It keeps no session: Mono resumes one with the same server, which sends no
+        /// certificate to check again.
+        /// </summary>
+        private static Process TestServer(string pki, out int port)
+        {
+            var free = new TcpListener(IPAddress.Loopback, 0);
+            free.Start();
+            port = ((IPEndPoint)free.LocalEndpoint).Port;
+            free.Stop();
+            Process server = Process.Start(new ProcessStartInfo("openssl",
+                "s_server -accept 127.0.0.1:" + port + " -tls1 -cipher DEFAULT:@SECLEVEL=0 -no_cache -no_ticket -www -quiet -cert " + Path.Combine(pki, "web/fullchain.pem")
+                + " -key " + Path.Combine(pki, "web/privkey.pem")) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true });
+            for (int i = 0; i < 50 && !Accepting(port); i++) Thread.Sleep(100);
+            return server;
         }
 
         private static bool Accepting(int port)

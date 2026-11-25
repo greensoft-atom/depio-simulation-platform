@@ -4387,6 +4387,30 @@ core's tests are 194; `client-simple`'s live row as D-112 left it) and §8, 03 �
 `client-simple` taking a wire change too), the front page and the docs index (`client-simple` had no row in either),
 the glossary, `client-simple`'s README (the file harmless at .NET Standard, beside an `.asmdef` when there is one),
 `unity-package.sh`'s comment (.NET Standard 2.0, not 2.1), CLAUDE.md. P-66 fixed in the register.
+
+#### 135. ~~The simple client's lobby and match over TLS on Unity's runtime (the owner, 2026-11-25).~~ — **done 2026-11-25**
+
+The owner, after D-112 and D-113: "similarly what about websocket and socket?"
+
+**Found first:**
+- Neither needs a reference beyond each level's defaults: `client-simple/Runtime/` without `BackendHttp.cs` compiles
+  at Unity's .NET 4.x with its default references, against .NET Framework 4.5's `mscorlib`, `System` and
+  `System.Core` alone, and at .NET Standard 2.0. `TcpClient`, `SslStream` and the WebSocket over them are in `System`.
+- .NET's `ClientWebSocket` cannot reach the backend's `wss://` on Unity 2019: `ClientWebSocketOptions` has no
+  `RemoteCertificateValidationCallback` at .NET 4.x or .NET Standard 2.0 (CS1061), and on Unity 2019's Mono it never
+  calls `ServicePointManager`'s callback, refusing the root's certificate itself (`TlsException`, `0x800b010a`;
+  the test server saw alert 46, certificate unknown). D-111's WebSocket of its own stands.
+- `client-simple`'s lobby and match over TLS had run on .NET 8 alone, through nginx.
+
+**Done:** offline, on Unity's Mono, against the same `openssl s_server` at TLS 1.0 as the API's HTTPS: the lobby's
+`wss://` through TLS with the root's certificate (the server's HTTP answer then read and refused as no WebSocket's),
+and refused in the handshake with another root's; a match kept open with the root's certificate for the grant's TLS
+name, and closed in the handshake with another root's, and with the root's own for a name it does not hold. 70
+offline checks. Five mutants, each caught: the runtime's verdict instead of the root's, and any certificate, for the
+lobby and for a match; a match's certificate checked for its host instead of the grant's TLS name.
+
+Docs: `client-simple`'s README (how it was checked, why not `ClientWebSocket`), 08 §6 and §9, `check.sh`'s header,
+CLAUDE.md.
 ---
 
 ### Completed 2026-09-23
