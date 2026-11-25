@@ -736,9 +736,6 @@ namespace Backend.Client.Headless
             }
         }
 
-        /// <summary>Math.Clamp, which .NET Framework has not.</summary>
-        private static float Clamp(float v, float lo, float hi) => v < lo ? lo : v > hi ? hi : v;
-
         /// <summary>One argument as Windows' rule, which .NET follows everywhere, splits it back: quotes and the backslashes before them escaped.</summary>
         private static string Quoted(string s)
         {
@@ -1493,70 +1490,21 @@ namespace Backend.Client.Headless
 
         /// <summary>
         /// Maze (01 §8.9): the eight are sent one maze's seed and each makes the walls from it; one
-        /// fires at the nearest wall at least 100 units off, and its bullets end at a wall the client
-        /// made (D-48). Nobody else fires, so the four minutes run out with nobody ahead.
+        /// fires at a wall in reach, its trigger held, and its bullets end at a wall the client made
+        /// (D-48, <see cref="MazeShot"/>). Nobody else fires, and the one stops once a bullet has, so the
+        /// four minutes run out with nobody ahead.
         /// </summary>
         private static void MazePlay() => Alone("maze", 8, 8, false, matches =>
         {
             long seed = matches[0].Welcome.MazeSeed;
             Check(seed != 0 && matches.TrueForAll(m => m.Welcome.MazeSeed == seed), $"one maze's seed for all eight ({seed})");
             Check(matches.TrueForAll(m => m.World.Walls.Count == 65), "and each made its 65 walls from it");
-            MatchConnection scout = matches[0];
-            Entity self = scout.World[Wire.SelfHandle];
-            float sx = self.X / Wire.PosScale, sy = self.Y / Wire.PosScale;
-            float nearX = 0, nearY = 0, near = float.MaxValue;
-            foreach (Wall w in scout.World.Walls)
-            {
-                float px = Clamp(sx, w.MinX, w.MaxX), py = Clamp(sy, w.MinY, w.MaxY);
-                float d = (float)Math.Sqrt((px - sx) * (px - sx) + (py - sy) * (py - sy));
-                // A bullet is born 39 units out at level 1: one fired at a nearer wall ends in a tick,
-                // before any snapshot carries it; so does one whose way there crosses another wall (T-57).
-                if (d >= 100 && d < near && ClearTo(w, px, py, d)) (near, nearX, nearY) = (d, px, py);
-            }
-            bool ClearTo(Wall target, float px, float py, float d)
-            {
-                for (float t = 39; t < d - 10; t += 5)
-                {
-                    float x = sx + (px - sx) * t / d, y = sy + (py - sy) * t / d;
-                    foreach (Wall other in scout.World.Walls)
-                        if (!other.Equals(target) && other.Hits(x, y, 10)) return false;
-                }
-                return true;
-            }
-            int aim = Wire.QuantiseAim((float)Math.Atan2(nearY - sy, nearX - sx));
-            scout.SetInput(0, aim, true, 0);
-            int flying = 0, removed = 0;
-            float closest = float.MaxValue;
-            bool atAWall = false;
-            // Every frame's removals, not the last polled frame's only: a poll applies every frame waiting (T-57).
-            scout.OnFrame = () =>
-            {
-                // Nobody else fires: a bullet removed is the scout's, by its own rule or the server's.
-                foreach (Removal r in scout.World.Removals)
-                    if (r.Kind == Wire.KindPredicted)
-                    {
-                        removed++;
-                        float rx = r.X / Wire.PosScale, ry = r.Y / Wire.PosScale;
-                        foreach (Wall w in scout.World.Walls)
-                        {
-                            float px = Clamp(rx, w.MinX, w.MaxX), py = Clamp(ry, w.MinY, w.MaxY);
-                            closest = Math.Min(closest, (float)Math.Sqrt((px - rx) * (px - rx) + (py - ry) * (py - ry)));
-                            if (w.Hits(rx, ry, 20)) atAWall = true;
-                        }
-                    }
-            };
-            bool EndedAtAWall()
-            {
-                for (int h = 0; h < Wire.MaxHandles; h++)
-                    if (scout.World[h].Alive && scout.World[h].Kind == Wire.KindPredicted) flying++;
-                return atAWall;
-            }
-            return (EndedAtAWall, $"its bullets, fired at a wall {near:F0} away, ended at a wall the client made",
+            var shot = new MazeShot(matches);
+            return (shot.Poll, "its bullets, fired at a wall in reach, ended at a wall the client made",
                 () =>
                 {
-                    scout.SetInput(0, aim, false, 0);
-                    scout.OnFrame = null;
-                    Console.WriteLine($"    bullets seen in flight, summed over polls: {flying}; removed {removed}, the nearest to a wall {closest:F0}");
+                    shot.Stop();
+                    Console.WriteLine($"    tank {matches.IndexOf(shot.Shooter) + 1} of the eight fired, at a wall {shot.Distance:F0} away; bullets seen in flight, summed over polls: {shot.Flying}; removed {shot.Removed}, the nearest to a wall {shot.Closest:F0}");
                 });
         });
 

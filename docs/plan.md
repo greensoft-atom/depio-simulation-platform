@@ -2,7 +2,7 @@
 
 What is built, what is next, and in what order. Updated 2026-11-25.
 
-**Where it stands (2026-11-25).** Plan items 1 to 139 are done, but for item 7, which stays open by design: what is
+**Where it stands (2026-11-25).** Plan items 1 to 141 are done, but for item 7, which stays open by design: what is
 left of it waits on Q-3's hardware.
 
 - **The site.** It launches on one machine, every role on it, for up to about 5 000 players (D-93); three machines stay
@@ -10,7 +10,7 @@ left of it waits on Q-3's hardware.
   D-97). It has one public address with three ports (D-82, D-115): nginx ends TLS on 443 (the API and the lobby) and
   on 9001 (matches), and serves all three in clear on 80, a match there by `/match/<the arena's name>`.
 - **The components**, each built and tested: `j-redis-service` 2.2.2 (229 tests); the backend's eleven modules (their
-  sources declare 1 150 tests); the client's engine-free core with its headless driver (191 tests, on .NET Framework 4.5, run on
+  sources declare 1 150 tests); the client's engine-free core with its headless driver (196 tests, on .NET Framework 4.5, run on
   Unity 2019's Mono; D-116). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
   `UnityEngine`; there is no Unity editor here, so it has not been opened in one (Q-54). Beside the full client,
   `client-simple/` and `client-simple-no-tls/` are small clients for the UI team (D-111, D-114).
@@ -69,7 +69,7 @@ and fixed-phrase chat
 | MySQL persistence design | **[Written](detailed-design/06-persistence-mysql.md)** — schema, transaction patterns, idempotency via natural keys, pooling, retention and growth, backups proved weekly. The schema is one baseline since 2026-10-04, `V1__schema.sql` and `V2__seed.sql` (D-75). |
 | Operations docs | [Mostly written](operations/01-deploy.md) — install, TLS, MySQL, backups and the certificate run for real; the stores' promotion scripted and drilled ([runbook §2](operations/02-runbook.md#2-stateful-primary-failure)), MySQL's too (2026-09-29, rehearsed under load 2026-09-30); backups proved by a weekly restore (item 76); every port and each machine's firewall, run as written ([05](operations/05-ports-and-firewall.md), item 88); the site behind one public address, the front's nginx ending TLS, and the backend's own CA, run as written with the C# client through it ([05](operations/05-ports-and-firewall.md), [06](operations/06-certificates.md), item 90). What is left is the alert thresholds, which wait on Q-3's hardware ([runbook](operations/02-runbook.md)). |
 | Application code | **[backend/](../backend/README.md)**: `common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`, `crypto-examples`. Their sources declare 1 150 tests (2026-11-25); the last whole run counted 1 064, with 0 compiler warnings (item 86, 2026-10-06). Multi-room arena, largest clean run 1 200 bots, every one sent every snapshot (item 14), and 600 through a failover (item 23); MySQL transactions tested for idempotency and double-spend under concurrency; single-use join tickets; Argon2id login and sessions; register → login → lobby → ticket → play → result persisted → **leaderboard updated**, verified end to end across four processes against real MySQL and real j-redis. |
-| Unity client | **Claude writes it** ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer), 2026-09-27): the engine-free core and a headless driver in [client/](../client/README.md), 191 tests (2026-11-25, .NET Framework 4.5, D-116), their list in its README checked by one of them (DOC-31), driven against the real stack by the live drills. The Unity layer is written as scripts over the core (item 77, the owner's Q-51), compiled against stubs and by Unity 2019.4's own compiler against its `UnityEngine`, and not opened in the editor (Q-54, D-108); own-tank prediction, deferred with it on 2026-09-27, was brought back on 2026-10-03 and built (item 70). |
+| Unity client | **Claude writes it** ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer), 2026-09-27): the engine-free core and a headless driver in [client/](../client/README.md), 196 tests (2026-11-25, .NET Framework 4.5, D-116), their list in its README checked by one of them (DOC-31), driven against the real stack by the live drills. The Unity layer is written as scripts over the core (item 77, the owner's Q-51), compiled against stubs and by Unity 2019.4's own compiler against its `UnityEngine`, and not opened in the editor (Q-54, D-108); own-tank prediction, deferred with it on 2026-09-27, was brought back on 2026-10-03 and built (item 70). |
 
 ### Build checklist
 
@@ -4640,13 +4640,40 @@ Lost, D-116's cost: the name a client's TLS handshake gives, seen by a server (`
 client through nginx's TLS, here; TLS 1.2 on .NET Framework itself, never run here. nginx's TLS stays checked by
 `openssl s_client`.
 
-#### 141. T-66: the maze's bullet check, by the seeds that fail it
+#### 141. ~~T-66: the maze's bullet check, by the seeds that fail it.~~ — **done 2026-11-25**
 
 The one open defect the drills meet: `maze`'s check that the scout's bullets end at a wall failed in two of four runs
 on .NET 8 and two of two on Unity's Mono (item 140), the shots stopped before their first snapshot. Read first what
 stops them: the two seeds recorded, the eight tanks' spawns and the line of fire, in the simulation alone. Then the
 check's shot chosen so that its way is clear of walls and tanks for the bullet's radius, and a test that puts a
 failing seed's geometry in by construction.
+
+**What stops them**, read in the code and measured in the simulation alone (the room as the arena makes a maze's:
+3 000 units, 120 shapes, the seed's walls, eight tanks), not the geometry alone:
+
+- **The check fires once.** It calls `SetInput(…, fire: true, …)` once; the core sends a press once and clears it,
+  as its contract says and `InputGoesOutTenTimesASecond…` tests: an app presses every frame. One shot, which a shape
+  in the corridor takes about one time in seven (139 rooms of 1 000, over 40 seeds); 40 s of fire held, 11.
+- **It aims from where the tank was.** A made match gives each player a tank while it waits for the roster, then its
+  start resets the room and places every tank again (`startMadeMatch`). The check aims when the eight have joined,
+  which can be before the scout has read the frame that moved it: it fires from its new place at a wall seen from
+  its old one, and a press that reaches the server first is the waiting tank's, which the start kills.
+- **Its wall can be out of reach**: a bullet at level 1 flies 75 ticks at 10 units, about 790 from the tank; and from
+  a few places no wall qualifies at all (11 rooms in 1 000 with the reach kept).
+
+**The fix**, in the driver's `MazeShot`, tested against the core tests' fake arena: the trigger held, pressed at every
+poll; the aim from where the own tank is, chosen again in any frame that makes it again; a wall 100 to 700 units off
+with a clear way; and the first of the eight that has one fires. Simulated, 3 rooms in 1 000 fail.
+
+**Done.** `client/Headless/MazeShot.cs`, the scenario's shot moved out of `Program.cs` as it was, then fixed; the core's
+tests compile it in (`core-tests.sh`, the tests' project). Test first: four tests failing on the shot as it was, each
+for its rule (one input of ten carrying fire, the aim kept from where the tank was, a wall 800 off taken, the first tank
+always), then a fifth for the removals (T-57's rule, untested until now): five passing, 196 in all on Unity's Mono.
+11 mutants, 11 caught. Two lines written and taken out as doing nothing: a dead tank skipped (nobody else fires) and
+the old shooter's trigger let go (a press already made is sent all the same). Live: `maze` six times straight and three
+times through nginx's 80 (`FRONT=http`), nine seeds, all passed, each bullet removed within 7 units of its wall.
+`vs2019-check.sh` builds the solution with the tests' linked file. The probes (`Probe.java`, `Fixed.java`, on the sim's
+classes) were the session's, not kept: what they measured is in T-66.
 
 ---
 

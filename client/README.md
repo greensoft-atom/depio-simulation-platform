@@ -112,7 +112,7 @@ cd client
 . ./unity-env.sh && build_headless ../work/headless   # the driver and the core, by hand; the drills build their own
 ```
 
-**Check the count, not only the verdict.** `core-tests.sh` prints NUnitLite's summary, `Test Count: 191, Passed: 191,
+**Check the count, not only the verdict.** `core-tests.sh` prints NUnitLite's summary, `Test Count: 196, Passed: 196,
 Failed: 0, …`, and says `CORE TESTS PASSED` only when none failed. A run that dies part of the way through prints no
 summary; the script then says so, and fails.
 

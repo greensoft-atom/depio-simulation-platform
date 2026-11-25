@@ -65,7 +65,7 @@ As of 2026-11-25, [plan](docs/plan.md) items 1 to 139 are done. Item 7 stays ope
 waits on Q-3's hardware. Item 140, the client on .NET Framework 4.5 alone (D-116), is under way.
 
 - **Tests.** j-redis 2.2.2 passes its 229 tests (2026-11-25). The backend's sources declare 1 150 tests (2026-11-25); the last
-  whole run's count was 1 064 (plan item 86, 2026-10-06). Each module's README holds its own count. The client core's 191 tests pass for
+  whole run's count was 1 064 (plan item 86, 2026-10-06). Each module's README holds its own count. The client core's 196 tests pass for
   .NET Framework 4.5 on Unity 2019's Mono (`client/core-tests.sh`, plan item 140). Nothing here runs .NET 8 since D-116.
 - **Live.** The live drill has 45 scenarios, all in clear since D-116: Unity's Mono, which runs the client here,
   speaks TLS 1.0 alone, so `untrusted`, `TLS=1` and `FRONT=https` are refused. At plan item 78, all 44 scenarios

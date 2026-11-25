@@ -14,6 +14,7 @@ and its scenarios.
 - Here the drills build it for each run with Unity 2019.4's compiler (`build_headless`, in `../unity-env.sh`), and run
   it on Unity's Mono 5.11 with `float32`, as Unity's Mono has it (P-65). Outside the editor, Mono's own TLS stops at
   1.0, and nginx and an arena's own TLS speak 1.2 and 1.3, so the drills drive it in clear (D-116).
+- The `maze` scenario's shot, `MazeShot.cs`, is the one file of it the core's tests compile in (`MazeShotTests`, T-66).
 
 **How it is run.** `../headless-drill.sh` starts the backend from a release and runs this driver against it. Its
 modes and ports are in [../README.md](../README.md#against-the-real-server).
@@ -106,7 +107,7 @@ The times are a run's own, roughly.
 | `stats` | The operator's figures: a new guest's stay counted as active and new today; day 1 empty until tomorrow has ended; two new guests who made friends counted under `friend` | A | seconds |
 | `domination` | Six queue alone, three a side. One drives to the middle line and sees a neutral dominator. Nobody takes one: a draw, each paid | L | five minutes |
 | `tag` | Six queue alone, three a side. Nobody fires, so nobody goes over to the other side: a draw, each paid | L | five minutes |
-| `maze` | Eight queue alone. One maze's seed is in every Welcome, and each client makes its 65 walls from it. One fires at the nearest wall, and its bullets end at the wall the client made | L | four minutes |
+| `maze` | Eight queue alone. One maze's seed is in every Welcome, and each client makes its 65 walls from it. The first of the eight with a wall in reach (100 to 700 units, its way clear) fires at it, its trigger held and aimed again whenever its tank is placed anew, as the match's start places every tank (`MazeShot.cs`, T-66); its bullets end at the wall the client made | L | four minutes |
 | `sandbox` | A party of two. The leader opens a sandbox for both, and both join; level 45 and a Guardian. Both leave; the room ends a minute after it empties, and nothing is paid | L | about a minute |
 | `resume` | The socket dropped without a word; resumed to the same tank with a new secret, and frames flowing again | | seconds |
 | `coldresume` | Killed mid-match, no `Leave`. A new connection resumes the stay with the kept secret; the spent secret is refused as `BadTicket`; the resumed stay is untouched | | seconds |

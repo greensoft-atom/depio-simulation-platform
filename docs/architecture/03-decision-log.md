@@ -3827,7 +3827,7 @@ and the .NET Standard 2.0 level of
   containers, and the simple clients' checks. VS 2019 builds the solution on Windows (`vs2019-check.sh` shows it, with
   VS 2019's own MSBuild). The one modern .NET left is that check's: VS 2019's MSBuild 16.11 and 16.7 reach Linux only
   inside Microsoft's .NET 5 and .NET Core 3.1 SDK images, taken in a container as build tools alone; nothing
-  targets them, nothing runs on them, and nothing they build ships.
+  targets them, nothing runs on them, and nothing they build ships. The owner, asked, kept the check (2026-11-25).
 - **The full client takes a match through the site's 80** as `client-simple-no-tls` does (D-115): given an API in clear
   (`http://`) and a grant that names a TLS name, it asks the front for the arena by name, `GET /match/<name>`, and
   plays the match on that connection once nginx answers 101. A client given `https://` dials the grant's 9001 with TLS,

@@ -24,7 +24,8 @@ compile() {   # what, then csc's arguments
 compile "the core, .NET Framework 4.5" -target:library -out:"$T/Backend.Client.Core.dll" $(fx45_refs) "$C"/Core/*.cs
 # shellcheck disable=SC2046
 compile "the core's tests, .NET Framework 4.5" -target:exe -out:"$T/tests.exe" $(fx45_refs) -r:"$T/Backend.Client.Core.dll" \
-    -r:"$T/nunit.framework.dll" -r:"$T/nunitlite.dll" -r:"$T/System.ValueTuple.dll" "$C"/Core.Tests/*.cs "$C/UnityRuntimeCheck/RunTests.cs"
+    -r:"$T/nunit.framework.dll" -r:"$T/nunitlite.dll" -r:"$T/System.ValueTuple.dll" "$C"/Core.Tests/*.cs "$C/UnityRuntimeCheck/RunTests.cs" \
+    "$C/Headless/MazeShot.cs"
 cp "$C"/Core.Tests/Pki/*.pem "$C"/Core.Tests/Pki/*.p12 "$T/Pki/"
 cp "$B/protocol-spike/vectors/vectors.txt" "$B/backend/sim/src/test/resources/maze-2026.txt" \
    "$B/backend/arena/src/test/resources/motion-2026.txt" "$C/Core.Tests/README.md" "$T/"

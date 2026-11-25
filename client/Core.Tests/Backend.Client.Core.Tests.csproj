@@ -20,6 +20,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Core/Backend.Client.Core.csproj" />
+    <!-- The headless driver's maze shot, the one file of the driver's these tests take (T-66). -->
+    <Compile Include="../Headless/MazeShot.cs" Link="MazeShot.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- The contract between the Java encoder and this decoder: the same file the server's

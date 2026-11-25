@@ -5,7 +5,7 @@ These are the tests of the client's core, `Backend.Client.Core`
 before and after every change. This page says how to run them, which files they share with the server's tests, which
 scripted servers they use, and what each test file covers.
 
-**What they are.** NUnit tests in C# 7.3 on .NET Framework 4.5 (D-116), 191 in all: 153 `[Test]` methods, and 38
+**What they are.** NUnit tests in C# 7.3 on .NET Framework 4.5 (D-116), 196 in all: 158 `[Test]` methods, and 38
 runs of 5 parameterised methods.
 
 | Where they run | How |
@@ -34,7 +34,7 @@ cd client
 TESTS="class =~ MatchConnectionTests" ./core-tests.sh    # some, by an NUnit where-expression
 ```
 
-**Read the count.** `core-tests.sh` prints NUnitLite's summary, `Test Count: 191, Passed: 191, Failed: 0, …`, and
+**Read the count.** `core-tests.sh` prints NUnitLite's summary, `Test Count: 196, Passed: 196, Failed: 0, …`, and
 says `CORE TESTS PASSED` only when none failed. A run that dies part of the way through prints no summary; the
 script then says so, and fails.
 
@@ -80,6 +80,7 @@ add, remove or rename a test, update this table in the same change.
 | `MatchConnectionTests.cs` | 30 | 1, eight rows | a match through the site's 80 by the arena's name, when it is taken, a site that does not open the tunnel, a site without the arena's name (D-116); each kick's `MatchEnd` (1 to 7, and an unknown reason); `Leave` waiting for the arena's close, and closing after its wait; an arena not reached is not tried again; a lost connection resumed with the latest secret and a fresh world; a cold resume, its stay over, and no arena for the minute; a desync resumed; resume backoff and its minute; input ten a second, with the acknowledgement and the latched fire; the own tank stepped at once; every frame's events told; a phrase; a sandbox's powers, and not before the Welcome; a ping every 10 s in every state, and the round trip; a maze's Welcome giving the world its walls; a silent arena lost in 3 s, a dead player's connection only when its pings go unanswered, a backgrounded one never; dead from the Death to the next tick, though the own tank is never removed; each frame told with its removals; a dial, a handshake and a Join each with a time limit; a credential that cannot be sent refused before dialling |
 | `MessageTests.cs` | 6 | | `Join` with the version first; `Input`'s acknowledgement and little-endian aim; the ping's clock big-endian; the server's messages read; frames split however the bytes arrive; a broken stream refused |
 | `MazeTests.cs` | 3 | | the same walls as the server's for the same seed; a seed of the arena's size; a circle within its radius of a wall |
+| `MazeShotTests.cs` | 5 | | the headless driver's maze shot, its file compiled in (T-66): the trigger held, every input carrying fire; the aim taken again from where the tank is made again, as a made match's start places every tank anew; a wall too near, behind another or beyond a bullet's reach no target; the first of the tanks with a wall in reach fires; a bullet ending at a wall seen in any frame of a poll, in the shooter's world alone |
 | `TankMotionTests.cs` | 2 | 1, three rows | the vector's three cases; every step the same as the room's, bit for bit; the move bits as the room reads them |
 | `OwnTankTests.cs` | 10 | | stepping at the room's rate by the clock; a frame matched to its step, and the steps after it replayed; a correction halving every 50 ms; a jump taken at once; nothing replayed without the echoed steps; an echo of no ticks; a send stamping its steps; no prediction while dead or without a rule; a respawn starting afresh; a stall stepping no more than it keeps |
 | `SceneTests.cs` | 7 | | a tank between its last two samples, never beyond; a tank at its class's size, 30 times its `bodySize` (P-67); the shorter way round; each kind by its own rule; the own tank where it is predicted; the list reused; the render tick two frames behind, never ahead, never back |
