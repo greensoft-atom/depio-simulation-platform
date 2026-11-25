@@ -2,22 +2,29 @@
 
 A small C# client for the backend, to put in a Unity project:
 
-- **the API**: HTTP calls such as logging in, the shop or the inventory;
+- **the API**: HTTP calls such as logging in, the shop or the inventory, through `HttpClient`;
 - **the lobby**: a WebSocket that stays open between matches;
 - **a match**: a TCP socket to the arena.
 
-Copy one folder, set two addresses, and call `Update()` every frame. It does not replace
-[`client/`](../client/README.md), the full client with prediction, the world and drawing ([D-111](../docs/architecture/03-decision-log.md#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms)).
+Copy one folder, set two addresses, `await` the API's calls, and call the lobby's and the match's `Update()` every
+frame. It does not replace [`client/`](../client/README.md), the full client with prediction, the world and drawing
+([D-111](../docs/architecture/03-decision-log.md#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms),
+[D-112](../docs/architecture/03-decision-log.md#d-112--the-simple-clients-api-over-httpclient-awaited-the-backends-root-as-the-apps-certificate-check)).
 
 ## Which Unity
 
-Any version from **Unity 2019.4 to Unity 6**, at either **Api Compatibility Level**: .NET Standard 2.0 or 2.1, or
-.NET 4.x / .NET Framework.
+Any version from **Unity 2019.4 to Unity 6**, at either **Api Compatibility Level** (Edit → Project Settings →
+Player → Other Settings): .NET Standard 2.0 (or 2.1), or .NET 4.x.
 
 The code uses:
 - C# 7.3;
-- nothing beyond .NET Standard 2.0;
-- no package, no DLL and no `async`.
+- nothing beyond .NET Framework 4.5 and .NET Standard 2.0, which both of Unity's levels contain;
+- `HttpClient` with `async` and `await` for the API;
+- no package and no DLL.
+
+**At the .NET 4.x level, copy `csc.rsp` into `Assets/`.** Unity does not give a script `System.Net.Http`, where
+`HttpClient` lives, at that level; the file's one line, `-r:System.Net.Http.dll`, adds it. Without it, Unity reports
+error CS1069 (or CS0234) for `HttpClient`. The .NET Standard levels need nothing.
 
 `Runtime/` does not use `UnityEngine` at all; only the examples do.
 
@@ -26,12 +33,13 @@ The code uses:
 | From | To | What it is |
 |---|---|---|
 | `Runtime/` | `Assets/Backend/Runtime/` | the client, seven files; needed |
+| `csc.rsp` | `Assets/csc.rsp` | at the .NET 4.x level only: gives scripts `System.Net.Http` |
 | `Examples/` | `Assets/Backend/Examples/` | three example scripts and the JSON classes they use; optional |
 | the backend's `ca.pem` | `Assets/Backend/ca.pem.txt` | the backend's own root certificate, renamed `.txt` so Unity takes it as a `TextAsset`; needed for `https://`, `wss://` and matches over TLS ([operations/06](../docs/operations/06-certificates.md)) |
 
 | File in `Runtime/` | What it does |
 |---|---|
-| `BackendHttp.cs` | the API: `Get`, `Post`, `Put`, `Delete`, each answered by a callback |
+| `BackendHttp.cs` | the API over `HttpClient`: `GetAsync`, `PostAsync`, `PutAsync`, `DeleteAsync`, each awaited |
 | `LobbyClient.cs` | the lobby: connects, sends the token, keeps the connection alive, sends requests and receives pushes |
 | `ArenaClient.cs` | a match: joins with a ticket, sends inputs, receives snapshots, resumes, leaves |
 | `ArenaMessages.cs` | the match protocol's bytes, its message numbers and kick reasons |
@@ -39,15 +47,25 @@ The code uses:
 | `TrustRoot.cs` | the certificate check: accepts only certificates issued by the backend's root (you do not call it) |
 | `Json.cs` | reads a single field of a JSON object: `Json.GetString(body, "token")` |
 
-## The one rule: call `Update()`
+## The main thread
 
-Each client works on its own thread, so the network never stalls a frame. Nothing reaches your code until you call
-`Update()`. Each callback then runs inside it, on Unity's main thread, where it may change the scene and the UI.
+The network never stalls a frame, and your code always runs on Unity's main thread, where it may change the scene
+and the UI:
+
+- **The API: `await` each call** in an `async` method. Unity runs the code after an `await` on the main thread
+  again. Never wait on a call with `.Result` or `.Wait()`: on the main thread that never returns.
+- **The lobby and a match: call `Update()` every frame.** Each works on its own thread, and nothing reaches your
+  code until you call `Update()`. Each callback then runs inside it.
 
 ```csharp
+async void Start()
+{
+    HttpAnswer answer = await http.GetAsync("/v1/health");     // the frames go on while it waits
+    Debug.Log(answer.Status);                                  // back on the main thread
+}
+
 void Update()
 {
-    http.Update();
     lobby.Update();
     arena.Update();
 }
@@ -58,21 +76,25 @@ void Update()
 ```csharp
 var http = new BackendHttp("https://203.0.113.10", rootCertificate.text);   // http:// and no root in development
 
-http.Post("/v1/sessions", JsonUtility.ToJson(new Credentials { username = "ada", password = "secret-123" }), answer =>
+async void LogIn()
 {
+    var credentials = new Credentials { username = "ada", password = "secret-123" };
+    HttpAnswer answer = await http.PostAsync("/v1/sessions", JsonUtility.ToJson(credentials));
     if (!answer.Ok) { Debug.Log("refused: " + answer.Error); return; }     // "invalid_credentials", "banned"...
     Session session = JsonUtility.FromJson<Session>(answer.Body);
     http.Token = session.token;                                          // every later call is the player's
-    http.Get("/v1/inventory", inv => Debug.Log(inv.Body));
-});
+
+    HttpAnswer inventory = await http.GetAsync("/v1/inventory");
+    Debug.Log(inventory.Body);
+}
 ```
 
-Every call ends in one `HttpAnswer`:
+A call never throws. It always ends in one `HttpAnswer`:
 
 | Field | Holds |
 |---|---|
 | `Ok` | true for a status of 200 to 299 |
-| `Status` | the HTTP status; **0 when no answer came**: no network, the certificate refused, or a timeout (15 s, `TimeoutMs`) |
+| `Status` | the HTTP status; **0 when no answer came**: no network, the certificate refused, or no answer in 15 s |
 | `Body` | the JSON text; read it with `JsonUtility.FromJson<T>` (the classes are in `Examples/ApiModels.cs`) |
 | `Error` | null when it went well; otherwise the API's `code` (`invalid_session`, `username_taken`...), or what went wrong |
 
@@ -89,6 +111,15 @@ The calls most apps start with; [docs/api/01](../docs/api/01-http-api.md) has ev
 | `DELETE /v1/sessions` | | 204: logged out |
 
 `invalid_session` on any call means the token is over: log in again.
+
+**Good to know:**
+- **An object can be destroyed while its call waits.** For example, the scene changed. After an `await` in a
+  `MonoBehaviour`, `if (this == null) return;` stops before touching it.
+- **The certificate check for `https://` is the whole app's.** Unity 2019's `HttpClient` has no check of its own to
+  set, so a `BackendHttp` made with the root sets .NET's one for the app,
+  `ServicePointManager.ServerCertificateValidationCallback`. The backend's address must have a certificate from
+  the root; every other site keeps the check it had. If your project sets that callback too, set yours first: one
+  set after `BackendHttp` replaces it. The lobby and matches check their own connections and are not affected.
 
 ## 2. The lobby: `LobbyClient`
 
@@ -179,7 +210,7 @@ format.
 
 | Script | Shows |
 |---|---|
-| `HttpExample` | the API: a guest made once and kept in `PlayerPrefs`, logged in, the shop and the inventory read; `Register` and `LogOut` |
+| `HttpExample` | the API, each step awaited: a guest made once and kept in `PlayerPrefs`, logged in, the shop and the inventory read; `Register` and `LogOut` |
 | `LobbyExample` | the lobby: logged in, connected, a seat in the public arena asked for, a duel accepted, pushes handled, reconnecting |
 | `ArenaExample` | a match from a grant: inputs ten a second, snapshots counted, pause, resume, kicks, `LeaveMatch` |
 | `ApiModels` | the `[Serializable]` classes `JsonUtility` reads and writes |
@@ -207,7 +238,8 @@ There is no Unity editor on the machine this was written on (it needs a licence)
 editor or on a phone. What did run:
 
 - **Compiled by Unity 2019.4.28f1's own compiler** (C# 7.3, warnings as errors):
-  - `Runtime/` against .NET Standard 2.0, .NET 4.x and .NET Standard 2.1;
+  - `Runtime/` against .NET Standard 2.0, .NET 4.x (with `csc.rsp`'s reference; refused without it, as said above),
+    .NET Framework 4.5 and .NET Standard 2.1;
   - `Examples/` against Unity's own `UnityEngine` at both of Unity 2019's levels.
 - **Offline, on Unity 2019's own Mono**:
   - JSON fields read and written;
@@ -215,21 +247,28 @@ editor or on a phone. What did run:
   - the arena's answers read as the full client reads them;
   - frames;
   - the WebSocket's handshake and frames against RFC 6455's own examples;
-  - the certificate check against certificates made by the site's own script.
+  - the certificate check against certificates made by the site's own script;
+  - the API: a call returns at once and gives up after 15 s;
+  - the app's certificate check for every case: the backend's address, another site, a check set before it;
+  - a real HTTPS call through `HttpClient` against a test server: the root's certificate taken, another root's
+    refused.
 - **Live**, by `client/headless-drill.sh SIMPLE=1` against a real backend, through nginx as the site runs it, over
   HTTPS, over HTTP, unencrypted, and straight to the processes:
-  - the API: health, register, log in, a token used and refused, a guest, a route that does not exist, log out;
+  - the API over `http://`: health, register, log in, a token used and refused, a guest, a route that does not
+    exist, log out;
   - the lobby: connect, `auth`, `ping`, an error, a seat in the public arena, kept open for 125 s by its heartbeat, a
     second connection replacing the first;
   - a match: Join, a Welcome, snapshots while sending inputs, a Pong, the app paused (snapshots stop) and back, a lost
     connection resumed, Leave;
-  - with TLS, another root's certificate refused for each connection;
-  - every callback on the thread that calls `Update()`.
-- **Each rule broken on purpose**: 16 mutants offline and 9 live, each caught by the check written for it.
+  - with TLS, another root's certificate refused for the lobby and for a match;
+  - every lobby and match callback on the thread that calls `Update()`.
+- **Each rule broken on purpose**, each caught by the check written for it.
 
-  Unencrypted, this ran on Unity 2019's Mono. With TLS it ran on .NET 8. Unity 2019's Mono outside the editor has
-  only its own old TLS, which stops at TLS 1.0, while nginx speaks 1.2 and 1.3. In the editor and on a phone, Unity's
-  own TLS speaks 1.2 ([08 §6](../docs/detailed-design/08-client.md#6-testing)).
+Unity 2019's Mono outside the editor has only its own old TLS, which stops at TLS 1.0. So the API's HTTPS was
+checked against a test server speaking 1.0. The lobby and matches over TLS were checked on .NET 8, because nginx
+speaks only 1.2 and 1.3. .NET 8's `HttpClient` ignores the app's certificate check that Unity's uses, so the live API
+calls are over `http://`. In the editor and on a phone, Unity's own TLS speaks 1.2
+([08 §6](../docs/detailed-design/08-client.md#6-testing)).
 
 ```bash
 client-simple/check.sh                                   # compiled at every level, the offline checks

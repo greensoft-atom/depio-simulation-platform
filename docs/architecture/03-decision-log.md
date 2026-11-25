@@ -3616,3 +3616,56 @@ which made it look like .NET Core. A UI team needs a small surface it can read i
 
 **Cost.** A second client to keep in step with the protocols: a new protocol version, message or field is changed in
 both. The drill's `SIMPLE=1` runs it against the drill's own stack, so a change that breaks it fails there.
+
+### D-112 — The simple client's API over `HttpClient`, awaited, the backend's root as the app's certificate check
+
+**Decided 2026-11-25** (plan item 133; the owner, on Unity 2019: the API through `HttpClient`, the way they write it,
+`await client.PostAsync(...)` and `ReadAsStringAsync()`; their environment given as `HttpClient`'s own list, .NET
+Framework 4.5, .NET Standard 1.1, .NET Core 1.0). It changes D-111 for the API alone.
+
+**Decision.**
+- **`BackendHttp` over `HttpClient`.** `GetAsync`, `PostAsync`, `PutAsync`, `DeleteAsync` and `SendAsync` each return
+  a `Task<HttpAnswer>`, awaited in a script's `async` method. In Unity the code after an `await` runs on the main thread
+  again (Unity's synchronisation context), so the API needs no `Update()`. A call never throws: the answer says what
+  went wrong, as before. The lobby and the arena are as they were: their own threads, `Update()`.
+- **The backend's root as the app's certificate check.** On Unity 2019's Mono, `HttpClient`'s own check,
+  `HttpClientHandler.ServerCertificateCustomValidationCallback`, throws `NotImplementedException` (P-63, seen again),
+  and `HttpClient` calls `ServicePointManager.ServerCertificateValidationCallback` with the `HttpWebRequest` as its
+  sender: a probe on that Mono against `openssl s_server`. A `BackendHttp` made with a root sets that callback. A
+  request to the backend's host is held to the root alone (`TrustRoot.Accepts`, as every connection is, D-108); any
+  other request gets the callback set before it, or the runtime's own verdict when there was none. The lobby and
+  matches keep their check on each connection (`SslStream`'s), which this does not touch.
+- **.NET Framework 4.5's API is the floor of `Runtime/`**, compiled against Unity's own `4.5-api` assemblies beside
+  .NET Standard 2.0, Unity's .NET 4.x (4.7.1's API) and .NET Standard 2.1. `TrustRoot` takes the root's key and checks
+  a signature by 4.5's means (`PublicKey.Key`, `RSAPKCS1SignatureDeformatter`), its only change from the core's.
+  .NET Standard 1.x is not a level: it has no TCP sockets, and no Unity compiles at it.
+- **At Unity's .NET 4.x level, `Assets/csc.rsp`** with `-r:System.Net.Http.dll` (P-66's reference), shipped as
+  `client-simple/csc.rsp`. .NET Standard 2.0 has `HttpClient` in it.
+- **No `ConfigureAwait(false)`:** a call's own steps after its `await`s run on the main thread as well, microseconds a
+  call, one idea fewer for the reader. A call is awaited, never waited on (`.Result` on Unity's main thread would
+  never return).
+- **Checked** offline on Unity's Mono: the callback called directly (the backend's host and another, a callback set
+  before it, a sender that is not a request); a real round over TLS against `openssl s_server` at TLS 1.0 (the root's
+  certificate taken, another root's refused); a call returning before its answer, and giving up after 15 s. The test
+  server keeps no session (`-no_cache -no_ticket`): Mono resumes a session with the same server, and a resumed
+  session brings no certificate to check, so a second client trusting another root was let in by the first one's
+  session. That is TLS as meant, since only the server that showed the root's certificate holds the session's secret,
+  but a check of a refusal needs a fresh handshake. Live
+  through the drill's stack over HTTP. The API over HTTPS through nginx is not run here: Unity's Mono outside the
+  editor speaks TLS 1.0 alone, and .NET 8's `HttpClient` does not call `ServicePointManager`'s callback (a probe), so
+  with `FRONT=https` the check takes the API at the front's clear port, the lobby and matches over TLS as before.
+
+**Why.** The owner asked, and `HttpClient` is what their team knows. The app's callback is the only check Unity 2019's
+`HttpClient` calls.
+
+**Not chosen:**
+- **The per-client check, the app's as a fallback:** it would work on .NET 8 too, but the property is not in .NET
+  Framework 4.5 and throws on Unity 2019; it would serve this machine's check alone.
+- **`HttpClient` over a handler of `HttpWebRequest`** (the core's `WebRequestTransport`): a check per request, but
+  `HttpWebRequest` under `HttpClient` is what the owner asked not to read.
+- **`UnityWebRequest`:** as in D-111, nothing outside the engine can run it.
+
+**Cost.** The callback is the whole app's: code that sets `ServicePointManager.ServerCertificateValidationCallback`
+after `BackendHttp` is made replaces it, and the backend's HTTPS calls then get that code's verdict. The README says
+so. The API's HTTPS path is checked against a TLS 1.0 server, not nginx's 1.2; in the editor and the player, Unity's
+TLS runs it, below the same callback.

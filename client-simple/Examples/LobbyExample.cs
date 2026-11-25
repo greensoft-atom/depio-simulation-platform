@@ -48,10 +48,9 @@ namespace Backend.Client.Simple.Examples
             LogIn();
         }
 
-        // Every callback of BackendHttp and LobbyClient runs in here, on the main thread.
+        // Every callback of LobbyClient runs in here, on the main thread.
         private void Update()
         {
-            _http?.Update();
             _lobby?.Update();
             if (_reconnectAt >= 0 && Time.unscaledTime >= _reconnectAt)
             {
@@ -62,26 +61,22 @@ namespace Backend.Client.Simple.Examples
 
         private void OnDestroy() => _lobby?.Close();
 
-        private void LogIn()
+        // A guest, as HttpExample logs in, then the lobby with its token. Unity runs the code after each await on the main thread.
+        private async void LogIn()
         {
             string key = PlayerPrefs.GetString("guestKey", "");
             if (key == "")
             {
-                _http.Post("/v1/guests", null, answer =>
-                {
-                    if (!answer.Ok) { Debug.LogError("No guest made: " + answer.Error); return; }
-                    PlayerPrefs.SetString("guestKey", JsonUtility.FromJson<Guest>(answer.Body).guestKey);
-                    PlayerPrefs.Save();
-                    LogIn();
-                });
-                return;
+                HttpAnswer made = await _http.PostAsync("/v1/guests", null);
+                if (!made.Ok) { Debug.LogError("No guest made: " + made.Error); return; }
+                key = JsonUtility.FromJson<Guest>(made.Body).guestKey;
+                PlayerPrefs.SetString("guestKey", key);
+                PlayerPrefs.Save();
             }
-            _http.Post("/v1/sessions", JsonUtility.ToJson(new GuestLogin { guestKey = key }), answer =>
-            {
-                if (!answer.Ok) { Debug.LogError("Not logged in: " + answer.Error); return; }
-                _token = JsonUtility.FromJson<Session>(answer.Body).token;
-                _lobby.Connect(_token);
-            });
+            HttpAnswer answer = await _http.PostAsync("/v1/sessions", JsonUtility.ToJson(new GuestLogin { guestKey = key }));
+            if (!answer.Ok) { Debug.LogError("Not logged in: " + answer.Error); return; }
+            _token = JsonUtility.FromJson<Session>(answer.Body).token;
+            _lobby.Connect(_token);
         }
 
         private void OnAuthenticated(long playerId)
@@ -131,12 +126,18 @@ namespace Backend.Client.Simple.Examples
                     Debug.LogWarning("The lobby ends this connection: " + push.Type + " " + push.Data);
                     break;
                 case "evt.resync":                          // pushes were lost: fetch what matters again
-                    _http.Get("/v1/queue", answer => Debug.Log("The queue, fetched again: " + answer.Body));
+                    FetchQueue();
                     break;
                 default:                                    // evt.party.*, evt.friend.*, evt.rewards, evt.inbox...
                     Debug.Log("Pushed: " + push.Text);
                     break;
             }
+        }
+
+        private async void FetchQueue()
+        {
+            HttpAnswer answer = await _http.GetAsync("/v1/queue");
+            Debug.Log("The queue, fetched again: " + answer.Body);
         }
 
         private void OnClosed(string why)

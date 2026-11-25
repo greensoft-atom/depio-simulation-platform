@@ -1,5 +1,6 @@
-// The core's check (client/Core/TrustRoot.cs, D-108), copied as it is but for its HttpClient handler, which
-// client-simple does not use (D-111). Nothing here needs reading to use it: TrustRoot.FromPem(ca.pem), then CheckFor(host).
+// The core's check (client/Core/TrustRoot.cs, D-108), copied but for its HttpClient handler, which client-simple does
+// not use (D-111), and for two calls of .NET 4.6 done by 4.5's means (D-112). Nothing here needs reading to use it:
+// TrustRoot.FromPem(ca.pem), then CheckFor(host).
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -30,9 +31,8 @@ namespace Backend.Client.Simple
         {
             if (root == null) throw new ArgumentNullException(nameof(root));
             RSA key = null;
-            try { key = root.GetRSAPublicKey(); }
+            try { key = root.PublicKey.Key as RSA; }        // .NET 4.5's way to the key; an EC key is no RSA
             catch (CryptographicException) { }              // Unity 2019's Mono, on an EC key
-            catch (NotImplementedException) { }
             _key = key ?? throw new ArgumentException(
                 "the root's key is not RSA: the backend's root is RSA since D-108; make it again (scripts/private-ca.sh)",
                 nameof(root));
@@ -71,7 +71,11 @@ namespace Backend.Client.Simple
             {
                 return false;
             }
-            if (!_key.VerifyData(c.Signed, c.Signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)) return false;
+            var signature = new RSAPKCS1SignatureDeformatter(_key);
+            signature.SetHashAlgorithm("SHA256");
+            byte[] hash;
+            using (SHA256 sha = SHA256.Create()) hash = sha.ComputeHash(c.Signed);
+            if (!signature.VerifySignature(hash, c.Signature)) return false;
             DateTime now = DateTime.UtcNow;
             if (now < c.NotBefore || now > c.NotAfter) return false;
             return IPAddress.TryParse(host, out IPAddress ip)

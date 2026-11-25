@@ -8,8 +8,8 @@ real server, and a thin Unity layer that draws it
 The diagrams are in [docs/diagrams/06-client.md](../docs/diagrams/06-client.md).
 
 **A smaller client, to read and paste into a project:** [`client-simple/`](../client-simple/README.md) (D-111): the
-API, the lobby and a match in seven files of C# 7.3 on .NET Standard 2.0, with three example scripts; no prediction,
-no world, no drawing.
+API (over `HttpClient`, D-112), the lobby and a match in seven files of C# 7.3 on .NET Framework 4.5's and .NET
+Standard 2.0's APIs, with three example scripts; no prediction, no world, no drawing.
 
 ## Projects
 

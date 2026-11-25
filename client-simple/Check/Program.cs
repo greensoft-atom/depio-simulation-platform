@@ -1,10 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Security;
+using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Backend.Client.Simple;
 using Core = Backend.Client.Core;
 
@@ -144,6 +149,79 @@ namespace Backend.Client.Simple.Check
 
             Section("the certificate check, as the core's (D-108)");
             SimpleTrust(pki);
+
+            Section("the API over HttpClient (D-112)");
+            ApiCalls(pki);
+        }
+
+        private static void ApiCalls(string pki)
+        {
+            string rootPem = File.ReadAllText(Path.Combine(pki, "root/ca.pem"));
+            string otherPem = File.ReadAllText(Path.Combine(pki, "other/ca.pem"));
+            X509Certificate2 web = FirstCertificate(Path.Combine(pki, "web/fullchain.pem"));      // the root's: 127.0.0.1, site.internal
+            X509Certificate2 stranger = FirstCertificate(Path.Combine(pki, "other-leaf/fullchain.pem"));
+
+            // A server that takes the connection and never answers.
+            var silent = new TcpListener(IPAddress.Loopback, 0);
+            silent.Start();
+            var clock = Stopwatch.StartNew();
+            Task<HttpAnswer> call = new BackendHttp("http://127.0.0.1:" + ((IPEndPoint)silent.LocalEndpoint).Port).GetAsync("/v1/health");
+            Check(!call.IsCompleted && clock.ElapsedMilliseconds < 1000, "a call returns at once, before its answer: the frame goes on");
+            bool ended = call.Wait(30000);
+            Check(ended && call.Result.Status == 0 && call.Result.Error == "no answer in 15 s" && clock.ElapsedMilliseconds >= 14000,
+                "no answer: given up after 15 s, Status 0 (" + (ended ? call.Result.Error : "still waiting") + ", " + clock.ElapsedMilliseconds + " ms)");
+            silent.Stop();
+
+            // The app's certificate check, called as Unity 2019's HttpClient calls it: the request as the sender.
+            Func<string, HttpWebRequest> to = host => (HttpWebRequest)WebRequest.Create("https://" + host + "/");
+            const SslPolicyErrors trusted = SslPolicyErrors.None, untrusted = SslPolicyErrors.RemoteCertificateChainErrors;
+            ServicePointManager.ServerCertificateValidationCallback = null;
+            new BackendHttp("https://127.0.0.1:1", rootPem);
+            RemoteCertificateValidationCallback app = ServicePointManager.ServerCertificateValidationCallback;
+            Check(app != null, "a BackendHttp with a root: the app's check set");
+            if (app == null) return;
+            Check(app(to("127.0.0.1"), web, null, untrusted), "the backend's host: the root's certificate taken, though the runtime knows no such root");
+            Check(!app(to("127.0.0.1"), stranger, null, trusted), "the backend's host: another root's refused, even one the runtime trusts");
+            Check(!app(to("site.internal"), web, null, untrusted), "another site: the runtime's verdict, not the root's, though the root issued its certificate");
+            Check(app(to("site.internal"), web, null, trusted), "another site the runtime trusts: taken");
+            Check(app(null, web, null, trusted) && !app(null, web, null, untrusted), "a sender that is not a request: the runtime's verdict");
+            var asked = new List<string>();
+            ServicePointManager.ServerCertificateValidationCallback = (s, c, ch, e) => { asked.Add(((HttpWebRequest)s).RequestUri.Host); return true; };
+            new BackendHttp("https://127.0.0.1:1", rootPem);
+            app = ServicePointManager.ServerCertificateValidationCallback;
+            Check(app(to("site.internal"), web, null, untrusted) && asked.SequenceEqual(new[] { "site.internal" }),
+                "another site, with a check set before: that check's verdict");
+            Check(!app(to("127.0.0.1"), stranger, null, untrusted) && asked.Count == 1, "the backend's host, with a check set before: the root's alone");
+
+            // A real round over TLS on Unity's Mono, whose own TLS outside the editor is 1.0: openssl's test server. It
+            // keeps no session: Mono resumes one with the same server, which sends no certificate to check again.
+            ServicePointManager.ServerCertificateValidationCallback = null;
+            var free = new TcpListener(IPAddress.Loopback, 0);
+            free.Start();
+            int port = ((IPEndPoint)free.LocalEndpoint).Port;
+            free.Stop();
+            Process server = Process.Start(new ProcessStartInfo("openssl",
+                "s_server -accept 127.0.0.1:" + port + " -tls1 -cipher DEFAULT:@SECLEVEL=0 -no_cache -no_ticket -www -quiet -cert " + Path.Combine(pki, "web/fullchain.pem")
+                + " -key " + Path.Combine(pki, "web/privkey.pem")) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true });
+            try
+            {
+                for (int i = 0; i < 50 && !Accepting(port); i++) Thread.Sleep(100);
+                HttpAnswer a = Wait(new BackendHttp("https://127.0.0.1:" + port, rootPem).GetAsync("/"));
+                Check(a.Status == 200, "over TLS: the root's certificate taken, 200 (" + a.Status + " " + a.Error + ")");
+                a = Wait(new BackendHttp("https://127.0.0.1:" + port, otherPem).GetAsync("/"));
+                Check(a.Status == 0 && !string.IsNullOrEmpty(a.Error), "over TLS: another root's refused, Status 0 (" + a.Error + ")");
+            }
+            finally
+            {
+                server.Kill();
+                ServicePointManager.ServerCertificateValidationCallback = null;
+            }
+        }
+
+        private static bool Accepting(int port)
+        {
+            try { using (new TcpClient("127.0.0.1", port)) return true; }
+            catch (SocketException) { return false; }
         }
 
         private static void CompareWelcome(byte[] frame, string what)
@@ -171,7 +249,8 @@ namespace Backend.Client.Simple.Check
             foreach (var c in cases)
                 Check(root.Accepts(c.Item1, c.Item2) == c.Item3 && coreRoot.Accepts(c.Item1, c.Item2) == c.Item3,
                     (c.Item3 ? "accepted: " : "refused: ") + (c.Item1 == leaf ? "the root's" : "another root's") + " certificate for " + c.Item2);
-            Check(Throws(() => TrustRoot.FromPem(File.ReadAllText(Path.Combine(pki, "ec.pem")))), "an EC root: refused, as Unity 2019 cannot check it");
+            Check(ThrowsSaying(() => TrustRoot.FromPem(File.ReadAllText(Path.Combine(pki, "ec.pem"))), "is not RSA"),
+                "an EC root: refused as not RSA, as Unity 2019 cannot check it");
             Check(Throws(() => TrustRoot.FromPem("nonsense")), "no PEM: refused");
         }
 
@@ -185,40 +264,34 @@ namespace Backend.Client.Simple.Check
 
             Section("the API, " + api);
             var http = new BackendHttp(api, ca);
-            HttpAnswer a = Call(http, done => http.Get("/v1/health", done));
+            HttpAnswer a = Wait(http.GetAsync("/v1/health"));
             Check(a.Status == 200 && Json.GetString(a.Body, "status") == "ok", "GET /v1/health: 200 ok (" + a.Status + " " + a.Error + ")");
             string username = "simple_" + run;
-            a = Call(http, done => http.Post("/v1/accounts",
-                "{\"username\":" + Json.Quote(username) + ",\"password\":\"example-password-1\",\"displayName\":\"Simple\"}", done));
+            a = Wait(http.PostAsync("/v1/accounts",
+                "{\"username\":" + Json.Quote(username) + ",\"password\":\"example-password-1\",\"displayName\":\"Simple\"}"));
             long playerId = Json.GetLong(a.Body, "playerId");
             Check(a.Status == 201 && playerId > 0, "register: 201 and a player id (" + a.Status + " " + a.Error + ")");
-            a = Call(http, done => http.Post("/v1/accounts",
-                "{\"username\":" + Json.Quote(username) + ",\"password\":\"example-password-1\"}", done));
+            a = Wait(http.PostAsync("/v1/accounts",
+                "{\"username\":" + Json.Quote(username) + ",\"password\":\"example-password-1\"}"));
             Check(a.Status == 409 && a.Error == "username_taken" && !a.Ok, "the same name again: 409, its code read (" + a.Error + ")");
-            a = Call(http, done => http.Post("/v1/sessions", "{\"username\":" + Json.Quote(username) + ",\"password\":\"example-password-1\"}", done));
+            a = Wait(http.PostAsync("/v1/sessions", "{\"username\":" + Json.Quote(username) + ",\"password\":\"example-password-1\"}"));
             string token = Json.GetString(a.Body, "token");
             Check(a.Status == 200 && token != null && token.Length == 43 && Json.GetLong(a.Body, "playerId") == playerId, "log in: a token");
             http.Token = token;
-            a = Call(http, done => http.Get("/v1/inventory", done));
+            a = Wait(http.GetAsync("/v1/inventory"));
             Check(a.Status == 200 && a.Ok, "GET /v1/inventory with the token: 200 (" + a.Status + " " + a.Error + ")");
-            a = Call(http, done => http.Put("/v1/accounts/name", "{\"displayName\":\"Simple Two\"}", done));
+            a = Wait(http.PutAsync("/v1/accounts/name", "{\"displayName\":\"Simple Two\"}"));
             Check(a.Status == 200 && Json.GetString(a.Body, "displayName") == "Simple Two", "PUT a display name: 200 (" + a.Status + " " + a.Error + ")");
-            a = Call(http, done => http.Get("/v1/nothing", done));
+            a = Wait(http.GetAsync("/v1/nothing"));
             Check(a.Status == 404 && a.Error == "no_such_route", "a route that is not there: 404 no_such_route (" + a.Status + " " + a.Error + ")");
             var stranger = new BackendHttp(api, ca) { Token = new string('A', 43) };
-            a = Call(stranger, done => stranger.Get("/v1/inventory", done));
+            a = Wait(stranger.GetAsync("/v1/inventory"));
             Check(a.Status == 401 && a.Error == "invalid_session", "a token that is no session: 401 invalid_session (" + a.Error + ")");
-            a = Call(stranger, done => stranger.Post("/v1/guests", null, done));
+            a = Wait(stranger.PostAsync("/v1/guests", null));
             string guestKey = Json.GetString(a.Body, "guestKey");
             Check(a.Status == 201 && guestKey != null, "POST /v1/guests, no body: 201 and a key (" + a.Status + " " + a.Error + ")");
-            a = Call(stranger, done => stranger.Post("/v1/sessions", "{\"guestKey\":" + Json.Quote(guestKey) + "}", done));
+            a = Wait(stranger.PostAsync("/v1/sessions", "{\"guestKey\":" + Json.Quote(guestKey) + "}"));
             Check(a.Status == 200 && Json.GetString(a.Body, "token") != null, "the guest logs in by its key");
-            if (wrong != null && api.StartsWith("https://", StringComparison.Ordinal))
-            {
-                var fooled = new BackendHttp(api, wrong);
-                a = Call(fooled, done => fooled.Get("/v1/health", done));
-                Check(a.Status == 0 && !string.IsNullOrEmpty(a.Error), "trusting another root: no answer, refused (" + a.Error + ")");
-            }
 
             Section("the lobby, " + lobbyUrl);
             var lobby = new LobbyClient(lobbyUrl, ca);
@@ -348,9 +421,9 @@ namespace Backend.Client.Simple.Check
             Check(!second.Send("ping", null, m => { }), "sending once closed: not sent");
 
             Section("logging out");
-            a = Call(http, done => http.Delete("/v1/sessions", null, done));
+            a = Wait(http.DeleteAsync("/v1/sessions"));
             Check(a.Status == 204 && a.Ok && a.Body == "", "DELETE /v1/sessions: 204, no body (" + a.Status + " " + a.Error + ")");
-            a = Call(http, done => http.Get("/v1/inventory", done));
+            a = Wait(http.GetAsync("/v1/inventory"));
             Check(a.Status == 401 && a.Error == "invalid_session", "the token afterwards: 401 invalid_session");
         }
 
@@ -372,13 +445,8 @@ namespace Backend.Client.Simple.Check
             }
         }
 
-        private static HttpAnswer Call(BackendHttp http, Action<Action<HttpAnswer>> send)
-        {
-            HttpAnswer answer = null;
-            send(x => { OnMain("an HTTP callback"); answer = x; });
-            Pump(() => answer != null, 30000, http.Update);
-            return answer ?? new HttpAnswer { Error = "no callback in 30 s" };
-        }
+        /// <summary>An API call's answer. A script awaits it instead; the check, with no frames to keep going, waits.</summary>
+        private static HttpAnswer Wait(Task<HttpAnswer> call) => call.Wait(30000) ? call.Result : new HttpAnswer { Error = "no answer in 30 s" };
 
         private static LobbyMessage Ask(LobbyClient lobby, string type, string data)
         {
@@ -427,6 +495,12 @@ namespace Backend.Client.Simple.Check
         {
             try { action(); return false; }
             catch (Exception) { return true; }
+        }
+
+        private static bool ThrowsSaying(Action action, string text)
+        {
+            try { action(); return false; }
+            catch (Exception e) { return e.Message.Contains(text); }
         }
 
         private static X509Certificate2 FirstCertificate(string pemFile)

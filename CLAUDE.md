@@ -168,8 +168,10 @@ for the backend, its docs and its client.
   it, C# 7.3, Core.Tests and Headless on .NET Framework 4.7.1 (and .NET 8 where MSBuild is 17 or later, which this
   machine runs: `-f net8.0`; D-109); the backend's CA RSA, which Unity 2019's runtime can check.
 - **`client-simple/` for the UI team** (owner, 2026-11-24; D-111): the API, the lobby and a match in small files
-  they can read and paste, beside the full client; C# 7.3 and .NET Standard 2.0's APIs alone (their Unity takes 2.1),
-  no `HttpClient`, no `UnityEngine` in `Runtime/`, every callback in `Update()`. A protocol change is made in both.
+  they can read and paste, beside the full client; C# 7.3, the APIs of .NET Framework 4.5 and .NET Standard 2.0 alone
+  (their Unity is 2019), no `UnityEngine` in `Runtime/`. The API over `HttpClient`, each call awaited, the backend's
+  root as the app's certificate check, `ServicePointManager`'s (owner, 2026-11-25; D-112); the lobby's and the
+  match's callbacks in `Update()`. A protocol change is made in both.
 - **Ports 6381 and 8082 belong to other processes.** Drills use 6390 (j-redis), 6392 (its
   replica, `FAILOVER=1`), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 (platform's
   metrics), 9196 (platform's admin API), 9197, 9198 and 9199 (the arena's, the gateway's and
@@ -231,7 +233,8 @@ client/unity-package.sh && client/unity-check.sh
 TMPDIR=<scratchpad> client/unity2019-check.sh
 # Visual Studio 2019's MSBuild and Roslyn (16.11, 16.7) on the core, .NET Framework 4.7.1, Unity's project, the solution
 client/vs2019-check.sh
-# client-simple (D-111): compiled by Unity 2019.4's compiler at its levels and .NET Standard 2.1, its offline checks on its Mono
+# client-simple (D-111, D-112): compiled by Unity 2019.4's compiler at its levels, .NET Framework 4.5 and .NET Standard 2.1,
+# its offline checks on its Mono (the API's HTTPS against openssl s_server at TLS 1.0)
 client-simple/check.sh
 
 # Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice erase

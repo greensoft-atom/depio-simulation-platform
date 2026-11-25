@@ -4315,6 +4315,49 @@ references `System.Net.Http`; `unity2019-check.sh` gave it the reference. Likely
 
 Docs: D-111, P-66 (and the register's open list), 08 §6 and §9, the glossary, the API's README and the client's,
 working-here (a standing decision), CLAUDE.md.
+
+#### 133. ~~The simple client's API over `HttpClient` (the owner, 2026-11-25, D-112).~~ — **done 2026-11-25**
+
+The owner, on Unity 2019: the API through `HttpClient`, the way they write it (`await client.PostAsync(...)`,
+`ReadAsStringAsync()`); their environment given as `HttpClient`'s list, .NET Framework 4.5, .NET Standard 1.1, .NET
+Core 1.0.
+
+**Found first, by probes on Unity 2019.4.28f1's Mono and on .NET 8:** Unity's `HttpClient` calls
+`ServicePointManager`'s certificate callback with the request as its sender, and its own per-client one throws
+`NotImplementedException`; .NET 8's does the opposite. Unity's runtime ships .NET Framework 4.5's reference
+assemblies, against which `Runtime/` failed only on `TrustRoot`'s `GetRSAPublicKey` and `RSA.VerifyData` (4.6).
+
+**Done** (D-112):
+- `BackendHttp` over `HttpClient`: `GetAsync`, `PostAsync`, `PutAsync`, `DeleteAsync`, `SendAsync`, each a
+  `Task<HttpAnswer>`, awaited; never throws; 15 s. A root given, the app's certificate check: the backend's host held
+  to the root, any other the check before it or the runtime's verdict.
+- `TrustRoot` on .NET 4.5's means (`PublicKey.Key`, `RSAPKCS1SignatureDeformatter`). `csc.rsp` shipped for Unity's .NET
+  4.x level. `HttpExample` and `LobbyExample` awaited. The README: the main thread, `csc.rsp`, the app-wide check.
+- `check.sh`: `Runtime/` also against .NET Framework 4.5, the .NET 4.x level from the shipped `csc.rsp` and refused
+  without it (CS1069); offline, the API's calls (back at once, given up after 15 s), the app's check called for every
+  case, and HTTPS through `HttpClient` on Unity's Mono against `openssl s_server` at TLS 1.0. `check.sh live` takes the
+  API at `http://` alone; the drill gives it the front's clear port with `FRONT=https`.
+- Test first: the 4.5 level failed on `TrustRoot`'s two calls; the offline checks failed on "the app's check set"
+  against a first `HttpClient` version without it; then 65 passed.
+
+**Checked:**
+- Compiled by Unity 2019.4.28f1's compiler at C# 7.3, warnings as errors: `Runtime/` against .NET Standard 2.0, .NET
+  4.x, .NET Framework 4.5 and .NET Standard 2.1; `Examples/` against Unity's `UnityEngine` at both of its levels.
+- Offline on Unity's Mono, 65 checks.
+- Live through the drill's stack on the final code, its `play` scenario passing beside each, the API at `http://` in
+  each: straight to the processes (30 checks, Unity's Mono), through nginx plain (30, Unity's Mono), http with matches
+  over TLS (31, .NET 8), and https, the lobby over `wss://` and matches over TLS (32, .NET 8).
+- Mutation-checked: 13 offline and 5 live. 15 caught. Three survived, and each was code with no need: a
+  `NotSupportedException` caught for an EC root (Unity's Mono throws `CryptographicException`, whose catch is
+  caught), an empty body sent when there is no JSON, and an `Accept` header the API does not read. All three were
+  taken out.
+- Found on the way: Mono resumes a TLS session with the same server, which sends no certificate to check, so the
+  first run let in a client trusting another root on the first client's session; the test server keeps no session
+  now (D-112).
+- Not seen here: the editor, Unity's own TLS (1.2), a phone, IL2CPP; the API's HTTPS through nginx (TLS 1.2).
+
+Docs: D-112, P-66's note, 08 §6 and §9, the glossary, the client's README, working-here (a standing decision),
+CLAUDE.md, `client-simple/README.md`.
 ---
 
 ### Completed 2026-09-23

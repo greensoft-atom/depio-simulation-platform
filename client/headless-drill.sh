@@ -58,7 +58,7 @@
 #                                                     scenarios, and a second worker started (its metrics on 9193),
 #                                                     whose retention a minute on erases it (D-87): the journal
 #                                                     line, the metric, its key refused at login, the row erased
-#   SIMPLE=1 client/headless-drill.sh play            client-simple's live check before the scenarios (D-111): the API, the
+#   SIMPLE=1 client/headless-drill.sh play            client-simple's live check before the scenarios (D-111, D-112): the API, the
 #                                                     lobby and a match on Unity 2019's Mono, through FRONT's nginx when set
 #
 # Needs: the backend release (backend/scripts/make-release.sh; RELEASE= for a copy of one), the
@@ -323,7 +323,7 @@ if [ "${NEWMAN:-0}" = 1 ]; then
   [ "$NEWMAN_RC" = 0 ] || { echo "NEWMAN FAILED (exit $NEWMAN_RC): $D/newman.log"; grep -E '^\s+[0-9]+\. ' "$D/newman.log" | head -20; }
 fi
 if [ "${SIMPLE:-0}" = 1 ]; then
-  echo "--- client-simple through $API and $LOBBY ($(date +%T))"
+  echo "--- client-simple through $([ "${FRONT:-}" = https ] && echo http://127.0.0.1:8095 || echo "$API") and $LOBBY ($(date +%T))"
   # The root its TLS connections must come from, and another it must refuse; TLS=1's are the arena's own, as DER.
   SIMPLE_CA=()
   case ${FRONT:-} in https|http) SIMPLE_CA=("$D/nginx/ca/ca.pem" "$D/other-ca/ca.pem") ;; esac
@@ -331,7 +331,10 @@ if [ "${SIMPLE:-0}" = 1 ]; then
     openssl x509 -inform der -in "$T/arena.crt" -out "$T/arena.pem" && openssl x509 -inform der -in "$T/other.crt" -out "$T/other.pem"
     SIMPLE_CA=("$T/arena.pem" "$T/other.pem")
   fi
-  "$B/client-simple/check.sh" live "$API" "$LOBBY" "${SIMPLE_CA[@]}" > "$D/simple.log" 2>&1
+  # The API at http:// (D-112): .NET 8, which runs the TLS checks here, does not call the app's certificate check that
+  # Unity's HttpClient does; check.sh's offline run checks that one. With https, the front's clear port, as http's.
+  SIMPLE_API=$API; [ "${FRONT:-}" = https ] && SIMPLE_API=http://127.0.0.1:8095
+  "$B/client-simple/check.sh" live "$SIMPLE_API" "$LOBBY" "${SIMPLE_CA[@]}" > "$D/simple.log" 2>&1
   SIMPLE_RC=$?
   sed 's/^/  /' "$D/simple.log"
   [ "$SIMPLE_RC" = 0 ] || echo "CLIENT-SIMPLE FAILED (exit $SIMPLE_RC): $D/simple.log"
