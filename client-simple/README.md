@@ -238,8 +238,9 @@ To try them:
 | A run by hand, through nginx ([development/03 §5](../docs/development/03-build-and-run.md#5-running-it-by-hand)) | `https://<address>`, or `http://<address>` | `wss://<address>/lobby`, or `ws://<address>/lobby` | from the grant, over TLS, its root `work/nginx/ca/ca.pem` |
 | The same, nothing encrypted (`PLAIN=1`, D-101) | `http://<address>` | `ws://<address>/lobby` | from the grant, plain |
 
-**A player's build connects encrypted only** (D-104). The examples refuse `http://`, `ws://` and a grant without TLS
-when the build is not a Development Build. Keep that check in your own code.
+**Any build connects the way it is set up** ([D-115](../docs/architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)): `https://`, `wss://` and the root,
+or `http://` and `ws://`, a build for players too. Without TLS, passwords, session tokens and match tickets cross the
+network in clear.
 
 ## How it was checked
 

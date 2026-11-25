@@ -147,7 +147,8 @@ for the backend, its docs and its client.
 - **One public address for the site** (owner, 2026-10-19; C-9, D-82): an IP, no domain, with 80,
   443 and 9001, forwarded to one machine, the front; the others on the private network alone; SSH
   from the internal network alone. nginx on the front (every machine set up the same) ends TLS on
-  443 and 9001 and routes match traffic by the arena's TLS name. The certificate comes from the
+  443 and 9001 and routes match traffic by the arena's TLS name; 80 serves the API, the lobby and matches in clear,
+  a match by `/match/<the arena's name>` (owner, 2026-11-25; Q-64, D-115). The certificate comes from the
   backend's own CA (`private-ca.sh`), whose root the app ships and trusts alone
   ([operations/06](docs/operations/06-certificates.md)).
 - **The site launches on one machine**, for up to about 5 000 players (owner, 2026-11-01; C-11, D-93):
@@ -171,9 +172,11 @@ for the backend, its docs and its client.
   they can read and paste, beside the full client; C# 7.3, the APIs of .NET Framework 4.5 and .NET Standard 2.0 alone
   (their Unity is 2019), no `UnityEngine` in `Runtime/`. The API over `HttpClient`, each call awaited, the backend's
   root as the app's certificate check, `ServicePointManager`'s (owner, 2026-11-25; D-112); the lobby's and the
-  match's callbacks in `Update()`. `client-simple-no-tls/` the same without TLS, for a backend run plain, a
-  Development Build alone (owner, 2026-11-25; D-114, Q-64 open); `ArenaMessages.cs` and `Json.cs` byte for byte
-  `client-simple`'s. A protocol change is made in all three clients.
+  match's callbacks in `Update()`. `client-simple-no-tls/` the same without TLS, for a backend run plain and the
+  site's 80 (owner, 2026-11-25; D-114, D-115); `ArenaMessages.cs` and `Json.cs` byte for byte `client-simple`'s. A
+  protocol change is made in all three clients.
+- **A players' build may connect without TLS** (owner, 2026-11-25; Q-64, D-115, superseding D-104): no build refuses
+  a way in clear, the full client's included; it connects as its settings say.
 - **Ports 6381 and 8082 belong to other processes.** Drills use 6390 (j-redis), 6392 (its
   replica, `FAILOVER=1`), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 (platform's
   metrics), 9196 (platform's admin API), 9197, 9198 and 9199 (the arena's, the gateway's and

@@ -34,11 +34,6 @@ namespace Backend.Client.Simple.Examples
 
         private void Start()
         {
-            if (!Debug.isDebugBuild && (!apiUrl.StartsWith("https://") || !lobbyUrl.StartsWith("wss://")))
-            {
-                Debug.LogError("A player's build connects over https:// and wss:// alone");
-                return;
-            }
             string ca = rootCertificate != null ? rootCertificate.text : null;
             _http = new BackendHttp(apiUrl, ca);
             _lobby = new LobbyClient(lobbyUrl, ca);
@@ -154,11 +149,6 @@ namespace Backend.Client.Simple.Examples
 
         private void StartMatch(Grant grant)
         {
-            if (!Debug.isDebugBuild && !grant.tls)
-            {
-                Debug.LogError("A player's build joins a match over TLS alone");
-                return;
-            }
             Debug.Log("A seat at " + grant.arenaHost + ":" + grant.arenaPort + (grant.tls ? " (TLS)" : ""));
             if (arena != null) arena.Play(grant);
         }

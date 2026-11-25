@@ -4446,6 +4446,28 @@ The owner: for the WebSocket, the socket, and maybe HTTP too, assume TLS cannot 
 
 Docs: D-114, Q-64, the client-simple-no-tls README, 08 §9, the front page and the docs index, the glossary, the
 client's and the API's READMEs, 03 §9, 07 §5, working-here, CLAUDE.md.
+
+#### 137. A players' build without TLS, and the site serving it on 80 (the owner, 2026-11-25, Q-64, D-115)
+
+The owner answered Q-64: yes, a players' build may connect without TLS; the site serves it on 80, matches through it
+too, by an HTTP request naming the arena; and the full client may go without TLS as well. In three parts, each
+committed on its own:
+
+- **(a) No build refuses a way in clear.** ~~D-104's `EncryptedOnly` and its two calls in the Unity layer go, with its
+  tests and the stubs' `isDebugBuild`; so do the Development Build guards of both simple clients' examples.~~ —
+  **done 2026-11-25**: `BackendClient` as it was before D-104 (an `ApiClient` always made, a grant always dialled);
+  `EncryptedOnly.cs`, `EncryptedOnlyTests.cs` (nine tests) and the stubs' `Debug` gone; the five guards of the
+  examples gone. Nothing new to test: a rule removed. Checked: the core's 185 tests on .NET 8 and on Unity 2019's
+  Mono (`unity2019-check.sh`, which compiles the package's scripts at both levels against Unity's own `UnityEngine`);
+  the package against the stubs for every platform (`unity-check.sh`); VS 2019's build of the solution; both simple
+  clients' checks, 70 and 48 offline, their examples compiled. Not run: the package in the editor or on a phone.
+- **(b) The site's 80 serves the API and the lobby**: 443's server listens on 80 too; the front's firewall opens 80;
+  `dev-nginx.sh`'s TLS way takes production's 80 as it is; the checks that run nginx as written expect 80 to answer.
+- **(c) A match through 80.** The arenas' names in `backend-arenas.conf`, included by 9001's map and by 80's new
+  `/match/`; the arena behind the front reads nginx's request as it reads the PROXY line, and answers 101;
+  `client-simple-no-tls`'s `ArenaClient` goes through the API's address for a grant with a name; the drill runs the
+  no-TLS client's live check through the front's TLS ways too, its match through 80.
+
 ---
 
 ### Completed 2026-09-23

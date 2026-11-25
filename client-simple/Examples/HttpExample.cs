@@ -21,12 +21,6 @@ namespace Backend.Client.Simple.Examples
         // Unity runs the code after each await on the main thread again: it may use the scene and the UI.
         private async void Start()
         {
-            // A player's build talks to the backend encrypted alone (D-104); a development build may use http://.
-            if (!Debug.isDebugBuild && !apiUrl.StartsWith("https://"))
-            {
-                Debug.LogError("A player's build calls the API over https:// alone, not " + apiUrl);
-                return;
-            }
             _http = new BackendHttp(apiUrl, rootCertificate != null ? rootCertificate.text : null);
 
             HttpAnswer health = await _http.GetAsync("/v1/health");

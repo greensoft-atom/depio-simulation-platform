@@ -317,9 +317,9 @@ The app's settings, the three ways side by side:
 The two roots are different: a build for development carries the development root, and the players' build the
 site's. In the TLS way a development build on `http://` still plays over TLS: its matches go to 9001 as the grant
 says, and it trusts the development root for them. Whatever reaches the machine's 80 reads that traffic, passwords
-and tokens too: the firewall of a development machine decides who. A players' build refuses `http://`, `ws://` and a match without TLS, and says why
-([D-104](../architecture/03-decision-log.md#d-104--the-players-build-connects-encrypted-alone-https-wss-and-a-match-over-tls)). On Android the plain way may also need the development build to allow cleartext, which is
-not checked here (no Unity).
+and tokens too: the firewall of a development machine decides who. Any build takes `http://` and `ws://` when it is
+given them, a players' build too ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)). On Android the plain way may also need the app to allow
+cleartext, which is not checked here (no Unity).
 
 ## 6. What protects each route
 

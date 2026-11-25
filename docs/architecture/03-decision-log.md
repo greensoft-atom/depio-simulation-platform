@@ -2377,6 +2377,10 @@ not at each arena. It replaces D-81, whose premise, three public ports on each m
 - **The platforms and gateways listen on the private network**, reachable from the other two
   machines alone, by the firewall.
 
+**Amended 2026-11-25** ([D-115](#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)):
+80 is open, and serves the API, the lobby and matches without TLS, a match reaching its arena by the name it asks
+for (`/match/<name>`) from the same list as 9001's, now `backend-arenas.conf`.
+
 ### D-83 — The result stream's retention is a setting, and the events store is sized by a table
 
 **Decided 2026-10-23** (plan item 92, [O-37](../defects.md#6-operations)), the owner asking for the
@@ -3305,6 +3309,9 @@ and `private-ca.sh` runs on the machine that keeps the root's key, off every ser
 
 ### D-104 — The players' build connects encrypted alone: `https://`, `wss://` and a match over TLS
 
+**Superseded by [D-115](#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)** (2026-11-25): the owner lets a players' build connect
+without TLS, and the site serves it on 80. Kept as the record of the rule and its reason.
+
 **Decided 2026-11-03** (plan item 123; the owner, after the review of every route from the phone, 05 §4).
 
 **Decision.** A build that is not a development build, the one players install, refuses to connect in clear:
@@ -3734,3 +3741,57 @@ environment.
 
 **Cost.** A third client to keep in step with the protocols. `ArenaMessages` and `Json` are `client-simple`'s, and
 the check fails when they differ; the rest is changed in both by hand, the drill running both.
+
+### D-115 — A players' build may connect without TLS, and the site serves it on 80, matches included
+
+**Decided 2026-11-25** (plan item 137; the owner, answering
+[Q-64](../requirements/01-scope-and-nfrs.md#7-open-questions): yes; the site serves the way without TLS on 80,
+matches through it too; the full client may go without TLS as well). **Supersedes
+[D-104](#d-104--the-players-build-connects-encrypted-alone-https-wss-and-a-match-over-tls)**, and opens the 80 that
+[D-82](#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name) kept closed.
+
+**Decision.**
+- **No build refuses a way in clear.** The full client's Unity layer dials what its settings give, as the core always
+  did: D-104's `EncryptedOnly` and its two calls are gone. So are the Development Build guards of `client-simple`'s
+  and `client-simple-no-tls`'s examples. A build is encrypted when it is given `https://`, `wss://` and a root, and in
+  clear when given `http://` and `ws://`.
+- **The site's 80 serves the API and the lobby without TLS**: 443's server listens on 80 too, with the same
+  locations, limits and upstreams, as development's TLS way has since D-107. The front's firewall opens 80 (`http`)
+  beside 443 and 9001. 443 and 9001 are as they were.
+- **A match through 80, by its arena's name.** 9001 tells arenas apart by the name in the TLS handshake, which a
+  client without TLS has not got, so that client reaches its arena through 80:
+  `GET /match/<the grant's tlsName> HTTP/1.1`, with `Connection: Upgrade` and `Upgrade: backend-match`, and once
+  `HTTP/1.1 101` is read, the protocol's frames as on 9001. nginx's `/match/` takes the name to the arena by the same
+  list as 9001 (`backend-arenas.conf`, which both maps include), passes the request on with `X-Forwarded-For` the
+  phone's address and none of the phone's own headers, and then the bytes both ways, as for the lobby's WebSocket. A
+  name not in the list is a 404.
+- **An arena behind the front reads either first**: nginx's PROXY line (9001, D-105) or that request (80), its
+  request line `GET /match/... HTTP/1.1` and its headers to the blank line, 1 KiB at most, the phone's address taken
+  from `X-Forwarded-For`. It answers 101 and steps out of the pipeline, as after the line. Anything else first is
+  closed and counted, as before.
+- **The grant is as it was.** The site's grants ask for TLS and name the arena (D-82). `client-simple-no-tls` takes
+  that name to the API's own address, `http://<address>`; a grant without TLS (a backend run plain, D-101) it dials
+  as before; one with TLS and no name (an arena with TLS of its own, a drill's) it cannot reach, and says so.
+- **The clients with TLS keep 9001.** The full client and `client-simple` take a grant's TLS as before, an API in clear
+  or not: `/match/` is for the client without TLS alone.
+
+**Why.** The owner's: their environment cannot use TLS, and their players' build must reach the site. 80 is one of
+the three ports the provider forwards (C-9), so a match through it needs no new public port, and 443 and 9001 stay
+as they are for the clients with TLS.
+
+**Not chosen:**
+- **A public port per arena for matches in clear**: three ports more on the one machine, seven at 50 000, against
+  C-9's three; the owner chose 80.
+- **9001 taking connections in clear too** (`ssl_preread`): it could tell them from TLS, but has no name to send them by.
+- **A field of the grant's own for the name**: `tlsName` already names the arena, and every client reads it.
+- **A second list of arenas for 80**: two lists to keep in step on every machine; one file, included by both maps.
+
+**Cost.**
+- What a player without TLS sends crosses the internet in clear, as D-104 warned: their password, session token and
+  join tickets, readable by anyone on the way, and usable before them.
+- A player through 80 is logged by address alone, without a port: nginx's HTTP proxy cannot send the PROXY line.
+- One round trip more at a match's start, for the 101.
+- The front's nginx carries matches in clear as HTTP tunnels, as it carries the lobby's sockets.
+- The arenas' names move from `backend-stream.conf`'s map to a file of their own, which the scripts and guides that
+  edit the map now edit instead.
+- Not checked, as there is no Unity here: whether Android lets the app's own sockets send in clear.

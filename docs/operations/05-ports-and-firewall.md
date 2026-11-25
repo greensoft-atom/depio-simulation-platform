@@ -224,8 +224,8 @@ arena's `tlsName` and a `ticketId`. The app dials that, gives the name, and join
 **What is trusted.** One certificate, from the backend's own CA, names the address and every arena ([06](06-certificates.md));
 nginx serves it on both ports, TLS 1.2 and 1.3 with forward secrecy and authenticated ciphers alone, no session
 tickets. The app trusts the root it ships alone (`TrustRoot`), and checks the name. Behind nginx the traffic is
-plaintext on loopback, or on the private network with three machines. A players' build connects encrypted alone,
-refusing `http://`, `ws://` and a grant without TLS ([D-104](../architecture/03-decision-log.md#d-104--the-players-build-connects-encrypted-alone-https-wss-and-a-match-over-tls)).
+plaintext on loopback, or on the private network with three machines. A build connects the way it is set up,
+encrypted or not, a players' build too ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
 
 **What fails closed.** Port 80 has nothing listening, the firewall closing it; any other path on 443 is 404; 9001
 without a mapped name, or without TLS, is closed; a certificate from another root is refused by the app.
@@ -243,7 +243,7 @@ over the three platforms and gateways, and each arena's name points at its machi
 **A run by hand** keeps the shape ([development/03 §5](../development/03-build-and-run.md#5-running-it-by-hand)): by default the same three routes over
 TLS, with a root of its own (`work/nginx/ca/ca.pem`), 80 the API and the lobby in clear as well ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)), the platform on 8080, the gateway on 8081
 and the arena on 9021; with `PLAIN=1` the API and the lobby on 80 as `http://` and `ws://`, and 9001 without TLS to
-its one arena (D-101), which a development build of the app alone dials (D-104).
+its one arena (D-101).
 
 ### Out to the internet
 

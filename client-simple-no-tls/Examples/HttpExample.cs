@@ -18,13 +18,6 @@ namespace Backend.Client.Simple.Examples
         // Unity runs the code after each await on the main thread again: it may use the scene and the UI.
         private async void Start()
         {
-            // A player's build talks to the backend encrypted alone (D-104): this client, without TLS, is for a
-            // Development Build and the editor.
-            if (!Debug.isDebugBuild)
-            {
-                Debug.LogError("This client has no TLS: a Development Build alone (D-104, Q-64)");
-                return;
-            }
             _http = new BackendHttp(apiUrl);
 
             HttpAnswer health = await _http.GetAsync("/v1/health");

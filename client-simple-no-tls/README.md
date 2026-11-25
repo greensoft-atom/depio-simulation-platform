@@ -28,10 +28,8 @@ export PLAIN=1 PUBLIC_ADDRESS=192.168.1.20      # the address the app dials
 **Everything crosses the network in clear**: passwords, session tokens and match tickets, readable and usable by
 anyone on the way. Use it on a network you trust.
 
-**A Development Build only.** The site's rule is that a build for players connects encrypted (D-104). The examples
-therefore stop in any build that is not a Development Build (Build Settings → Development Build), and in the
-editor they run. Keep that check in your own code. Whether a players' build may ever go without TLS is an open
-question for the owner (Q-64).
+**Any build**, a build for players too: the owner lets a players' build connect without TLS (Q-64,
+[D-115](../docs/architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
 
 ## Which Unity
 

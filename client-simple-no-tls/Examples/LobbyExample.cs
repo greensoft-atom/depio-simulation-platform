@@ -31,12 +31,6 @@ namespace Backend.Client.Simple.Examples
 
         private void Start()
         {
-            // A player's build connects encrypted alone (D-104): this client, without TLS, is for a Development Build.
-            if (!Debug.isDebugBuild)
-            {
-                Debug.LogError("This client has no TLS: a Development Build alone (D-104, Q-64)");
-                return;
-            }
             _http = new BackendHttp(apiUrl);
             _lobby = new LobbyClient(lobbyUrl);
             _lobby.OnAuthenticated = OnAuthenticated;

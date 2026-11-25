@@ -266,13 +266,12 @@ client adds:
   cannot be reached, or whose certificate is refused, moves the call to the
   next, never to plain text, and the one that answered is tried first next
   time. `LobbyClient` takes one address. Trying the lobby's endpoints in turn is
-  the layer above's, and **not in the package's scripts yet** (§8). **A players'
-  build connects encrypted alone** ([D-104](../architecture/03-decision-log.md#d-104--the-players-build-connects-encrypted-alone-https-wss-and-a-match-over-tls)): `EncryptedOnly` refuses an API endpoint
-  that is not `https://`, a lobby that is not `wss://` and a match grant without
-  TLS, and the package's `BackendClient` asks it when the build is not a
-  development build (Unity's `Debug.isDebugBuild`). The core's classes take any
-  address, so the drills, the headless driver and a development build can go
-  plain (D-101).
+  the layer above's, and **not in the package's scripts yet** (§8). **Any build
+  connects the way it is set up** ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)):
+  `https://`, `wss://` and the root, or `http://` and `ws://`, a players' build
+  too; D-104's refusal in a players' build is gone. A grant's TLS is the
+  backend's: the site's ask for it, so the full client plays over TLS on 9001
+  even when its API and lobby are in clear.
 - **The account's key lives in the device's secure store** (Keychain, Android
   Keystore): `AccountKeeper` keeps a guest's key and logs in by it on every
   launch (§8). Keeping the session token there too, so that a restarted app
@@ -625,11 +624,10 @@ call, `Resume()`, which the example retries five times within the minute; the co
 lobby's endpoints in turn and a purchase key kept on disk are not in it.
 
 **Its examples** are three scripts (`HttpExample`, `LobbyExample`, `ArenaExample`) and the `[Serializable]` classes
-`JsonUtility` maps; the players' build's rule (D-104) is theirs: `http://`, `ws://` and a grant without TLS are refused
-when `Debug.isDebugBuild` is false.
+`JsonUtility` maps; they connect the way they are set up, in any build (D-115).
 
 **Without TLS, `client-simple-no-tls/`** ([D-114](../architecture/03-decision-log.md#d-114--a-simple-client-without-tls-client-simple-no-tls-for-a-backend-run-plain)): the same three clients with no
-TLS at all, for a backend run plain (`PLAIN=1`, D-101), the examples in a Development Build alone (D-104, Q-64).
+TLS at all, for a backend run plain (`PLAIN=1`, D-101) and the site's 80 (D-115), in any build.
 `ArenaMessages` and `Json` are `client-simple`'s byte for byte; `client-simple/check.sh` checks it too (`NO_TLS=1`, the
 check program's TLS checks left out), and `SIMPLE=1` drills it live in the plain ways.
 
