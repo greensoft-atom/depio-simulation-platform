@@ -5,7 +5,7 @@
        UnityDefines of UNITY_EDITOR, UNITY_IOS and UNITY_ANDROID, and none, so every branch compiles: unity-check.sh.
        CS0649, a field never assigned, is what an inspector-assigned [SerializeField] is, and not an error. -->
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net45</TargetFramework>
     <LangVersion>7.3</LangVersion>
     <Nullable>disable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -19,6 +19,8 @@
     <Compile Include="../Unity/com.backend.client/Runtime/**/*.cs" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Net.Http" />
     <ProjectReference Include="../Core/Backend.Client.Core.csproj" />
   </ItemGroup>
 </Project>

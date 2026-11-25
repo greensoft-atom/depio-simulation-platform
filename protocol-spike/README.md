@@ -100,8 +100,10 @@ deltas, event payloads — is checked field by field by the client's own decoder
 The remaining Phase 0 work:
 
 1. ~~Drop `SnapshotReader.cs` into a Unity project and make it compile.~~
-   Compiled with the .NET SDK (netstandard-compatible code); Unity itself is
-   not on this machine.
+   Compiled with the .NET 8 SDK on 2026-09-27 (netstandard-compatible code).
+   Nothing compiles it now: the client's own decoder took its place, and no
+   C# here is built with .NET 8 since D-116. The Unity editor is not run on
+   this machine (it needs a licence).
 2. ~~Write the loader for `vectors/vectors.txt` and assert every decoded field.~~
    Done, as above.
 3. Render extrapolated bullets against a simulated server feed with adjustable

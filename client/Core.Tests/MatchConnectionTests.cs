@@ -2,9 +2,11 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using Backend.Client.Core;
 using NUnit.Framework;
@@ -15,6 +17,82 @@ namespace Backend.Client.Core.Tests
     internal sealed class ManualClock : IClock
     {
         public long NowMs { get; set; } = 1_000_000;
+    }
+
+    /// <summary>
+    /// The front's 80 as nginx is for a match (D-115): it reads a request to its blank line, keeps it, answers it, and
+    /// on a 101 passes bytes between the client and the arena both ways, as nginx's tunnel does.
+    /// </summary>
+    internal sealed class SiteFront : IDisposable
+    {
+        public const string Upgraded = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: backend-match\r\n\r\n";
+        private readonly TcpListener _listener = new TcpListener(IPAddress.Loopback, 0);
+        private readonly int _arenaPort;
+        private readonly string _answer;
+        public readonly BlockingCollection<string> Requests = new BlockingCollection<string>();
+
+        public SiteFront(int arenaPort, string answer = Upgraded)
+        {
+            _arenaPort = arenaPort;
+            _answer = answer;
+            _listener.Start();
+            new Thread(Accept) { IsBackground = true }.Start();
+        }
+
+        public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+
+        private void Accept()
+        {
+            try
+            {
+                while (true)
+                {
+                    TcpClient c = _listener.AcceptTcpClient();
+                    new Thread(() => Serve(c)) { IsBackground = true }.Start();
+                }
+            }
+            catch (Exception) { }                   // stopped
+        }
+
+        private void Serve(TcpClient c)
+        {
+            try
+            {
+                NetworkStream s = c.GetStream();
+                var head = new StringBuilder();
+                while (!head.ToString().EndsWith("\r\n\r\n", StringComparison.Ordinal))
+                {
+                    int b = s.ReadByte();
+                    if (b < 0) return;
+                    head.Append((char)b);
+                }
+                Requests.Add(head.ToString());
+                byte[] answer = Encoding.ASCII.GetBytes(_answer);
+                s.Write(answer, 0, answer.Length);
+                if (!_answer.StartsWith("HTTP/1.1 101 ", StringComparison.Ordinal))
+                {
+                    c.Close();
+                    return;
+                }
+                NetworkStream a = new TcpClient("127.0.0.1", _arenaPort).GetStream();
+                new Thread(() => Pump(a, s)) { IsBackground = true }.Start();
+                Pump(s, a);
+            }
+            catch (Exception) { }                   // either end closed
+        }
+
+        private static void Pump(Stream from, Stream to)
+        {
+            var buffer = new byte[4096];
+            try
+            {
+                int n;
+                while ((n = from.Read(buffer, 0, buffer.Length)) > 0) to.Write(buffer, 0, n);
+            }
+            catch (Exception) { }
+        }
+
+        public void Dispose() => _listener.Stop();
     }
 
     /// <summary>
@@ -276,6 +354,89 @@ namespace Backend.Client.Core.Tests
                     clock.NowMs += MatchConnection.SilenceMs + 1;
                     m.Poll();
                     Assert.That(m.State, Is.EqualTo(MatchState.Lost));
+                }
+            }
+        }
+
+        [Test]
+        public void AMatchThroughTheSitesEightyAsksForItsArenaByNameAndPlaysOnThatConnection()
+        {
+            // D-116, as client-simple-no-tls does (D-115): the site's API in clear, and a grant that names its arena.
+            using (var arena = new FakeArena())
+            using (var front = new SiteFront(arena.Port))
+            {
+                var clock = new ManualClock();
+                using (var m = new MatchConnection(new MatchSettings
+                {
+                    // The grant's 9001 with TLS, neither taken: nothing listens on port 1.
+                    Host = "127.0.0.1", Port = 1, Tls = true, TlsName = "a1.arena.internal",
+                    Site = "http://127.0.0.1:" + front.Port,
+                }, clock))
+                {
+                    m.Join("TicketNumberOne");
+                    PollUntil(m, () => front.Requests.Count > 0, "a request at the front");
+                    string request = front.Requests.Take();
+                    Assert.That(request, Does.StartWith("GET /match/a1.arena.internal HTTP/1.1\r\n"));
+                    Assert.That(request, Does.Contain("\r\nHost: 127.0.0.1:" + front.Port + "\r\n")
+                        .And.Contain("\r\nConnection: Upgrade\r\n").And.Contain("\r\nUpgrade: backend-match\r\n"));
+                    PollUntil(m, () => m.State == MatchState.Joining, "joining");
+                    var join = arena.Next();
+                    Assert.That(join.frame.Take(3), Is.EqualTo(new byte[] { Wire.MsgJoin, Wire.Version, 15 }), "the join, through the tunnel");
+                    arena.Send(join.connection, FakeArena.Welcome("s"));
+                    PollUntil(m, () => m.State == MatchState.InMatch, "in the match, through the front");
+                }
+            }
+        }
+
+        [Test]
+        public void TheSitesEightyIsTakenWhenItsApiIsInClearAndTheGrantNamesItsArena()
+        {
+            // D-116: a grant from the site asks for TLS by the arena's name; a client in clear asks the site's 80 for it.
+            Assert.That(MatchSettings.SiteFor("http://203.0.113.10", true, "a1.arena.internal"), Is.EqualTo("http://203.0.113.10"));
+            Assert.That(MatchSettings.SiteFor("http://203.0.113.10/", true, "a1.arena.internal"), Is.EqualTo("http://203.0.113.10"));
+            Assert.That(MatchSettings.SiteFor("https://203.0.113.10", true, "a1.arena.internal"), Is.Null, "with TLS: the grant's 9001");
+            Assert.That(MatchSettings.SiteFor("http://127.0.0.1:8093", false, null), Is.Null, "an arena dialled as it is, run plain");
+            Assert.That(MatchSettings.SiteFor("http://127.0.0.1:8093", true, null), Is.Null, "an arena with TLS of its own, no name");
+            Assert.That(MatchSettings.SiteFor("http://203.0.113.10", false, "a1.arena.internal"), Is.Null, "a grant in clear: dialled");
+        }
+
+        [Test]
+        public void ASiteThatDoesNotOpenTheTunnelEndsTheMatchUnreachableSayingWhatItAnswered()
+        {
+            using (var arena = new FakeArena())
+            using (var front = new SiteFront(arena.Port, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"))
+            {
+                var clock = new ManualClock();
+                using (var m = new MatchConnection(new MatchSettings
+                {
+                    Host = "127.0.0.1", Port = 1, Tls = true, TlsName = "a9.arena.internal", Site = "http://127.0.0.1:" + front.Port,
+                }, clock))
+                {
+                    m.Join("TicketNumberOne");
+                    PollUntil(m, () => m.State == MatchState.Ended, "ended");
+                    Assert.That(m.End, Is.EqualTo(MatchEnd.Unreachable));
+                    Assert.That(m.LastProblem, Does.Contain("HTTP/1.1 404 Not Found"), "what the site answered");
+                    Assert.That(arena.Connections, Is.Zero, "nothing reached an arena");
+                }
+            }
+        }
+
+        [Test]
+        public void ASiteWithoutTheArenasNameIsNotDialled()
+        {
+            using (var front = new SiteFront(1))
+            {
+                var clock = new ManualClock();
+                using (var m = new MatchConnection(new MatchSettings
+                {
+                    Host = "127.0.0.1", Port = 1, Site = "http://127.0.0.1:" + front.Port,
+                }, clock))
+                {
+                    m.Join("TicketNumberOne");
+                    PollUntil(m, () => m.State == MatchState.Ended, "ended");
+                    Assert.That((m.End, m.LastProblem), Is.EqualTo((MatchEnd.Unreachable,
+                        "a match through the site needs the arena's name, the grant's tlsName")));
+                    Assert.That(front.Requests.Count, Is.Zero, "nothing asked of the site");
                 }
             }
         }

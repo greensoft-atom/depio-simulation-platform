@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- What Unity 2019.4 compiles, at either API level (.NET Standard 2.0, .NET 4.x), and Visual Studio 2019 for
-       .NET Framework 4.7.1; Unity 2022.3 and 6 take it as well (D-108, docs 08 §1). No package references: the
-       core has no dependencies, so it drops into a Unity project as source or as this one assembly. -->
+  <!-- .NET Framework 4.5 alone (D-116): what Visual Studio 2019 builds, and Unity 2019.4 takes at its .NET 4.x API
+       level. No package the app takes: the core has no dependencies, so it drops into a Unity project as source or as
+       this one assembly. The reference assemblies' package builds it on a machine with no 4.5 targeting pack. -->
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net45</TargetFramework>
     <LangVersion>7.3</LangVersion>
     <RootNamespace>Backend.Client.Core</RootNamespace>
     <AssemblyName>Backend.Client.Core</AssemblyName>
@@ -11,4 +11,8 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
 </Project>

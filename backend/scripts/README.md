@@ -25,8 +25,8 @@ are in the [glossary](../../docs/glossary.md).
 | [`check-release-guest-el9.sh`](#check-release-guest-el9sh) | Release | no | a person, on a machine with QEMU, after one run of `check-selinux-el9.sh`: the release on RHEL 9's kernel with SELinux enforcing (D-110) |
 | [`check-units-el9.sh`](#check-units-el9sh) | Release | no | a person, on a machine with Docker: the release's units under systemd in UBI 9 |
 | [`check-install-guide-el9.sh`](#check-install-guide-el9sh) | Release | no | a person, on a machine with Docker: the install guide's blocks as written, in UBI 9 with no network; then the launch's one machine checked (D-93), again after a restart, and the runbook's restore after the database's disk is lost |
-| [`check-two-machines-el9.sh`](#check-two-machines-el9sh) | Release | no | root, on a machine with Docker and .NET: the two-machine page's steps as written (D-96) on two UBI 9 machines joined by a private link, the site probed throughout; B's own arenas (D-97); then A's MySQL lost, then A lost |
-| [`check-ports-el9.sh`](#check-ports-el9sh) | Release | no | a person, on a machine with Docker |
+| [`check-two-machines-el9.sh`](#check-two-machines-el9sh) | Release | no | root, on a machine with Docker and Unity's editor in `work/unity`: the two-machine page's steps as written (D-96) on two UBI 9 machines joined by a private link, the site probed throughout; B's own arenas (D-97); then A's MySQL lost, then A lost |
+| [`check-ports-el9.sh`](#check-ports-el9sh) | Release | no | a person, on a machine with Docker and Unity's editor in `work/unity` |
 | [`check-bind.sh`](#check-bindsh) | Ports | yes | `dev-mysql.sh`, `dev-jredis.sh`, `dev-backend.sh`, `dev-nginx.sh` and `client/headless-drill.sh`, before they start anything; a person, on a server whose unit says `Permission denied` on its port |
 | [`check-selinux-el9.sh`](#check-selinux-el9sh) | Ports | no | a person, on a machine with QEMU: `check-bind.sh`'s SELinux branch and the three grants, in a Rocky 9 guest with SELinux enforcing (D-90) |
 | [`binlog-stream.sh`](#binlog-streamsh) | Backups | yes | `backend-binlog-stream.service`, always on |
@@ -265,8 +265,9 @@ changes. In order:
 1. A, the launch's machine, is installed by the install guide's own check;
 2. B is made A's standby by the page's steps, while a probe uses the site through A's nginx and times every request;
 3. B's own arenas (D-97, the page's [§10](../../docs/operations/10-two-machines.md#10-arenas-on-b)): matches played
-   on them through A's nginx by the C# headless client, with A's arenas stopped for it; then B frozen for a minute
-   while A's site goes on;
+   on them through A's nginx's 80, in clear, by the C# headless client on Unity 2019's Mono (D-116), with A's arenas
+   stopped for it; where nginx passed each match is read from `access.log`'s `/match/` lines, answered 101; then B
+   frozen for a minute while A's site goes on;
 4. A's MySQL lost while A runs: B's MySQL promoted
    ([runbook §2](../../docs/operations/02-runbook.md#2-stateful-primary-failure)) and A's processes moved onto it;
 5. A lost: the runbook's steps for it on B ([§4](../../docs/operations/02-runbook.md#4-whole-machine-loss)), the
@@ -284,8 +285,8 @@ STANDBY_ONLY=1 scripts/check-two-machines-el9.sh         the standby alone (D-96
 
 | | |
 |---|---|
-| Settings | `IMAGE` (default `registry.access.redhat.com/ubi9/ubi-init:9.5`); `SAVE_A`, `A_IMAGE`, `STANDBY_ONLY` as above; `DOTNET`, the .NET 8 that publishes the client (default `/opt/dotnet/dotnet`) |
-| Needs | root; Docker, git, `ip`, `nsenter`, and .NET 8 for the C# client |
+| Settings | `IMAGE` (default `registry.access.redhat.com/ubi9/ubi-init:9.5`); `SAVE_A`, `A_IMAGE`, `STANDBY_ONLY` as above; `UNITY_DATA`, another copy of Unity's `Editor/Data` (`client/unity-env.sh`) |
+| Needs | root; Docker, git, `ip`, `nsenter`, and Unity 2019.4's editor in `work/unity` (`client/unity-env.sh` fetches it once): its compiler builds the C# client for .NET Framework 4.5, and its Mono, mounted in both machines, runs it (D-116) |
 | Runs | on the build machine; about twenty minutes, twelve with `A_IMAGE` |
 | Prints | `ok` or `FAIL` per check, then `--- <n> failed`; exits non-zero on any failure |
 
@@ -313,7 +314,11 @@ Then it checks:
 3. as a player who trusts the backend's root alone: registrations and the lobby through 443; match TLS through 9001
    by each arena's name, with a wrong name and a wrong root refused; 80 in clear (D-115), the API's health on it,
    and A's and B's arenas by name through `/match/`, answered 101, with an unknown name answered 404;
-4. the C# headless driver, published for Linux, playing sixteen scenarios through the front;
+4. the C# headless driver, built for .NET Framework 4.5 and run on Unity 2019's Mono, playing fifteen scenarios
+   through the front's 80 in clear: `http://`, `ws://`, and matches by `/match/` (D-116). Not `untrusted`: Mono's
+   own TLS stops at 1.0, and nginx's is 1.2 and 1.3, so 443's and 9001's TLS are checked by `openssl s_client`
+   alone (step 3). The arenas log each join from the player's address without a port, from nginx's
+   `X-Forwarded-For` (D-115);
 5. what nginx's logs say it routed; the player's address in the login limits' keys; A's platform stopped and B's
    serving;
 6. the rules after a restart of firewalld, the commands run twice, B's and C's commands, and the install guide's
@@ -328,8 +333,8 @@ scripts/check-ports-el9.sh                     from backend/, the release in tar
 
 | | |
 |---|---|
-| Settings | `DOTNET`, the .NET 8 that publishes the C# driver (default `/opt/dotnet/dotnet` when it is there, else the `dotnet` on `PATH`) |
-| Needs | a release (`make-release.sh` first); Docker, and the network once, to build its image (`rockylinux/rockylinux:9.5` with firewalld); .NET 8 for the C# driver, which is published self-contained, so the image needs no .NET; `fs.inotify.max_user_watches` high enough for the container's dbus (524288; an editor's watches can use up the default) |
+| Settings | `UNITY_DATA`, another copy of Unity's `Editor/Data` (`client/unity-env.sh`) |
+| Needs | a release (`make-release.sh` first); Docker, and the network once, to build its image (`rockylinux/rockylinux:9.5` with firewalld); Unity 2019.4's editor in `work/unity` (`client/unity-env.sh` fetches it once), whose compiler builds the C# driver for .NET Framework 4.5, and whose Mono, mounted in the container, runs it, so the image needs no Mono or .NET (D-116); `fs.inotify.max_user_watches` high enough for the container's dbus (524288; an editor's watches can use up the default) |
 | Runs | on the build machine, from any directory; about ten minutes once its image is built. The processes run as root with small heaps; neither changes where they listen |
 | Prints | `ok` or `FAIL` per check, then `--- <n> failed`; exits non-zero on any failure |
 

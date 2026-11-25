@@ -115,13 +115,15 @@ scripts/check-release-el9.sh [release-dir]          # then, in backend/; default
 own: j-redis 6390, platform 8093, gateway 8094, arena 9011, platform's metrics 9195 and admin API 9196. The client's
 headless driver drives it through named scenarios. By default it runs `play`, `resume`, `badticket` and `lifecycle`;
 the others, such as `duel`, `party`, `sandbox`, `tournament`, `purchase` and `pass`, by name
-(`client/Headless/Program.cs` has every one). Modes such as `FAILOVER=1`, `MYSQL_FAILOVER=1`, `BOTS=`, `WATCH=1`,
+(`client/Headless/Program.cs` has every one). The drill builds the driver for .NET Framework 4.5 with Unity 2019's
+compiler and runs it on Unity's Mono, in clear alone: `TLS=1`, `FRONT=https` and `untrusted` are refused (D-116).
+Modes such as `FAILOVER=1`, `MYSQL_FAILOVER=1`, `BOTS=`, `WATCH=1`,
 `IDLEGUEST=1`, `SIMPLE=1` and `FRONT=` are in the drill's header and in
 [build and run §7](../docs/development/03-build-and-run.md#7-the-drills):
 
 ```bash
 TMPDIR=<scratch> client/headless-drill.sh [scenario ...]        # from the repository's root
-TLS=1 TMPDIR=<scratch> client/headless-drill.sh play untrusted  # the arena over TLS
+FRONT=http TMPDIR=<scratch> client/headless-drill.sh play       # through nginx's 80, matches by /match/ (D-116)
 TMPDIR=<scratch> backend/scripts/backup-drill.sh                # the backups' own drill; RELEASE=<release> on its MySQL 8.4
 ```
 
@@ -142,8 +144,9 @@ java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.RankBenchma
      "jdbc:mysql://127.0.0.1:3314/backend_test?useSSL=false&allowPublicKeyRetrieval=true" backend backend-dev-password 200000 5000 21
 ```
 
-**The client's own tests** need the .NET 8 SDK, which is not in the repository (`/opt/dotnet` on the development VM):
-`cd client && DOTNET_NOLOGO=1 dotnet test Core.Tests -f net8.0`. The client's checks with Unity 2019.4's compiler and
+**The client's own tests** need Unity 2019.4's Linux editor in `work/unity`, which is not in the repository:
+`client/core-tests.sh` fetches it once (1.8 GB), compiles the core and its tests for .NET Framework 4.5 with its
+compiler, and runs them on its Mono. No .NET is needed (D-116). The client's checks with Unity 2019.4's compiler and
 Visual Studio 2019's MSBuild are in [client/](../client/README.md). Running each process by hand is
 [below](#running-it).
 
@@ -578,9 +581,9 @@ inventing them. "Defensible" is not "tuned".
 
 ## Bots, and the Java stand-in for the client
 
-The client is C# ([client/](../client/README.md)), built with `/opt/dotnet`. This machine has no Unity editor (it
-needs a licence); Unity 2019.4.28f1's compiler, assemblies and Mono are in `work/unity`, and the client's
-`unity2019-check.sh` uses them. The load tools stay Java. `LobbyClient` is the lobby flow (register, log in, hold a
+The client is C# ([client/](../client/README.md)), on .NET Framework 4.5. This machine runs no Unity editor (it
+needs a licence); Unity 2019.4.28f1's compiler, assemblies and Mono are in `work/unity`, and every build and run of
+the client here uses them (D-116). The load tools stay Java. `LobbyClient` is the lobby flow (register, log in, hold a
 WebSocket, ask for a match), written with nothing but the JDK's HTTP and WebSocket clients.
 
 `BotClient` uses it, so **every bot takes the path a real client takes**: register, log in, lobby, match request,

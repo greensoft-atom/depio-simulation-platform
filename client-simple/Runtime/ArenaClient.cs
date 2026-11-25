@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Security;
+using System.Security.Authentication;
 using System.Net.Sockets;
 using System.Threading;
 
@@ -142,7 +143,8 @@ namespace Backend.Client.Simple
                     // The grant's tlsName: what the handshake names, what the front routes by, what the certificate must name.
                     string name = string.IsNullOrEmpty(_tlsName) ? _host : _tlsName;
                     var tls = new SslStream(stream, false, _trust?.CheckFor(name));
-                    tls.AuthenticateAsClient(name);
+                    // TLS 1.2 by name: built for .NET Framework 4.5, a socket offers 1.0 alone by default (D-116).
+                    tls.AuthenticateAsClient(name, null, SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12, false);
                     stream = tls;
                 }
                 stream.Write(admission, 0, admission.Length);

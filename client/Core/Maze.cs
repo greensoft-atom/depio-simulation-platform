@@ -43,6 +43,20 @@ namespace Backend.Client.Core
         /// <summary>One wall in this many is taken out after the division.</summary>
         private const int BraidDivisor = 5;
 
+        /// <summary>A wall on a cell's top edge (across) or its left edge; a struct, as .NET Framework 4.5 has no tuples (D-116).</summary>
+        private struct Segment
+        {
+            public readonly bool Across;
+            public readonly int X, Y;
+
+            public Segment(bool across, int x, int y)
+            {
+                Across = across;
+                X = x;
+                Y = y;
+            }
+        }
+
         public static Wall[] Walls(long seed)
         {
             var rng = new Xorshift(seed);
@@ -51,13 +65,13 @@ namespace Backend.Client.Core
             var down = new bool[Cells, Cells];
             Divide(rng, across, down, 0, 0, Cells, Cells);
 
-            var segments = new System.Collections.Generic.List<(bool across, int x, int y)>();
+            var segments = new System.Collections.Generic.List<Segment>();
             for (int y = 0; y < Cells; y++)
                 for (int x = 0; x < Cells; x++)
-                    if (across[x, y]) segments.Add((true, x, y));
+                    if (across[x, y]) segments.Add(new Segment(true, x, y));
             for (int x = 0; x < Cells; x++)
                 for (int y = 0; y < Cells; y++)
-                    if (down[x, y]) segments.Add((false, x, y));
+                    if (down[x, y]) segments.Add(new Segment(false, x, y));
             int n = segments.Count;
             int removed = n / BraidDivisor;
             var order = new int[n];
@@ -65,7 +79,9 @@ namespace Backend.Client.Core
             for (int i = 0; i < removed; i++)
             {
                 int j = i + rng.NextInt(n - i);
-                (order[i], order[j]) = (order[j], order[i]);
+                int swap = order[i];
+                order[i] = order[j];
+                order[j] = swap;
             }
             var gone = new bool[n];
             for (int i = 0; i < removed; i++) gone[order[i]] = true;
@@ -76,10 +92,10 @@ namespace Backend.Client.Core
             for (int i = 0; i < n; i++)
             {
                 if (gone[i]) continue;
-                var s = segments[i];
-                float x = s.x * Cell;
-                float y = s.y * Cell;
-                walls[at++] = s.across
+                Segment s = segments[i];
+                float x = s.X * Cell;
+                float y = s.Y * Cell;
+                walls[at++] = s.Across
                     ? new Wall(x - half, y - half, x + Cell + half, y + half)
                     : new Wall(x - half, y - half, x + half, y + Cell + half);
             }

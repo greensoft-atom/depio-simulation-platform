@@ -23,14 +23,24 @@ namespace Backend.Client.Core
     /// </summary>
     public sealed class TrustRoot
     {
-        private readonly RSA _key;
+        private readonly RSACryptoServiceProvider _key;
 
         public TrustRoot(X509Certificate2 root)
         {
             if (root == null) throw new ArgumentNullException(nameof(root));
-            RSA key = null;
-            try { key = root.GetRSAPublicKey(); }
+            RSACryptoServiceProvider key = null;
+            try
+            {
+                // .NET Framework 4.5's way to the key (GetRSAPublicKey is 4.6's, D-116), copied into a provider of its
+                // own, which verifies SHA-256 whatever provider the certificate's key came in.
+                if (root.PublicKey.Key is RSA rsa)
+                {
+                    key = new RSACryptoServiceProvider();
+                    key.ImportParameters(rsa.ExportParameters(false));
+                }
+            }
             catch (CryptographicException) { }              // Unity 2019's Mono, on an EC key
+            catch (NotSupportedException) { }               // .NET Framework, on an EC key
             catch (NotImplementedException) { }
             _key = key ?? throw new ArgumentException(
                 "the root's key is not RSA: the backend's root is RSA since D-108; make it again (scripts/private-ca.sh)",
@@ -70,7 +80,7 @@ namespace Backend.Client.Core
             {
                 return false;
             }
-            if (!_key.VerifyData(c.Signed, c.Signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)) return false;
+            if (!_key.VerifyData(c.Signed, "SHA256", c.Signature)) return false;     // PKCS#1 v1.5, SHA-256
             DateTime now = DateTime.UtcNow;
             if (now < c.NotBefore || now > c.NotAfter) return false;
             return IPAddress.TryParse(host, out IPAddress ip)

@@ -15,7 +15,7 @@ using Backend.Client.Core;
 namespace Backend.Client.UnityRuntimeCheck
 {
     /// <summary>
-    /// The core on Unity 2019.4's own Mono (D-108), where the runtime differs from .NET 8's: the certificate check
+    /// The core on Unity 2019.4's own Mono (D-108), where the runtime differs from .NET Framework's: the certificate check
     /// with certificates scripts/private-ca.sh makes, a root of another key refused, JSON's numbers under a locale
     /// that writes a decimal comma, and each connection's TLS check end to end, the API through HttpWebRequest, the
     /// lobby's wss:// and a match, against a TLS server here. Outside the editor Mono's TLS is its own, TLS 1.0, not

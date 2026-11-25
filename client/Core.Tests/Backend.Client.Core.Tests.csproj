@@ -1,20 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- C# 7.3 on .NET Framework 4.7.1, what Visual Studio 2019 builds and runs and Unity 2019's .NET 4.x is (D-109);
-       and .NET 8 where MSBuild is 17 or later (the .NET 8 SDK, VS 2022), which this machine's commands run. -->
+  <!-- C# 7.3 on .NET Framework 4.5 alone (D-116), what Visual Studio 2019 builds and runs in its Test Explorer. Here
+       client/core-tests.sh compiles them by Unity 2019.4's compiler and runs them on its Mono, with no .NET. The test
+       SDK and the adapter are the last versions that take 4.5; System.ValueTuple is the tests' tuples. -->
   <PropertyGroup>
-    <TargetFrameworks>net471</TargetFrameworks>
-    <TargetFrameworks Condition="'$(MSBuildAssemblyVersion)' &gt;= '17.0'">net471;net8.0</TargetFrameworks>
+    <TargetFramework>net45</TargetFramework>
     <LangVersion>7.3</LangVersion>
     <Nullable>disable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <!-- .NET Framework 4.7.1's reference assemblies, for a machine with no targeting pack (Linux, or VS without it). -->
+    <!-- .NET Framework 4.5's reference assemblies, for a machine with no targeting pack (VS without it). -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.11.0" />
     <PackageReference Include="NUnit" Version="3.14.0" />
-    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="3.17.0" />
+    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
+    <Reference Include="System.Net.Http" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Core/Backend.Client.Core.csproj" />

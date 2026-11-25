@@ -138,7 +138,7 @@ them, in number order, and records each one in the database.
   and [docs/api](../api/README.md) with the change.
 - **The client**: run the core's tests, then the Unity checks
   ([03 §9](03-build-and-run.md#9-the-client)):
-  1. `cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test Core.Tests -f net8.0`;
+  1. `client/core-tests.sh` (the core's tests, for .NET Framework 4.5 on Unity's Mono, D-116);
   2. `client/unity-package.sh && client/unity-check.sh`;
   3. `client/unity2019-check.sh`.
 - **The simple clients** take the same change (D-111, D-114). A protocol change is made in all three clients: the

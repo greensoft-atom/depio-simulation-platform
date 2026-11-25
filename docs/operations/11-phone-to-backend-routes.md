@@ -134,7 +134,7 @@ and it says why in its own log and metrics.
 | ① the API | gives up after 10 s | 15 s for an answer; a body up to 4 KiB; the four sign-up and login paths: 2 a second per address, a burst of 30, then 429 | the platform: a body up to 4 KiB; password attempts limited precisely, nginx's limit only a flood guard in front of it |
 | ② the lobby | a ping every 30 s; the lobby counts as lost when a ping has no answer in 10 s; it reconnects after about 1 s, the wait doubling up to 30 s, each wait spread by ±50 % | closes after 150 s without a byte | the gateway: the token within 5 s; closes a lobby silent for 120 s |
 | ③ a match | 5 s to dial; a ping every 10 s in every state | 5 s to reach the arena; closes after 60 s without a byte | the arena: `Join` within 10 s; drops a connection after 30 s without a frame |
-| ③ in clear, `/match/` | `client-simple-no-tls`: 10 s to dial; nginx's answer read up to its blank line, 4 KiB at most; then as ③ | the same: 5 s to reach the arena, 60 s without a byte either way | the same, once it has read nginx's request, 1 KiB at most |
+| ③ in clear, `/match/` | `client-simple-no-tls`: 10 s to dial; the full client (D-116): 5 s to dial and be answered, as ③; each reads nginx's answer up to its blank line, 4 KiB at most; then as ③ | the same: 5 s to reach the arena, 60 s without a byte either way | the same, once it has read nginx's request, 1 KiB at most |
 
 ## 4. nginx, file by file
 
@@ -375,9 +375,11 @@ Notes on the table:
   them ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
 - **The two roots are different.** A build for development carries the development root, and the players' build
   carries the site's.
-- **A client with TLS given `http://`** (the full client, `client-simple`) still plays its matches over TLS: they go
-  to 9001 as the grant says, and the client trusts its root for them. Only the client without TLS,
-  `client-simple-no-tls`, goes through 80's `/match/`, for a grant that asks for TLS.
+- **The full client given `http://`** plays its matches through 80's `/match/` too, for a grant that asks for TLS
+  by an arena's name, as `client-simple-no-tls` does
+  ([D-116](../architecture/03-decision-log.md#d-116--the-client-on-net-framework-45-alone-built-and-run-here-without-net-8-and-driven-in-clear)).
+  Given `https://`, it dials the grant's 9001 with TLS, as before. `client-simple` given `http://` still plays its
+  matches over TLS: they go to 9001 as the grant says, and it trusts its root for them.
 - **Whoever can reach the machine's 80 can read that traffic**, passwords and tokens too. On a development machine
   its firewall decides who that is.
 - **On Android**, the way in clear may also need the app to allow cleartext traffic. That is not checked here, as
@@ -457,12 +459,12 @@ These scripts check the routes as this page describes them:
 | Script | What it proves |
 |---|---|
 | `check-units-el9.sh` | the units in RHEL 9's (and 8's) systemd: a registration through nginx over HTTPS, a match connection on 9001 verified as `a1.arena.internal` and passed to the arena; on 80, the API's health and `/match/a1.arena.internal` answered 101 by the arena |
-| `check-ports-el9.sh` | 05 and 06 as written, in Rocky 9.5 with firewalld: two machines behind the front, the C# client playing its scenarios from a player's address through 443 and 9001, every connection to the arena its name gives, a name not in the list refused, and the arenas naming the player's address, not nginx's; 80 open from a player's address, the API's health on it, A's and B's arenas by name through `/match/`, an unknown name 404 |
+| `check-ports-el9.sh` | 05 and 06 as written, in Rocky 9.5 with firewalld: two machines behind the front; 443 and 9001 from a player's address by `curl` and `openssl s_client`, every connection to the arena its name gives, a name not in the list refused; 80 open from a player's address, the API's health on it, A's and B's arenas by name through `/match/`, an unknown name 404; the C# client playing its scenarios through 80 in clear, on Unity 2019's Mono (D-116), and the arenas naming the player's address, not nginx's |
 | `check-install-guide-el9.sh` | the install guide as written: a registration through nginx, every arena's name on 9001 and through 80's `/match/` |
-| `check-two-machines-el9.sh` | matches by the C# client on B's arenas through A's nginx |
+| `check-two-machines-el9.sh` | matches by the C# client on B's arenas through A's nginx's 80, in clear (D-116), read from `access.log`'s `/match/` lines |
 | `check-nginx-logs.sh` | the logs' rotation |
 | `dev-nginx.sh test`, `dev-backend.sh test` | a run by hand, TLS or plain: nginx's configuration, 80 and 443 with the platform behind them, its certificate, two bots registered, in the lobby and in a match through nginx |
-| `headless-drill.sh` with `FRONT=https`, `FRONT=http` or `FRONT=plain`, and `NEWMAN=1` | every route of §10 through the release's nginx as `dev-nginx.sh` configures it, on the drill's own stack: the Postman collection first (every HTTP route, its body, each answer's status tested), then the C# client's scenarios (the API, the lobby, and matches on the port that stands for 9001, which the arena reads from the PROXY line in the TLS ways). The drill's nginx uses 8095 for 80, 8096 for 443 and 9095 for 9001 ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)). With `SIMPLE=1`, also `client-simple-no-tls` through the port for 80, its matches through `/match/` in the TLS ways |
+| `headless-drill.sh` with `FRONT=http` or `FRONT=plain`, and `NEWMAN=1` | every route of §10 in clear through the release's nginx as `dev-nginx.sh` configures it, on the drill's own stack: the Postman collection first (every HTTP route, its body, each answer's status tested), then the C# client's scenarios on Unity 2019's Mono: the API and the lobby on the port that stands for 80, and matches there by `/match/` with `FRONT=http`, or on the port that stands for 9001 with `FRONT=plain`. `FRONT=https` is refused since D-116: Mono's own TLS stops at 1.0. The drill's nginx uses 8095 for 80, 8096 for 443 and 9095 for 9001 ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)). With `SIMPLE=1`, also `client-simple-no-tls` through the port for 80, its matches through `/match/` with `FRONT=http` |
 
 ## 10. Every route, one by one
 
@@ -471,7 +473,9 @@ had it on 2026-11-05
 ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)).
 For each route it also says what ran it through nginx in the checks of that day: `headless-drill.sh` with
 `FRONT=https`, `http` and `plain`, and `NEWMAN=1` (§9). nginx's own access log was read to tell them apart: the
-collection's requests carry Postman's user agent, and none of the C# client's do.
+collection's requests carry Postman's user agent, and none of the C# client's do. Those runs are of before D-116:
+since then `FRONT=https` is refused, and with `FRONT=http` the C# client takes everything through 80, its matches by
+`/match/`.
 
 ### 10.1 HTTP, to the platform
 
@@ -670,4 +674,4 @@ Then come the match's own binary frames, each a varint length followed by its by
 Through nginx in the runs: every scenario's matches, on the drill's port for 9001. In the TLS ways they went over
 TLS, and the arena read the PROXY line (its log names each player's address); in the plain way they went plain.
 Since 2026-11-25 `client-simple-no-tls`'s matches also went through the drill's port for 80, by `/match/`, in the
-TLS ways (D-115).
+TLS ways (D-115). Since D-116 the C# client's matches go there too, with `FRONT=http`, and none over TLS.

@@ -55,7 +55,7 @@ Your MySQL 5 is never touched. See §6.
 
 | Path you may see | What it is | On your offline machine |
 |---|---|---|
-| `/opt/jdk21`, `/opt/maven`, `/opt/dotnet` | the tools installed on the development VM, where the backend was written | not needed: the repository carries its own JDK and Maven in `vendor/` |
+| `/opt/jdk21`, `/opt/maven`, `/opt/dotnet` | the tools installed on the development VM, where the backend was written | not needed: the repository carries its own JDK and Maven in `vendor/`. No .NET is used since D-116: the client is built and run with Unity's editor in `work/unity` |
 | `/opt/java21-offline` | a path inside a template file: where the library bundle would go if it were carried alone to another project | not used: `dev-env.sh` replaces it with your folder's path (§3) |
 | `/opt/backend` | where the install guide puts the backend on a production server, as a service | only when you install on a server, by the [install guide](../operations/03-install-guide.md), which copies it there itself |
 | `/tmp` | where the old build kept Maven's files, and Java's default folder for temporary files | not used: everything goes in `work/tmp` |

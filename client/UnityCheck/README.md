@@ -16,11 +16,13 @@ nothing to run.
 
 ```bash
 cd client
-./unity-check.sh          # DOTNET and JAVAC may be set; see the defaults below
+./unity-check.sh          # JAVAC and UNITY_DATA may be set; see below
 ```
 
-The defaults: `DOTNET` is `/opt/dotnet/dotnet` when it is there, and otherwise the `dotnet` on the PATH. `JAVAC` is
-the `javac` on the PATH, and otherwise `/opt/jdk21/bin/javac`.
+It compiles the C# with Unity 2019.4.28f1's compiler (Roslyn 2.9.1) against Mono's .NET Framework 4.5 reference
+assemblies, with no .NET SDK (D-116). It sources `../unity-env.sh`, which fetches Unity's editor once into `work/unity`;
+`UNITY_DATA` names another copy of the editor's `Editor/Data`. `JAVAC` is the `javac` on the PATH, and otherwise
+`/opt/jdk21/bin/javac`.
 
 For a check with Unity 2019.4's own compiler against its real assemblies, run `../unity2019-check.sh`
 ([../README.md](../README.md#building-testing-packaging-checking)).
@@ -29,13 +31,15 @@ For a check with Unity 2019.4's own compiler against its real assemblies, run `.
 
 | Step | How |
 |---|---|
-| The C#, four times | `dotnet build UnityCheck -p:UnityDefines=…`, with no define, `UNITY_EDITOR`, `UNITY_IOS` and `UNITY_ANDROID`, so every `#if` branch of `SecureStores` compiles. It prints `ok   C#, …` for each; otherwise the errors (or the log's end when it names none) and `UNITY CHECK FAILED` |
+| The core | `../Core/*.cs`, compiled for .NET Framework 4.5, warnings as errors. Otherwise `UNITY CHECK FAILED: the core` |
+| The C#, four times | `Stubs/**/*.cs` and the package's `Runtime/*.cs` against that core, with no define, `UNITY_EDITOR`, `UNITY_IOS` and `UNITY_ANDROID`, so every `#if` branch of `SecureStores` compiles. Warnings are errors, but not `CS0649`. It prints `ok   C#, …` for each; otherwise the errors (or the log's end when it names none) and `UNITY CHECK FAILED` |
 | The Java | `javac --release 11 -Werror` of `AndroidStubs/**/*.java` with `../Unity/com.backend.client/Plugins/Android/SecureStore.java`. It prints `ok   Java, the Android plugin`; otherwise `UNITY CHECK FAILED: the Android plugin's Java` |
 | The verdict | `UNITY CHECK PASSED (compiled against stubs; not run, not in Unity)` |
 
-The project, `UnityCheck.csproj`:
+The project, `UnityCheck.csproj`, is the same check for Visual Studio 2019, in `../Backend.Client.sln`, which
+`../vs2019-check.sh` builds. `unity-check.sh` does not use it. The project:
 
-- targets .NET Standard 2.0, with C# 7.3 as Unity 2019.4 compiles it (D-108), and warnings as errors;
+- targets .NET Framework 4.5 alone, with C# 7.3 as Unity 2019.4 compiles it (D-108, D-116), and warnings as errors;
 - has default compile items off. It compiles `Stubs/**/*.cs` and the package's `Runtime/**/*.cs`, adds
   `$(UnityDefines)` to the defined constants, and references the core's project;
 - does not treat `CS0649` (a field never assigned) as an error, because an inspector-assigned `[SerializeField]` is
@@ -58,5 +62,5 @@ documentation.
 | The scripts' own mistakes: types, names, calls, every platform branch | Unity's API as the stubs believe it: a wrong belief compiles here and fails in Unity |
 | The core's API as the scripts use it | Anything run: `Update`, `OnGUI`, touches, the camera, sprites, the main thread's rules |
 | The Android plugin's Java against the Android API it calls | The iOS plugin, `BackendKeychain.mm`, which only Xcode compiles |
-| | The library in the package: the check compiles against the core's project, so it does not notice a `Backend.Client.Core.dll` copied in before the core last changed. `../unity-package.sh` copies it again |
+| | The library in the package: the check compiles the core's sources itself, so it does not notice a `Backend.Client.Core.dll` copied in before the core last changed. `../unity-package.sh` copies it again |
 | | The keychain and the keystore on a device, TLS with a device's trust store, the frame time on a phone |

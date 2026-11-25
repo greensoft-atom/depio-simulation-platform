@@ -2715,6 +2715,8 @@ namespace Backend.Client.Headless
             {
                 Host = g.Host, Port = g.Port, Tls = g.Tls, TlsName = g.TlsName,
                 Trust = _trust == null ? null : new TrustRoot(_trust),
+                // The site's 80 by the arena's name when the platform is reached in clear (D-116).
+                Site = MatchSettings.SiteFor(_platform, g.Tls, g.TlsName),
             }, new SystemClock());
 
         /// <summary>A lobby connection, trusting --trust's root when given, as the app's does (D-82).</summary>

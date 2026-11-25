@@ -1,11 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- The client's core, driven without Unity against the real stack (docs 08 §6): C# 7.3 on .NET Framework 4.7.1,
-       which Visual Studio 2019 builds and a Windows machine runs (D-109); and .NET 8 where MSBuild is 17 or later,
-       which the drills here run (on Linux only .NET speaks TLS 1.2: bin/Debug/net8.0). -->
+  <!-- The client's core, driven without Unity against the real stack (docs 08 §6): C# 7.3 on .NET Framework 4.5 alone
+       (D-116), which Visual Studio 2019 builds and a Windows machine runs. The drills here compile it by Unity 2019.4's
+       compiler and run it on its Mono (client/headless-drill.sh). System.ValueTuple is its tuples. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFrameworks>net471</TargetFrameworks>
-    <TargetFrameworks Condition="'$(MSBuildAssemblyVersion)' &gt;= '17.0'">net471;net8.0</TargetFrameworks>
+    <TargetFramework>net45</TargetFramework>
     <LangVersion>7.3</LangVersion>
     <Nullable>disable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -13,7 +12,8 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
-    <Reference Include="System.Net.Http" Condition="'$(TargetFramework)' == 'net471'" />
+    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
+    <Reference Include="System.Net.Http" />
     <ProjectReference Include="../Core/Backend.Client.Core.csproj" />
   </ItemGroup>
 </Project>

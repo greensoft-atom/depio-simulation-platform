@@ -7,28 +7,32 @@ and its scenarios.
 
 **What it prints.** Each check prints `ok` or `FAIL`. The exit status is 0 only if every check passed.
 
-**What it is.** A tool for the development machine, not part of the app, so it may use what .NET has and Unity does
-not. It is C# 7.3, with a project reference to `Core`, and it has two targets (D-109):
+**What it is.** A tool for the development machine, not part of the app. It is C# 7.3 on .NET Framework 4.5 alone
+(D-116), with a project reference to `Core`, and System.ValueTuple 4.5.0 for its tuples.
 
-- .NET Framework 4.7.1, which Visual Studio 2019 builds and a Windows machine runs;
-- .NET 8, where MSBuild is 17 or later. The drills on this machine run that one (`bin/Debug/net8.0`), because on
-  Linux only .NET speaks TLS 1.2; Mono outside Unity does not.
+- Visual Studio 2019 builds it, and a Windows machine runs it.
+- Here the drills build it for each run with Unity 2019.4's compiler (`build_headless`, in `../unity-env.sh`), and run
+  it on Unity's Mono 5.11 with `float32`, as Unity's Mono has it (P-65). Outside the editor, Mono's own TLS stops at
+  1.0, and nginx and an arena's own TLS speak 1.2 and 1.3, so the drills drive it in clear (D-116).
 
 **How it is run.** `../headless-drill.sh` starts the backend from a release and runs this driver against it. Its
 modes and ports are in [../README.md](../README.md#against-the-real-server).
 
 ## Command line
 
+From `client/`, in a shell that sourced `unity-env.sh` (it fetches Unity's editor once into `work/unity`):
+
 ```
-dotnet Headless/bin/Debug/net8.0/Backend.Client.Headless.dll <platform-url> [--lobby <ws-url>] [--trust <cert>] [--wrong-trust <cert>] [scenario ...]
+build_headless ../work/headless
+MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=$MONO_LIB "$MONO" ../work/headless/Backend.Client.Headless.exe <platform-url> [--lobby <ws-url>] [--trust <cert>] [--wrong-trust <cert>] [scenario ...]
 ```
 
 | Argument | Meaning |
 |---|---|
 | `<platform-url>` | The platform API. It comes first and is required. It is the one endpoint that `ApiClient` is given |
 | `--lobby <ws-url>` | The gateway's lobby, for example `ws://127.0.0.1:8094/lobby` |
-| `--trust <cert>` | The one root certificate to trust in place of the device's store, for the API, the lobby and matches, as the app trusts the backend's own root (`TrustRoot`, D-82): a test CA's, or `ca.pem` from `private-ca.sh`. The name is still checked (the address dialled, or a grant's `tlsName`), and nothing is pinned |
-| `--wrong-trust <cert>` | A root that is not the arena's, for the `untrusted` scenario |
+| `--trust <cert>` | The one root certificate to trust in place of the device's store, for the API, the lobby and matches, as the app trusts the backend's own root (`TrustRoot`, D-82): a test CA's, or `ca.pem` from `private-ca.sh`. The name is still checked (the address dialled, or a grant's `tlsName`), and nothing is pinned. The drills give none: they run in clear (D-116) |
+| `--wrong-trust <cert>` | A root that is not the arena's, for the `untrusted` scenario, which the drills cannot run (D-116) |
 | `scenario ...` | The scenarios to run, in the order given. With none named, it runs `play resume badticket lifecycle`. An unknown name is a failed check |
 
 **Without `--lobby`**, the driver drops from its list the scenarios that need the lobby, as `Program.NeedsLobby`
@@ -124,7 +128,8 @@ The times are a run's own, roughly.
 | `removed` | An operator takes a player out of the public arena, then closes another player's room: each ends `Removed`, `Kick(7)`; a player removed but not banned plays again | A | seconds |
 | `phrase` | The phrase list that platform serves is the one the Welcome names; a phrase said comes back to its speaker by their own handle and name; a second one at once is dropped without a kick, and one two seconds later is heard | | seconds |
 
-`untrusted` needs a grant with TLS and `--wrong-trust`: `headless-drill.sh` gives both with `TLS=1`, and with
-`FRONT=https` or `FRONT=http`.
+`untrusted` needs a match over TLS and `--wrong-trust`. It can no longer be driven here: the driver runs on Unity's
+Mono, whose own TLS stops at 1.0, so `headless-drill.sh` refuses it, with `TLS=1` and `FRONT=https` (D-116). The
+driver keeps it, for a runtime that speaks TLS 1.2.
 
 The drills' dated records are in [../README.md](../README.md#drill-records).

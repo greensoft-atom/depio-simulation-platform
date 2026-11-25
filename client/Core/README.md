@@ -7,13 +7,16 @@ where the core runs, its threads, its public types, a sketch of a client built o
 
 **Where it runs.**
 
-- It is .NET Standard 2.0 and C# 7.3 (D-108). Unity 2019.4 compiles it at either API compatibility level, and so do
-  Unity 2022.3 and Unity 6. Visual Studio 2019 builds it for .NET Framework 4.7.1.
+- It is .NET Framework 4.5 alone and C# 7.3, with no API above 4.5 (D-116). Unity 2019.4 takes it at its .NET 4.x
+  API level (Player settings, Api Compatibility Level), not at .NET Standard 2.0. Visual Studio 2019 builds it.
+  Later versions of Unity are not checked here.
 - `../unity2019-check.sh` compiles it with Unity 2019.4.28f1's own compiler and runs it on Unity's Mono.
-- It has no package references, so it goes into a Unity project as one library (`../unity-package.sh` builds and
-  copies it).
-- On this machine the .NET SDK runs it: its tests and the headless drills drive it against the real server.
-- It uses no spans, which .NET Standard 2.0 does not have: a frame is an `ArraySegment<byte>`.
+- No package goes with it, so it goes into a Unity project as one library (`../unity-package.sh` builds and copies
+  it).
+- On this machine Unity's Mono 5.11 runs it: its tests (`../core-tests.sh`), and the headless drills, which drive it
+  against the real server.
+- It uses no spans, no tuples and no `Array.Empty`, which .NET Framework 4.5 does not have: a frame is an
+  `ArraySegment<byte>`.
 
 **TLS** (Transport Layer Security). The site's certificates come from the backend's own certificate authority (CA),
 not from a public one (D-82). So the core checks a server's certificate itself, against the backend's root
@@ -23,8 +26,13 @@ certificate (`TrustRoot`, D-108), the same way on every runtime:
 - the lobby uses a WebSocket of the core's own over `SslStream`;
 - a match uses `SslStream`, checked for the grant's TLS name.
 
-`HttpClient` is in the assembly `System.Net.Http`. A Unity project references it by default at the .NET Standard
-2.0 level, but not at the .NET 4.x level: there, the package's `csc.rsp` adds it (D-113).
+**TLS 1.2 by name.** An assembly built for .NET Framework 4.5 offers TLS 1.0 alone by default, which nginx refuses.
+So the match's and the lobby's sockets offer TLS 1.2, 1.1 and 1.0 (`TlsVersions.Client`). `ApiClient` adds 1.2 and
+1.1 to `ServicePointManager.SecurityProtocol`, a setting of the whole process (`TlsVersions.ForRequests`). The server
+chooses (D-116).
+
+`HttpClient` is in the assembly `System.Net.Http`. A Unity project does not reference it by default at the .NET 4.x
+level, the one that takes the core: there, the package's `csc.rsp` adds it (D-113).
 
 The core's structure, and the lifecycles below, are drawn in
 [docs/diagrams/06-client.md](../../docs/diagrams/06-client.md).
@@ -78,7 +86,7 @@ No other thread writes anything that the main thread reads, except those queues 
 | Type | What it is for |
 |---|---|
 | `MatchConnection` | One player's connection to one arena, made with `new MatchConnection(settings, clock)`. Calls: `Join(ticket)` or `Resume(secret)`; `Poll()` once a frame; `SetInput`, `SetBackgrounded`, `Respawn`, `UpgradeStat`, `ChooseClass`, `Say`, `SetLevel`, `SummonGuardian`, `Leave`, `Dispose`. State: `State`, `End`, `World`, `OwnTank`, `Welcome`, `Alive` (false from a death until the respawn), `SnapshotsApplied`, `Resumes`, `RoundTripMs`, `LastProblem`. Callbacks: `OnEvent`, and `OnFrame` (after each frame, while the world still holds its removals) |
-| `MatchSettings` | Where and how to dial, taken from the grant: `Host`, `Port`, `Tls`, `TlsName` (the name the handshake sends; null means `Host`), `Trust` (the backend's root, checked for the name the handshake sends; null means the runtime's own check), `Profile` (−1 leaves it out, which the arena reads as mobile) |
+| `MatchSettings` | Where and how to dial, taken from the grant: `Host`, `Port`, `Tls`, `TlsName` (the name the handshake sends; null means `Host`), `Trust` (the backend's root, checked for the name the handshake sends; null means the runtime's own check), `Profile` (−1 leaves it out, which the arena reads as mobile), `Site` (the site's API in clear, `http://…`: the match is asked for through its 80, `GET /match/<TlsName>`, and played in clear on that connection once it answers 101; another answer ends it `Unreachable`, and `LastProblem` says what the site answered; null dials `Host` and `Port`). `SiteFor(api, tls, tlsName)` gives that `Site` when the API is `http://` and the grant asks for TLS by a name, and null otherwise (D-116) |
 | `MatchState` | `Connecting`, `Joining`, `InMatch`, `Lost`, `Ended` |
 | `MatchEnd` | Why it ended, each with its own next step ([08 §3](../../docs/detailed-design/08-client.md#3-the-match-connection)): `None` while it runs; `Left`, `BadTicket`, `RoomFull`, `ProtocolVersion`, `RateLimit`, `ServerFault`, `Unreachable`, `ResumeExpired`, `MatchOver`, `Removed` |
 | `IClock`, `SystemClock` | Milliseconds that never go backwards. A test's clock can be moved by hand |
@@ -132,6 +140,7 @@ arena).
 | Type | What it is for |
 |---|---|
 | `TrustRoot` | The backend's root certificate, which the client trusts alone for the API, the lobby and matches (D-82). Made with `new TrustRoot(certificate)` or `TrustRoot.FromPem(text)` (`ca.pem` from `private-ca.sh`); a root whose key is not RSA is refused with an `ArgumentException` that says why. `Accepts(certificate, host)`: the root issued it (RSA PKCS#1, SHA-256), it is valid now, and its subjectAltName holds the host, an IP address or a DNS name. `CheckFor(host)`: that check for one `SslStream`. `HttpHandler()`: the handler for `ApiClient`, which checks each request for its own host. Nothing is pinned, so the server's certificate can be renewed without a new release of the app |
+| `TlsVersions` | The TLS versions the core asks for by name (D-116): `Client`, TLS 1.2, 1.1 and 1.0, for the match's and the lobby's sockets; `ForRequests()`, which adds 1.2 and 1.1 to `ServicePointManager.SecurityProtocol` and takes nothing away. `ApiClient`'s constructor calls it |
 
 ### What a frame draws, and the sticks
 
@@ -158,8 +167,9 @@ Unity.
 
 It uses the site's one address (here `203.0.113.10`) and the backend's root, as the site needs (D-82). The core
 dials what it is given, in any build (D-115): for an API and a lobby in clear, give `http://` and `ws://` addresses.
-A grant from the site still asks for TLS on 9001, so a match there still needs the root. A backend run plain
-(`PLAIN=1`, D-101) gives grants without TLS.
+A grant from the site asks for TLS on 9001, by the arena's name. With an API in clear, `MatchSettings.SiteFor` gives
+the site's 80 instead, and the match goes through it in clear, with no root (D-116). A backend run plain (`PLAIN=1`,
+D-101) gives grants without TLS, which are dialled as they are.
 
 ```csharp
 using System;
@@ -218,6 +228,7 @@ public sealed class Player
             _match = new MatchConnection(new MatchSettings
             {
                 Host = grant.ArenaHost, Port = grant.ArenaPort, Tls = grant.Tls, TlsName = grant.TlsName, Trust = _root,
+                Site = MatchSettings.SiteFor(_api.Current, grant.Tls, grant.TlsName),   // an http:// API: the site's 80
             }, _clock);
             _match.OnEvent = e =>                      // every event of every frame; copy what is kept
             {

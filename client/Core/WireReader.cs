@@ -26,9 +26,11 @@ namespace Backend.Client.Core
 
         public WireReader(byte[] bytes) : this(new ArraySegment<byte>(bytes)) { }
 
+        private static readonly byte[] NoBytes = new byte[0];      // Array.Empty is 4.6's (D-116)
+
         public WireReader(ArraySegment<byte> bytes)
         {
-            _bytes = bytes.Array ?? Array.Empty<byte>();
+            _bytes = bytes.Array ?? NoBytes;
             _start = bytes.Array == null ? 0 : bytes.Offset;
             _end = _start + bytes.Count;
             _at = _start;

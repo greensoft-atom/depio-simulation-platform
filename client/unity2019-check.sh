@@ -1,64 +1,41 @@
 #!/bin/bash
-# The client in Unity 2019.4's own terms (D-108, docs 08 §8): Unity 2019.4.28f1's compiler (Roslyn 2.9.1, C# 7.3),
-# its references and its own UnityEngine assemblies, from its Linux editor in work/unity (downloaded once, 1.8 GB,
-# its SHA-256 checked). The core at both of Unity's API levels, .NET Standard 2.0 and .NET 4.x (.NET Framework
-# 4.7.1's references, what Visual Studio 2019 builds against too); the package's scripts against UnityEngine at both,
-# in each platform branch, with each level's default references and those of the package's csc.rsp, as Unity gives
-# them (D-113), and refused at .NET 4.x without it (P-66); then the core run on Unity's own Mono 5.11
-# (UnityRuntimeCheck), and the core's tests, compiled by Unity's compiler, run on it by NUnitLite (D-109). Warnings
-# are errors.
+# The client in Unity 2019.4's own terms (D-108, D-116, docs 08 §8): Unity 2019.4.28f1's compiler (Roslyn 2.9.1,
+# C# 7.3), its references and its own UnityEngine assemblies, from its Linux editor in work/unity (unity-env.sh). The
+# core for .NET Framework 4.5, what every project targets (D-116); the package's scripts against UnityEngine at Unity's
+# .NET 4.x API level (.NET Framework 4.7.1's references, what Unity gives a script there), the level that takes the
+# core, in each platform branch, with that level's default references and those of the package's csc.rsp, as Unity
+# gives them (D-113), and refused without it (P-66); then the core run on Unity's own Mono 5.11 (UnityRuntimeCheck),
+# and the core's tests (core-tests.sh). Warnings are errors.
 # Not the editor itself (it needs a licence), not Unity's TLS (the editor's and the player's), not a phone.
 #
 #   client/unity2019-check.sh            UNITY_DATA=<an editor's Editor/Data> for another copy
 set -euo pipefail
 C="$(cd "$(dirname "$0")" && pwd)"
 B="$(dirname "$C")"
-VERSION=2019.4.28f1 CHANGESET=1381962e9d08
-SHA256=c0b8360c19ea464c0e7f29c7c1c91760b32df876a1288a4924e115e8aa30b7e1
-W=$B/work/unity
-U=${UNITY_DATA:-$W/$VERSION/Editor/Data}
-if [ ! -d "$U/Managed/UnityEngine" ]; then
-    echo "--- Unity $VERSION's Linux editor, once, into $W (1.8 GB)"
-    mkdir -p "$W"
-    curl -fsSL -o "$W/Unity-$VERSION.tar.xz.part" "https://download.unity3d.com/download_unity/$CHANGESET/LinuxEditorInstaller/Unity.tar.xz"
-    echo "$SHA256  $W/Unity-$VERSION.tar.xz.part" | sha256sum -c --quiet || { echo "UNITY 2019 CHECK FAILED: the download's SHA-256"; exit 1; }
-    mv "$W/Unity-$VERSION.tar.xz.part" "$W/Unity-$VERSION.tar.xz"
-    mkdir -p "$W/$VERSION" && tar -xJf "$W/Unity-$VERSION.tar.xz" -C "$W/$VERSION"
-fi
-MONO=$U/MonoBleedingEdge/bin/mono
-CSC=$U/Tools/RoslynNet46/csc.exe
+. "$C/unity-env.sh"
+VERSION=$_UNITY_VERSION
 echo "--- $("$MONO" "$CSC" -version) (Roslyn, Unity $VERSION's), $("$MONO" --version | head -1 | cut -d'(' -f1)"
-OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT
-NS=$U/NetStandard
-FX=$U/MonoBleedingEdge/lib/mono/4.7.1-api
-# Each API level's references, as Unity gives them to a script's compilation by default: no System.Net.Http at .NET 4.x.
+mkdir -p "$B/work/tmp"; OUT=$(mktemp -d "$B/work/tmp/unity2019-check.XXXXXX"); trap 'rm -rf "$OUT"' EXIT   # in work/ (D-80)
+FX=$FX471
+# Unity's .NET 4.x level's references, as it gives them to a script's compilation by default: no System.Net.Http.
 level_refs() {
-    case $1 in
-        # The shims: UnityEngine's assemblies name mscorlib and the rest, which .NET Standard's level forwards.
-        netstandard2.0) printf -- '-r:%s ' "$NS/ref/2.0.0/netstandard.dll"; for f in "$NS"/compat/2.0.0/shims/netfx/*.dll; do printf -- '-r:%s ' "$f"; done ;;
-        net4.x) for d in mscorlib System System.Core System.Numerics; do printf -- '-r:%s/%s.dll ' "$FX" "$d"; done
-                for f in "$FX"/Facades/*.dll; do printf -- '-r:%s ' "$f"; done ;;
-    esac
+    for d in mscorlib System System.Core System.Numerics; do printf -- '-r:%s/%s.dll ' "$FX" "$d"; done
+    for f in "$FX"/Facades/*.dll; do printf -- '-r:%s ' "$f"; done
 }
 # The references a csc.rsp beside an assembly definition adds, as Unity 2019.4 finds them (D-113): each -r: name in the
 # level's own reference folders, the first that has it; a name in none is Unity's "could not be found as a system library".
-rsp_refs() {   # level, csc.rsp
-    [ -f "$2" ] || return 0
-    local dirs name d found
-    case $1 in
-        netstandard2.0) dirs="$NS/ref/2.0.0 $NS/compat/2.0.0/shims/netstandard $NS/Extensions/2.0.0 $NS/compat/2.0.0/shims/netfx" ;;
-        net4.x) dirs="$FX $FX/Facades" ;;
-    esac
+rsp_refs() {   # csc.rsp
+    [ -f "$1" ] || return 0
+    local name d found
     while read -r line; do
         [ -n "$line" ] || continue
-        [[ $line =~ ^[-/]r(eference)?:(.+)$ ]] || { echo "UNITY 2019 CHECK FAILED: $2: '$line' is not a reference" >&2; exit 1; }
+        [[ $line =~ ^[-/]r(eference)?:(.+)$ ]] || { echo "UNITY 2019 CHECK FAILED: $1: '$line' is not a reference" >&2; exit 1; }
         name=${BASH_REMATCH[2]} found=
-        for d in $dirs; do [ -f "$d/$name" ] && { found=$d/$name; break; }; done
-        [ -n "$found" ] || { echo "UNITY 2019 CHECK FAILED: $2: $name could not be found as a system library at $1" >&2; exit 1; }
+        for d in "$FX" "$FX/Facades"; do [ -f "$d/$name" ] && { found=$d/$name; break; }; done
+        [ -n "$found" ] || { echo "UNITY 2019 CHECK FAILED: $1: $name could not be found as a system library" >&2; exit 1; }
         printf -- '-r:%s ' "$found"
-    done < "$2"
+    done < "$1"
 }
-NETHTTP=-r:$FX/System.Net.Http.dll        # what the core, a library built with its own references, and the programs here need
 # CS0649, a field never assigned, is what an inspector-assigned [SerializeField] is (as UnityCheck), not an error.
 compile() {   # what, output, references and sources...
     local what=$1 out=$2; shift 2
@@ -72,25 +49,23 @@ CORE=$(ls "$C"/Core/*.cs)
 SCRIPTS=$(ls "$C"/Unity/com.backend.client/Runtime/*.cs)
 RSP=$C/Unity/com.backend.client/Runtime/csc.rsp
 ENGINE=(); for m in "$U"/Managed/UnityEngine/*.dll; do ENGINE+=("-r:$m"); done
-for level in netstandard2.0 net4.x; do
-    mkdir -p "$OUT/$level"
+mkdir -p "$OUT/net45"
+# shellcheck disable=SC2046
+compile "the core, C# 7.3, .NET Framework 4.5" "$OUT/net45/Backend.Client.Core.dll" $(fx45_refs) $CORE
+refs=$(rsp_refs "$RSP")
+for defines in "" UNITY_EDITOR UNITY_ANDROID UNITY_IOS; do
     # shellcheck disable=SC2046
-    compile "the core, C# 7.3, $level" "$OUT/$level/Backend.Client.Core.dll" $(level_refs $level) $([ $level = net4.x ] && echo "$NETHTTP") $CORE
-    refs=$(rsp_refs $level "$RSP")
-    for defines in "" UNITY_EDITOR UNITY_ANDROID UNITY_IOS; do
-        # shellcheck disable=SC2046
-        compile "the package's scripts, $level, ${defines:-no platform}" "$OUT/unity-$level-${defines:-none}.dll" \
-            ${defines:+-define:$defines} $(level_refs $level) $refs "${ENGINE[@]}" -r:"$OUT/$level/Backend.Client.Core.dll" $SCRIPTS
-    done
+    compile "the package's scripts, Unity's .NET 4.x, ${defines:-no platform}" "$OUT/unity-${defines:-none}.dll" \
+        ${defines:+-define:$defines} $(level_refs) $refs "${ENGINE[@]}" -r:"$OUT/net45/Backend.Client.Core.dll" $SCRIPTS
 done
 # shellcheck disable=SC2046
-if "$MONO" "$CSC" -nologo -langversion:7.3 -nostdlib -noconfig -target:library -out:"$OUT/bare.dll" $(level_refs net4.x) "${ENGINE[@]}" \
-        -r:"$OUT/net4.x/Backend.Client.Core.dll" $SCRIPTS > "$OUT/log" 2>&1; then
-    echo "UNITY 2019 CHECK FAILED: the package's scripts compiled at net4.x without its csc.rsp, which D-113 says they need"; exit 1
+if "$MONO" "$CSC" -nologo -langversion:7.3 -nostdlib -noconfig -target:library -out:"$OUT/bare.dll" $(level_refs) "${ENGINE[@]}" \
+        -r:"$OUT/net45/Backend.Client.Core.dll" $SCRIPTS > "$OUT/log" 2>&1; then
+    echo "UNITY 2019 CHECK FAILED: the package's scripts compiled at .NET 4.x without its csc.rsp, which D-113 says they need"; exit 1
 fi
-echo "  ok   the package's scripts, net4.x without its csc.rsp: refused ($(grep -o 'error CS[0-9]*' "$OUT/log" | sort -u | tr '\n' ' '))"
+echo "  ok   the package's scripts, .NET 4.x without its csc.rsp: refused ($(grep -o 'error CS[0-9]*' "$OUT/log" | sort -u | tr '\n' ' '))"
 echo "--- the core on Unity's Mono"
-compile "the runtime check" "$OUT/net4.x/check.exe" -target:exe $(level_refs net4.x) $NETHTTP -r:"$OUT/net4.x/Backend.Client.Core.dll" \
+compile "the runtime check, .NET Framework 4.5" "$OUT/net45/check.exe" -target:exe $(fx45_refs) -r:"$OUT/net45/Backend.Client.Core.dll" \
     "$C/UnityRuntimeCheck/Program.cs"
 # Its certificates made here, by the scripts the site's are (Mono outside the editor never sees a child's output end).
 # The test server's keys in what Mono 5.11 reads: 3DES and SHA-1, not OpenSSL 3's AES and PBKDF2. Nothing shipped.
@@ -101,34 +76,9 @@ P=$OUT/pki CA=$B/backend/scripts/private-ca.sh OLD_P12="-keypbe PBE-SHA1-3DES -c
   && openssl pkcs12 -export $OLD_P12 -passout pass:check -in "$P/leaf/fullchain.pem" -inkey "$P/leaf/privkey.pem" -out "$P/leaf.p12" \
   && openssl pkcs12 -export $OLD_P12 -passout pass:check -in "$P/other-leaf/fullchain.pem" -inkey "$P/other-leaf/privkey.pem" -out "$P/other.p12"; } \
   > "$OUT/pki.log" 2>&1 || { cat "$OUT/pki.log"; echo "UNITY 2019 CHECK FAILED: the certificates"; exit 1; }
-MONO_PATH=$U/MonoBleedingEdge/lib/mono/unityjit timeout 300 "$MONO" "$OUT/net4.x/check.exe" "$P" \
+MONO_PATH=$MONO_LIB timeout 300 "$MONO" "$OUT/net45/check.exe" "$P" \
     || { echo "UNITY 2019 CHECK FAILED: the core on Unity's Mono"; exit 1; }
-echo "--- the core's tests on Unity's Mono, compiled by its compiler (D-109)"
-# NUnit and NUnitLite for .NET Framework, from nuget.org once, their SHA-256 checked.
-N=$W/nuget; mkdir -p "$N"
-for p in "nunit 0ae3ffab91e8bcf59f016dc2b72fd0c518bb5698f2909dd30cbab94c4348e8a6" \
-         "nunitlite 75c5f1ded2ca9d510cad569d2f60d9243ebffab502c35840406333bedc4a9696"; do
-    set -- $p
-    [ -f "$N/$1/lib/net45/$1.dll" ] || [ -f "$N/$1/lib/net45/$1.framework.dll" ] && continue
-    curl -fsSL -o "$N/$1.nupkg" "https://api.nuget.org/v3-flatcontainer/$1/3.14.0/$1.3.14.0.nupkg"
-    echo "$2  $N/$1.nupkg" | sha256sum -c --quiet || { echo "UNITY 2019 CHECK FAILED: $1's SHA-256"; exit 1; }
-    mkdir -p "$N/$1" && (cd "$N/$1" && unzip -q -o ../$1.nupkg 'lib/net45/*')
-done
-T=$OUT/tests; mkdir -p "$T/Pki"
-cp "$OUT/net4.x/Backend.Client.Core.dll" "$N/nunit/lib/net45/nunit.framework.dll" "$N/nunitlite/lib/net45/nunitlite.dll" "$T/"
-# shellcheck disable=SC2046
-compile "the core's tests and their runner, C# 7.3, net4.x" "$T/tests.exe" -target:exe $(level_refs net4.x) $NETHTTP \
-    -r:"$T/Backend.Client.Core.dll" -r:"$T/nunit.framework.dll" -r:"$T/nunitlite.dll" "$C"/Core.Tests/*.cs "$C/UnityRuntimeCheck/RunTests.cs"
-cp "$C"/Core.Tests/Pki/*.pem "$C"/Core.Tests/Pki/*.p12 "$T/Pki/"
-cp "$B/protocol-spike/vectors/vectors.txt" "$B/backend/sim/src/test/resources/maze-2026.txt" \
-   "$B/backend/arena/src/test/resources/motion-2026.txt" "$C/Core.Tests/README.md" "$T/"
-# float32, as Unity's own Mono has it (its fork's "[jit] Enable float32 by default"): the standalone mono here computes
-# a float in double without it, and the own tank's step then differs from the server's in its last bits (P-65).
-(cd "$T" && MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=$U/MonoBleedingEdge/lib/mono/unityjit timeout 900 "$MONO" tests.exe \
-    --noresult --noheader > "$T/run.txt" 2>&1)
-sed -n '/^Errors, Failures/,/^Test Run Summary/p' "$T/run.txt" | grep -E '^[0-9]+\) |^  [A-Z]' | head -20 || true
-summary=$(grep -m1 'Test Count' "$T/run.txt" | sed 's/^ *//')
-echo "  $summary"
-[[ $summary == *"Failed: 0,"* ]] || { echo "UNITY 2019 CHECK FAILED: the core's tests on Unity's Mono"; exit 1; }
+echo "--- the core's tests on Unity's Mono, compiled by its compiler for .NET Framework 4.5 (core-tests.sh)"
+if ! "$C/core-tests.sh" | sed 's/^/  /'; then echo "UNITY 2019 CHECK FAILED: the core's tests on Unity's Mono"; exit 1; fi
 echo "UNITY 2019 CHECK PASSED (compiled by Unity $VERSION's compiler against its assemblies, the core and its tests run on its Mono;"
 echo "  not in the editor, not through Unity's TLS, not on a phone)"

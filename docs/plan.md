@@ -10,8 +10,8 @@ left of it waits on Q-3's hardware.
   D-97). It has one public address with three ports (D-82, D-115): nginx ends TLS on 443 (the API and the lobby) and
   on 9001 (matches), and serves all three in clear on 80, a match there by `/match/<the arena's name>`.
 - **The components**, each built and tested: `j-redis-service` 2.2.2 (229 tests); the backend's eleven modules (their
-  sources declare 1 150 tests); the client's engine-free core with its headless driver (185 tests, on .NET 8 and on
-  Unity 2019's Mono). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
+  sources declare 1 150 tests); the client's engine-free core with its headless driver (191 tests, on .NET Framework 4.5, run on
+  Unity 2019's Mono; D-116). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
   `UnityEngine`; there is no Unity editor here, so it has not been opened in one (Q-54). Beside the full client,
   `client-simple/` and `client-simple-no-tls/` are small clients for the UI team (D-111, D-114).
 - **The release** carries its own Java runtime, MySQL 8.4 and nginx, built for glibc 2.28 and checked on RHEL 8 and 9
@@ -60,7 +60,7 @@ and fixed-phrase chat
 | **j-redis-service** | **2.2.2 shipped** (2026-11-25): `HELLO` reports the server's role (D-52, plan item 139). 2.2.1 (2026-10-01): a subscriber follows the primary as every other connection does (plan item 50). 2.2.0 (2026-09-29) added replication, a primary and its replicas with promotion guarded by epochs; 2.1.0 (the same day) streams, on 2.0.0's Java 21 base. 229 tests, crash-tested with and without a replica, offline build, documented. See its [README](../j-redis-service/README.md). |
 | `java21-offline` bundle | Built and verified: 244 jars, 0 above Java 21, offline build proven from an empty repository. It holds 300 jars today: 56 were added on 2026-09-23, after that check, listed since 2026-11-25 and marked `later` ([its README](../java21-offline/README.md), DOC-57). |
 | Requirements | [Written](requirements/01-scope-and-nfrs.md), with 64 questions recorded. Four wait on the owner's machines or players: Q-1 uplink, Q-2 in-battle ratio, Q-3 production measurements, Q-4 how players cluster. Six wait on the owner's choices: Q-52, a real payment provider (the flow is built, its provider simulated); Q-53, where the backups' copies off the site go; Q-58, a day of results past 20 000 players; Q-59, the app's updates; Q-60, where alerts go; Q-62, the launch's machine. The owner held Q-53, Q-58, Q-59, Q-60 and Q-62 on 2026-11-01. The rest are answered, or built on their recommendations unless the owner decides otherwise. |
-| Architecture | [Topology](architecture/01-system-topology.md), [availability](architecture/02-availability.md) and the [decision log](architecture/03-decision-log.md), D-1 to D-115, written. At launch, every role on one machine (D-93, topology §2). |
+| Architecture | [Topology](architecture/01-system-topology.md), [availability](architecture/02-availability.md) and the [decision log](architecture/03-decision-log.md), D-1 to D-116, written. At launch, every role on one machine (D-93, topology §2). |
 | `arena` design | [Current](detailed-design/01-arena.md), with what is not built marked in place: replays, the in-room events beyond the kill feed, and co-op's tiers. The modes, the maze's walls, the whole tank tree and the kill feed are built. |
 | `networking` design | **[Written](detailed-design/02-networking.md)** — transport, wire format, snapshot protocol, client-side simulation contract, traffic profiles, the own tank's prediction. |
 | `gateway` design | **[Written](detailed-design/03-gateway.md)** — lobby connection, auth handshake, push routing, rate limiting. |
@@ -69,7 +69,7 @@ and fixed-phrase chat
 | MySQL persistence design | **[Written](detailed-design/06-persistence-mysql.md)** — schema, transaction patterns, idempotency via natural keys, pooling, retention and growth, backups proved weekly. The schema is one baseline since 2026-10-04, `V1__schema.sql` and `V2__seed.sql` (D-75). |
 | Operations docs | [Mostly written](operations/01-deploy.md) — install, TLS, MySQL, backups and the certificate run for real; the stores' promotion scripted and drilled ([runbook §2](operations/02-runbook.md#2-stateful-primary-failure)), MySQL's too (2026-09-29, rehearsed under load 2026-09-30); backups proved by a weekly restore (item 76); every port and each machine's firewall, run as written ([05](operations/05-ports-and-firewall.md), item 88); the site behind one public address, the front's nginx ending TLS, and the backend's own CA, run as written with the C# client through it ([05](operations/05-ports-and-firewall.md), [06](operations/06-certificates.md), item 90). What is left is the alert thresholds, which wait on Q-3's hardware ([runbook](operations/02-runbook.md)). |
 | Application code | **[backend/](../backend/README.md)**: `common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`, `crypto-examples`. Their sources declare 1 150 tests (2026-11-25); the last whole run counted 1 064, with 0 compiler warnings (item 86, 2026-10-06). Multi-room arena, largest clean run 1 200 bots, every one sent every snapshot (item 14), and 600 through a failover (item 23); MySQL transactions tested for idempotency and double-spend under concurrency; single-use join tickets; Argon2id login and sessions; register → login → lobby → ticket → play → result persisted → **leaderboard updated**, verified end to end across four processes against real MySQL and real j-redis. |
-| Unity client | **Claude writes it** ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer), 2026-09-27): the engine-free core and a headless driver in [client/](../client/README.md), 185 tests (2026-11-25), their list in its README checked by one of them (DOC-31), driven against the real stack by the live drills. The Unity layer is written as scripts over the core (item 77, the owner's Q-51), compiled against stubs and by Unity 2019.4's own compiler against its `UnityEngine`, and not opened in the editor (Q-54, D-108); own-tank prediction, deferred with it on 2026-09-27, was brought back on 2026-10-03 and built (item 70). |
+| Unity client | **Claude writes it** ([D-19](architecture/03-decision-log.md#d-19--the-client-is-an-engine-free-core-and-a-thin-unity-layer), 2026-09-27): the engine-free core and a headless driver in [client/](../client/README.md), 191 tests (2026-11-25, .NET Framework 4.5, D-116), their list in its README checked by one of them (DOC-31), driven against the real stack by the live drills. The Unity layer is written as scripts over the core (item 77, the owner's Q-51), compiled against stubs and by Unity 2019.4's own compiler against its `UnityEngine`, and not opened in the editor (Q-54, D-108); own-tank prediction, deferred with it on 2026-09-27, was brought back on 2026-10-03 and built (item 70). |
 
 ### Build checklist
 
@@ -4592,6 +4592,61 @@ The owner: fix what is still open. So DOC-57 too, the bundle's list.
 The backend's whole build passed with every test, and the release (`dev-backend.sh build`; its counts are not kept,
 since the release's own build cleans the reports). The live drill from that release, `play resume lobby removed`, on
 j-redis 2.2.2: all passed.
+
+#### 140. ~~The client on .NET Framework 4.5 alone, and no .NET 8 anywhere (the owner, 2026-11-25, D-116).~~ — **done 2026-11-25**
+
+The owner: keep .NET Framework 4.5 (and .NET Standard 1.1) as the main target, unsure of modern .NET; then, asked:
+.NET Framework 4.5 alone, .NET 8 removed everywhere, the drills' C# client on Unity 2019's Mono and no drill through
+nginx's TLS. .NET Standard 1.1 has no sockets, TLS stream or threads (D-116). In four parts, each committed:
+
+- **(a) Every C# project and tree on .NET Framework 4.5.** The four projects of `Backend.Client.sln`, the Unity
+  package at Unity's .NET 4.x level, both simple clients at 4.5 alone. The core's 4.6 calls replaced, and TLS 1.2
+  asked for by name. Everything here compiled by Unity 2019's compiler against Mono's 4.5 references, and the core's
+  tests run on Unity's Mono (`client/core-tests.sh`).
+- **(b) The full client through the site's 80**: `GET /match/<name>` when its API is in clear, as
+  `client-simple-no-tls` does; test first, mutants.
+- **(c) No .NET 8.** The drills' driver and the simple clients' live checks built and run on Unity's Mono; `TLS=1`
+  and `FRONT=https` refused; `check-ports-el9.sh` and `check-two-machines-el9.sh` drive the client through 80, Unity's
+  Mono in their containers. The drills run again.
+- **(d) The documents**: CLAUDE.md and working-here's rule, 08-client, the client's READMEs, build-and-run, both
+  simple clients' READMEs, the glossary.
+
+**Done.** The four parts in one commit, not four: the tests do not build until the projects move, and the drills need
+the driver on Mono and the `/match/` way both.
+
+- **(a)**: the six C# trees at net45, C# 7.3. The core's 4.6 calls replaced (the root's RSA key through
+  `PublicKey.Key`, its own empty arrays, the maze's tuples a struct of its own); the tests and the driver take
+  `System.ValueTuple` 4.5.0, and the test packages fall to the last that take net45 (Test SDK 16.11.0, NUnit 3.14.0,
+  its adapter 3.17.0). TLS 1.2 asked for by name (`TlsVersions`), test first: seven mutants, six caught; the match
+  socket's list cannot be seen on Unity's Mono, whose own TLS is 1.0 alone (the lobby's and the requests' can).
+  `client-simple`'s check asks the same of its own (71 checks, 52 without TLS), failing first.
+- **(b)**: the full core's `/match/` way (P-68): four tests, three failing first on the grant's 9001 dialled; nine
+  mutants caught.
+- **(c)**: the driver, the simple clients' checks and the two checks in containers on Unity's Mono, built by
+  `unity-env.sh`'s `build_headless`; `TLS=1`, `FRONT=https` and `untrusted` exit 2, each saying why.
+- **(d)**: 31 pages and READMEs; D-116 names the one modern .NET left, `vs2019-check.sh`'s SDK images, VS 2019's
+  MSBuild as build tools alone.
+
+Checked: the core's 191 tests on Unity's Mono (`core-tests.sh`); `unity2019-check.sh`, `unity-check.sh` and
+`vs2019-check.sh` (MSBuild 16.11 and 16.7, every project and the solution); both simple clients' checks. Live: every
+scenario but `untrusted` straight, with `SIMPLE=1`; `play lobby duel maze` through `FRONT=http`, client-simple-no-tls's
+match by `/match/`; `play lobby duel` through `FRONT=plain`, both simple clients. All passed but `maze`'s bullets, in both
+runs it was in (T-66, open, seen on .NET 8 before: the shots stopped before their first snapshot, two seeds recorded).
+`check-ports-el9.sh`: 181 checks, the C# client's 15 scenarios through 80 in clear, every match to the arena its name
+gives, each join from the player's address. `check-two-machines-el9.sh`: 51 checks, the C# client's matches
+through A's 80 by `/match/`: to B's arenas, to A's own with B frozen, and on B with A lost.
+
+Lost, D-116's cost: the name a client's TLS handshake gives, seen by a server (`TrustRootTests`, .NET 8's alone); the C#
+client through nginx's TLS, here; TLS 1.2 on .NET Framework itself, never run here. nginx's TLS stays checked by
+`openssl s_client`.
+
+#### 141. T-66: the maze's bullet check, by the seeds that fail it
+
+The one open defect the drills meet: `maze`'s check that the scout's bullets end at a wall failed in two of four runs
+on .NET 8 and two of two on Unity's Mono (item 140), the shots stopped before their first snapshot. Read first what
+stops them: the two seeds recorded, the eight tanks' spawns and the line of fire, in the simulation alone. Then the
+check's shot chosen so that its way is clear of walls and tanks for the bullet's radius, and a test that puts a
+failing seed's geometry in by construction.
 
 ---
 

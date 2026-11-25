@@ -43,6 +43,8 @@ namespace Backend.Client.Simple
         public BackendHttp(string baseUrl, string caPem = null)
         {
             _baseUrl = baseUrl.TrimEnd('/');
+            // Built for .NET Framework 4.5, a request offers TLS 1.0 alone by default, which nginx refuses (D-116).
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12;
             if (caPem != null) CheckWithRoot(new Uri(_baseUrl).Host, TrustRoot.FromPem(caPem));
         }
 

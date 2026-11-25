@@ -2,7 +2,7 @@
 # The client's core, headless, against the real stack from a release: j-redis, platform, an
 # arena and a worker, on ports of their own. Stops everything on the way out (docs 08 §6).
 #
-#   client/headless-drill.sh [scenario ...]          TLS=1 for an arena serving TLS
+#   client/headless-drill.sh [scenario ...]          the client on Unity 2019's Mono, in clear alone (D-116)
 #   DRAIN_AFTER=<s> client/headless-drill.sh duel     stops the arena <s> seconds in: it drains
 #   FAILOVER=1 client/headless-drill.sh play          the store with a replica (port 6392): the
 #                                                     scenarios, the primary killed, the replica
@@ -59,12 +59,15 @@
 #                                                     whose retention a minute on erases it (D-87): the journal
 #                                                     line, the metric, its key refused at login, the row erased
 #   SIMPLE=1 client/headless-drill.sh play            client-simple's live check before the scenarios (D-111, D-112): the API, the
-#                                                     lobby and a match on Unity 2019's Mono, through FRONT's nginx when set;
-#                                                     client-simple-no-tls's after it, straight or through nginx's 80, its
-#                                                     match by /match/ when the grant asks for TLS (D-114, D-115)
+#                                                     lobby and a match on Unity 2019's Mono, straight or through FRONT=plain's
+#                                                     nginx; client-simple-no-tls's after it, straight or through nginx's 80,
+#                                                     its match by /match/ when the grant asks for TLS (D-114, D-115)
+#   TLS=1, FRONT=https and the scenario untrusted are refused: the C# client runs on Unity 2019's Mono, whose own TLS
+#   stops at 1.0, and an arena's own TLS and nginx's speak 1.2 and 1.3 (D-116). The core's TLS is core-tests.sh's.
 #
-# Needs: the backend release (backend/scripts/make-release.sh; RELEASE= for a copy of one), the
-# headless client built (dotnet build), python3 and the development MySQL (dev-mysql.sh, 127.0.0.1:3314
+# Needs: the backend release (backend/scripts/make-release.sh; RELEASE= for a copy of one), Unity 2019.4's editor in
+# work/unity (client/unity-env.sh fetches it once), which builds the headless client for .NET Framework 4.5 and runs it
+# (D-116), python3 and the development MySQL (dev-mysql.sh, 127.0.0.1:3314
 # or MYSQL_PORT), started for the drill when it is not running and stopped after; its database is
 # backend_dev, a run by hand's too, so the two are not run at once (D-80, O-40). A release
 # carries its own runtime, j-redis and MySQL (docs/detailed-design/09 §4), and the drill takes them
@@ -88,7 +91,12 @@ fi
 if [ -x "$R/runtime/bin/java" ]; then J=${JAVA:-$R/runtime/bin/java}; else J=${JAVA:-/opt/jdk21/bin/java}; fi
 if [ -x "$R/mysql/bin/mysqld" ]; then MYSQLD_BIN=${MYSQLD_BIN:-$R/mysql/bin/mysqld}; PATH="$R/mysql/bin:$PATH"
 else MYSQLD_BIN=${MYSQLD_BIN:-/usr/sbin/mysqld}; fi
-DOTNET=${DOTNET:-/opt/dotnet/dotnet}
+# The C# client on Unity 2019's Mono, in clear alone (D-116): no TLS mode, and no scenario of TLS's.
+[ "${TLS:-0}" = 1 ] && { echo "TLS=1: the client runs on Unity 2019's Mono, whose own TLS stops at 1.0 (D-116)"; exit 2; }
+for s in "$@"; do
+  [ "$s" = untrusted ] && { echo "untrusted needs a match over TLS, which the client on Unity 2019's Mono cannot make (D-116)"; exit 2; }
+done
+. "$C/unity-env.sh" || { echo "DRILL FAILED: no Unity 2019.4 editor to build and run the client"; exit 1; }
 # The drill's fixed ports, tried first: one in use, or one a policy of the machine refuses, is named (D-88); and
 # each mode's own, which a server left by an earlier run would otherwise answer for (O-80).
 MODE_PORTS=()
@@ -97,18 +105,21 @@ MODE_PORTS=()
 [ "${IDLEGUEST:-0}" = 1 ] && MODE_PORTS+=(9193)
 [ "${WATCH:-0}" = 1 ] && MODE_PORTS+=(9194)
 # FRONT (D-107): the release's nginx in front of the drill's processes, as dev-nginx.sh configures it, on ports of its
-# own (8095 for 80, 8096 for 443, 9095 for 9001), and the client through it: https and http the TLS way, the API and
-# the lobby on 443's place or on 80's (matches over TLS either way), plain the plain way (D-101). NEWMAN=1: the
-# Postman collection through the same address first, on the fresh stack.
+# own (8095 for 80, 8096 for 443, 9095 for 9001), and the client through it, in clear (D-116): http the TLS way's
+# nginx, the API, the lobby and matches on 80's place (a match by /match/ and the arena's name, D-115); plain the plain
+# way (D-101), 80's and 9001's places. NEWMAN=1: the Postman collection through the same address first, on the fresh stack.
 FRONT=${FRONT:-}
 if [ -n "$FRONT" ]; then
-  case $FRONT in https|http|plain) ;; *) echo "FRONT is https, http or plain, not $FRONT"; exit 2 ;; esac
-  [ "${TLS:-0}" = 1 ] && { echo "FRONT with TLS=1: an arena behind the front has no TLS of its own (D-82)"; exit 2; }
+  case $FRONT in http|plain) ;;
+    https) echo "FRONT=https: the client runs on Unity 2019's Mono, whose own TLS stops at 1.0, and nginx's is 1.2 and 1.3 (D-116)"; exit 2 ;;
+    *) echo "FRONT is http or plain, not $FRONT"; exit 2 ;; esac
   MODE_PORTS+=(8095 8096 9095)
 fi
 "$B/backend/scripts/check-bind.sh" 6390 8093 8094 9011 9195 9196 9197 9198 9199 "${MODE_PORTS[@]}" || exit 1
 D=$(mktemp -d); mkdir -p "$D/data" "$D/spool"
 echo "logs in $D"
+# The headless client for .NET Framework 4.5, built here by Unity 2019's compiler, run on its Mono (D-116).
+build_headless "$D/headless" || { echo "DRILL FAILED: the headless client does not compile"; exit 1; }
 # The store's jars copied, and the tools' below: a build beside a long drill deletes its target
 # directory, and every sample of the store starts the command-line client afresh (T-31).
 cp "$JREDIS" "$JREDIS_CLI" "$D/"; JREDIS=$D/${JREDIS##*/}; JREDIS_CLI=$D/${JREDIS_CLI##*/}
@@ -142,21 +153,7 @@ nfr2_quantiles() {
 OPENS="--add-opens java.base/java.nio=ALL-UNNAMED"
 cli() { printf '%s\n' "$@" | $J -jar "$JREDIS_CLI" --raw -p 6390 | sed -E 's/^([^ ]+:[0-9]+> ?)+//' | sed '/^$/d'; }
 
-# TLS=1: the arena serves a test certificate naming 127.0.0.1, and the client trusts only it. RSA, the one key the
-# client takes, as the app on Unity 2019 can check no other (D-108).
 TLSENV=(); TRUST=()
-if [ "${TLS:-0}" = 1 ]; then
-  K="$(dirname "$J")/keytool"; T="$D/tls"; mkdir -p "$T"; chmod 700 "$T"
-  $K -genkeypair -alias arena -keyalg RSA -keysize 2048 -sigalg SHA256withRSA -dname CN=arena-drill -ext san=ip:127.0.0.1 \
-     -validity 2 -storetype PKCS12 -keystore "$T/arena.p12" -storepass drill-pass -keypass drill-pass 2>/dev/null
-  $K -exportcert -alias arena -keystore "$T/arena.p12" -storepass drill-pass -file "$T/arena.crt" 2>/dev/null
-  $K -genkeypair -alias other -keyalg RSA -keysize 2048 -sigalg SHA256withRSA -dname CN=someone-else -ext san=ip:127.0.0.1 \
-     -validity 2 -storetype PKCS12 -keystore "$T/other.p12" -storepass other-pass 2>/dev/null
-  $K -exportcert -alias other -keystore "$T/other.p12" -storepass other-pass -file "$T/other.crt" 2>/dev/null
-  printf 'drill-pass\n' > "$T/arena-pass"
-  TLSENV=(env BACKEND_ARENA_TLS_KEYSTORE="$T/arena.p12" BACKEND_ARENA_TLS_PASSWORD_FILE="$T/arena-pass")
-  TRUST=(--trust "$T/arena.crt" --wrong-trust "$T/other.crt")
-fi
 API=http://127.0.0.1:8093 LOBBY=ws://127.0.0.1:8094/lobby ARENAENV=() FRONTENV=()
 if [ -n "$FRONT" ]; then
   FRONTENV=(env NGINX_DIR="$D/nginx" PUBLIC_ADDRESS=127.0.0.1 PLATFORM_PORT=8093 GATEWAY_PORT=8094 ARENA_PORT=9011
@@ -306,17 +303,12 @@ for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null || { echo "DRILL FAILED: proc
 if [ -n "$FRONT" ]; then
   NGINX_STARTED=1
   "${FRONTENV[@]}" "$B/dev-nginx.sh" start > "$D/nginx.log" 2>&1 || { cat "$D/nginx.log"; echo "DRILL FAILED: nginx in front"; exit 1; }
-  "$B/backend/scripts/private-ca.sh" root "$D/other-ca" > /dev/null    # a root the client must not trust (untrusted)
-  case $FRONT in
-    https) API=https://127.0.0.1:8096 LOBBY=wss://127.0.0.1:8096/lobby ;;
-    *)     API=http://127.0.0.1:8095  LOBBY=ws://127.0.0.1:8095/lobby ;;
-  esac
-  [ "$FRONT" = plain ] || TRUST=(--trust "$D/nginx/ca/ca.pem" --wrong-trust "$D/other-ca/ca.pem")
-  echo "--- through nginx ($FRONT): the API $API, the lobby $LOBBY, matches 127.0.0.1:9095$([ "$FRONT" = plain ] && echo ", plain" || echo " over TLS")"
+  API=http://127.0.0.1:8095 LOBBY=ws://127.0.0.1:8095/lobby
+  echo "--- through nginx ($FRONT): the API $API, the lobby $LOBBY, matches $([ "$FRONT" = plain ] && echo "127.0.0.1:9095, plain" || echo "through 8095's /match/ by the arena's name")"
 fi
 if [ "${NEWMAN:-0}" = 1 ]; then
   echo "--- the Postman collection through $API, every HTTP route ($(date +%T))"
-  NEWMAN_CA=(); [ "$FRONT" = https ] && NEWMAN_CA=(--ssl-extra-ca-certs "$D/nginx/ca/ca.pem")
+  NEWMAN_CA=()
   npx --yes newman run "$B/docs/api/backend.postman_collection.json" --env-var baseUrl="$API" \
       --env-var adminUrl=http://127.0.0.1:9196 --env-var adminToken=drill-admin-secret "${NEWMAN_CA[@]}" \
       --reporters cli --reporter-cli-no-banner --reporter-cli-no-console > "$D/newman.log" 2>&1
@@ -325,32 +317,24 @@ if [ "${NEWMAN:-0}" = 1 ]; then
   [ "$NEWMAN_RC" = 0 ] || { echo "NEWMAN FAILED (exit $NEWMAN_RC): $D/newman.log"; grep -E '^\s+[0-9]+\. ' "$D/newman.log" | head -20; }
 fi
 if [ "${SIMPLE:-0}" = 1 ]; then
-  echo "--- client-simple through $([ "${FRONT:-}" = https ] && echo http://127.0.0.1:8095 || echo "$API") and $LOBBY ($(date +%T))"
-  # The root its TLS connections must come from, and another it must refuse; TLS=1's are the arena's own, as DER.
-  SIMPLE_CA=()
-  case ${FRONT:-} in https|http) SIMPLE_CA=("$D/nginx/ca/ca.pem" "$D/other-ca/ca.pem") ;; esac
-  if [ "${TLS:-0}" = 1 ]; then
-    openssl x509 -inform der -in "$T/arena.crt" -out "$T/arena.pem" && openssl x509 -inform der -in "$T/other.crt" -out "$T/other.pem"
-    SIMPLE_CA=("$T/arena.pem" "$T/other.pem")
+  # client-simple takes the grant's TLS when it asks for TLS, so it is driven where nothing does: straight, or
+  # FRONT=plain (D-116). Behind FRONT=http a grant asks for TLS: client-simple-no-tls's way, below.
+  if [ "${FRONT:-}" = http ]; then
+    echo "--- client-simple: not through FRONT=http, whose grants ask for TLS, which Unity 2019's Mono cannot speak to nginx (D-116)"
+  else
+    echo "--- client-simple through $API and $LOBBY ($(date +%T))"
+    "$B/client-simple/check.sh" live "$API" "$LOBBY" > "$D/simple.log" 2>&1
+    SIMPLE_RC=$?
+    sed 's/^/  /' "$D/simple.log"
+    [ "$SIMPLE_RC" = 0 ] || echo "CLIENT-SIMPLE FAILED (exit $SIMPLE_RC): $D/simple.log"
   fi
-  # The API at http:// (D-112): .NET 8, which runs the TLS checks here, does not call the app's certificate check that
-  # Unity's HttpClient does; check.sh's offline run checks that one. With https, the front's clear port, as http's.
-  SIMPLE_API=$API; [ "${FRONT:-}" = https ] && SIMPLE_API=http://127.0.0.1:8095
-  "$B/client-simple/check.sh" live "$SIMPLE_API" "$LOBBY" "${SIMPLE_CA[@]}" > "$D/simple.log" 2>&1
-  SIMPLE_RC=$?
-  sed 's/^/  /' "$D/simple.log"
-  [ "$SIMPLE_RC" = 0 ] || echo "CLIENT-SIMPLE FAILED (exit $SIMPLE_RC): $D/simple.log"
   # client-simple-no-tls (D-114, D-115) wherever its addresses are in clear: straight to the processes, or nginx's 80,
   # where a grant of the TLS way's, which asks for TLS, is reached through /match/ by the arena's name.
-  if [ "${TLS:-0}" != 1 ]; then
-    NOTLS_API=$API NOTLS_LOBBY=$LOBBY
-    [ -n "${FRONT:-}" ] && NOTLS_API=http://127.0.0.1:8095 NOTLS_LOBBY=ws://127.0.0.1:8095/lobby
-    echo "--- client-simple-no-tls through $NOTLS_API and $NOTLS_LOBBY ($(date +%T))"
-    "$B/client-simple-no-tls/check.sh" live "$NOTLS_API" "$NOTLS_LOBBY" > "$D/simple-no-tls.log" 2>&1
-    NOTLS_RC=$?
-    sed 's/^/  /' "$D/simple-no-tls.log"
-    [ "$NOTLS_RC" = 0 ] || echo "CLIENT-SIMPLE-NO-TLS FAILED (exit $NOTLS_RC): $D/simple-no-tls.log"
-  fi
+  echo "--- client-simple-no-tls through $API and $LOBBY ($(date +%T))"
+  "$B/client-simple-no-tls/check.sh" live "$API" "$LOBBY" > "$D/simple-no-tls.log" 2>&1
+  NOTLS_RC=$?
+  sed 's/^/  /' "$D/simple-no-tls.log"
+  [ "$NOTLS_RC" = 0 ] || echo "CLIENT-SIMPLE-NO-TLS FAILED (exit $NOTLS_RC): $D/simple-no-tls.log"
 fi
 
 # The arena's pid is the second started: stopped mid-scenario, it drains (01 §8.6).
@@ -374,7 +358,7 @@ run_client() {
   drill_sql
   BACKEND_DRILL_SQL="$D/drill-sql.sh" \
   BACKEND_ADMIN_URL=http://127.0.0.1:9196 BACKEND_ADMIN_TOKEN=drill-admin-secret \
-  DOTNET_NOLOGO=1 "$DOTNET" "$C/Headless/bin/Debug/net8.0/Backend.Client.Headless.dll" "$API" --lobby "$LOBBY" "${TRUST[@]}" "$@"
+  MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=$MONO_LIB "$MONO" "$D/headless/Backend.Client.Headless.exe" "$API" --lobby "$LOBBY" "${TRUST[@]}" "$@"
 }
 # The failovers in steps, so that a load run can put the bots' leaving between the kill and the
 # promotion (architecture/02 §6).

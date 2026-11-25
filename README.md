@@ -8,7 +8,8 @@ they are in the repository, what state they are in, and how to build and run the
 **In short:**
 - **The server** is Java 21 and MySQL 8.4, with a Redis-compatible store of its own,
   [j-redis](j-redis-service/README.md).
-- **The client** is C#: an engine-free core, for Unity 2019.4 and Visual Studio 2019 first (D-108).
+- **The client** is C#: an engine-free core, for Unity 2019.4 and Visual Studio 2019 first (D-108), on .NET Framework
+  4.5 alone (D-116).
 - **The size**: the site launches on **one machine, for up to about 5 000 concurrent players** (D-93). The design
   grows to 50 000 on three machines.
 - **The way in**: one public IP address, with no domain. nginx on the front machine takes the players' connections:
@@ -26,8 +27,8 @@ they are in the repository, what state they are in, and how to build and run the
 | j-redis `events`  | The result stream `s:match-result`, read by the group `rewards`.                                                                                                                                             | RESP2, 6380 in the example settings; on three machines a replica on another machine, at launch none                                                     |
 | MySQL 8.4 LTS     | The system of record: accounts, progression, the economy and its ledger, teams, tournaments, history.                                                                                                        | 3306, TLS; on three machines a GTID replica on another machine, at launch none; with a standby machine, the replica there (D-96)                        |
 | nginx             | The front: it ends TLS for the API and the lobby on 443 and for matches on 9001, passing each match to its arena by name; and it serves all three in clear on 80, for a client without TLS (D-82, D-115).    | 80, 443 and 9001                                                                                                                                        |
-| Client core       | `Backend.Client.Core`, .NET Standard 2.0 and C# 7.3, for Unity 2019.4 and Visual Studio 2019 first (D-108): the wire, the world, the match connection, the lobby, the API, the own tank's prediction, and what a frame draws. | All of the above, as a player does                                                                                                                      |
-| Headless driver   | The core driven without Unity: the live drill's player.                                                                                                                                                      | Against a running stack                                                                                                                                 |
+| Client core       | `Backend.Client.Core`, .NET Framework 4.5 and C# 7.3, for Unity 2019.4 (at its .NET 4.x level) and Visual Studio 2019 first (D-108, D-116): the wire, the world, the match connection, the lobby, the API, the own tank's prediction, and what a frame draws. | All of the above, as a player does                                                                                                                      |
+| Headless driver   | The core driven without Unity: the live drill's player, run here on Unity 2019's Mono, in clear (D-116).                                                                                                     | Against a running stack                                                                                                                                 |
 | Unity package     | `com.backend.client`: thin scripts over the core. Compiled by Unity 2019.4's own compiler against its assemblies, and against stubs; not yet run in the editor.                                              | Through the core                                                                                                                                        |
 | Simple client     | `client-simple/`: the API, the lobby and a match in seven small C# files for a UI team, with examples (D-111, D-112). Run on Unity 2019.4's Mono against the stack; not yet in the editor.                   | HTTP, WebSocket, TCP                                                                                                                                    |
 | Simple client, no TLS | `client-simple-no-tls/`: the same without TLS (`http://`, `ws://` and plain matches), for a backend run plain (D-114) and for the site's 80 (D-115).                                                         | HTTP, WebSocket, TCP                                                                                                                                    |
@@ -42,7 +43,7 @@ are drawn in [docs/diagrams/01-system.md](docs/diagrams/01-system.md).
 | Path                                            | What it holds                                                                                                                                                                                                                                                                            |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`backend/`](backend/README.md)                 | The server: a Maven build of eleven modules (`common`, `protocol`, `sim`, `arena`, `handoff`, `persistence`, `platform`, `worker`, `gateway`, `tools`, `crypto-examples`), the release script, the operations scripts (`scripts/`), and the systemd units, nginx configuration and example settings (`deploy/`) |
-| [`client/`](client/README.md)                   | The client: the core (`Core/`), its tests (`Core.Tests/`), the headless driver (`Headless/`), the Unity package (`Unity/com.backend.client/`), the stubs that compile it (`UnityCheck/`), the core on Unity 2019's Mono (`UnityRuntimeCheck/`), the one solution (`Backend.Client.sln`, VS 2019's), the checks (`unity-check.sh`, `unity2019-check.sh`, `vs2019-check.sh`), and the live drill (`headless-drill.sh`) |
+| [`client/`](client/README.md)                   | The client: the core (`Core/`), its tests (`Core.Tests/`), the headless driver (`Headless/`), the Unity package (`Unity/com.backend.client/`), the stubs that compile it (`UnityCheck/`), the core on Unity 2019's Mono (`UnityRuntimeCheck/`), the one solution (`Backend.Client.sln`, VS 2019's), the core's tests run on Unity's Mono (`core-tests.sh`), the checks (`unity-check.sh`, `unity2019-check.sh`, `vs2019-check.sh`), Unity's tools for them (`unity-env.sh`), and the live drill (`headless-drill.sh`) |
 | [`client-simple/`](client-simple/README.md)     | A simple client for a UI team to read and paste into Unity: the API over `HttpClient`, the lobby, a match, three example scripts, and its check (`check.sh`)                                                                                                                             |
 | [`client-simple-no-tls/`](client-simple-no-tls/README.md) | The simple client without TLS, for a backend run plain and the site's 80: `http://`, `ws://`, plain matches; checked by client-simple's check                                                                                                                                            |
 | [`docs/`](docs/README.md)                       | Requirements, architecture and the decision log, detailed designs, development and operations guides, the API, the plan, the defect register, the glossary, research                                                                                                                     |
@@ -60,15 +61,16 @@ are drawn in [docs/diagrams/01-system.md](docs/diagrams/01-system.md).
 
 ## Status
 
-As of 2026-11-25, [plan](docs/plan.md) items 1 to 137 are done. Item 7 stays open by design: what is left of it
-waits on Q-3's hardware. Item 138, this review of every guide and document, is under way.
+As of 2026-11-25, [plan](docs/plan.md) items 1 to 139 are done. Item 7 stays open by design: what is left of it
+waits on Q-3's hardware. Item 140, the client on .NET Framework 4.5 alone (D-116), is under way.
 
 - **Tests.** j-redis 2.2.2 passes its 229 tests (2026-11-25). The backend's sources declare 1 150 tests (2026-11-25); the last
-  whole run's count was 1 064 (plan item 86, 2026-10-06). Each module's README holds its own count. The client core's 185 tests pass on .NET 8 and on
-  Unity 2019's Mono (plan item 137).
-- **Live.** The live drill has 45 scenarios, and `untrusted` over TLS. At plan item 78, all 44 scenarios of then
-  passed against one release, in clear and over TLS (the TLS ones over TLS), and a two-hour soak of 300 bots held
-  flat. Since D-107 the drill also runs the client through nginx, in each of nginx's ways.
+  whole run's count was 1 064 (plan item 86, 2026-10-06). Each module's README holds its own count. The client core's 191 tests pass for
+  .NET Framework 4.5 on Unity 2019's Mono (`client/core-tests.sh`, plan item 140). Nothing here runs .NET 8 since D-116.
+- **Live.** The live drill has 45 scenarios, all in clear since D-116: Unity's Mono, which runs the client here,
+  speaks TLS 1.0 alone, so `untrusted`, `TLS=1` and `FRONT=https` are refused. At plan item 78, all 44 scenarios
+  of then passed against one release, in clear and over TLS (the TLS ones over TLS), and a two-hour soak of 300 bots
+  held flat. Since D-107 the drill also runs the client through nginx, since D-116 by its 80 or the plain way.
 - **Not done.** Nothing has run on the production hardware, and nothing has launched.
 
 **What is open is the owner's** ([open questions](docs/requirements/01-scope-and-nfrs.md#7-open-questions)):
@@ -137,8 +139,10 @@ What you get, by default:
 
 `<address>` is this machine's first IPv4 address, unless `PUBLIC_ADDRESS` names another.
 
-**More:** with VS Code, see [05 — VS Code](docs/development/05-vscode.md). The client and the drills need the .NET 8
-SDK, which the repository does not carry ([client/README.md](client/README.md)). The development VM's own tools
+**More:** with VS Code, see [05 — VS Code](docs/development/05-vscode.md). The client and the drills need Unity
+2019.4's Linux editor in `work/unity`, which the repository does not carry: `client/unity-env.sh` fetches it once
+(1.8 GB). Its compiler builds the client for .NET Framework 4.5, and its Mono runs it; no .NET is needed (D-116,
+[client/README.md](client/README.md)). The development VM's own tools
 under `/opt` are listed in [working here §3](docs/development/02-working-here.md#3-the-development-machine), and are
 not needed. Every command, the benchmarks among them, is in [`CLAUDE.md`](CLAUDE.md#commands).
 

@@ -319,7 +319,7 @@ an operator sets by hand:
 | `IMAGE` | `check-release-el9.sh`, `check-units-el9.sh`, `check-install-guide-el9.sh`, `check-two-machines-el9.sh`, `check-certificates.sh` | `registry.access.redhat.com/ubi9/ubi-minimal:9.5` for the first; `registry.access.redhat.com/ubi9/ubi-init:9.5` for the next three; none for `check-certificates.sh`, which then runs on this machine |
 | `GUIDE_VALUES` | `check-install-guide-el9.sh` | none: values set after the install guide's own |
 | `SAVE_A`, `A_IMAGE`, `STANDBY_ONLY` | `check-two-machines-el9.sh` | none ([scripts/README](../scripts/README.md#check-two-machines-el9sh)) |
-| `DOTNET` | `check-ports-el9.sh`, `check-two-machines-el9.sh`, `client/headless-drill.sh` | `/opt/dotnet/dotnet` |
+| `UNITY_DATA` | `client/unity-env.sh`, so every script that sources it: `check-ports-el9.sh`, `check-two-machines-el9.sh`, `client/headless-drill.sh`, `client/core-tests.sh`, the client's checks | `work/unity/2019.4.28f1/Editor/Data`: Unity 2019.4.28f1's Linux editor, fetched there once, whose compiler and Mono build and run the C# client (D-116). Nothing reads `DOTNET` since D-116 |
 | `EL9_SSH_PORT` | `check-selinux-el9.sh`, `check-release-guest-el9.sh` | 2223, 2224 |
 | `CA`, `IC`, `PM`, `PS`, `ROTATE`, `PORT` | `check-certificates.sh`, `check-promote.sh`, `check-nginx-logs.sh` | none, for a mutation check; `PORT` 18080 |
 | `RELEASE`, `JREDIS_JAR`, `JREDIS_CLI_JAR`, `TOOLS_JAR`, `JAVA`, `MYSQLD_BIN`, `TLS`, `FAILOVER`, `MYSQL_FAILOVER`, `BOTS`, `ARENA_OPTS`, `SOAK`, `STAYS`, `SAMPLE_EVERY`, `JUDGE_FROM`, `WORKERS`, `TAKEOVER`, `DRAIN_AFTER`, `WATCH`, `IDLEGUEST`, `SIMPLE`, `FRONT`, `NEWMAN`, `BACKEND_DB_PASSWORD` | `client/headless-drill.sh` | its header |

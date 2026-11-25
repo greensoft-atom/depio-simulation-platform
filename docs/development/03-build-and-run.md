@@ -30,8 +30,9 @@ Other guides:
   not run separately, though `build-offline.sh` runs them all.
 
 No connection reached 3306, and nothing was written to `~/.m2`. Outside the checkout, only the JVM's own
-`/tmp/hsperfdata_<user>/` was written (§1). Not run as written: the drills (§7), which need .NET, and the RHEL 9
-checks (§8) other than the install guide's, which passed the same day.
+`/tmp/hsperfdata_<user>/` was written (§1). Not run as written: the drills (§7), which then needed .NET (since D-116,
+Unity 2019's editor in `work/unity` instead), and the RHEL 9 checks (§8) other than the install guide's, which passed
+the same day.
 
 ## 1. What you need, and what the repository touches
 
@@ -39,7 +40,7 @@ checks (§8) other than the install guide's, which passed the same day.
 |---|---|
 | Building, testing, running and debugging the backend | Linux on x86-64 with bash, coreutils, findutils, `sed`, `tar` and `gzip`. For nginx in front of a run by hand (§5.0), also `openssl`, `curl` for its `test`, and `hostname` for the default address. No Java, Maven, MySQL or network. **glibc 2.28 or later**, for every binary the release carries (nginx is built on Rocky 8; MySQL's own build and its two libraries are RHEL 8's; D-100): RHEL 8 and 9 and their rebuilds, Ubuntu 20.04, Debian 10 and later. MySQL also takes `libstdc++`, and for its client the machine's `libncurses.so.6` and `libtinfo.so.6` (`ncurses-libs` on RHEL, `libncurses6` on Ubuntu), which every install but the smallest has ([DOC-39](../defects.md#7-documentation)). Run as written as a user who is not root on Ubuntu 24.04 and Rocky 9.8, from a fresh clone, with no network. |
 | The checks on RHEL 9, and compiling nginx again | Docker |
-| The client, the Unity package and the drills | the .NET 8 SDK, which the repository does not carry (§7) |
+| The client, the Unity package and the drills | Unity 2019.4.28f1's Linux editor in `work/unity`, which the repository does not carry. `client/unity-env.sh` fetches it once (1.8 GB, its SHA-256 checked), and the NuGet packages the client's tests and driver take, with `curl`, `xz` and `unzip`: the network once, or a copy of another machine's `work/unity`. Its compiler builds the client, for .NET Framework 4.5, and its Mono runs it. No .NET ([D-116](../architecture/03-decision-log.md#d-116--the-client-on-net-framework-45-alone-built-and-run-here-without-net-8-and-driven-in-clear), §7, §9) |
 
 **Copy the repository whole**, with `git clone` or as one `tar` archive. A copy made file by file can lose the
 files' execute bits, and then nothing runs (`dev-env.sh` says so). **Its path may hold letters, digits and
@@ -64,6 +65,7 @@ build among them, must be given the new one.
 | `mysql/` | the development MySQL's data, socket and logs (§3) | `dev-mysql.sh` |
 | `run/` | a run by hand: each process's log and pid, the store's files, the arena's spool (§5) | `dev-jredis.sh`, `dev-backend.sh` |
 | `nginx/` | nginx in front of a run by hand: its configuration, rewritten from the release's, its logs and pid, the certificate and its root (§5.0) | `dev-nginx.sh` |
+| `unity/` | Unity 2019.4.28f1's Linux editor, whose compiler and Mono build and run the C# client, and the NuGet packages the client's tests and driver take (§1). Deleted, it is fetched again | `client/unity-env.sh` |
 
 **`dev-env.sh` is the environment.** Every script beside it reads it first. It sets:
 - `JAVA_HOME` and `PATH` on `vendor/jdk-21` and `vendor/maven-3.9`, whatever the machine's `JAVA_HOME` says;
@@ -385,7 +387,7 @@ client stays good. The certificate is issued again when the address changes. How
 |---|---|
 | `curl` | `curl --cacert ca.pem` |
 | Postman | Settings, Certificates, CA certificates |
-| the headless client | `--trust` |
+| the headless client | `--trust`, where it runs on .NET Framework. On Unity's Mono here its TLS stops at 1.0, which nginx refuses, so here it uses 80 in clear (D-116) |
 | the app on a phone | it trusts only the root it was built with, so the build for these phones carries this `ca.pem` (`BackendClient`'s root certificate) |
 
 **The firewall is the machine's administrator's.** `start` prints the line that opens 80, 443 and 9001
@@ -578,9 +580,12 @@ vendor/jdk-21/bin/jcmd $(cat work/run/arena.pid) GC.heap_info
 ## 7. The drills
 
 **The drills are the live tests**: each starts a release's processes on ports of its own, and drives them with the
-headless client (the C# core without Unity). They need the .NET 8 SDK and the client built
-(`cd client && dotnet build Headless`), which the repository does not carry.
+headless client (the C# core without Unity). They need Unity 2019's editor in `work/unity` (§1): each drill builds
+the headless client with its compiler, for .NET Framework 4.5, and runs it on its Mono (D-116).
 
+- **The C# client is driven in clear alone.** Unity's Mono outside the editor speaks TLS 1.0 alone, and nginx and an
+  arena's own TLS speak 1.2 and 1.3. So `TLS=1`, `FRONT=https` and the scenario `untrusted` are refused. The core's
+  TLS is tested by its own tests (§9).
 - **Their database** is `backend_dev` on the development MySQL (§3.1), which each drill starts when it is not
   running, and stops after. The machine's own MySQL on 3306 is never touched (O-40).
 - **Do not run a drill and a run by hand at once.** A run by hand uses `backend_dev` too, and a drill's `season`
@@ -601,9 +606,9 @@ The scenarios and options are listed in the header of `client/headless-drill.sh`
 
 | Setting | What the drill does |
 |---|---|
-| `TLS=1` | an arena that serves TLS itself; `untrusted` is then a scenario too |
-| `FRONT=https`, `FRONT=http`, `FRONT=plain` | the release's nginx in front of the drill's processes, as `dev-nginx.sh` sets it up: the API and the lobby on 443's place or 80's (matches over TLS either way), or the plain way (D-107). `NEWMAN=1` runs the Postman collection through it first |
-| `SIMPLE=1` | `client-simple`'s live check before the scenarios, then `client-simple-no-tls`'s (D-111, D-114, D-115) |
+| `FRONT=http`, `FRONT=plain` | the release's nginx in front of the drill's processes, as `dev-nginx.sh` sets it up (D-107). `http`: nginx the TLS way, and the client through 80's place alone, the API, the lobby and matches, a match by `/match/` and the arena's name (D-115, D-116). `plain`: the plain way (D-101), 80's place and 9001's. `NEWMAN=1` runs the Postman collection through it first |
+| `SIMPLE=1` | `client-simple`'s live check before the scenarios, straight or with `FRONT=plain` (behind `FRONT=http` it is left out: its grants ask for TLS); then `client-simple-no-tls`'s, in every way (D-111, D-114, D-115, D-116) |
+| `TLS=1`, `FRONT=https`, the scenario `untrusted` | refused since D-116, as above. They were an arena serving TLS itself, and nginx's 443 and 9001 |
 | `WATCH=1` | the platform's watch on, with a webhook receiver of the drill's: after the scenarios the worker is killed, and `TargetDown` must be listed and sent (D-86) |
 | `IDLEGUEST=1` | a guest aged 181 days in the database after the scenarios, erased by a fresh worker's retention a minute later (D-87) |
 | `FAILOVER=1`, `MYSQL_FAILOVER=1` | the store, or MySQL, with a replica: the primary killed, the replica promoted by the script, the scenarios again |
@@ -618,8 +623,8 @@ These checks need Docker, and each runs on a release:
 | `check-release-el9.sh` | the release in UBI 9 with nothing installed (`IMAGE=` for another: 9.0 to 9.9 checked, and UBI 8.10): every native file's libraries, every MySQL program and plugin (D-110), MySQL, j-redis, the four processes, nginx |
 | `check-units-el9.sh` | the units under RHEL 9's systemd, installed as the deploy document says, with nginx as one machine's front: HTTPS, and a match connection through 9001, with the backend's root trusted alone; and 80's health and its `/match/` for the arena, in clear (D-115) |
 | `check-install-guide-el9.sh` | the [install guide](../operations/03-install-guide.md), every step as written, with no network: the launch's one machine (D-93), each arena by its name through nginx's 9001 and 80; again after a restart; and the runbook's restore on one machine (about twenty-five minutes) |
-| `check-two-machines-el9.sh` | as root: [two machines](../operations/10-two-machines.md) as written (D-96), on two UBI 9 machines joined by a private link of their own. A is installed by the install guide's check, and a probe of the site runs through its nginx throughout. B's own arenas (D-97) play matches by the C# client through A's nginx, with B frozen. Then A's MySQL is lost and B's promoted; then A is lost, and the runbook's steps for it are run on B. It needs .NET, and takes about twenty minutes, twelve from an image. `SAVE_A=` keeps A installed and `A_IMAGE=` reuses it; `STANDBY_ONLY=1` leaves B's arenas out |
-| `check-ports-el9.sh` | in Rocky Linux 9.5 with RHEL 9's firewalld: the [ports and the firewall](../operations/05-ports-and-firewall.md) as written; the front's nginx ending TLS on 443 and 9001 with a certificate from the backend's own CA, and serving 80 in clear (D-115); and the C# headless driver playing through it. It needs .NET 8 too, and takes about ten minutes |
+| `check-two-machines-el9.sh` | as root: [two machines](../operations/10-two-machines.md) as written (D-96), on two UBI 9 machines joined by a private link of their own. A is installed by the install guide's check, and a probe of the site runs through its nginx throughout. B's own arenas (D-97) play matches by the C# client through A's nginx's 80, in clear, with B frozen. Then A's MySQL is lost and B's promoted; then A is lost, and the runbook's steps for it are run on B. It needs Unity's editor in `work/unity` (§1), which builds the C# client for .NET Framework 4.5 and runs it in the machines on its Mono (D-116). It takes about twenty minutes, twelve from an image. `SAVE_A=` keeps A installed and `A_IMAGE=` reuses it; `STANDBY_ONLY=1` leaves B's arenas out |
+| `check-ports-el9.sh` | in Rocky Linux 9.5 with RHEL 9's firewalld: the [ports and the firewall](../operations/05-ports-and-firewall.md) as written; the front's nginx ending TLS on 443 and 9001 with a certificate from the backend's own CA, and serving 80 in clear (D-115); and the C# headless driver playing through its 80, in clear, on Unity's Mono, with 443's and 9001's TLS checked by `openssl s_client` (D-116). It needs Unity's editor in `work/unity` too, and takes about ten minutes |
 
 **Checks without Docker:**
 - `backend/scripts/check-certificates.sh` checks the certificate scripts, with `openssl` alone, in a few seconds
@@ -640,14 +645,17 @@ And `vendor/build-nginx.sh` compiles nginx again ([vendor/README](../../vendor/R
 
 ## 9. The client
 
-All of these need the .NET 8 SDK ([client/README](../../client/README.md)):
+All of these need Unity 2019's editor in `work/unity` (§1), and no .NET ([client/README](../../client/README.md)).
+Every project targets .NET Framework 4.5. Every C# build here is Unity 2019.4.28f1's compiler (Roslyn 2.9.1, C# 7.3)
+against Mono's 4.5 reference assemblies, and every run is Unity's Mono 5.11 (`client/unity-env.sh`, D-116):
 
 | What | Command | What it does |
 |---|---|---|
-| The engine-free core, its tests and the headless driver | `cd client && dotnet test Core.Tests -f net8.0` | runs the core's tests; read `Total tests:` |
-| The Unity package, against stubs | `client/unity-package.sh && client/unity-check.sh` | compiles the package's scripts against stubs of the Unity API |
-| The Unity package, against Unity 2019 | `client/unity2019-check.sh` | Unity 2019.4.28f1's own compiler at both API levels, with the package's `csc.rsp` as Unity reads it; the core and its tests run on Unity's Mono (D-108, D-113). Nothing here runs the editor |
-| The simple client | `client-simple/check.sh`; live, `SIMPLE=1 client/headless-drill.sh play` | its offline checks, then its live check against a drill ([client-simple/README](../../client-simple/README.md)) |
+| The engine-free core and its tests | `client/core-tests.sh` | compiles the core and its tests for .NET Framework 4.5, and runs them on Unity's Mono by NUnitLite: 191 tests. Read its `Test Count:` line; it ends `CORE TESTS PASSED` when none failed |
+| The Unity package, against stubs | `client/unity-package.sh && client/unity-check.sh` | builds the core into the package, then compiles the package's scripts against stubs of the Unity API, each by Unity's compiler |
+| The Unity package, against Unity 2019 | `client/unity2019-check.sh` | Unity 2019.4.28f1's own compiler: the core for .NET Framework 4.5, and the package's scripts against Unity's assemblies at its .NET 4.x API level, with the package's `csc.rsp` as Unity reads it; then the core on Unity's Mono, and `core-tests.sh` (D-108, D-113, D-116). Nothing here runs the editor |
+| The solution, as Visual Studio 2019 builds it | `client/vs2019-check.sh` | VS 2019's MSBuild and Roslyn (16.11 and 16.7, from the .NET 5 and .NET Core 3.1 SDKs' images, as build tools alone) build the core and an app of 4.5, Unity 2019's project as VS 2019 compiles it, and `Backend.Client.sln`. It needs Docker too. Nothing runs on .NET Framework itself |
+| The simple client | `client-simple/check.sh`; live, `SIMPLE=1 client/headless-drill.sh play` | its offline checks, then its live check against a drill, in clear: straight or with `FRONT=plain` ([client-simple/README](../../client-simple/README.md)) |
 | The simple client without TLS | `client-simple-no-tls/check.sh` | its offline checks. The same `SIMPLE=1` drill runs its live check after `client-simple`'s, through nginx's 80 or straight (D-115) ([client-simple-no-tls/README](../../client-simple-no-tls/README.md)) |
 
 ## 10. When something fails

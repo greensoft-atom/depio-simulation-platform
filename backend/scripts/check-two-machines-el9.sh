@@ -4,12 +4,14 @@
 # nginx, every request timed; then the failovers: A's MySQL lost while A runs, B's promoted (the runbook's §2) and A's
 # processes on it; and A lost, the runbook's steps for it on B (§4), the site served from B with nothing committed
 # lost. Between the standby and the failovers, B's own arenas (D-97, the page's §10): matches played through A's
-# nginx on them by the C# headless client, A's arenas stopped for it; then B frozen a minute, A's site going on.
+# nginx's 80 on them by the C# headless client, in clear on Unity 2019's Mono (D-116), A's arenas stopped for it; then
+# B frozen a minute, A's site going on.
 # Two UBI 9.5 containers, systemd their first process, with no network but a link of their own: a veth pair,
 # one end moved into each (A 10.0.0.1, B 10.0.0.2), so nothing of the host's network or firewall changes.
 #
-#   scripts/check-two-machines-el9.sh       as root; needs docker, git, ip, nsenter and .NET 8 (DOTNET, default
-#                                           /opt/dotnet/dotnet) for the client; about twenty minutes on this VM
+#   scripts/check-two-machines-el9.sh       as root; needs docker, git, ip, nsenter and Unity 2019.4's editor in
+#                                           work/unity (client/unity-env.sh fetches it) for the client, which it builds
+#                                           for .NET Framework 4.5 and runs on its Mono; about twenty minutes on this VM
 #   SAVE_A=<image> scripts/check-two-machines-el9.sh     A kept as an image once the install guide's steps pass
 #   A_IMAGE=<image> scripts/check-two-machines-el9.sh    A started from that image: the install not run again
 #   STANDBY_ONLY=1 scripts/check-two-machines-el9.sh     the standby alone (D-96), without B's arenas
@@ -83,16 +85,18 @@ watch_reads_all() {   # watch_reads_all <machine>: across 20 s, more than a roun
 }
 # A match from the lobby to its reward: the arena the lobby names, the result through the events store, the worker and MySQL.
 # Not the client's play, whose frame rate and bullets are timed and missed twice on this loaded host.
-play() {   # play <machine> <label> <scenario>...: the C# client through that machine's nginx, trusting the backend's root alone
+play() {   # play <machine> <label> <scenario>...: the C# client through that machine's nginx's 80, in clear (D-116)
     local rc
-    on "$1" env HOME=/tmp DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 /check/headless/Backend.Client.Headless https://127.0.0.1 \
-        --lobby wss://127.0.0.1/lobby --trust /etc/backend/tls/ca.pem "${@:3}" > "$WORK/play-$2.log" 2>&1
+    on "$1" env HOME=/tmp MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=/check-mono/lib/mono/unityjit /check-mono/bin/mono \
+        /check/headless/Backend.Client.Headless.exe http://127.0.0.1 --lobby ws://127.0.0.1/lobby "${@:3}" > "$WORK/play-$2.log" 2>&1
     rc=$?
     [ "$rc" = 0 ] && grep -q 'ALL PASSED' "$WORK/play-$2.log" && ok "the C# client, $2: ${*:3}, all passed" \
         || { fail "the C# client, $2: exit $rc"; grep -E '^--- |FAIL' "$WORK/play-$2.log" | head -12 | sed 's/^/      /'; }
 }
-matches_to() {   # matches_to <machine> <from line>: where its nginx passed match connections since then, "<name> <address> <status>"
-    on "$1" tail -n "+$2" /var/log/backend-nginx/stream.log | awk '{ gsub(/"/, "", $4); print $4, $5, $6 }' | sort | uniq -c
+matches_to() {   # matches_to <machine> <from line>: where its nginx's 80 passed matches since then, "<name> <address> <status>"
+    # access.log's lines: address [time zone] "GET /match/<name> HTTP/1.1" status bytes seconds upstream "agent" (D-115).
+    on "$1" tail -n "+$2" /var/log/backend-nginx/access.log \
+        | awk '$5 ~ /^\/match\// { sub(/^\/match\//, "", $5); print $5, $10, $7 }' | sort | uniq -c
 }
 mark() { local m; echo "--- $*"; for m in "$A" "$B"; do docker exec "$m" sh -c 'echo "=== $1" >> /var/tmp/probe.log' sh "$*" 2> /dev/null; done; }
 
@@ -154,19 +158,17 @@ guide_script() {   # guide_script <section>: the install guide's bash blocks und
 }
 echo "--- the page's steps: $(grep -c . "$WORK/items") items, for B's arenas $(grep -c . "$WORK/items-arenas"); the runbook's for A lost: $(grep -c . "$WORK/items-a-lost")"
 
-# The C# headless client, self-contained, for matches through nginx as a device plays them (D-97), as check-ports-el9.sh
-# publishes it; in /check/headless on both machines.
-DOTNET=${DOTNET:-/opt/dotnet/dotnet}
-DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1 "$DOTNET" publish "$REPO/client/Headless/Backend.Client.Headless.csproj" \
-    -c Release -f net8.0 -r linux-x64 --self-contained true -p:InvariantGlobalization=true -o "$WORK/headless" \
-    > "$WORK/publish.log" 2>&1 || { tail -20 "$WORK/publish.log"; echo "  FAIL the C# client not published"; exit 1; }
+# The C# headless client, for matches through nginx as a device plays them (D-97): built for .NET Framework 4.5 by
+# Unity 2019's compiler, in /check/headless on both machines, and run there on Unity's Mono, /check-mono (D-116).
+. "$REPO/client/unity-env.sh" || { echo "  FAIL no Unity 2019.4 editor for the C# client"; exit 1; }
+build_headless "$WORK/headless" || { echo "  FAIL the C# client does not compile"; exit 1; }
 
 # The repository, as a clone has it, for A's install; A from an image needs none.
 if [ -z "${A_IMAGE:-}" ]; then
     (cd "$REPO" && git ls-files --cached --others --exclude-standard | tar -czf "$WORK/repository.tar.gz" -T -) || exit 1
 fi
 start() {   # start <name> <image>
-    docker run -d --rm --privileged --network none --name "$1" -v "$WORK:/check:ro" \
+    docker run -d --rm --privileged --network none --name "$1" -v "$WORK:/check:ro" -v "$U/MonoBleedingEdge:/check-mono:ro" \
         -v "$HERE/check-two-machines-el9.sh:/check.sh:ro" -v "$HERE/check-install-guide-el9.sh:/check-guide.sh:ro" \
         "$2" > /dev/null
 }
@@ -320,11 +322,11 @@ watch_reads_all "$A" A
 on "$A" bash /check-guide.sh --launch-checks || fail "A's launch checks with B's arenas"
 # Matches on B's arenas, through A's nginx: A's own stopped meanwhile, so the directory has only B's to offer.
 on "$A" systemctl stop backend-arena@a1 backend-arena@a2 backend-arena@a3
-from=$(( $(on "$A" sh -c 'wc -l < /var/log/backend-nginx/stream.log') + 1 ))
+from=$(( $(on "$A" sh -c 'wc -l < /var/log/backend-nginx/access.log') + 1 ))
 play "$A" "on B's arenas" lobby
 got=$(matches_to "$A" "$from")
 echo "$got" | sed 's/^/      /'
-awk '$4 == 200 && $3 ~ /^10\.0\.0\.2:901[1-3]$/' <<< "$got" | grep -q . && ! awk '$3 !~ /^10\.0\.0\.2:/' <<< "$got" | grep -q . \
+awk '$4 == 101 && $3 ~ /^10\.0\.0\.2:901[1-3]$/' <<< "$got" | grep -q . && ! awk '$3 !~ /^10\.0\.0\.2:/' <<< "$got" | grep -q . \
     && ok "every match connection passed to B" || fail "match connections not all to B: see above"
 on "$A" systemctl start backend-arena@a1 backend-arena@a2 backend-arena@a3
 for port in 9110 9111 9113; do
@@ -338,11 +340,11 @@ sleep 12
 gone=0
 for a in b1 b2 b3; do [ "$(store_cmd "$A" 6379 "EXISTS arena:$a")" = 0 ] && gone=$((gone + 1)); done
 [ "$gone" = 3 ] && ok "B's arenas gone from A's directory 12 s after B froze" || fail "$((3 - gone)) of B's arenas still in A's directory"
-from=$(( $(on "$A" sh -c 'wc -l < /var/log/backend-nginx/stream.log') + 1 ))
+from=$(( $(on "$A" sh -c 'wc -l < /var/log/backend-nginx/access.log') + 1 ))
 play "$A" "with B frozen" lobby
 got=$(matches_to "$A" "$from")
 echo "$got" | sed 's/^/      /'
-awk '$4 == 200 && $3 ~ /^127\.0\.0\.1:901[1-3]$/' <<< "$got" | grep -q . && ok "the match on A's own arenas" || fail "no match on A's arenas"
+awk '$4 == 101 && $3 ~ /^127\.0\.0\.1:901[1-3]$/' <<< "$got" | grep -q . && ok "the match on A's own arenas" || fail "no match on A's arenas"
 # A's watch saw B's arenas go: their reads failing, three a round, over at least one round of 15 s.
 sleep $(( 20 - ($(date +%s) - t_frozen) > 0 ? 20 - ($(date +%s) - t_frozen) : 0 ))
 read -r _ f1 < <(scrapes "$A")

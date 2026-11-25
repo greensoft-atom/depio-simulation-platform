@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Net.Security;
+using System.Security.Authentication;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -9,7 +10,7 @@ namespace Backend.Client.Simple
 {
     /// <summary>
     /// The client's side of a WebSocket (RFC 6455), text messages alone, over TCP or TLS: what <see cref="LobbyClient"/>
-    /// talks through. Its own, because .NET Standard 2.0's ClientWebSocket cannot be told to trust the backend's root
+    /// talks through. Its own, because .NET Framework 4.5's ClientWebSocket cannot be told to trust the backend's root
     /// (D-108). Blocking: <see cref="Open"/> and <see cref="Receive"/> run on LobbyClient's thread, <see cref="Send"/>
     /// on the caller's; one reader and one writer at a time.
     /// </summary>
@@ -50,7 +51,8 @@ namespace Backend.Client.Simple
             if (secure)
             {
                 var tls = new SslStream(stream, false, _trust?.CheckFor(_uri.Host));
-                tls.AuthenticateAsClient(_uri.Host);
+                // TLS 1.2 by name: built for .NET Framework 4.5, a socket offers 1.0 alone by default (D-116).
+                tls.AuthenticateAsClient(_uri.Host, null, SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12, false);
                 stream = tls;
             }
             _stream = stream;

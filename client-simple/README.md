@@ -18,7 +18,7 @@ Security) is the encryption that `https://` and `wss://` use; other terms are in
 
 **In short:**
 
-1. Copy `Runtime/` into your project. At the .NET 4.x level, also copy `csc.rsp`. For TLS, also copy the backend's
+1. Set the project to the .NET 4.x level. Copy `Runtime/` and `csc.rsp` into it. For TLS, also copy the backend's
    `ca.pem`, renamed `ca.pem.txt`.
 2. Set two addresses: the API's and the lobby's.
 3. `await` the API's calls.
@@ -32,28 +32,30 @@ a site's match through port 80 (D-114, D-115).
 
 ## Which Unity
 
-It works in any version from **Unity 2019.4 to Unity 6**, at either **Api Compatibility Level** (Edit → Project
-Settings → Player → Other Settings): .NET Standard 2.0 (or 2.1), or .NET 4.x.
+It works in any version from **Unity 2019.4 to Unity 6**, at the **.NET 4.x** Api Compatibility Level (Edit →
+Project Settings → Player → Other Settings; from Unity 2021.2 the level is called .NET Framework). It targets .NET
+Framework 4.5, and is checked at the .NET 4.x level alone
+([D-116](../docs/architecture/03-decision-log.md#d-116--the-client-on-net-framework-45-alone-built-and-run-here-without-net-8-and-driven-in-clear)):
+the .NET Standard 2.0 and 2.1 levels are no longer checked, so use .NET 4.x.
 
 The code uses:
 
 - C# 7.3;
-- nothing beyond .NET Framework 4.5 and .NET Standard 2.0, which both of Unity's levels contain;
+- nothing beyond .NET Framework 4.5, which Unity's .NET 4.x level contains;
 - `HttpClient` with `async` and `await` for the API;
 - no package and no DLL.
 
-**At the .NET 4.x level, copy `csc.rsp` into `Assets/`.** At that level Unity does not give a script
-`System.Net.Http`, the assembly where `HttpClient` is. The file's one line, `-r:System.Net.Http.dll`, adds it.
-Without it, Unity reports error CS1069 (or CS0234) for `HttpClient`. The .NET Standard levels need nothing, and the
-file does no harm there, so it can stay if you change levels. If you put `Runtime/` in an assembly definition of its
-own, put `csc.rsp` beside the `.asmdef` file instead: Unity 2019.4 reads one there, for that assembly alone (D-113).
+**Copy `csc.rsp` into `Assets/`.** At the .NET 4.x level Unity does not give a script `System.Net.Http`, the
+assembly where `HttpClient` is. The file's one line, `-r:System.Net.Http.dll`, adds it. Without it, Unity reports
+error CS1069 (or CS0234) for `HttpClient`. If you put `Runtime/` in an assembly definition of its own, put `csc.rsp`
+beside the `.asmdef` file instead: Unity 2019.4 reads one there, for that assembly alone (D-113).
 
 `Runtime/` does not use `UnityEngine` at all; only the examples do.
 
 ## What to copy
 
 1. Copy `Runtime/` to `Assets/Backend/Runtime/`. This is needed.
-2. At the .NET 4.x level, copy `csc.rsp` to `Assets/csc.rsp`.
+2. Copy `csc.rsp` to `Assets/csc.rsp`. This is needed too.
 3. If you want the examples, copy `Examples/` to `Assets/Backend/Examples/`.
 4. For `https://`, `wss://` or a match over TLS, copy the backend's root certificate, `ca.pem`, to
    `Assets/Backend/ca.pem.txt`. The `.txt` ending makes Unity import it as a `TextAsset`. A match from the site always
@@ -62,7 +64,7 @@ own, put `csc.rsp` beside the `.asmdef` file instead: Unity 2019.4 reads one the
 | From | To | What it is |
 |---|---|---|
 | `Runtime/` | `Assets/Backend/Runtime/` | the client, seven files; needed |
-| `csc.rsp` | `Assets/csc.rsp` | for the .NET 4.x level: gives scripts `System.Net.Http`; harmless at .NET Standard |
+| `csc.rsp` | `Assets/csc.rsp` | gives scripts `System.Net.Http`, which the .NET 4.x level leaves out; needed |
 | `Examples/` | `Assets/Backend/Examples/` | three example scripts and the JSON classes they use; optional |
 | the backend's `ca.pem` | `Assets/Backend/ca.pem.txt` | the backend's own root certificate, renamed `.txt` so that Unity takes it as a `TextAsset`; needed for `https://`, `wss://` and matches over TLS ([operations/06](../docs/operations/06-certificates.md)) |
 
@@ -238,7 +240,7 @@ A `LobbyMessage` has `Type`, `Data` (its `d` as JSON text, for `JsonUtility.From
 
 **Why not .NET's `ClientWebSocket`:** on Unity 2019 it cannot connect to the backend's `wss://`.
 
-- It has no certificate check of its own that you can set, at either API level.
+- It has no certificate check of its own that you can set.
 - On Unity 2019's runtime it ignores the app's check that `HttpClient` uses. It refuses the backend's certificate,
   because no public authority issued it (this was tried here).
 
@@ -381,10 +383,10 @@ There is no Unity editor on the machine where this was written (it needs a licen
 editor or on a phone. This is what did run:
 
 - **Compiled by Unity 2019.4.28f1's own compiler** (C# 7.3, warnings as errors):
-  - `Runtime/` against .NET Standard 2.0, .NET 4.x (with `csc.rsp`'s reference; refused without it, as said above),
-    .NET Framework 4.5 and .NET Standard 2.1;
-  - `Examples/` against Unity's own `UnityEngine`, at both of Unity 2019's levels.
-- **Offline, on Unity 2019's own Mono** (70 checks):
+  - `Runtime/` for .NET Framework 4.5, what it targets, and at Unity's .NET 4.x level (with `csc.rsp`'s reference;
+    refused without it, as said above);
+  - `Examples/` against Unity's own `UnityEngine`, at the .NET 4.x level.
+- **Offline, on Unity 2019's own Mono** (71 checks):
   - JSON fields read and written;
   - every match message byte for byte the same as the full client's;
   - the arena's answers read as the full client reads them;
@@ -392,37 +394,39 @@ editor or on a phone. This is what did run:
   - the WebSocket's handshake and frames, against RFC 6455's own examples;
   - the certificate check, against certificates made by the site's own script;
   - the API: a call returns at once, and gives up after 15 s;
+  - TLS 1.2 asked for by name, which .NET Framework 4.5 does not give by default (D-116): the API's requests add 1.2 and
+    1.1 to what the process offers, and the lobby's and a match's sockets offer 1.0 to 1.2;
   - the app's certificate check in every case: the backend's address, another site, a check set before it;
   - a real HTTPS call through `HttpClient` against a test server: the root's certificate taken, another root's
     refused;
   - the lobby's `wss://` and a match's TLS against the same test server: the root's certificate taken, another root's
     refused, and, for a match, a certificate without the grant's TLS name refused.
-- **Live**, by `SIMPLE=1 client/headless-drill.sh play` against a real backend: through nginx as the site runs it
-  (`FRONT=https`, `FRONT=http`), through nginx with nothing encrypted (`FRONT=plain`), and straight to the processes
-  (no `FRONT`):
+- **Live**, by `SIMPLE=1 client/headless-drill.sh play` against a real backend, on Unity 2019's Mono and in clear
+  alone (D-116): through nginx with nothing encrypted (`FRONT=plain`), and straight to the processes (no `FRONT`).
+  Not through nginx as the site runs it (`FRONT=http`): its grants ask for TLS, and this client's TLS is checked
+  offline alone.
   - the API over `http://`: health, register (and the same name refused), log in, a token used and refused, a
     display name changed, a guest, a route that does not exist, log out;
   - the lobby: connect, `auth`, `ping`, an error, a seat in the public arena, kept open for 125 s by its heartbeat, a
     second connection replacing the first;
   - a match: `Join`, a Welcome, snapshots while sending inputs, a Pong, the app paused (snapshots stop) and back, a
     lost connection resumed, `Leave`;
-  - with TLS, another root's certificate refused for the lobby and for a match;
   - every lobby and match callback on the thread that calls `Update()`.
 - **Each rule broken on purpose**, and each break caught by the check written for it.
 
 **Which TLS was checked where:**
 
 - Unity 2019's Mono, outside the editor, has only its own old TLS, which stops at TLS 1.0. So on it, the API's
-  HTTPS, the lobby's `wss://` and a match's TLS were checked against a test server that speaks TLS 1.0.
-- nginx speaks only TLS 1.2 and 1.3, so through nginx the lobby and matches over TLS ran on .NET 8.
-- .NET 8's `HttpClient` ignores the app's certificate check that Unity's uses, so the live API calls are over
-  `http://`.
+  HTTPS, the lobby's `wss://` and a match's TLS were checked offline, against a test server that speaks TLS 1.0.
+- nginx speaks only TLS 1.2 and 1.3, so this client's TLS through nginx is not checked here. `check.sh live` runs
+  in clear alone: given a root, or a `wss://` lobby, it refuses. Until D-116 (2026-11-25) the lobby and
+  matches over TLS ran live through nginx on .NET 8, which nothing here runs now.
 - In the editor and on a phone, Unity's own TLS speaks TLS 1.2
   ([08 §6](../docs/detailed-design/08-client.md#6-testing)).
 
 ```bash
-client-simple/check.sh                                   # compiled at every level, the offline checks
-SIMPLE=1 FRONT=https client/headless-drill.sh play       # live, through nginx over TLS (also: http, plain, no FRONT)
+client-simple/check.sh                                   # compiled for 4.5 and at .NET 4.x, the offline checks
+SIMPLE=1 FRONT=plain client/headless-drill.sh play       # live, in clear through nginx run plain (also: no FRONT)
 ```
 
-`check.sh` needs Unity 2019.4.28f1 in `work/unity`, which `client/unity2019-check.sh` unpacks once.
+`check.sh` takes Unity 2019.4.28f1 from `work/unity`, which `client/unity-env.sh` fetches once (1.8 GB).

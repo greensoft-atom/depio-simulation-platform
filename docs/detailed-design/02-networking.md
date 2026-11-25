@@ -40,9 +40,9 @@ which one a client takes.
 
 | Way | Used by | The client dials | TLS ends at | The arena reads first |
 |---|---|---|---|---|
-| **The site, port 9001, TLS** (D-82) | the full client, `client-simple/` | the site's public address and 9001 (`arenaHost`, `arenaPort`); its TLS handshake sends `tlsName` | the front's nginx | nginx's PROXY line (D-105) |
-| **The site, port 80, no TLS** (D-115) | `client-simple-no-tls/` | the API's own address and 80; it asks for `GET /match/<tlsName>` | nowhere: no TLS | nginx's request for the match, answered `101` |
-| **An arena with TLS of its own** (S-6) | a drill, an arena given a keystore | `arenaHost` and `arenaPort` | the arena, in Netty | the TLS handshake |
+| **The site, port 9001, TLS** (D-82) | the full client given an `https://` API, `client-simple/` | the site's public address and 9001 (`arenaHost`, `arenaPort`); its TLS handshake sends `tlsName` | the front's nginx | nginx's PROXY line (D-105) |
+| **The site, port 80, no TLS** (D-115) | `client-simple-no-tls/`, and the full client given an `http://` API (D-116) | the API's own address and 80; it asks for `GET /match/<tlsName>` | nowhere: no TLS | nginx's request for the match, answered `101` |
+| **An arena with TLS of its own** (S-6) | an arena given a keystore (the drills' `TLS=1` until D-116) | `arenaHost` and `arenaPort` | the arena, in Netty | the TLS handshake |
 | **A development run without TLS** (`PLAIN=1`, [D-101](../architecture/03-decision-log.md#d-101--a-plain-run-by-hand-goes-through-nginx-as-the-site-does-80-and-9001-without-tls)) | any client, given a grant without TLS | nginx's 9001 in plaintext, which passes it to the run's one arena | nowhere: no TLS | nothing: the arena has no TLS name, so it reads no line |
 
 The site launches on one machine
@@ -105,7 +105,8 @@ name reads no line. The arena's own TLS, described below, is for an arena reache
 **A match without TLS goes through port 80**
 ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
 Port 9001 tells the arenas apart by the name in the TLS handshake. A client without TLS has no handshake, so it cannot
-send that name. Instead it dials the API's own address on port 80 and asks for the arena by the grant's `tlsName`:
+send that name. Instead it dials the API's own address on port 80 and asks for the arena by the grant's `tlsName`.
+`client-simple-no-tls/` does this, and so does the full client when its API is `http://` (D-116):
 
 ```
 GET /match/a1.arena.internal HTTP/1.1
@@ -149,8 +150,11 @@ That library is native code, one build for each platform. It is not in the offli
 nobody has measured a need for.
 
 **TLS 1.2 is accepted as well as 1.3.** Android before version 10 has no TLS 1.3 in its platform. Unity's own TLS
-layer has historically gone no further than 1.2. Which version the client ends up on is for whoever builds it to
-confirm: Unity's TLS, in the editor and on a phone, is not checked here
+layer has historically gone no further than 1.2. The full client's core is built for .NET Framework 4.5, whose
+default is TLS 1.0 alone, so it asks for TLS 1.2, 1.1 and 1.0 by name
+([D-116](../architecture/03-decision-log.md#d-116--the-client-on-net-framework-45-alone-built-and-run-here-without-net-8-and-driven-in-clear)).
+Which version the client ends up on is for whoever builds it to confirm: Unity's TLS, in the editor and on a phone,
+is not checked here
 ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root)).
 Each frame is one `writeAndFlush`, so it is one TLS record. A record costs 22 bytes on TLS 1.3 (RFC 8446 §5.2) and 29
 bytes on TLS 1.2 with AES-GCM (RFC 5288). Both fit inside the per-packet overhead that the bandwidth budget in §4
@@ -998,8 +1002,8 @@ cost the most time, so the protocol is designed against it:
   before it draws anything from them.
 - **Golden test vectors** are checked into the repository (`protocol-spike/vectors/vectors.txt`): encoded byte arrays
   with their expected decoded values. The Java tests (`GoldenVectorTest` and others) and the C# core's tests
-  (`Core.Tests`, `GoldenVectorTests`, run by `dotnet test`) both read them. This cost an afternoon, and it catches
-  drift at build time rather than in production.
+  (`Core.Tests`, `GoldenVectorTests`, run on Unity 2019's Mono by `client/core-tests.sh`, D-116) both read them.
+  This cost an afternoon, and it catches drift at build time rather than in production.
 - **A change to the protocol is made in all three clients**: the full client's core, `client-simple/` and
   `client-simple-no-tls/`. The two simple clients share `ArenaMessages.cs` byte for byte, and their check fails when
   they differ ([D-111](../architecture/03-decision-log.md#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms),

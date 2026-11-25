@@ -151,12 +151,18 @@ For whoever builds the client:
   no root at all; any build may be set up that way (D-115, [11 §5](11-phone-to-backend-routes.md#5-on-a-development-machine)).
 
 The headless driver does the same with `--trust ca.pem` ([client/Headless/README](../../client/Headless/README.md)).
+The core asks for TLS 1.2 by name, as an assembly built for .NET Framework 4.5 gets TLS 1.0 alone by default, which
+nginx refuses
+([D-116](../architecture/03-decision-log.md#d-116--the-client-on-net-framework-45-alone-built-and-run-here-without-net-8-and-driven-in-clear)).
 
-**Not proved here**: the app in Unity on a phone. The core's trust is tested in `Core.Tests` (`TrustRootTests`) on
-.NET 8, and on Unity 2019.4.28f1's own Mono by `client/unity2019-check.sh`: certificates of `private-ca.sh` accepted
-and refused, and the API, the lobby and a match each through TLS. That TLS is Mono's own, outside the editor, not
-Unity's (the editor's and the player's). So whether Unity's TLS on Android (C-10) completes the handshake is still to
-be seen, in the editor and on devices; the check it then calls is the same code.
+**Not proved here**: the app in Unity on a phone. The core's trust is tested in `Core.Tests` (`TrustRootTests`),
+compiled for .NET Framework 4.5 and run on Unity 2019.4.28f1's own Mono (`client/core-tests.sh`), and the core runs on
+that Mono in `client/unity2019-check.sh`: certificates of `private-ca.sh` accepted and refused, and the API, the lobby
+and a match each through TLS. That TLS is Mono's own, outside the editor, TLS 1.0, not Unity's (the editor's and the
+player's). Since D-116 nothing here runs .NET 8, so the name a client's handshake gives is not seen by a server, and
+the C# client is not run through nginx's TLS: nginx takes 1.2 and 1.3. Nor is the TLS 1.2 asked for on .NET Framework
+itself run: there is no .NET Framework on Linux. So whether Unity's TLS on Android (C-10) completes the handshake
+with nginx is still to be seen, in the editor and on devices; the check it then calls is the same code.
 
 ## 6. Renewing, every year
 
@@ -210,13 +216,16 @@ on the alert ([02 §6](02-runbook.md#6-routine)).
   `IMAGE=<image>` runs it in a container image, on that image's openssl. RHEL 8's 1.1.1 and RHEL 9's 3.x are both
   checked (D-103).
 - **The end-to-end check**: `backend/scripts/check-ports-el9.sh` makes a root and a certificate with `private-ca.sh`
-  and installs it with `install-certificate.sh`. It then runs the C# client through nginx on 443 and 9001, trusting
-  that root alone, against arenas on two machines
-  ([05 §9](05-ports-and-firewall.md#9-what-was-checked-and-what-was-not)).
-- **The drills** (`client/headless-drill.sh`): with `TLS=1` they give the arena a certificate of their own and
-  connect to it directly, without nginx. That tests the arena's own TLS, which the site does not use. With
-  `FRONT=https` or `FRONT=http` they go through the release's nginx instead, as `dev-nginx.sh` sets it up, with a root
-  made for the drill (D-107).
+  and installs it with `install-certificate.sh`. It then checks 443 with `curl` and 9001 with `openssl s_client`,
+  trusting that root alone, against arenas on two machines; a wrong name and a wrong root are refused
+  ([05 §9](05-ports-and-firewall.md#9-what-was-checked-and-what-was-not)). Until D-116 it also ran the C# client
+  through 443 and 9001. Since then the C# client runs on Unity 2019's Mono, whose own TLS stops at 1.0, and goes
+  through 80 in clear.
+- **The drills** (`client/headless-drill.sh`): until D-116, with `TLS=1` they gave the arena a certificate of their
+  own and connected to it directly, without nginx. That tested the arena's own TLS, which the site does not use. With
+  `FRONT=https` and `FRONT=http` they went through the release's nginx's TLS (matches over TLS either way), with a
+  root made for the drill (D-107). Since D-116 `TLS=1` and `FRONT=https` are refused, for the reason above, and
+  `FRONT=http` goes through that nginx's 80 alone, in clear, matches too.
 - **On a developer's machine**, `private-ca.sh root` and `issue` make a test CA in any directory, for `127.0.0.1` and
   the arena's name. `dev-nginx.sh` does this in `work/nginx`, for the address clients dial, `127.0.0.1` and the
   arena's name. It keeps the root, and issues the certificate again when it no longer names those, is not the root's,

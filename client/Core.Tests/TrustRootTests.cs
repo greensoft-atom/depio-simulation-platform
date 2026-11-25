@@ -39,6 +39,25 @@ namespace Backend.Client.Core.Tests
     /// </summary>
     public class TrustRootTests
     {
+        [Test]
+        public void TlsOneTwoIsAskedForByNameForAnAssemblyBuiltForDotNetFramework45GetsTlsOneZero()
+        {
+            // D-116: built for .NET Framework 4.5, a request and a socket get TLS 1.0 alone by default, which nginx refuses.
+            SecurityProtocolType before = ServicePointManager.SecurityProtocol;
+            try
+            {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls;
+                new ApiClient(new[] { "http://127.0.0.1:1" });
+                Assert.That(ServicePointManager.SecurityProtocol,
+                    Is.EqualTo(SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12), "the API's requests");
+                Assert.That(TlsVersions.Client, Is.EqualTo(SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12), "the sockets'");
+            }
+            finally
+            {
+                ServicePointManager.SecurityProtocol = before;
+            }
+        }
+
         private static TrustRoot Trust() => new TrustRoot(TestPki.Cert("root"));
 
         [Test]
@@ -98,7 +117,7 @@ namespace Backend.Client.Core.Tests
         }
 
         [Test]
-        public void AMatchDialsTheHostAndGivesTheGrantsNameInItsHandshake()
+        public void AMatchDialsTheHostAndChecksTheArenasCertificateForTheGrantsName()
         {
             using (var front = new TlsFront(TestPki.Server("server-arena"), TlsFront.ReadSome))
             {
@@ -118,11 +137,6 @@ namespace Backend.Client.Core.Tests
                         front.Received.TryTake(out read, 20);
                     }
                     Assert.That(read, Is.Not.Null.And.Not.Empty, "the join, through TLS, checked for the grant's name");
-#if NETCOREAPP
-                    // What the handshake named, which nginx routes by: a server sees it on .NET's own API alone.
-                    Assert.That(front.Names.TryTake(out string name, 5_000), Is.True, "no handshake reached the front");
-                    Assert.That(name, Is.EqualTo("a1.arena.internal"), "the name nginx routes by");
-#endif
                 }
 
                 // Without the name it is checked against the address dialled, which the certificate does not name.
@@ -190,7 +204,6 @@ namespace Backend.Client.Core.Tests
             private readonly TcpListener _listener = new TcpListener(IPAddress.Loopback, 0);
             private readonly X509Certificate2 _certificate;
             private readonly Action<SslStream, BlockingCollection<string>> _serve;
-            public readonly BlockingCollection<string> Names = new BlockingCollection<string>();
             public readonly BlockingCollection<string> Received = new BlockingCollection<string>();
 
             public TlsFront(X509Certificate2 certificate, Action<SslStream, BlockingCollection<string>> serve)
@@ -262,19 +275,9 @@ namespace Backend.Client.Core.Tests
                 {
                     using (var tls = new SslStream(c.GetStream(), false))
                     {
-#if NETCOREAPP
-                        tls.AuthenticateAsServer(new SslServerAuthenticationOptions
-                        {
-                            ServerCertificateSelectionCallback = (sender, name) =>
-                            {
-                                Names.Add(name ?? "");
-                                return _certificate;
-                            },
-                        });
-#else
-                        // What each runtime speaks: .NET Framework TLS 1.2, Mono outside Unity TLS 1.0.
+                        // What each runtime speaks: .NET Framework TLS 1.2, Mono outside Unity TLS 1.0. Which name the
+                        // handshake gave, a server sees on .NET's own API alone, which nothing here runs (D-116).
                         tls.AuthenticateAsServer(_certificate, false, SslProtocols.Tls | SslProtocols.Tls11 | SslProtocols.Tls12, false);
-#endif
                         _serve(tls, Received);
                     }
                 }

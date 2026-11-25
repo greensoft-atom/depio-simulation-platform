@@ -52,34 +52,36 @@ them and use them. Use it on a network you trust.
 
 ## Which Unity
 
-It works in any version from **Unity 2019.4 to Unity 6**, at either **Api Compatibility Level** (Edit → Project
-Settings → Player → Other Settings): .NET Standard 2.0 (or 2.1), or .NET 4.x.
+It works in any version from **Unity 2019.4 to Unity 6**, at the **.NET 4.x** Api Compatibility Level (Edit →
+Project Settings → Player → Other Settings; from Unity 2021.2 the level is called .NET Framework). It targets .NET
+Framework 4.5, and is checked at the .NET 4.x level alone
+([D-116](../docs/architecture/03-decision-log.md#d-116--the-client-on-net-framework-45-alone-built-and-run-here-without-net-8-and-driven-in-clear)):
+the .NET Standard 2.0 and 2.1 levels are no longer checked, so use .NET 4.x.
 
 The code uses:
 
 - C# 7.3;
-- nothing beyond .NET Framework 4.5 and .NET Standard 2.0, which both of Unity's levels contain;
+- nothing beyond .NET Framework 4.5, which Unity's .NET 4.x level contains;
 - `HttpClient` with `async` and `await` for the API;
 - no package and no DLL.
 
-**At the .NET 4.x level, copy `csc.rsp` into `Assets/`.** At that level Unity does not give a script
-`System.Net.Http`, the assembly where `HttpClient` is. The file's one line, `-r:System.Net.Http.dll`, adds it.
-Without it, Unity reports error CS1069 (or CS0234) for `HttpClient`. The .NET Standard levels need nothing, and the
-file does no harm there. If you put `Runtime/` in an assembly definition of its own, put `csc.rsp` beside the
-`.asmdef` file instead. The lobby and matches need nothing of the kind: they use `System.dll` alone.
+**Copy `csc.rsp` into `Assets/`.** At the .NET 4.x level Unity does not give a script `System.Net.Http`, the
+assembly where `HttpClient` is. The file's one line, `-r:System.Net.Http.dll`, adds it. Without it, Unity reports
+error CS1069 (or CS0234) for `HttpClient`. If you put `Runtime/` in an assembly definition of its own, put `csc.rsp`
+beside the `.asmdef` file instead. The lobby and matches need nothing of the kind: they use `System.dll` alone.
 
 `Runtime/` does not use `UnityEngine` at all; only the examples do.
 
 ## What to copy
 
 1. Copy `Runtime/` to `Assets/Backend/Runtime/`. This is needed.
-2. At the .NET 4.x level, copy `csc.rsp` to `Assets/csc.rsp`.
+2. Copy `csc.rsp` to `Assets/csc.rsp`. This is needed too.
 3. If you want the examples, copy `Examples/` to `Assets/Backend/Examples/`.
 
 | From | To | What it is |
 |---|---|---|
 | `Runtime/` | `Assets/Backend/Runtime/` | the client, six files; needed |
-| `csc.rsp` | `Assets/csc.rsp` | for the .NET 4.x level: gives scripts `System.Net.Http`; harmless at .NET Standard |
+| `csc.rsp` | `Assets/csc.rsp` | gives scripts `System.Net.Http`, which the .NET 4.x level leaves out; needed |
 | `Examples/` | `Assets/Backend/Examples/` | three example scripts and the JSON classes they use; optional |
 
 | File in `Runtime/` | What it does |
@@ -332,9 +334,9 @@ It is checked by the same check as `client-simple`, run over this folder: `check
 with `NO_TLS=1`. Nothing ran inside the Unity editor or on a phone.
 
 - **Compiled by Unity 2019.4.28f1's own compiler** (C# 7.3, warnings as errors):
-  - `Runtime/` against .NET Standard 2.0, .NET 4.x (with `csc.rsp`'s reference; refused without it), .NET Framework
-    4.5 and .NET Standard 2.1;
-  - `Examples/` against Unity's own `UnityEngine`, at both of Unity 2019's levels;
+  - `Runtime/` for .NET Framework 4.5, what it targets, and at Unity's .NET 4.x level (with `csc.rsp`'s reference;
+    refused without it);
+  - `Examples/` against Unity's own `UnityEngine`, at the .NET 4.x level;
   - `ArenaMessages.cs` and `Json.cs` compared with `client-simple`'s, byte for byte; and `Runtime/` searched for any
     TLS type (`System.Net.Security`, `SslStream`, `TrustRoot`, `X509`, `ServicePointManager`), of which there is none.
 - **Offline, on Unity 2019's own Mono** (52 checks): `client-simple`'s checks without its TLS ones. That is: JSON;
@@ -343,8 +345,8 @@ with `NO_TLS=1`. Nothing ran inside the Unity editor or on a phone.
   through the site's 80, against a stand-in for nginx: the request exact; `Join` once the 101 is read; nginx's 404
   said in `OnClosed`; an address that is not `http://`, and a grant without a name, refused.
 - **Live**, by `SIMPLE=1 client/headless-drill.sh play` against a real backend, on Unity 2019's Mono:
-  - through nginx's 80 in its TLS way, as the site's (`FRONT=https` or `FRONT=http`), the match through `/match/` by
-    the grant's name;
+  - through nginx's 80 in its TLS way, as the site's (`FRONT=http`), the match through `/match/` by the grant's
+    name;
   - through nginx run plain (`FRONT=plain`);
   - straight to the processes (no `FRONT`).
 
@@ -353,8 +355,8 @@ with `NO_TLS=1`. Nothing ran inside the Unity editor or on a phone.
   lobby and match callback on the thread that calls `Update()`.
 
 ```bash
-client-simple-no-tls/check.sh                              # compiled at every level, the offline checks
-SIMPLE=1 FRONT=https client/headless-drill.sh play         # live through nginx's 80, as the site's (also: http, plain, no FRONT)
+client-simple-no-tls/check.sh                              # compiled for 4.5 and at .NET 4.x, the offline checks
+SIMPLE=1 FRONT=http client/headless-drill.sh play          # live through nginx's 80, as the site's (also: plain, no FRONT)
 ```
 
-`check.sh` needs Unity 2019.4.28f1 in `work/unity`, which `client/unity2019-check.sh` unpacks once.
+`check.sh` takes Unity 2019.4.28f1 from `work/unity`, which `client/unity-env.sh` fetches once (1.8 GB).

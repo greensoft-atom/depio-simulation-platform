@@ -54,7 +54,7 @@ namespace Backend.Client.Core
                     if (secure)
                     {
                         var tls = new SslStream(stream, false, trust?.CheckFor(uri.Host));
-                        await tls.AuthenticateAsClientAsync(uri.Host).ConfigureAwait(false);
+                        await tls.AuthenticateAsClientAsync(uri.Host, null, TlsVersions.Client, false).ConfigureAwait(false);
                         stream = tls;
                     }
                     var link = new WebSocketLink(tcp, stream);

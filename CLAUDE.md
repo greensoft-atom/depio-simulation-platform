@@ -162,15 +162,21 @@ for the backend, its docs and its client.
 - **Client scope:** the engine-free C# core, the headless driver, and since 2026-10-04 (Q-51,
   plan item 77) the Unity layer as scripts: logic in the core where it can be tested, the
   Unity scripts thin. There is no Unity editor here (a licence): Unity 2019.4.28f1's compiler, assemblies and Mono
-  are, in `work/unity` (`unity2019-check.sh`): say what was compiled, what ran on its Mono, and what only the editor
+  are, in `work/unity` (`client/unity-env.sh` fetches them): say what was compiled, what ran on its Mono, and what only the editor
   or a phone can show.
-- **The client is for Unity 2019.4 and Visual Studio 2019 first** (owner, 2026-11-05; D-108): the core C# 7.3 on
-  .NET Standard 2.0, `client/Backend.Client.sln` VS 2019's and no solution for another version: all four projects in
-  it, C# 7.3, Core.Tests and Headless on .NET Framework 4.7.1 (and .NET 8 where MSBuild is 17 or later, which this
-  machine runs: `-f net8.0`; D-109); the backend's CA RSA, which Unity 2019's runtime can check.
+- **The client is for Unity 2019.4 and Visual Studio 2019 first** (owner, 2026-11-05; D-108), **on .NET Framework 4.5
+  alone** (owner, 2026-11-25; D-116, unsure of modern .NET): every C# project and tree targets net45, C# 7.3, no API
+  above 4.5, TLS 1.2 asked for by name; `client/Backend.Client.sln` VS 2019's, its four projects in it; the backend's
+  CA RSA, which Unity 2019's runtime can check. Unity takes the core at its .NET 4.x API level. **No .NET 8, nor any
+  modern .NET, anywhere**: here every C# build is Unity 2019.4's compiler against Mono's 4.5 references and every run
+  Unity's Mono (`client/unity-env.sh`, `client/core-tests.sh`), but `vs2019-check.sh`'s VS 2019 MSBuild, which comes
+  only in .NET 5's and .NET Core 3.1's SDK images (build tools in a container; nothing targets, runs on or ships from
+  them); not .NET Standard 1.1, which has no sockets or TLS.
+  Unity's Mono outside the editor speaks TLS 1.0 alone, so the C# client is driven in clear here: `TLS=1`,
+  `FRONT=https` and `untrusted` are refused, and the checks drive it through the site's 80 (owner's choice).
 - **`client-simple/` for the UI team** (owner, 2026-11-24; D-111): the API, the lobby and a match in small files
-  they can read and paste, beside the full client; C# 7.3, the APIs of .NET Framework 4.5 and .NET Standard 2.0 alone
-  (their Unity is 2019), no `UnityEngine` in `Runtime/`. The API over `HttpClient`, each call awaited, the backend's
+  they can read and paste, beside the full client; C# 7.3, .NET Framework 4.5's APIs alone (their Unity is 2019,
+  D-116), no `UnityEngine` in `Runtime/`. The API over `HttpClient`, each call awaited, the backend's
   root as the app's certificate check, `ServicePointManager`'s (owner, 2026-11-25; D-112); the lobby's and the
   match's callbacks in `Update()`. `client-simple-no-tls/` the same without TLS, for a backend run plain and the
   site's 80 (owner, 2026-11-25; D-114, D-115); `ArenaMessages.cs` and `Json.cs` byte for byte `client-simple`'s. A
@@ -189,8 +195,8 @@ for the backend, its docs and its client.
   as the only repository, `work/m2`, `work/tmp`), the tests use the development MySQL
   (`dev-mysql.sh`, 3314), a run by hand is a script a service (D-92, owner 2026-11-01: `dev-mysql.sh`,
   `dev-jredis.sh` 6380, `dev-backend.sh` 8080, 8081, the arena 9021, `dev-nginx.sh` 80, 443, 9001 on every IPv4 address;
-  debugger 5005 to 5009), `run-local.sh` the four in order. Nothing in `/tmp`, `~/.m2` or `/opt` is needed by a clone; the drills, which
-  need .NET, are the exception (03 §7). The built-in defaults name the development MySQL too
+  debugger 5005 to 5009), `run-local.sh` the four in order. Nothing in `/tmp`, `~/.m2` or `/opt` is needed by a clone: the client's builds,
+  tests and drills take Unity 2019's editor, fetched once into `work/unity` (D-116), where they took .NET in `/opt` (03 §7). The built-in defaults name the development MySQL too
   (O-40): a process with no `BACKEND_DB_URL`, a test with no `JDBC_URL`, and the drills.
 - **Nothing on a development machine needs root but `dev-nginx.sh` on 80 and 443** (D-92: the owner runs it as
   root, its workers as `nobody`; moved ports for anyone else), and everything here runs as root, so a policy that
@@ -226,8 +232,8 @@ for the backend, its docs and its client.
 ./dev-nginx.sh  start|stop|restart|status|test      # the release's nginx on 80 (the API and the lobby in clear, D-107), 443, 9001, every IPv4 address; root; work/nginx/ca/ca.pem
                                                     # PLAIN=1, to every command: 80 (the API, the lobby) and 9001 without TLS (D-101)
 
-# Client core tests (look for "Total tests:")
-cd client && DOTNET_NOLOGO=1 /opt/dotnet/dotnet test Core.Tests -f net8.0 --logger "console;verbosity=normal"
+# Client core tests: .NET Framework 4.5, Unity 2019.4's compiler, its Mono, no .NET (D-116); look for "Test Count:"
+client/core-tests.sh                                # TESTS="class =~ MatchConnectionTests" for some
 
 # Crypto examples (from backend/, in that shell), then their probe on a release's runtime (docs/development/04 §5)
 mvn -q -pl crypto-examples test
@@ -235,30 +241,31 @@ target/release/backend-*/runtime/bin/java -cp crypto-examples/target/classes com
 
 # The Unity package: the core built into it, then its scripts compiled against stubs (nothing run)
 client/unity-package.sh && client/unity-check.sh
-# Unity 2019.4.28f1's compiler on the core and the scripts against its UnityEngine, the package's csc.rsp as Unity reads it
-# (D-113), the core run on its Mono (D-108)
+# Unity 2019.4.28f1's compiler on the core (.NET Framework 4.5) and the scripts against its UnityEngine at its .NET 4.x
+# level, the package's csc.rsp as Unity reads it (D-113), the core and its tests run on its Mono (D-108, D-116)
 TMPDIR=<scratchpad> client/unity2019-check.sh
-# Visual Studio 2019's MSBuild and Roslyn (16.11, 16.7) on the core, .NET Framework 4.7.1, Unity's project, the solution
+# Visual Studio 2019's MSBuild and Roslyn (16.11, 16.7) on the core, .NET Framework 4.5, Unity's project, the solution
 client/vs2019-check.sh
-# client-simple (D-111, D-112): compiled by Unity 2019.4's compiler at its levels, .NET Framework 4.5 and .NET Standard 2.1,
+# client-simple (D-111, D-112): compiled by Unity 2019.4's compiler for .NET Framework 4.5 and at Unity's .NET 4.x level,
 # its offline checks on its Mono (the API's HTTPS, the lobby's wss:// and a match's TLS against openssl s_server at TLS 1.0)
 client-simple/check.sh
 client-simple-no-tls/check.sh                       # the same check over the no-TLS tree (D-114)
 
 # Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice erase
 TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]
-# Over TLS, where "untrusted" is a scenario too (without TLS=1 it fails: it needs a certificate)
-TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted
-# client-simple's live check before the scenarios (D-111), through FRONT's nginx: https, http or plain (none: straight);
-# client-simple-no-tls's after it unless TLS=1, through nginx's 80 or straight, its match by /match/ in the TLS ways (D-114, D-115)
-SIMPLE=1 FRONT=https TMPDIR=<scratchpad> client/headless-drill.sh play
+# The client on Unity 2019's Mono, in clear alone (D-116): TLS=1, FRONT=https and untrusted are refused. Through FRONT's
+# nginx: http (the API, the lobby and matches on 80's place, a match by /match/) or plain (80's and 9001's, D-101)
+FRONT=http TMPDIR=<scratchpad> client/headless-drill.sh play lobby duel
+# client-simple's live check before the scenarios (D-111), straight or FRONT=plain; client-simple-no-tls's after it,
+# straight or through nginx's 80, its match by /match/ when the grant asks for TLS (D-114, D-115)
+SIMPLE=1 FRONT=plain TMPDIR=<scratchpad> client/headless-drill.sh play
 # The watch on, a webhook receiver of the drill's: the worker killed after the scenarios, TargetDown listed and sent (08)
 WATCH=1 TMPDIR=<scratchpad> client/headless-drill.sh play
 # A guest aged 181 days in the database after the scenarios, erased by a fresh worker's retention a minute on (D-87)
 IDLEGUEST=1 TMPDIR=<scratchpad> client/headless-drill.sh play
 
 # The certificate scripts' own check (openssl alone, a few seconds), and the front's end to end in Rocky 9.5:
-# firewalld, nginx, two machines, the C# client through 443 and 9001 (Docker, .NET; about ten minutes)
+# firewalld, nginx, two machines, 443 and 9001 by openssl, the C# client through 80 on Unity's Mono (Docker; ten minutes; D-116)
 backend/scripts/check-certificates.sh
 backend/scripts/check-nginx-logs.sh                 # nginx's log rotation, the release's nginx on a loopback port
 backend/scripts/check-promote.sh                    # both promotions' refusals and the handover's order, stand-in clients (D-95)
@@ -267,8 +274,8 @@ backend/scripts/check-selinux-el9.sh                # its SELinux branch and the
 backend/scripts/check-release-guest-el9.sh          # the release on RHEL 9's kernel in that guest, SELinux enforcing: backend-mysql.service, then check-release-el9.sh's checks (D-110)
 (cd backend && scripts/check-ports-el9.sh)
 # A second machine as the first one's standby (D-96), with arenas of its own (D-97), operations/10 as written on two UBI 9
-# machines joined by a private link, a probe of the site throughout, matches by the C# client on B's arenas through A's
-# nginx, B frozen; then A's MySQL lost, then A lost (as root, .NET; about twenty minutes, twelve with A_IMAGE)
+# machines joined by a private link, a probe of the site throughout, matches by the C# client (Unity's Mono, D-116) on B's
+# arenas through A's nginx's 80, B frozen; then A's MySQL lost, then A lost (as root; about twenty minutes, twelve with A_IMAGE)
 backend/scripts/check-two-machines-el9.sh            # SAVE_A=<image> keeps A installed, A_IMAGE=<image> starts from it; STANDBY_ONLY=1 without B's arenas
 
 # The backups' own drill: the stream, dump, copy off the site, weekly proof under writes, a restore to a

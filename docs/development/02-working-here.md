@@ -68,8 +68,8 @@ decision; the last column says where it is recorded.
 | No third-party Redis server, client library or tool, tests included: the store is j-redis | 2026-09 | this page (it was in `CLAUDE.md` only); D-6, D-7 |
 | No third-party service or daemon of any kind beyond MySQL and nginx, whether installed or bundled. Monitoring and alerting are the backend's own code: Prometheus, Alertmanager and node_exporter were refused even bundled. Libraries embedded as jars stay allowed | 2026-10-24 | C-6, Q-60, plan item 100 |
 | The client is the engine-free C# core, the headless driver, and the Unity layer as thin scripts. Nothing is run in Unity here | 2026-10-04 | Q-51, D-73 |
-| The client is for Unity 2019.4 and Visual Studio 2019 first, the team's tools. The core is C# 7.3 on .NET Standard 2.0 (Unity 2022.3 and 6 take it too). `client/Backend.Client.sln` is VS 2019's, with all four projects in it at C# 7.3; Core.Tests and Headless are on .NET Framework 4.7.1 (and on .NET 8 where MSBuild is 17 or later: here, `-f net8.0`). There is no solution for any other version. The backend's CA signs with RSA, which Unity 2019's runtime can check. Checked by `client/unity2019-check.sh` (Unity 2019.4.28f1's compiler, assemblies and Mono, with the core's tests run on it; its editor files in `work/unity`) and by `client/vs2019-check.sh` (VS 2019's MSBuild and Roslyn, in Docker) | 2026-11-05 | D-108, D-109 |
-| A simple client for the UI team, `client-simple/`, beside the full one: the API, the lobby and a match in small files to read and paste. It uses C# 7.3 and only the APIs of .NET Framework 4.5 and .NET Standard 2.0 (their Unity is 2019), and no `UnityEngine` in its `Runtime/`. A protocol change is made in both clients (since D-114, in all three). Checked by `client-simple/check.sh` and by `headless-drill.sh` with `SIMPLE=1` | 2026-11-24 | D-111 |
+| The client is for Unity 2019.4 and Visual Studio 2019 first, the team's tools, and on .NET Framework 4.5 alone. Every C# project targets 4.5 at C# 7.3, with no API above it: the core, its tests, the headless driver and UnityCheck, all four in `client/Backend.Client.sln`, VS 2019's. No .NET Standard and no .NET 8: no project targets either, and nothing here runs on .NET 8. Unity 2019 takes the core's assembly at its .NET 4.x API level. The core asks for TLS 1.2 by name. There is no solution for any other version. The backend's CA signs with RSA, which Unity 2019's runtime can check. Here every C# build is Unity 2019.4.28f1's compiler against Mono's 4.5 reference assemblies, and every run is its Mono 5.11, from its editor's files in `work/unity` (`client/unity-env.sh`): the core's tests (`client/core-tests.sh`), the drills' driver and the checks (`client/unity2019-check.sh`). `client/vs2019-check.sh` builds the solution with VS 2019's MSBuild and Roslyn, in Docker: they come only in Microsoft's .NET 5 and .NET Core 3.1 SDK images, the one modern .NET left, taken as build tools alone (nothing targets them, runs on them or ships from them). Unity's Mono outside the editor speaks TLS 1.0 alone, so the C# client is driven here in clear alone | 2026-11-05; 4.5 alone since 2026-11-25 | D-108, D-109, [D-116](../architecture/03-decision-log.md#d-116--the-client-on-net-framework-45-alone-built-and-run-here-without-net-8-and-driven-in-clear) |
+| A simple client for the UI team, `client-simple/`, beside the full one: the API, the lobby and a match in small files to read and paste. It uses C# 7.3 on .NET Framework 4.5 alone, with no API above it (their Unity is 2019, at its .NET 4.x level), and no `UnityEngine` in its `Runtime/`. `client-simple-no-tls/` is the same. A protocol change is made in both clients (since D-114, in all three). Checked by `client-simple/check.sh` (Unity 2019.4's compiler, and its Mono for the offline checks) and by `headless-drill.sh` with `SIMPLE=1`, live in clear alone | 2026-11-24; 4.5 alone since 2026-11-25 | D-111, D-116 |
 | `client-simple`'s API runs over `HttpClient`, each call awaited. The app's certificate check is the backend's root, set through `ServicePointManager` (the only check that Unity 2019's `HttpClient` calls). A `csc.rsp` gives Unity's .NET 4.x level what it needs | 2026-11-25 | D-112 |
 | `client-simple-no-tls/` is the simple client without TLS, for a backend run plain (`PLAIN=1`) and for the site's 80 (D-115). Its `ArenaMessages.cs` and `Json.cs` are `client-simple`'s byte for byte, and one check covers both | 2026-11-25 | D-114 |
 | The migrations were squashed once, before launch, to V1 (the schema) and V2 (the seed). From V3 on they are forward-only | 2026-10-04 | D-75 |
@@ -97,11 +97,12 @@ average sits around 5 to 9, so latency numbers measured on it vary between runs.
 | Maven | `/opt/maven` | 3.9.16. The work uses `vendor/maven-3.9` |
 | The development MySQL | 127.0.0.1:3314 | `vendor/`'s 8.4, its files in `work/mysql` (`dev-mysql.sh`): the tests' and the benchmarks' database server |
 | The JDK and Maven, committed | `vendor/jdk-21`, `vendor/maven-3.9` | the same versions, usable as they are. `build-offline.sh` builds with them alone, with no network ([09 §3](../detailed-design/09-release-and-packaging.md#3-the-build-from-the-repository-alone)) |
-| .NET 8 SDK | `/opt/dotnet` | for `client/`; NuGet.org is reachable. It is not in `vendor/`: the owner chose to carry the backend's tools only (D-77) |
+| .NET 8 SDK | `/opt/dotnet` | not used since D-116 (2026-11-25): nothing here builds or runs on .NET. It was for `client/`, and was never in `vendor/` (D-77) |
+| Unity 2019.4.28f1's Linux editor | `work/unity` | every C# build here (its compiler, Roslyn 2.9.1, against Mono's .NET Framework 4.5 reference assemblies) and every C# run (its Mono 5.11). `client/unity-env.sh` fetches it once (1.8 GB, its SHA-256 checked), with the NuGet packages the tests and the driver take. The editor itself is never run: it needs a licence (D-116) |
 | MySQL | 127.0.0.1:3306 | 8.0.46 from the distribution, with the databases `backend_dev` and `backend_test` and the user `backend` / `backend-dev-password`. Nothing here has used it since O-40 (2026-10-23): the tests, the drills and a run by hand use the development MySQL on 3314 |
 | Docker | `/usr/bin/docker` | other users' containers run here too: give ours distinct names, and remove them afterwards |
 | QEMU | `/usr/bin/qemu-system-x86_64` | 8.2, with `cloud-localds`, installed on 2026-10-28 for `backend/scripts/check-selinux-el9.sh`: a Rocky 9 guest with SELinux enforcing. That is the only way to see SELinux from this machine: its kernel's security module is AppArmor, and Docker shares the kernel. There is no KVM here, so the guest is emulated: forty minutes the first time, ten after. Its image and disk are in `work/el9` (D-90) |
-| The internet | reachable | Maven Central, NuGet.org, GitHub, the vendors' downloads |
+| The internet | reachable | Maven Central, NuGet.org, GitHub, Unity's and the vendors' downloads |
 
 **Ports on this machine:**
 
@@ -128,7 +129,8 @@ a user who is not root. Until item 106 it had only ever run as root here (O-46).
   the moved ports.
 - To reproduce a refused port, raise the unprivileged-port threshold in that namespace alone:
   `ip netns exec devtest sysctl -w net.ipv4.ip_unprivileged_port_start=9100`, and set it back to 1024 afterwards.
-- The namespace has no network: the clone builds (from the bundle), but the client's NuGet restore does not.
+- The namespace has no network: the clone builds (from the bundle), but the client's first build does not. It
+  fetches Unity's editor and the NuGet packages it takes (D-116).
 
 **This is not the production platform.** Production is RHEL 9.x, with glibc 2.34; this machine has glibc 2.39.
 Anything compiled here may need newer glibc symbols (2.38's, for one) and then not start there. So:
@@ -243,12 +245,14 @@ Each trap below happened at least once. Each says what went wrong and what to do
 - **A mutation check leaves the mutant compiled.** The source put back is older than the mutant's class in
   `target/`, so Maven's incremental build keeps the mutant's class. Build `clean` after a mutation run, before any
   test, release or drill (2026-10-06).
-- **`dotnet test` prints "Passed!" when its test host dies part-way**, counting only the tests that ran. Read
-  `Total tests:` at `--logger "console;verbosity=normal"`; it reads `Unknown` after a crash.
+- **`dotnet test` printed "Passed!" when its test host died part-way** (before D-116), counting only the tests that
+  ran; `Total tests:` read `Unknown` after a crash. `client/core-tests.sh`, which replaced it, prints NUnitLite's
+  `Test Count:` line, and fails when NUnitLite printed none. Read the count.
 - **`mvn clean install` replaces `target/*-all.jar`** under a server running from `target/`, which then dies with
   `NoClassDefFoundError`. Run servers from a copy of the release (`RELEASE=` for the drills while a build runs).
-- **The headless driver runs the build in `client/Headless/bin/Debug`, and the drill script does not build it.**
-  Rebuild it (`dotnet build Headless`) after any change to the core or the driver, or the drill runs the old code.
+- **The headless driver ran the build in `client/Headless/bin/Debug`, and the drill script did not build it**
+  (before D-116). After a change to the core or the driver, a drill ran the old code unless `dotnet build Headless`
+  came first. Since D-116 the drill builds the driver afresh for each run, in its own directory.
 - **What this machine has, a minimal RHEL 9 may not have.** `jlink --strip-debug` calls `objcopy` (from binutils),
   which is here and is absent there, and a release built on a fresh server failed on it.
   `check-install-guide-el9.sh` checks everything a build or a release runs, building in UBI 9 with nothing added.
@@ -274,13 +278,14 @@ Each trap below happened at least once. Each says what went wrong and what to do
   - It reads no PKCS#12 file that OpenSSL 3 writes by default (AES, PBKDF2). A test's keys are exported with
     `-keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1`.
   - Its own TLS is Mono's, TLS 1.0, which nginx refuses. So a test uses a server of Mono's own, never the editor's
-    or a phone's TLS.
+    or a phone's TLS. And since D-116 the drills and the checks in containers drive the C# client in clear alone:
+    `TLS=1`, `FRONT=https` and the scenario `untrusted` are refused.
   - Its .NET Core compiler (`Tools/Roslyn/csc`) wants an ICU library that this machine lacks.
     `Tools/RoslynNet46/csc.exe` under its Mono is the same Roslyn, 2.9.1.
 - **Two solution files in `client/`, and `dotnet test` names neither**: MSBuild refuses ("more than one project or
   solution file"). Keep one solution, and name the tests by their path. **And `dotnet test Core.Tests` without
-  `-f net8.0`** also runs the .NET Framework 4.7.1 build, which off Windows wants a `mono` on the `PATH`. Use
-  `-f net8.0` here (D-109).
+  `-f net8.0`** also ran the .NET Framework 4.7.1 build, which off Windows wants a `mono` on the `PATH` (D-109).
+  Since D-116 every project has one target, .NET Framework 4.5, and nothing here runs `dotnet test`.
 - **Mono's `float` is a double** unless `--optimize=float32` is given (Unity's own fork turns it on by default). On
   Unity 2019's standalone `mono`, the own tank's step differed from the server's in its last bits (P-65). And
   **Mono's `HttpListener` has no WebSocket server** (`AcceptWebSocketAsync` throws `NotImplementedException`), so

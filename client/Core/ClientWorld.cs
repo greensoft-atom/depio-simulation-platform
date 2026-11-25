@@ -141,7 +141,7 @@ namespace Backend.Client.Core
         public ClientWorld(long mazeSeed = 0)
         {
             for (int h = 0; h < _entities.Length; h++) _entities[h] = new Entity();
-            _walls = mazeSeed == 0 ? Array.Empty<Wall>() : Maze.Walls(mazeSeed);
+            _walls = mazeSeed == 0 ? new Wall[0] : Maze.Walls(mazeSeed);       // Array.Empty is 4.6's (D-116)
         }
 
         /// <summary>The entity behind a handle. Check <see cref="Entity.Alive"/> first.</summary>

@@ -27,25 +27,31 @@ no Unity editor. The routes and messages themselves are in [docs/api](../api/REA
   70).
 - **The simple clients**, `client-simple/` and `client-simple-no-tls/`, were added on 2026-11-24 and 2026-11-25 for
   the UI team (§9).
+- **On .NET Framework 4.5 alone since 2026-11-25**
+  ([D-116](../architecture/03-decision-log.md#d-116--the-client-on-net-framework-45-alone-built-and-run-here-without-net-8-and-driven-in-clear)):
+  every client project, with no .NET 8 anywhere. Here the C# is compiled by Unity 2019.4's compiler and run on its
+  Mono, apart from `vs2019-check.sh`, which builds with Visual Studio 2019's own MSBuild. The C# client is driven in
+  clear alone (§1, §6).
 
 ## 1. Two layers
 
 ```
-┌─ Unity layer  (Backend.Client.Unity)  ─ Unity 2019.4 LTS and later ──────┐
+┌─ Unity layer  (Backend.Client.Unity)  ─ Unity 2019.4 and later, .NET 4.x ─┐
 │  scenes, rendering, touch input, app lifecycle, secure key storage,       │
 │  the main-thread pump                                                     │
-├─ Core  (Backend.Client.Core)  ─ .NET Standard 2.0, C# 7.3, no dependencies ┤
+├─ Core (Backend.Client.Core) ─ .NET Framework 4.5, C# 7.3, no dependencies ┤
 │  wire · world · match connection · lobby · API · prediction               │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Everything that speaks to the server is in the core, and the core knows nothing of Unity.** The most expensive bug
 this project can have is a client and a server that disagree about a byte. The only defence is to run the client's
-own code against the real server. The core has no engine in it, so it builds and runs with the .NET SDK on the
-development machine, where the server runs too. Its tests apply the golden vectors field by field: snapshot frames,
-each with what it decodes to, written by the protocol spike's independent codec, which the server's decoder must read
-too ([glossary](../glossary.md)). And a headless client, one with no screen, drives the real stack through a login,
-the lobby, a match, a lost connection and a resume ([§6](#6-testing)).
+own code against the real server. The core has no engine in it, so it builds and runs on the development machine,
+where the server runs too: compiled by Unity 2019.4's compiler and run on its Mono, with no .NET SDK (D-116). Its
+tests apply the golden vectors field by field: snapshot frames, each with what it decodes to, written by the protocol
+spike's independent codec, which the server's decoder must read too ([glossary](../glossary.md)). And a headless
+client, one with no screen, drives the real stack through a login, the lobby, a match, a lost connection and a resume
+([§6](#6-testing)).
 
 **The Unity layer is thin because it cannot be tested here.** The development machine has no Unity editor (the editor
 needs a licence). It does have Unity 2019.4.28f1's compiler, assemblies and Mono runtime, in `work/unity` (D-108), so
@@ -54,12 +60,26 @@ touches into inputs, tells the core when the app goes to the background, and kee
 secure store. It is kept small enough to review by reading. It is to be checked in the Unity editor: none of it has
 run yet (§8).
 
-**.NET Standard 2.0 and C# 7.3**, because that is what the owner's team builds with: Unity 2019.4, at either of its
-API levels (.NET Standard 2.0 and .NET 4.x), and Visual Studio 2019 on .NET Framework 4.7.1. Unity 2022.3 and Unity 6
-take them as well ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root)).
-Before D-108 the core was .NET Standard 2.1 and C# 9, for Unity 2022.3 and 6 alone. Neither C# 7.3 nor .NET Standard
-2.0 has `ReadOnlySpan<T>`, so a frame is an array segment: an array with an offset and a count.
-`client/unity2019-check.sh` compiles the core with Unity 2019.4.28f1's own compiler.
+**.NET Framework 4.5 and C# 7.3**, because that is what the owner's team builds with: .NET Framework 4.5, Visual
+Studio 2019 and Unity 2019.4
+([D-116](../architecture/03-decision-log.md#d-116--the-client-on-net-framework-45-alone-built-and-run-here-without-net-8-and-driven-in-clear)).
+
+- **Every client project targets 4.5 alone**: the core, its tests, the headless driver and UnityCheck
+  (`Backend.Client.sln`), and both simple clients. None targets .NET Standard or .NET 8.
+- **Unity 2019 takes the core's library at its .NET 4.x API level alone.** A project at .NET Standard 2.0 switches to
+  .NET 4.x (Player settings, Api Compatibility Level).
+- **No API above 4.5.** The root's RSA key is read through `PublicKey.Key` and checked by
+  `RSACryptoServiceProvider.VerifyData(…, "SHA256", …)`, because `GetRSAPublicKey` and `HashAlgorithmName` are 4.6's.
+  Empty arrays are the core's own, because `Array.Empty` is 4.6's. The maze has no tuples, which 4.5 lacks.
+- **No package in the app.** The core takes none. Its tests and the headless driver take `System.ValueTuple`, for
+  their tuples, which ships in no app.
+
+Before D-116 the core was .NET Standard 2.0
+([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root)),
+and the tests and the driver were .NET Framework 4.7.1 and .NET 8 (D-109). Before D-108 the core was .NET Standard
+2.1 and C# 9, for Unity 2022.3 and 6 alone. Neither C# 7.3 nor .NET Framework 4.5 has `ReadOnlySpan<T>`, so a frame
+is an array segment: an array with an offset and a count. `client/unity2019-check.sh` compiles the core with Unity
+2019.4.28f1's own compiler.
 
 **The main thread allocates almost nothing.** Its work on a frame (decoding, applying, predicting and building the
 scene) allocates nothing but the names that a frame carries: a new tank's name, a kill's names, a phrase speaker's
@@ -109,7 +129,23 @@ certificate, which the app ships (`TrustRoot`,
 client makes this check itself, for the name the handshake sends, and does not ask the runtime for its own verdict
 ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root)).
 The certificate must be issued by the root, be signed with RSA and SHA-256, be valid now, and carry the name in its
-subjectAltName. A client without TLS reaches the same arena through port 80 instead (§9).
+subjectAltName. A client in clear reaches the same arena through port 80 instead, as below.
+
+**Through the site's 80, in clear**
+([D-116](../architecture/03-decision-log.md#d-116--the-client-on-net-framework-45-alone-built-and-run-here-without-net-8-and-driven-in-clear)).
+The site's 9001 speaks TLS alone. So a client whose API is in clear takes the site's grant through port 80, as
+`client-simple-no-tls` does (D-115, §9):
+
+- **When.** `MatchSettings.SiteFor(api, tls, tlsName)` gives the site to use. That is the API's address when the API
+  is `http://` and the grant asks for TLS by an arena's name, as the site's grants do. Otherwise it gives null, and
+  the grant's own host and port are dialled, with TLS when the grant asks for it. `BackendClient` and the headless
+  driver set `MatchSettings.Site` from it.
+- **How.** With `Site` set, the connection dials the site and sends `GET /match/<TlsName> HTTP/1.1`, with `Host`,
+  `Connection: Upgrade` and `Upgrade: backend-match`. It reads the answer to its blank line, 4 KiB at most. On
+  `HTTP/1.1 101` it plays the match in clear on that connection, with no TLS of its own.
+- **When it fails.** Any other answer fails the connection, and `LastProblem` says "the site refused the match:
+  <status>". A `Site` with no TLS name is never dialled: "a match through the site needs the arena's name, the grant's
+  tlsName". Before any `Welcome`, either one ends the match `Unreachable`, as an arena that cannot be reached does.
 
 What this document adds:
 
@@ -285,15 +321,21 @@ What the client adds is below.
   callback for each request). The lobby goes through the core's own WebSocket, over `SslStream`
   ([D-108](../architecture/03-decision-log.md#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root)).
   The core does not use the usual classes: Unity 2019's `HttpClientHandler` certificate callback is not implemented,
-  and .NET Standard 2.0's `ClientWebSocket` has no callback at all. When the Unity package is given no root, it uses
+  and .NET Framework 4.5's `ClientWebSocket` has no callback at all. When the Unity package is given no root, it uses
   the platform's own `HttpClient` and the device's own certificate store, for a backend that a public certificate
   authority certifies.
+- **TLS 1.2 asked for by name** (D-116). An assembly built for .NET Framework 4.5 gets TLS 1.0 alone by default, on a
+  socket and on a request, and nginx refuses TLS 1.0. So the lobby's and the match's sockets ask for TLS 1.2, 1.1 and
+  1.0 (`TlsVersions.Client`). `ApiClient`'s constructor adds TLS 1.2 and 1.1 to
+  `ServicePointManager.SecurityProtocol`, for the whole process, and takes nothing away. The server chooses among
+  them.
 - **Any build connects the way it is set up**
   ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
   A build given `https://`, `wss://` and the root is encrypted. A build given `http://` and `ws://` is in clear. This
   holds for a players' build too: D-104's refusal of plain connections in a players' build is gone. A grant's TLS is
-  the backend's choice. The site's grants ask for TLS, so the full client plays over TLS on port 9001 even when its API
-  and lobby are in clear.
+  the backend's choice, and the site's grants ask for TLS. With an `https://` API the full client plays them over TLS
+  on port 9001. With an `http://` API it asks the site's port 80 for the arena by name, and plays in clear (§3,
+  D-116).
 - **The account's key lives in the device's secure store** (the Keychain on iOS, the Android Keystore).
   `AccountKeeper` keeps a guest's key, and logs in by it on every launch (§8). Keeping the session token there too, so
   that a restarted app skips the login, is the layer above's, and **not built**: the package holds the session in
@@ -432,18 +474,20 @@ What the client adds is below.
 
 | What | How | Where |
 |---|---|---|
-| The wire and the world | every decoded field of every golden vector; unknown events stepped over; malformed frames refused | the core's tests, on the .NET SDK, on this machine |
+| The wire and the world | every decoded field of every golden vector; unknown events stepped over; malformed frames refused | the core's tests, compiled by Unity 2019.4's compiler and run on its Mono, on this machine (`client/core-tests.sh`, D-116) |
 | The maze | the walls for one seed against the server's golden vector (`backend/sim/src/test/resources/maze-2026.txt`); a bullet ending at a wall by the server's rule; live, the `maze` drill | the core's tests; the headless client |
 | The messages the client sends | encoded here, decoded by the real server | the headless client |
-| The whole path | a headless client driving the real stack from a release: register, log in, the lobby, a ticket, join, input, a death, a respawn, a dropped socket and a resume, `Leave`, and the result in MySQL | this machine |
+| The whole path | a headless client driving the real stack from a release: register, log in, the lobby, a ticket, join, input, a death, a respawn, a dropped socket and a resume, `Leave`, and the result in MySQL. In clear alone, on Unity 2019's Mono (D-116): straight to the processes, through nginx run plain (`FRONT=plain`), and through nginx's 80 as the site's (`FRONT=http`), its matches by `/match/` and the arena's name. `TLS=1`, `FRONT=https` and the `untrusted` scenario are refused | this machine (`client/headless-drill.sh`); `check-ports-el9.sh` and `check-two-machines-el9.sh` through the site's 80, in their containers |
+| A match through the site's 80 (§3, D-116) | against a stand-in for nginx's 80 on a loopback socket: the request exact, and the match played on that connection once the `101` is read; a site that answers anything else, and a site without the arena's name, each ending the match `Unreachable`, saying why; when `SiteFor` takes the site and when not. Live, the drills through `FRONT=http` | the core's tests (`MatchConnectionTests`); the headless client |
 | Prediction | the movement rule bit for bit against the trajectory that the server's `Room` wrote (`motion-2026.txt`); stamping, matching, replay, corrections and jumps on a frozen clock; live, the `prediction` drill: each frame's predicted position against the server's | the core's tests; the headless client |
 | What a frame draws, the sticks, the account kept, the party's state (§8 (a), D-74) | the scene at a render tick, and the render clock, on a frozen clock; the sticks' sectors, dead zone and fire; a first launch, and a key refused, against a scripted API and a store in memory; older and ended parties' states refused | the core's tests |
 | The lobby client | against a scripted lobby on a loopback WebSocket: the queue "none" again after a match, a declined match forgotten, a message split inside a character read whole, a silent lobby found lost, reconnects spread out; and live, the drills | the core's tests; the headless client |
 | The tests' own list | `Core.Tests/README.md`'s rows compared with the test assembly by reflection, as the server's READMEs are checked by its build (DOC-29, DOC-31) | `ReadmeTestListTests`, in every run of the client's tests |
 | The Unity package's scripts | compiled against stubs of the Unity API, for no platform, for the editor, for iOS and for Android; the Android plugin compiled against stubs of Android's API | `client/unity-check.sh`; nothing run |
-| The core in Visual Studio 2019 (D-108) | built with warnings as errors by Visual Studio 2019's own MSBuild and Roslyn (16.11, and 16.7), from Microsoft's .NET 5 and .NET Core 3.1 SDK images: the core's project (.NET Standard 2.0); its sources in a .NET Framework 4.7.1 library at C# 7.3, against Microsoft's 4.7.1 reference assemblies; a 4.7.1 app that references it; Unity 2019.4's project, as Visual Studio 2019 compiles it (4.7.1, `UnityEngine`, each platform branch); and `Backend.Client.sln`, the client's one solution, Visual Studio 2019's, with its four projects (Core.Tests and Headless at .NET Framework 4.7.1, D-109). A C# 8 operator, and an API that .NET Framework lacks, each failed every build | `client/vs2019-check.sh`; not inside Visual Studio, and nothing run on .NET Framework itself |
-| The core and the scripts in Unity 2019.4 (D-108, D-113) | compiled by Unity 2019.4.28f1's compiler (Roslyn 2.9.1, C# 7.3, warnings as errors): the core at .NET Standard 2.0 and at .NET 4.x (with .NET Framework 4.7.1's references, as Visual Studio 2019 builds it); the scripts against Unity's own `UnityEngine` assemblies at both levels, each platform branch, with each level's default references and the package's `csc.rsp` as Unity reads it, and refused at .NET 4.x without it. Then the core run on Unity's Mono 5.11: certificates made by `private-ca.sh` checked, an EC root refused with the reason, JSON under a decimal comma, and the API, the lobby's `wss://` and a match, each through TLS to a server there, accepted with the root's certificate and refused with another's. And the core's 185 tests, compiled by Unity's compiler, run there by NUnitLite with `float32` (D-109, P-65) | `client/unity2019-check.sh`; not the editor (a licence), not Unity's own TLS (the editor's and the player's; this is Mono's own, at TLS 1.0), not a phone |
-| The simple client, `client-simple/` (§9, D-111, D-112) | compiled by Unity 2019.4.28f1's compiler at C# 7.3: `Runtime/` against .NET Standard 2.0, .NET 4.x (with `csc.rsp`'s `System.Net.Http`, and refused without it), .NET Framework 4.5 and .NET Standard 2.1; `Examples/` against Unity's `UnityEngine` at both levels. Offline, on Unity's Mono: JSON; every match message byte for byte as the core writes it; the arena's answers read as the core reads them; frames; the WebSocket against RFC 6455's examples; the certificate check; the API's calls and the app's certificate check; HTTPS through `HttpClient`; and the lobby's `wss://` and a match's TLS (its grant's name checked) against `openssl s_server` at TLS 1.0. Live, against the drill's stack, through nginx in the three ways and straight to the processes: the API at `http://`, the lobby and a match, another root refused for the lobby and for a match, and every lobby and match callback run on the thread that calls `Update()` | `client-simple/check.sh`; `headless-drill.sh SIMPLE=1`; in clear on Unity's Mono, and with TLS on .NET 8 (Mono's own TLS here stops at 1.0) |
+| The core in Visual Studio 2019 (D-108, D-116) | built with warnings as errors by Visual Studio 2019's own MSBuild and Roslyn (16.11, and 16.7), from Microsoft's .NET 5 and .NET Core 3.1 SDK images, used as Visual Studio 2019's build tools alone: the core's project (.NET Framework 4.5, against Microsoft's 4.5 reference assemblies); a 4.5 app that references it; Unity 2019.4's project, as Visual Studio 2019 compiles it (4.7.1, Unity's .NET 4.x level, `UnityEngine`, the reference of the package's `csc.rsp`, each platform branch); and `Backend.Client.sln`, the client's one solution, Visual Studio 2019's, with its four projects, every one .NET Framework 4.5 (D-109, D-116). A C# 8 operator, and an API that .NET Framework lacks, each failed every build (D-108) | `client/vs2019-check.sh`; not inside Visual Studio, and nothing run on .NET Framework itself |
+| The core and the scripts in Unity 2019.4 (D-108, D-113, D-116) | compiled by Unity 2019.4.28f1's compiler (Roslyn 2.9.1, C# 7.3, warnings as errors): the core for .NET Framework 4.5, against Mono's 4.5 reference assemblies (`client/unity-env.sh`); the scripts against Unity's own `UnityEngine` assemblies at Unity's .NET 4.x level (.NET Framework 4.7.1's references, what Unity gives a script there), each platform branch, with that level's default references and the package's `csc.rsp` as Unity reads it, and refused without it. Then the core run on Unity's Mono 5.11: certificates made by `private-ca.sh` checked, an EC root refused with the reason, JSON under a decimal comma, and the API, the lobby's `wss://` and a match, each through TLS to a server there, accepted with the root's certificate and refused with another's. And the core's 191 tests, compiled by Unity's compiler for .NET Framework 4.5, run there by NUnitLite with `float32` (`client/core-tests.sh`; D-109, P-65) | `client/unity2019-check.sh`, `client/core-tests.sh`; not the editor (a licence), not Unity's own TLS (the editor's and the player's; this is Mono's own, at TLS 1.0), not a phone |
+| The simple client, `client-simple/` (§9, D-111, D-112, D-116) | compiled by Unity 2019.4.28f1's compiler at C# 7.3: `Runtime/` for .NET Framework 4.5, and at Unity's .NET 4.x level (with `csc.rsp`'s `System.Net.Http`, and refused without it); `Examples/` against Unity's `UnityEngine` at that level. Offline, on Unity's Mono: JSON; every match message byte for byte as the core writes it; the arena's answers read as the core reads them; frames; the WebSocket against RFC 6455's examples; the certificate check; the API's calls and the app's certificate check; HTTPS through `HttpClient`; and the lobby's `wss://` and a match's TLS (its grant's name checked) against `openssl s_server` at TLS 1.0. Live, against the drill's stack, in clear alone: straight to the processes and through nginx run plain (`FRONT=plain`), the API at `http://`, the lobby and a match, and every lobby and match callback run on the thread that calls `Update()`. Not through `FRONT=http`, whose grants ask for TLS; `client-simple-no-tls` is driven there (§9). Until D-116 its TLS ways ran live on .NET 8 | `client-simple/check.sh`; `headless-drill.sh SIMPLE=1`; on Unity's Mono alone, whose own TLS here stops at 1.0: `check.sh live` refuses a root or a `wss://` lobby |
+| The C# client through nginx's TLS (443 and 9001); the name its TLS handshake sends, as a server sees it; the TLS 1.2 it asks for, on .NET Framework itself | not checked here since D-116. Unity's Mono outside the editor speaks TLS 1.0 alone, and nginx 1.2 and 1.3; only .NET 8 showed a server the handshake's name; and there is no .NET Framework on Linux. nginx's TLS stays checked by `openssl s_client` (`check-ports-el9.sh`, `check-two-machines-el9.sh`), and the core's TLS between its own two ends, at TLS 1.0 | **the Unity editor and a phone**; Windows, for .NET Framework |
 | Rendering, touch, the app's lifecycle, secure storage, the device's TLS, frame time on a phone | the Unity editor and devices | **not on this machine** |
 
 The tests use NUnit, which Unity's test runner also runs, so the core's tests can run there unchanged.
@@ -465,7 +509,8 @@ The tests use NUnit, which Unity's test runner also runs, so the core's tests ca
    - an arena whose certificate was not trusted was refused.
 
    What the real arena cannot be made to do on demand (each kick reason, a broken frame, the resume backoff and its
-   minute) is tested against a scripted arena on a local socket.
+   minute) is tested against a scripted arena on a local socket. Since D-116 (2026-11-25) the drills run the client in
+   clear alone, on Unity 2019's Mono: the TLS run and the untrusted arena are refused (§6).
 3. **The API and the lobby; the headless client goes the whole path.** **Built 2026-09-27.** It logs in over the API,
    authenticates the lobby, asks it for a match, plays past the reward's minimum and leaves; the worker's reward is in
    the inventory within a third of a second. A second sign-in replaces the first lobby connection, which does not come
@@ -559,9 +604,10 @@ layer would otherwise work out for itself. **Built 2026-10-04**: `Scene`, `Rende
 
 **(b) The Unity package** (**written 2026-10-04**; compiled as below, and run nowhere). It is
 `client/Unity/com.backend.client`, a UPM package (Unity's package format) of thin scripts over the core. The scripts
-reach the core as the library that `dotnet build` makes (.NET Standard 2.0, D-108), which `client/unity-package.sh`
-copies in. The package's `Runtime/csc.rsp`, beside the assembly definition, gives the scripts `System.Net.Http`,
-which Unity does not reference by default at the .NET 4.x API level (D-113):
+reach the core as its library, which `client/unity-package.sh` compiles with Unity 2019.4's compiler for .NET
+Framework 4.5 and copies in (D-116). Unity 2019 takes that library at its .NET 4.x API level alone. The package's
+`Runtime/csc.rsp`, beside the assembly definition, gives the scripts `System.Net.Http`, which Unity does not reference
+by default at that level (D-113):
 
 | Script | Does |
 |---|---|
@@ -575,15 +621,16 @@ which Unity does not reference by default at the .NET 4.x API level (D-113):
 **Checked here, and not.** The core's additions are checked by its tests. The package's scripts are compiled on this
 machine in two ways:
 
-- **Against stubs** of the Unity API they use (`client/unity-check.sh`): once with no platform defined, once for the
-  editor, and once each with `UNITY_IOS` and `UNITY_ANDROID`, so every branch compiles. The Android plugin's Java is
-  compiled against stubs of the Android API.
+- **Against stubs** of the Unity API they use (`client/unity-check.sh`), by Unity 2019.4's compiler against .NET
+  Framework 4.5's references (D-116): once with no platform defined, once for the editor, and once each with
+  `UNITY_IOS` and `UNITY_ANDROID`, so every branch compiles. The Android plugin's Java is compiled against stubs of
+  the Android API.
 - **By Unity 2019.4.28f1's own compiler, against Unity's own `UnityEngine` assemblies** (`client/unity2019-check.sh`,
   D-108; §6).
 
 These catch the C#'s own mistakes, the core's API misused, and a call that Unity's API does not have. They do **not**
 catch Unity behaving differently from what the scripts expect, which only the editor or a phone can show. The stub
-check compiles against the core's project, not the library in the package, so `unity-package.sh` must copy the
+check compiles the core from its sources, not the library in the package, so `unity-package.sh` must copy the
 library in again whenever the core changes. Nothing here is run in Unity, drawn, touched or put on a phone. The
 package's README says so, and says what the owner checks first in the editor.
 
@@ -621,10 +668,12 @@ client, and does not replace it. Its README is the guide. In short, it has these
 **The main thread.** The API's calls are awaited, and Unity runs the code after an `await` on its main thread. The
 lobby and a match each work on their own thread, and queue what happens. `Update()`, called from a script's `Update`,
 runs every callback on the main thread. There is no coroutine, and no `UnityEngine` in `Runtime/`, so the same code
-runs here on Unity's Mono and on .NET 8.
+runs here on Unity's Mono, outside the editor.
 
-- The API's HTTPS is checked on Unity's Mono alone, because .NET 8's `HttpClient` does not call the app's
-  certificate check (D-112).
+- Both trees target .NET Framework 4.5 and are compiled at Unity's .NET 4.x level, the one a project uses (D-116).
+- Everything is checked on Unity's Mono. The API's HTTPS, the lobby's `wss://` and a match's TLS are checked offline,
+  against `openssl s_server` at TLS 1.0. Live, the simple clients run in clear alone: Mono's own TLS stops at 1.0, and
+  nginx takes 1.2 and 1.3. Until D-116 the TLS ways ran live on .NET 8.
 - The lobby keeps its own WebSocket. At Unity's API levels, .NET's `ClientWebSocket` has no certificate check to
   set; and on Unity 2019's Mono it ignores the app's check too, and refuses the backend's certificate (a probe,
   2026-11-25).
@@ -651,9 +700,9 @@ It is the same three clients with no TLS at all, in six files (no `TrustRoot`). 
 
 `ArenaMessages` and `Json` are `client-simple`'s, byte for byte. `client-simple/check.sh` checks this client too
 (`NO_TLS=1`): the check program's TLS checks are left out, and a stand-in for nginx answers the request, and refuses
-it. `SIMPLE=1` drills it live, straight to the processes and through nginx's port 80 in every way, with its match
-going through `/match/` where the grant asks for TLS. The full client and `client-simple` keep port 9001 with TLS:
-`/match/` is for this client alone.
+it. `SIMPLE=1` drills it live, straight to the processes and through nginx's port 80 (`FRONT=http`, `FRONT=plain`),
+with its match going through `/match/` where the grant asks for TLS. `client-simple` keeps port 9001 with TLS. The
+full client takes `/match/` too, when its API is in clear (§3, D-116).
 
 **Three clients to keep in step.** A protocol version, a message or a field changes in both simple clients and in the
 core. `headless-drill.sh SIMPLE=1` runs the simple clients against the drill's own stack, so a change that breaks them

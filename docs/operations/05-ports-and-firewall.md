@@ -506,7 +506,7 @@ These ports are on a developer's machine, not on A, B or C. All of them are boun
 | 5005 to 5009 | the debugger, one port per process | `DEBUG=1 ./run-local.sh start` ([development/05](../development/05-vscode.md)) |
 | 6390, 6392, 8093, 8094, 9011, 9195 to 9199, 3307, 3308 | the live drill's processes, MySQL servers and metrics | `client/headless-drill.sh` |
 | 9193, 9194 | with `IDLEGUEST=1`, a second worker's metrics; with `WATCH=1`, the drill's receiver of alerts | `client/headless-drill.sh` |
-| 8095, 8096, 9095, every IPv4 address | with `FRONT=https`, `http` or `plain`, the drill's own nginx, as `dev-nginx.sh` sets it up: 8095 for 80, 8096 for 443, 9095 for 9001 (D-107) | `client/headless-drill.sh` |
+| 8095, 8096, 9095, every IPv4 address | with `FRONT=http` or `plain`, the drill's own nginx, as `dev-nginx.sh` sets it up: 8095 for 80, 8096 for 443, 9095 for 9001 (D-107). `FRONT=https` is refused since D-116 | `client/headless-drill.sh` |
 | 3307, 3309 | the backup drill's MySQL servers | `backup-drill.sh` |
 
 The catalogue in [deploy/README](../../backend/deploy/README.md#ports) says which drill uses which port.
@@ -521,7 +521,9 @@ production machine much of it is free on `127.0.0.1`: 3314 always, and on A 6380
 
 **Run as written** by
 [`backend/scripts/check-ports-el9.sh`](../../backend/scripts/README.md#check-ports-el9sh): **on 2026-10-19**, 156
-checks, none failing; **again on 2026-11-25**, with 80 open (D-115), 181 checks, none failing.
+checks, none failing; **again on 2026-11-25**, with 80 open (D-115), 181 checks, none failing. Both runs drove the C#
+client through 443 and 9001, on .NET 8. Since D-116 the check drives it through 80 in clear, on Unity 2019's Mono
+(the C# client's line below).
 - **Where**: Rocky Linux 9.5, which is rebuilt from RHEL 9's sources, with RHEL 9's firewalld (1.3.4), systemd as its
   first process, and no network.
 - **What ran**, from a release built from the code as it is now, each process with the settings the release ships:
@@ -573,10 +575,15 @@ open while the commands ran, went on working after `--reload`; a new one was ref
 - 9001 as `a1.arena.internal` and as `b1.arena.internal`: `Verify return code: 0 (ok)`. As a name the certificate
   does not hold: `62 (hostname mismatch)`. Trusting another root: `21`, refused;
 - `install-certificate.sh --check`: 443 for the address and 9001 for each of the seven names, each `0 (ok)`;
-- **the C# client**, the headless driver from `client/Headless` published for Linux, in the player's namespace: 16
-  scenarios through 443 and 9001, all passed. They were `play`, `resume`, `coldresume`, `badticket`, `lifecycle`,
-  `untrusted`, `lobby`, `duel`, `walkover`, `guest`, `replaced`, `badsession`, `phrase`, `decline`, `party` and
-  `prediction`. `replaced` failed in the first run; that is [T-60](../defects.md#4-concurrency), fixed;
+- **the C# client**, the headless driver from `client/Headless` published for Linux on .NET 8, in the player's
+  namespace: 16 scenarios through 443 and 9001, all passed. They were `play`, `resume`, `coldresume`, `badticket`,
+  `lifecycle`, `untrusted`, `lobby`, `duel`, `walkover`, `guest`, `replaced`, `badsession`, `phrase`, `decline`,
+  `party` and `prediction`. `replaced` failed in the first run; that is [T-60](../defects.md#4-concurrency), fixed.
+  Since D-116 the check builds the driver for .NET Framework 4.5 and runs it on Unity 2019's Mono, through 80 in
+  clear: `http://`, `ws://`, and matches by `/match/` and the arena's name. It plays the same scenarios but
+  `untrusted`, fifteen: Mono's own TLS stops at 1.0, and nginx's is 1.2 and 1.3. The arenas then log each join from
+  `198.51.100.7` without a port, from nginx's `X-Forwarded-For` (D-115), and `stream.log` holds `openssl s_client`'s
+  connections alone;
 - `stream.log`: every connection reached the arena its name gives, 14 to `a1` (`10.0.0.1:9011`) and 13 to `b1`
   (`10.0.0.2:9011`); a name not in the list reached none;
 - `access.log`: requests served by both machines' platforms and gateways; C's, which ran none, passed over
@@ -610,5 +617,8 @@ code's own rules are checked by their tests: `BACKEND_TRUSTED_PROXIES`, `BACKEND
 - B's and C's own firewalls: their commands were run and their zones read, on A's firewalld;
 - the app in Unity on a phone: the C# core is the app's, and the Unity scripts were compiled against stubs (since
   D-108 also by Unity 2019.4's own compiler, `client/unity2019-check.sh`; the editor and a phone still not);
+- since D-116, by the check as it is now: the C# client through nginx's TLS on 443 and 9001, and the arenas' joins
+  from 9001's PROXY line. Unity's Mono outside the editor speaks TLS 1.0 alone. nginx's TLS stays checked by
+  `openssl s_client`; the C# client's TLS against it is the editor's and the phone's to show;
 - the cost of the front: nginx's TLS for every match byte, and the extra hop, not measured;
 - IPv6 between the machines (the private network was IPv4 here, as in the examples).

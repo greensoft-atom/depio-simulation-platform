@@ -528,6 +528,7 @@ namespace Backend.Client.Core
             if (endpoints == null || endpoints.Count == 0) throw new ArgumentException("at least one endpoint");
             _endpoints = new string[endpoints.Count];
             for (int i = 0; i < endpoints.Count; i++) _endpoints[i] = endpoints[i].TrimEnd('/');
+            TlsVersions.ForRequests();          // built for .NET Framework 4.5, a request offers TLS 1.0 alone (D-116)
             _http = handler == null ? new HttpClient() : new HttpClient(handler);
             // A login may queue behind Argon2 for a while: 10 s is what a client allows (04 §1).
             _http.Timeout = timeout ?? TimeSpan.FromSeconds(10);

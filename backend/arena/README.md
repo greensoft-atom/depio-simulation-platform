@@ -328,14 +328,16 @@ Then run the drills from the repository's root:
 
 ```bash
 TMPDIR=<scratchpad> client/headless-drill.sh play resume coldresume duel tag maze sandbox
-TLS=1 TMPDIR=<scratchpad> client/headless-drill.sh play untrusted
+FRONT=http TMPDIR=<scratchpad> client/headless-drill.sh play duel   # through nginx's 80: matches by /match/ (D-115)
 DRAIN_AFTER=20 TMPDIR=<scratchpad> client/headless-drill.sh duel     # stop the arena mid-duel: it drains
 BOTS=300:120 TMPDIR=<scratchpad> client/headless-drill.sh            # the load run
 ```
 
 The drill runs the arena on 9011, with its metrics on 9197, against j-redis on 6390. Its scenarios are listed in
-the repository's CLAUDE.md. Measure what a change costs the tick or the payload with `tools/TickBenchmark`
-([tools](../tools/README.md#tickbenchmark)).
+the repository's CLAUDE.md. Its client runs on Unity 2019's Mono, whose own TLS stops at 1.0, so the drill is in
+clear alone: `TLS=1`, the arena serving TLS from its own keystore, is refused, and `untrusted` with it (D-116). That
+TLS is `ArenaTlsTest`'s and `ArenaServerTest`'s. Measure what a change costs the tick or the payload with
+`tools/TickBenchmark` ([tools](../tools/README.md#tickbenchmark)).
 
 ## Tests
 

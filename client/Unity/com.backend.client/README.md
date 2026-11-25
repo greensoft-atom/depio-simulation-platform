@@ -12,14 +12,15 @@ is drawn in [docs/diagrams/06-client.md](../../../docs/diagrams/06-client.md).
 
 **The package.** It is a UPM (Unity Package Manager) package, `com.backend.client` 0.1.0, for Unity 2019.4 LTS and
 later, with no package dependencies. D-108: Unity 2019.4.28f1's own compiler compiles its scripts and the core
-against Unity's own assemblies (`../../unity2019-check.sh`).
+against Unity's own assemblies (`../../unity2019-check.sh`). It needs the **.NET 4.x** API level: the core is .NET
+Framework 4.5, which Unity 2019 does not take at .NET Standard 2.0 (D-116).
 
 - Its assembly definition is `Backend.Client.Unity`. It references the core as the precompiled
   `Backend.Client.Core.dll` in `Runtime/Plugins/`. `client/unity-package.sh` builds that library and copies it in;
   git does not keep it.
 - `Runtime/csc.rsp`, beside the assembly definition, is one line: `-r:System.Net.Http.dll`. It gives the package's
   assembly `System.Net.Http`. The scripts need it at Unity's .NET 4.x API level, where Unity does not reference it by
-  default, and it does no harm at .NET Standard 2.0. Unity reads a `csc.rsp` in an assembly definition's folder for
+  default. Unity reads a `csc.rsp` in an assembly definition's folder for
   that assembly alone, so you do not copy anything into `Assets/` (D-113, P-66).
 
 ## What was checked, and what was not
@@ -31,7 +32,7 @@ Unity editor (it needs a licence). It does have Unity 2019.4's own compiler and 
 |---|---|
 | The core: the scene at a render tick, the sticks, the account kept, and all it did before | its tests (`client/Core.Tests`), and the live drills against the real servers |
 | These scripts compile, in each platform branch | `client/unity-check.sh`: the C# against stubs of the Unity API that the scripts use, written to Unity's signatures, for no platform, the editor, iOS and Android; the Android plugin's Java against stubs of the Android API ([UnityCheck](../../UnityCheck/README.md)) |
-| These scripts and the core in Unity 2019.4's own terms | `client/unity2019-check.sh`: Unity 2019.4.28f1's compiler against its own `UnityEngine` and references, at .NET Standard 2.0 and .NET 4.x, in each platform branch, with `Runtime/csc.rsp` as Unity reads it, and refused at .NET 4.x without it. The core and its tests run on Unity's Mono (D-108, D-113) |
+| These scripts and the core in Unity 2019.4's own terms | `client/unity2019-check.sh`: Unity 2019.4.28f1's compiler, the core for .NET Framework 4.5, and the scripts against its own `UnityEngine` and references at the .NET 4.x level, in each platform branch, with `Runtime/csc.rsp` as Unity reads it, and refused without it. The core and its tests run on Unity's Mono (D-108, D-113, D-116) |
 
 **Not checked:**
 
@@ -40,6 +41,8 @@ Unity editor (it needs a licence). It does have Unity 2019.4's own compiler and 
 - the iOS plugin, which only Xcode compiles;
 - the keychain and the keystore on a device;
 - TLS through Unity's own TLS on a device;
+- the core's TLS against nginx: the drills here drive the client in clear, as Unity's Mono outside the editor speaks
+  TLS 1.0 alone (D-116);
 - the frame time on a phone.
 
 The checks compile against the core's project, not against the library in `Runtime/Plugins/`. So copy the library
@@ -60,12 +63,13 @@ in again (`client/unity-package.sh`) whenever the core changes.
    `Backend.Client.Core.dll` into `Runtime/Plugins/`, where the assembly definition names it. Run it again whenever
    the core changes.
 2. **Add the package.** In Unity 2019.4 LTS or later: Window, Package Manager, **+**, Add package from disk, and
-   choose this folder's `package.json`. Either API compatibility level works: the package's `Runtime/csc.rsp` gives
-   its scripts `System.Net.Http` at .NET 4.x by itself.
+   choose this folder's `package.json`. Then set the Api Compatibility Level to **.NET 4.x** (Edit, Project Settings,
+   Player, Other Settings): Unity 2019 takes the core's library at that level alone (D-116). The package's
+   `Runtime/csc.rsp` gives its scripts `System.Net.Http` there by itself.
 3. **Add the backend's root certificate.** Copy the backend's `ca.pem` (from `private-ca.sh`,
    [operations/06](../../../docs/operations/06-certificates.md)) into `Assets/`, renamed `ca.pem.txt`, so that Unity
-   imports it as a `TextAsset`. The site needs it: its certificates come from the backend's own CA (certificate
-   authority), and its matches always use TLS.
+   imports it as a `TextAsset`. The site needs it for TLS (`https://`, `wss://` and a match on 9001): its certificates
+   come from the backend's own CA (certificate authority).
 4. **Build the scene.** Add these objects:
    - an object with **BackendClient**, at the scene's root. Set **Api Endpoints** (the API's endpoints, tried in
      turn, as `https://203.0.113.10`, the site's public address), **Lobby Url** (the lobby's `wss://` address, whose
@@ -88,14 +92,16 @@ in again (`client/unity-package.sh`) whenever the core changes.
 only for an object at the scene's root, so put it on one.
 
 **Without TLS** (D-115): any build connects the way it is set up. Give `http://` endpoints and a `ws://` lobby to
-connect in clear. A grant from the site still asks for TLS on 9001, so a match there still needs the Trusted Root.
-Without TLS, passwords, session tokens and match tickets cross the network in clear.
+connect in clear. A grant from the site asks for TLS on 9001, by the arena's name. With `http://` endpoints,
+`BackendClient` takes the match through the site's 80 instead, by that name, in clear (`MatchSettings.SiteFor`,
+D-116), so it needs no Trusted Root. Without TLS, passwords, session tokens and match tickets cross the network in
+clear.
 
 ## The scripts
 
 | Script | What it does |
 |---|---|
-| `BackendClient` | Owns the core's objects. It dials what its settings give, `https://` and `wss://` or `http://` and `ws://`, in any build (D-115). `SignIn()` signs in by `AccountKeeper`. `Update` completes the sign-in, or puts its failure in `Problem` so that Play is offered again. A session that ends (`InvalidSession`: expired, or revoked by an operator) is reported and signed out the same way. `Update` also pumps the lobby, takes a grant from it (`TakeGrant`, which sets the lobby's queue back to "none") and joins it, pumps the match, feeds a `RenderClock` (a new one for each world) and builds the `Scene`. A match that has ended leaves how it ended in `LastEnd`. `OnApplicationPause` is the match's lifecycle. Other calls: `PlayNow()`, `Queue(mode)`, `DeleteAccount()` |
+| `BackendClient` | Owns the core's objects. It dials what its settings give, `https://` and `wss://` or `http://` and `ws://`, in any build (D-115). With an `http://` API, a match goes through the site's 80 by the arena's name (D-116). `SignIn()` signs in by `AccountKeeper`. `Update` completes the sign-in, or puts its failure in `Problem` so that Play is offered again. A session that ends (`InvalidSession`: expired, or revoked by an operator) is reported and signed out the same way. `Update` also pumps the lobby, takes a grant from it (`TakeGrant`, which sets the lobby's queue back to "none") and joins it, pumps the match, feeds a `RenderClock` (a new one for each world) and builds the `Scene`. A match that has ended leaves how it ended in `LastEnd`. `OnApplicationPause` is the match's lifecycle. Other calls: `PlayNow()`, `Queue(mode)`, `DeleteAccount()` |
 | `WorldView` | Draws the `Scene` in `LateUpdate`: one pooled `SpriteRenderer` for each handle, placed, turned and sized. The world's y grows down and Unity's grows up; this script, and no other, turns it over |
 | `TouchControls` | The left half of the screen moves and the right half aims and fires (`TouchSticks`). Each stick is where its thumb lands, and its reach is 0.12 of the screen's height. Keys (W A S D) and the mouse in the editor and a desktop build. It calls `SetInput` every frame |
 | `FollowCamera` | An orthographic camera on the own tank, 1 600 world units high |

@@ -1,12 +1,13 @@
 #!/bin/bash
-# The client as Visual Studio 2019 builds it (D-108, docs 08 §6): Microsoft's SDK images whose MSBuild and Roslyn are
-# a VS 2019's, 16.11 (the .NET 5 SDK, MSBuild 16.11, Roslyn 3.11) and 16.7 (the .NET Core 3.1 SDK), each building,
-# warnings as errors: the core's project (.NET Standard 2.0); its sources in a .NET Framework 4.7.1 library at C# 7.3,
-# against Microsoft's 4.7.1 reference assemblies; a 4.7.1 app referencing the core's project; Unity 2019.4's
-# project as VS 2019 compiles it (4.7.1, C# 7.3, Unity's UnityEngine assemblies, the package's scripts, each
-# platform branch); and Backend.Client.sln, the client's one solution, VS 2019's (all four projects, D-109: the core,
-# UnityCheck, the tests and the headless driver, the last two .NET Framework 4.7.1 under VS 2019). Needs docker, the network once (the images, the reference assemblies' package) and
-# Unity 2019.4.28f1's editor in work/unity (unity2019-check.sh fetches it). Nothing run on .NET Framework itself.
+# The client as Visual Studio 2019 builds it (D-108, D-116, docs 08 §6): Microsoft's SDK images whose MSBuild and
+# Roslyn are a VS 2019's, 16.11 (the .NET 5 SDK, MSBuild 16.11, Roslyn 3.11) and 16.7 (the .NET Core 3.1 SDK), here as
+# VS 2019's build tools alone (nothing targets or runs on them), each building, warnings as errors: the core's project,
+# .NET Framework 4.5, against Microsoft's 4.5 reference assemblies; a 4.5 app referencing it; Unity 2019.4's project as
+# VS 2019 compiles it (4.7.1, Unity's .NET 4.x level, C# 7.3, Unity's UnityEngine assemblies, the package's scripts,
+# each platform branch); and Backend.Client.sln, the client's one solution, VS 2019's (all four projects, D-109: the
+# core, UnityCheck, the tests and the headless driver, every one .NET Framework 4.5, D-116). Needs docker, the network
+# once (the images, the reference assemblies' and the tests' packages) and Unity 2019.4.28f1's editor in work/unity
+# (unity-env.sh fetches it). Nothing run on .NET Framework itself.
 #
 #   client/vs2019-check.sh
 set -u
@@ -37,21 +38,13 @@ run() {
     else echo "  FAIL $what"; grep -E 'error|warning' /tmp/log | sed 's|/w/client/||' | sort -u | head -12; FAILS=$((FAILS + 1)); fi
 }
 REFS='<PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />'
-run "the core's project, .NET Standard 2.0" dotnet build Core/Backend.Client.Core.csproj -c Release -warnaserror
-mkdir -p vs/fx vs/app vs/unity
-cat > vs/fx/Fx.csproj << EOF
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net471</TargetFramework><LangVersion>7.3</LangVersion><AssemblyName>Backend.Client.Core</AssemblyName>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup>
-  <ItemGroup><Compile Include="../../Core/*.cs" /><Reference Include="System.Net.Http" />$REFS</ItemGroup>
-</Project>
-EOF
-run "its sources in a .NET Framework 4.7.1 library, C# 7.3" dotnet build vs/fx/Fx.csproj -c Release
+run "the core's project, .NET Framework 4.5" dotnet build Core/Backend.Client.Core.csproj -c Release -warnaserror
+mkdir -p vs/app vs/unity
 cat > vs/app/App.csproj << EOF
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net471</TargetFramework><LangVersion>7.3</LangVersion><OutputType>Exe</OutputType>
+  <PropertyGroup><TargetFramework>net45</TargetFramework><LangVersion>7.3</LangVersion><OutputType>Exe</OutputType>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
-  <ItemGroup><ProjectReference Include="../../Core/Backend.Client.Core.csproj" />$REFS</ItemGroup>
+  <ItemGroup><ProjectReference Include="../../Core/Backend.Client.Core.csproj" /><Reference Include="System.Net.Http" />$REFS</ItemGroup>
 </Project>
 EOF
 cat > vs/app/App.cs << 'EOF'
@@ -72,7 +65,7 @@ class App
     }
 }
 EOF
-run "a .NET Framework 4.7.1 app referencing the core's project" dotnet build vs/app/App.csproj -c Release
+run "a .NET Framework 4.5 app referencing the core's project" dotnet build vs/app/App.csproj -c Release
 cat > vs/unity/Unity.csproj << EOF
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- As Unity 2019.4 generates for Visual Studio: .NET Framework 4.7.1, C# 7.3, UnityEngine, the package's scripts.
@@ -82,6 +75,8 @@ cat > vs/unity/Unity.csproj << EOF
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems><DefineConstants>\$(Defines)</DefineConstants></PropertyGroup>
   <ItemGroup><Compile Include="../../Unity/com.backend.client/Runtime/*.cs" />
     <ProjectReference Include="../../Core/Backend.Client.Core.csproj" />
+    <!-- The package's csc.rsp's reference, which the project Unity generates carries (D-113). -->
+    <Reference Include="System.Net.Http" />
     <Reference Include="/unity/Managed/UnityEngine/*.dll" />$REFS</ItemGroup>
 </Project>
 EOF

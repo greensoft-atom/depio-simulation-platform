@@ -13,7 +13,7 @@ namespace Backend.Client.Unity
     public sealed class BackendClient : MonoBehaviour
     {
         [Tooltip("The platform API's endpoints, tried in turn, as https://203.0.113.10: the site's public address (D-82)")]
-        [SerializeField] private string[] apiEndpoints = Array.Empty<string>();
+        [SerializeField] private string[] apiEndpoints = new string[0];        // Array.Empty is 4.6's (D-116)
         [Tooltip("The lobby's WebSocket, as wss://203.0.113.10/lobby")]
         [SerializeField] private string lobbyUrl = "";
         [Tooltip("The backend's root certificate, ca.pem from scripts/private-ca.sh: trusted alone, for the API, the "
@@ -137,6 +137,8 @@ namespace Backend.Client.Unity
                 {
                     Host = grant.ArenaHost, Port = grant.ArenaPort, Tls = grant.Tls, TlsName = grant.TlsName,
                     Trust = _trust,
+                    // In clear (an http:// API) the site's 80, by the arena's name: its 9001 speaks TLS alone (D-116).
+                    Site = MatchSettings.SiteFor(Api.Current, grant.Tls, grant.TlsName),
                 }, _clock);
                 Match.Join(grant.TicketId);
             }

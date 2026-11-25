@@ -3795,3 +3795,63 @@ as they are for the clients with TLS.
 - The arenas' names move from `backend-stream.conf`'s map to a file of their own, which the scripts and guides that
   edit the map now edit instead.
 - Not checked, as there is no Unity here: whether Android lets the app's own sockets send in clear.
+
+### D-116 — The client on .NET Framework 4.5 alone, built and run here without .NET 8, and driven in clear
+
+**Decided 2026-11-25** (plan item 140; the owner: .NET Framework 4.5 and .NET Standard 1.1 as the main targets, not
+sure about modern .NET; then, asked: .NET Framework 4.5 alone, .NET 8 removed everywhere, and the drills' C# client on
+Unity 2019's Mono, with no drill through nginx's TLS). **Supersedes** the .NET Standard 2.0 target of
+[D-108](#d-108--the-client-for-unity-20194-and-net-framework-c-73-a-certificate-check-of-its-own-an-rsa-root), the
+.NET Framework 4.7.1 and .NET 8 builds of
+[D-109](#d-109--every-client-project-in-visual-studio-2019-c-73-the-tests-and-the-driver-on-net-framework-471-as-well),
+and the .NET Standard 2.0 level of
+[D-111](#d-111--a-simple-client-beside-the-core-client-simple-three-small-clients-on-net-standard-20-examples-in-unitys-terms).
+
+**Decision.**
+- **Every C# project and tree targets .NET Framework 4.5**, C# 7.3 as before: the core, its tests, the headless
+  driver and UnityCheck (`Backend.Client.sln`, VS 2019's), `client-simple` and `client-simple-no-tls`. No API above
+  4.5: the root's RSA key through `PublicKey.Key` and `RSACryptoServiceProvider.VerifyData(…, "SHA256", …)`, where
+  `GetRSAPublicKey` and `HashAlgorithmName` are 4.6's; empty arrays of the core's own, where `Array.Empty` is 4.6's.
+  Unity 2019 takes the core's assembly at its .NET 4.x API level; the package says so. The core takes no package;
+  its tests and the headless driver take `System.ValueTuple` (their tuples; .NET Framework 4.5 has none), which
+  ships in no app.
+- **TLS 1.2 asked for by name.** An assembly built for .NET Framework 4.5 gets TLS 1.0 by default, which nginx refuses:
+  the core's sockets ask for TLS 1.2, 1.1 and 1.0 (`SslProtocols`), and its API requests add TLS 1.2 and 1.1 to
+  `ServicePointManager.SecurityProtocol`. nginx then chooses 1.2, the highest both speak: .NET Framework 4.5 has no
+  TLS 1.3.
+- **Not .NET Standard 1.1**: it has no sockets, no TLS stream and no threads (`System.Net.Sockets` and `SslStream`
+  are .NET Standard 1.3's, `Thread` 2.0's), which a match connection and the lobby's own WebSocket need.
+- **.NET 8 nowhere.** No project targets it, and nothing here runs on it. Here every C# build is Unity 2019.4.28f1's
+  compiler (Roslyn 2.9.1) against Mono's .NET Framework 4.5 reference assemblies, and every run is Unity's Mono 5.11:
+  the core's tests (by NUnitLite, `client/core-tests.sh`), the headless driver in the drills and in the checks'
+  containers, and the simple clients' checks. VS 2019 builds the solution on Windows (`vs2019-check.sh` shows it, with
+  VS 2019's own MSBuild). The one modern .NET left is that check's: VS 2019's MSBuild 16.11 and 16.7 reach Linux only
+  inside Microsoft's .NET 5 and .NET Core 3.1 SDK images, taken in a container as build tools alone; nothing
+  targets them, nothing runs on them, and nothing they build ships.
+- **The full client takes a match through the site's 80** as `client-simple-no-tls` does (D-115): given an API in clear
+  (`http://`) and a grant that names a TLS name, it asks the front for the arena by name, `GET /match/<name>`, and
+  plays the match on that connection once nginx answers 101. A client given `https://` dials the grant's 9001 with TLS,
+  as before.
+- **The C# client is driven in clear.** Unity's Mono outside the editor speaks TLS 1.0 alone, and nginx 1.2 and 1.3,
+  so nothing drives the C# client through nginx's TLS here: the drills drive it straight to the processes, through
+  `FRONT=plain` (D-101) and through `FRONT=http`, all on 80; `TLS=1` and `FRONT=https` are refused, `untrusted` with
+  them; the checks in containers drive it through the site's 80. The core's TLS stays tested between its own two ends,
+  at TLS 1.0 on Unity's Mono.
+
+**Why.** The owner's team works on .NET Framework 4.5, Visual Studio 2019 and Unity 2019, and is unsure of modern
+.NET: a client that asks for no runtime newer than theirs, and is never run on one here.
+
+**Not chosen** (each offered to the owner):
+- **.NET Standard 1.1**, for the reason above; nor a split of the core into logic on 1.1 and its sockets on 4.5.
+- **.NET Framework 4.5 and .NET Standard 2.0 both**: the owner chose 4.5 alone.
+- **A newer Mono, 6.8 or 6.12, for the drills**, which speaks TLS 1.2; **or .NET 8 for the TLS drills alone**.
+
+**Cost.**
+- Unity 2019 at its .NET Standard 2.0 API level cannot take the core's assembly: a project there switches to .NET 4.x
+  (Player settings, Api Compatibility Level).
+- What only .NET 8 checked here is checked no more: the name a client's TLS handshake gives, seen by a server
+  (`TrustRootTests`), and the C# client through nginx's TLS on 443 and 9001 (`TLS=1`, `FRONT=https`, the TLS legs of
+  `check-ports-el9.sh` and `check-two-machines-el9.sh`). nginx's TLS stays checked by `openssl s_client` in those
+  checks; the C# client's TLS against nginx is the editor's and the phone's to show.
+- The TLS 1.2 asked for on .NET Framework itself is not run here: no .NET Framework on Linux.
+- A build here needs Unity's editor in `work/unity` (1.8 GB, fetched once) where it needed .NET 8 in `/opt/dotnet`.

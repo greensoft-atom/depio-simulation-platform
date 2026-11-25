@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 
 namespace Backend.Client.Core
@@ -67,6 +68,20 @@ namespace Backend.Client.Core
         public TrustRoot Trust;
         /// <summary>The most this client wants sent (02 §8), or -1 for the server's default.</summary>
         public int Profile = -1;
+        /// <summary>
+        /// The site's API in clear, <c>http://203.0.113.10</c>: the match asked for through its 80 by the arena's name,
+        /// <see cref="TlsName"/>, and played in clear on that connection, as nginx passes it (D-115, D-116); not
+        /// <see cref="Host"/>, <see cref="Port"/> or <see cref="Tls"/>. Null: those are dialled, as the grant says.
+        /// </summary>
+        public string Site;
+
+        /// <summary>
+        /// The <see cref="Site"/> a grant is played through (D-116): the API it came from, when that is in clear and the
+        /// grant asks for TLS by an arena's name, as the site's are; else null, the grant's own address dialled.
+        /// </summary>
+        public static string SiteFor(string api, bool tls, string tlsName) =>
+            tls && !string.IsNullOrEmpty(tlsName) && api != null && api.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                ? api.TrimEnd('/') : null;
     }
 
     /// <summary>
@@ -475,6 +490,8 @@ namespace Backend.Client.Core
             private readonly FrameReader _frames = new FrameReader();
             // Made here, before the thread: a Close that comes before the thread has dialled closes it too, where
             // one made on the thread was left open (client review, 2026-10-04).
+            /// <summary>The most of the site's answer read for a match, as client-simple-no-tls reads.</summary>
+            private const int SiteAnswerMax = 4096;
             private readonly TcpClient _tcp = new TcpClient { NoDelay = true };
             private volatile bool _connected, _closed, _leaving;
             private Timer _linger;
@@ -495,15 +512,23 @@ namespace Backend.Client.Core
             {
                 try
                 {
-                    _tcp.Connect(_settings.Host, _settings.Port);
-                    Stream stream = _tcp.GetStream();
-                    if (_settings.Tls)
+                    Stream stream;
+                    if (_settings.Site != null)
+                    {
+                        stream = ThroughSite();
+                    }
+                    else
+                    {
+                        _tcp.Connect(_settings.Host, _settings.Port);
+                        stream = _tcp.GetStream();
+                    }
+                    if (_settings.Tls && _settings.Site == null)
                     {
                         // Checked against the name the grant gives, whatever address was dialled: behind the front
                         // (D-82) its tlsName, which is also what the handshake sends and nginx routes by.
                         string name = _settings.TlsName ?? _settings.Host;
                         var tls = new SslStream(stream, false, _settings.Trust?.CheckFor(name));
-                        tls.AuthenticateAsClient(name);
+                        tls.AuthenticateAsClient(name, null, TlsVersions.Client, false);   // 1.2 by name (D-116)
                         stream = tls;
                     }
                     Stream = stream;
@@ -522,6 +547,39 @@ namespace Backend.Client.Core
                 }
                 if (_leaving) Close();                  // the arena has closed: now this side may
                 _closed = true;
+            }
+
+            /// <summary>
+            /// The site's 80 asked for the arena by its name, and the match played on that connection once nginx answers
+            /// 101 (D-115, D-116), as client-simple-no-tls asks. The answer is read a byte at a time to its blank line:
+            /// what follows it is the arena's.
+            /// </summary>
+            private Stream ThroughSite()
+            {
+                if (string.IsNullOrEmpty(_settings.TlsName))
+                    throw new InvalidOperationException("a match through the site needs the arena's name, the grant's tlsName");
+                var site = new Uri(_settings.Site);
+                if (site.Scheme != Uri.UriSchemeHttp)
+                    throw new InvalidOperationException("a match through the site is asked for in clear, http://, not " + _settings.Site);
+                _tcp.Connect(site.Host, site.Port);
+                Stream stream = _tcp.GetStream();
+                byte[] request = Encoding.ASCII.GetBytes("GET /match/" + _settings.TlsName + " HTTP/1.1\r\nHost: " + site.Authority
+                    + "\r\nConnection: Upgrade\r\nUpgrade: backend-match\r\n\r\n");
+                stream.Write(request, 0, request.Length);
+                var head = new StringBuilder();
+                while (head.Length < 4 || head[head.Length - 4] != '\r' || head[head.Length - 3] != '\n'
+                       || head[head.Length - 2] != '\r' || head[head.Length - 1] != '\n')
+                {
+                    if (head.Length >= SiteAnswerMax) throw new IOException("the site's answer to the match is over " + SiteAnswerMax + " bytes");
+                    int b = stream.ReadByte();
+                    if (b < 0) throw new IOException("the site closed without answering the match");
+                    head.Append((char)b);
+                }
+                string answer = head.ToString();
+                string status = answer.Substring(0, answer.IndexOf("\r\n", StringComparison.Ordinal));
+                if (!status.StartsWith("HTTP/1.1 101 ", StringComparison.Ordinal))
+                    throw new IOException("the site refused the match: " + status);
+                return stream;
             }
 
             /// <summary>

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Checks docs/operations/05-ports-and-firewall.md and 06-certificates.md as written (D-82): the site behind one
 # public address, nginx on the front ending TLS on 443 and 9001 and serving 80 in clear (D-115), two machines'
-# platforms, gateways and arenas behind it on the private network, and the C# client playing through it, trusting
-# the backend's own root alone.
+# platforms, gateways and arenas behind it on the private network, and the C# client playing through its 80, in clear
+# on Unity 2019's Mono (D-116); 443's and 9001's TLS checked by openssl s_client, trusting the backend's root alone.
 # In Rocky Linux 9.5 (RHEL 9's firewalld), systemd its first process, with no network:
 #   - A, the front here (10.0.0.1, and the public 198.51.100.1): MySQL with TLS (01 §9), the session store, the
 #     platform, the gateway, the arena a1 and nginx, from a release with the settings it ships; and two of C's,
@@ -13,9 +13,10 @@
 # 05 §5's commands for A, taken from the page, seen stopped, as RHEL 9 has it, and after; then B's and C's, and
 # the install guide's §12, each on a firewall as RHEL 9 has it.
 #
-#   scripts/check-ports-el9.sh      from backend/, after make-release.sh. Needs docker, .NET 8 (DOTNET, default
-#                                   /opt/dotnet/dotnet) to publish the C# headless client self-contained, and the
-#                                   network once, to build the image. About ten minutes.
+#   scripts/check-ports-el9.sh      from backend/, after make-release.sh. Needs docker, Unity 2019.4's editor in
+#                                   work/unity (client/unity-env.sh fetches it), which builds the C# headless client for
+#                                   .NET Framework 4.5 and runs it, and the network once, to build the image. About ten
+#                                   minutes.
 #
 # The processes run as root, not as their users, with small heaps: neither changes where they listen.
 set -u
@@ -24,15 +25,12 @@ if [ "${1:-}" != --inside ]; then
     REPO=$(cd "$HERE/../.." && pwd)
     REL=$(ls -d "$REPO"/backend/target/release/backend-*/ 2> /dev/null | head -1)
     [ -n "$REL" ] || { echo "no release in backend/target/release: scripts/make-release.sh first" >&2; exit 1; }
-    # The documented .NET 8 first, /opt/dotnet, where it is (O-81).
-    DOTNET=${DOTNET:-$( { [ -x /opt/dotnet/dotnet ] && echo /opt/dotnet/dotnet; } || command -v dotnet || echo /opt/dotnet/dotnet)}
-    [ -x "$DOTNET" ] || { echo "no .NET 8 at $DOTNET (DOTNET=...): it publishes the C# client" >&2; exit 1; }
     WORK=$(mktemp -d "${TMPDIR:-/tmp}/check-ports.XXXXXX")
     trap 'rm -rf "$WORK"' EXIT
-    echo "--- publishing the C# headless client, self-contained for linux-x64"
-    DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1 "$DOTNET" publish "$REPO/client/Headless/Backend.Client.Headless.csproj" \
-        -c Release -f net8.0 -r linux-x64 --self-contained true -p:InvariantGlobalization=true -o "$WORK/headless" \
-        > "$WORK/publish.log" 2>&1 || { tail -20 "$WORK/publish.log"; exit 1; }
+    # The C# headless client for .NET Framework 4.5, by Unity 2019's compiler, run in the container on its Mono (D-116).
+    . "$REPO/client/unity-env.sh" || { echo "no Unity 2019.4 editor for the C# client" >&2; exit 1; }
+    echo "--- building the C# headless client, .NET Framework 4.5, for Unity 2019's Mono"
+    build_headless "$WORK/headless" || exit 1
     IMAGE=backend-check-ports-el9
     docker build -q -t "$IMAGE" - > /dev/null <<'EOF' || exit 1
 FROM rockylinux/rockylinux:9.5
@@ -45,7 +43,7 @@ EOF
         -v "$REPO/docs/operations/03-install-guide.md:/check/install.md:ro" \
         -v "$REPO/docs/operations/10-two-machines.md:/check/two.md:ro" \
         -v "$REPO/backend/scripts/private-ca.sh:/check/private-ca.sh:ro" \
-        -v "$WORK/headless:/check/headless:ro" \
+        -v "$WORK/headless:/check/headless:ro" -v "$U/MonoBleedingEdge:/check-mono:ro" \
         -v "$HERE/check-ports-el9.sh:/check.sh:ro" "$IMAGE" > /dev/null || exit 1
     # Stopped on every way out, an interrupt too: the docker client exits, and the container went on (O-78).
     trap 'docker stop "$NAME" > /dev/null 2>&1; rm -rf "$WORK"' EXIT
@@ -376,13 +374,14 @@ expect "9001, trusting another root" "a certificate, Verify return code: 21 (una
     || { cat "$L/certificate-check.log"; fail "install-certificate.sh --check"; }
 sed 's/^/      /' "$L/certificate-check.log"
 
-echo "--- the C# headless client, in the player's namespace, through 443 and 9001:"
+echo "--- the C# headless client, in the player's namespace, through 80 in clear, on Unity 2019's Mono (D-116):"
 # The scenarios that need nothing of the drill's (its database helper, its admin token, its catalogue: equip buys
-# the drill's own item); replaced puts two lobby connections on two gateways, as nginx spreads them (T-60).
-SCENARIOS=(play resume coldresume badticket lifecycle untrusted lobby duel walkover guest replaced badsession phrase
+# the drill's own item); replaced puts two lobby connections on two gateways, as nginx spreads them (T-60). Not
+# untrusted: Mono's own TLS stops at 1.0, nginx's is 1.2 and 1.3; a match goes by /match/ and the arena's name.
+SCENARIOS=(play resume coldresume badticket lifecycle lobby duel walkover guest replaced badsession phrase
            decline party prediction)
-ip netns exec player env HOME=/tmp DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 /check/headless/Backend.Client.Headless \
-    "https://$PUB" --lobby "wss://$PUB/lobby" --trust "$CA/ca.pem" --wrong-trust /root/another-ca/ca.pem \
+ip netns exec player env HOME=/tmp MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=/check-mono/lib/mono/unityjit \
+    /check-mono/bin/mono /check/headless/Backend.Client.Headless.exe "http://$PUB" --lobby "ws://$PUB/lobby" \
     "${SCENARIOS[@]}" > "$L/headless.log" 2>&1
 rc=$?
 grep -E '^--- |FAIL|PASSED|FAILED' "$L/headless.log" | sed 's/^/      /' | tail -30
@@ -401,11 +400,12 @@ for pair in "a1.arena.internal 10.0.0.1:9011" "b1.arena.internal 10.0.0.2:9011";
 done
 grep -q '"nope.arena.internal" ' "$STREAM" && ! grep '"nope.arena.internal" ' "$STREAM" | grep -q ' 10\.0\.0\.' \
     && ok "a name not in the list: no arena" || fail "a name not in the list reached one"
-# The arenas know the player's address, from nginx's PROXY line (D-105): the player's namespace's, never nginx's.
-a=$(grep -c 'joined from 198\.51\.100\.7:' "$L/arena-a1.log"); b=$(grep -c 'joined from 198\.51\.100\.7:' "$L/b-arena.log")
-other=$(cat "$L/arena-a1.log" "$L/b-arena.log" | grep 'joined from ' | grep -v 'joined from 198\.51\.100\.7:' | head -1)
+# The arenas know the player's address: through 80, from nginx's X-Forwarded-For, without a port (D-115); the player's
+# namespace's, never nginx's.
+a=$(grep -c 'joined from 198\.51\.100\.7$' "$L/arena-a1.log"); b=$(grep -c 'joined from 198\.51\.100\.7$' "$L/b-arena.log")
+other=$(cat "$L/arena-a1.log" "$L/b-arena.log" | grep 'joined from ' | grep -v 'joined from 198\.51\.100\.7$' | head -1)
 [ $((a + b)) -gt 0 ] && [ -z "$other" ] \
-    && ok "the arenas know the player's address: $a joins on a1, $b on b1, each from 198.51.100.7 (D-105)" \
+    && ok "the arenas know the player's address: $a joins on a1, $b on b1, each from 198.51.100.7 (D-115)" \
     || fail "the player's address in the arenas: $a joins on a1, $b on b1 from it; ${other:-none} otherwise"
 ACCESS=/var/log/backend-nginx/access.log
 for up in 10.0.0.1:8080 10.0.0.2:8080 10.0.0.1:8090 10.0.0.2:8090; do

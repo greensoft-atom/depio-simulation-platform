@@ -157,6 +157,14 @@ namespace Backend.Client.Simple.Check
             ApiCalls(pki);
 
 #if !NO_TLS
+            Section("TLS 1.2 asked for by name, which .NET Framework 4.5 does not give by default (D-116)");
+            SecurityProtocolType had = ServicePointManager.SecurityProtocol;
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls;
+            new BackendHttp("http://127.0.0.1:1");
+            Check(ServicePointManager.SecurityProtocol == (SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12),
+                "the API's requests: TLS 1.2 and 1.1 added to what the process offers");
+            ServicePointManager.SecurityProtocol = had;
+
             Section("the lobby and a match over TLS, each connection checked by the root (D-108)");
             LobbyAndMatchOverTls(pki);
 #else

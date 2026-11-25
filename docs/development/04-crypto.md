@@ -211,7 +211,7 @@ SSLContext client = Tls.client(KeyStores.trustStore(List.of(ca.certificate())));
 | Session tokens, tickets, IDs | `SecureRandom` | `handoff`'s `SessionStore`, `Ticket`, `Ulid` |
 | A guest's key (random, the device's to keep) | kept as its SHA-256 | `platform`'s `AuthService` |
 | The players' TLS for logins, purchases and the lobby | nginx, with OpenSSL 3.5 compiled in, ends TLS on 443 | [09 §5](../detailed-design/09-release-and-packaging.md) |
-| The players' TLS for matches | on the site, nginx ends it on 9001 and passes the match to the arena in clear over the private network (D-82); an arena given a keystore of its own (`BACKEND_ARENA_TLS_KEYSTORE`, as in a drill with `TLS=1`) speaks Java's TLS from a PKCS#12 store | nginx's `backend-stream.conf`; `arena`'s `ArenaTls` |
+| The players' TLS for matches | on the site, nginx ends it on 9001 and passes the match to the arena in clear over the private network (D-82); an arena given a keystore of its own (`BACKEND_ARENA_TLS_KEYSTORE`, as in a drill with `TLS=1` until D-116, which refuses that mode now) speaks Java's TLS from a PKCS#12 store | nginx's `backend-stream.conf`; `arena`'s `ArenaTls` |
 | The site's certificate | a CA of the backend's own: an RSA root of 3072 bits, a certificate of 2048, SHA-256 signatures (D-82, D-108), made with `openssl` | `backend/scripts/private-ca.sh`, [operations/06](../operations/06-certificates.md) |
 | MySQL's TLS | a private CA made with `openssl` | [operations/01 §9](../operations/01-deploy.md) |
 | nginx's certificate's expiry, as a metric | read as X.509 | `gateway`'s `EdgeCertificate` |

@@ -39,9 +39,11 @@ namespace Backend.Client.Core
         public string AsString => Kind == Kinds.String ? _string : null;
         public bool AsBool => Kind == Kinds.Bool && _bool;
         public long AsLong => Kind == Kinds.Number ? (long)_number : 0;
+        private static readonly string[] NoNames = new string[0];      // Array.Empty is 4.6's (D-116)
+
         public int AsInt => (int)AsLong;
         public float AsFloat => Kind == Kinds.Number ? (float)_number : 0f;
-        public IEnumerable<string> Names => Kind == Kinds.Object ? (IEnumerable<string>)_object.Keys : Array.Empty<string>();
+        public IEnumerable<string> Names => Kind == Kinds.Object ? (IEnumerable<string>)_object.Keys : NoNames;
 
         public JsonValue Set(string name, JsonValue value)
         {

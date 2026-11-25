@@ -5,29 +5,38 @@ These are the tests of the client's core, `Backend.Client.Core`
 before and after every change. This page says how to run them, which files they share with the server's tests, which
 scripted servers they use, and what each test file covers.
 
-**What they are.** NUnit tests in C# 7.3, 185 in all: 147 `[Test]` methods, and 38 runs of 5 parameterised methods.
+**What they are.** NUnit tests in C# 7.3 on .NET Framework 4.5 (D-116), 191 in all: 153 `[Test]` methods, and 38
+runs of 5 parameterised methods.
 
 | Where they run | How |
 |---|---|
-| .NET Framework 4.7.1 | Visual Studio 2019 builds them and runs them in its Test Explorer |
-| .NET 8, where MSBuild is 17 or later | this machine: `dotnet test Core.Tests -f net8.0` |
-| Unity 2019.4's own Mono | `../unity2019-check.sh` compiles them with Unity's compiler and runs them there by NUnitLite, with `float32` as Unity's Mono has it (D-109, P-65) |
+| .NET Framework 4.5 | Visual Studio 2019 builds them and runs them in its Test Explorer |
+| Unity 2019.4's own Mono | this machine: `../core-tests.sh` compiles them for .NET Framework 4.5 with Unity's compiler and runs them there by NUnitLite, with `float32` as Unity's Mono has it (D-109, P-65, D-116). `../unity2019-check.sh` runs it too |
+
+Nothing here runs them on .NET 8, or any modern .NET (D-116). So two things are not checked here: the name that a TLS
+handshake gives, as a server sees it (only .NET 8's API showed it), and TLS 1.2 on .NET Framework itself. Unity's
+Mono outside the editor speaks TLS 1.0, so the tests' TLS runs at 1.0.
 
 **Their certificates** are files in `Pki/`, made once by `Pki/make.sh` with openssl. They are RSA, signed as
 `private-ca.sh` signs, and they are test keys only, nothing of the site's. The tests cannot make them at run time:
-.NET Framework 4.7.1 and Unity 2019 have no `CertificateRequest`.
+.NET Framework 4.5 and Unity 2019 have no `CertificateRequest`.
 
-**Packages:** NUnit 3.14.0, NUnit3TestAdapter 4.6.0, Microsoft.NET.Test.Sdk 17.11.1, and
-Microsoft.NETFramework.ReferenceAssemblies 1.0.3 (.NET Framework 4.7.1's reference assemblies, for a machine without
-its targeting pack); and a project reference to `Core`.
+**Packages:** NUnit 3.14.0, NUnit3TestAdapter 3.17.0 and Microsoft.NET.Test.Sdk 16.11.0 (the adapter and the test
+SDK at the last versions that take 4.5), System.ValueTuple 4.5.0 (the tests' tuples, which .NET Framework 4.5 does
+not have), and Microsoft.NETFramework.ReferenceAssemblies 1.0.3 (.NET Framework 4.5's reference assemblies, for a
+machine without its targeting pack); and a project reference to `Core`. `core-tests.sh` does not use the project. It compiles the files
+itself, with NUnit, NUnitLite 3.14.0 and System.ValueTuple from nuget.org, fetched once into `work/unity/nuget`, each
+SHA-256 checked.
 
 ```bash
 cd client
-DOTNET_NOLOGO=1 /opt/dotnet/dotnet test Core.Tests -f net8.0 --logger "console;verbosity=normal"   # read "Total tests:"
+./core-tests.sh                                          # all of them: read "Test Count:"
+TESTS="class =~ MatchConnectionTests" ./core-tests.sh    # some, by an NUnit where-expression
 ```
 
-**Read the total.** `dotnet test` says "Passed!" even when its host process dies part of the way through: it counts
-only the tests that ran. After such a crash, `Total tests:` reads `Unknown`.
+**Read the count.** `core-tests.sh` prints NUnitLite's summary, `Test Count: 191, Passed: 191, Failed: 0, …`, and
+says `CORE TESTS PASSED` only when none failed. A run that dies part of the way through prints no summary; the
+script then says so, and fails.
 
 ## The contract files, linked
 
@@ -47,6 +56,7 @@ The tests do not need a running backend. These helpers play the server's part, o
 | Helper | In | What it is |
 |---|---|---|
 | `FakeArena` | `MatchConnectionTests.cs` | An arena on a loopback socket. It sends what a test scripts (a Welcome, frames, a kick, a close) and records what the client sent: things the real arena cannot be made to do on demand |
+| `SiteFront` | `MatchConnectionTests.cs` | The front's 80 as nginx is for a match (D-115): it reads the request to its blank line, keeps it, answers it, and on a 101 passes bytes between the client and the arena both ways |
 | `ManualClock` | `MatchConnectionTests.cs` | An `IClock` that the test moves by hand, to test backoff, cadence and the resume minute without waiting |
 | `FrameBuilder` | `ClientWorldTests.cs` | Builds snapshot frames field by field |
 | `Hosts` | `ApiClientTests.cs` | An `HttpMessageHandler` that answers by host, with some hosts that cannot be reached: endpoint rotation without a network |
@@ -67,7 +77,7 @@ add, remove or rename a test, update this table in the same change.
 |---|---|---|---|
 | `GoldenVectorTests.cs` | 3 | 2, once for each case in `vectors.txt` | the vector file has its six cases; every decoded field of every case, `motion` included; a frame cut at any byte is refused, not misread; trailing bytes are refused; the world applies every case that starts from nothing, and refuses one from mid-stream |
 | `ClientWorldTests.cs` | 23 | | a create placed in world space, and updates adding up; every update field; a bullet extrapolated from its create, expiring at its lifetime, landing where the server's reference client puts it, and created late; a maze's wall ending a bullet (by its radius, after a move, on its last tick, between frames, created past it, a remove after it, no maze); a remove freeing its handle; units; an update for a handle not held is a desync; events read, an unknown one stepped over, kills and phrases; the seq echo wrapping at 24 bits; motion and skins as state, not events; Java's rounding |
-| `MatchConnectionTests.cs` | 26 | 1, eight rows | each kick's `MatchEnd` (1 to 7, and an unknown reason); `Leave` waiting for the arena's close, and closing after its wait; an arena not reached is not tried again; a lost connection resumed with the latest secret and a fresh world; a cold resume, its stay over, and no arena for the minute; a desync resumed; resume backoff and its minute; input ten a second, with the acknowledgement and the latched fire; the own tank stepped at once; every frame's events told; a phrase; a sandbox's powers, and not before the Welcome; a ping every 10 s in every state, and the round trip; a maze's Welcome giving the world its walls; a silent arena lost in 3 s, a dead player's connection only when its pings go unanswered, a backgrounded one never; dead from the Death to the next tick, though the own tank is never removed; each frame told with its removals; a dial, a handshake and a Join each with a time limit; a credential that cannot be sent refused before dialling |
+| `MatchConnectionTests.cs` | 30 | 1, eight rows | a match through the site's 80 by the arena's name, when it is taken, a site that does not open the tunnel, a site without the arena's name (D-116); each kick's `MatchEnd` (1 to 7, and an unknown reason); `Leave` waiting for the arena's close, and closing after its wait; an arena not reached is not tried again; a lost connection resumed with the latest secret and a fresh world; a cold resume, its stay over, and no arena for the minute; a desync resumed; resume backoff and its minute; input ten a second, with the acknowledgement and the latched fire; the own tank stepped at once; every frame's events told; a phrase; a sandbox's powers, and not before the Welcome; a ping every 10 s in every state, and the round trip; a maze's Welcome giving the world its walls; a silent arena lost in 3 s, a dead player's connection only when its pings go unanswered, a backgrounded one never; dead from the Death to the next tick, though the own tank is never removed; each frame told with its removals; a dial, a handshake and a Join each with a time limit; a credential that cannot be sent refused before dialling |
 | `MessageTests.cs` | 6 | | `Join` with the version first; `Input`'s acknowledgement and little-endian aim; the ping's clock big-endian; the server's messages read; frames split however the bytes arrive; a broken stream refused |
 | `MazeTests.cs` | 3 | | the same walls as the server's for the same seed; a seed of the arena's size; a circle within its radius of a wall |
 | `TankMotionTests.cs` | 2 | 1, three rows | the vector's three cases; every step the same as the room's, bit for bit; the move bits as the room reads them |
@@ -78,7 +88,7 @@ add, remove or rename a test, update this table in the same change.
 | `JsonTests.cs` | 3 | 1, fifteen rows | the API's answers read; escapes, and names in any script, surviving a round trip; what is not JSON refused; nesting limited |
 | `ApiClientTests.cs` | 37 | | endpoints tried in turn, and the one that answered tried first next time; a refusal is an answer, not a reason to try elsewhere, with its `Retry-After`; none answering is unreachable; a POST that timed out is not sent again elsewhere, a read that timed out is; a success that is not JSON is not taken for one; every call's route, method, body and bearer, and its answer read: guests and renames, the class table, the phrase list, the skin table, the shop in coins and gems, purchases, item levels, gems for money and its 503, the season pass, equipment, boosts, teams, applications, tournaments of both kinds and a round robin, the queue, a sandbox, a match asked about, a party, social calls, achievements, goals, seasons and boards; `AccountKeeper`'s first launch, a key refused, the store touched only on the thread that signed in (as Unity's main thread requires), and an account deleted, with a guest's key forgotten with it (D-84) |
 | `LobbyClientTests.cs` | 10 | | after a match the queue is "none" again and a new join is queued; a join's answer that comes late, after a queue push or after a leave, dropped (T-61); a declined match forgotten; a message split inside a character read whole; a lobby that stops answering found lost and dialled again; reconnects spread out, not in step; the core's own WebSocket (D-108): an answer with a wrong `Sec-WebSocket-Accept` refused, and a ping answered with a masked pong carrying its payload; a join refused after a queue push is still the join's refusal, and one left before its refusal is not (T-67) |
-| `TrustRootTests.cs` | 8 | | the backend's root (D-82), checked by the client itself (D-108): a certificate it signed accepted for each name it holds (DNS, IPv4, IPv6); refused when from another root, for another name, expired, not yet valid, signed with SHA-384, altered, or missing; years past 2029 read as written; a root of another key type refused, saying why; the root read from its PEM; a match giving the grant's TLS name in its handshake; the API through `HttpWebRequest` and the lobby over `wss://`, each checked for its own host |
+| `TrustRootTests.cs` | 9 | | TLS 1.2 asked for by name, which .NET Framework 4.5 does not give by default (D-116); the backend's root (D-82), checked by the client itself (D-108): a certificate it signed accepted for each name it holds (DNS, IPv4, IPv6); refused when from another root, for another name, expired, not yet valid, signed with SHA-384, altered, or missing; years past 2029 read as written; a root of another key type refused, saying why; the root read from its PEM; a match checking the arena's certificate for the grant's TLS name, and refused without the name (which name the handshake gives, a server sees on .NET alone, not run here: D-116); the API through `HttpWebRequest` and the lobby over `wss://`, each checked for its own host |
 | `ReadmeTestListTests.cs` | 1 | | this table held to the code (DOC-31): a row for each file with tests, naming it, with its `[Test]` and parameterised methods counted, and no row for a file that is gone |
 
 The headless drills also drive the lobby client against a real gateway
