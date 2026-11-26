@@ -6,22 +6,39 @@ namespace Backend.Client.Simple.Examples
     // are named as the JSON's. A field the JSON lacks keeps its default; JsonUtility writes every field, a null string
     // as "", so a class sent holds only what the request takes. Shapes: docs/api/01-http-api.md, 02-lobby-websocket.md.
 
+    // ---- The account service (its address the site's with /account; docs/detailed-design/10-accounts.md §3.2)
+
+    /// <summary>POST /v1/accounts (sign up) and POST /v1/sessions (log in) at the account service: a name and a password.</summary>
+    [Serializable] public class Credentials { public string username; public string password; }
+
+    /// <summary>
+    /// What the account service answers a sign-up, a login and a refresh, in RFC 6749's names: keep refresh_token on the
+    /// device (it signs the device in again), and take access_token to the API once, for a session (TokenLogin).
+    /// </summary>
+    [Serializable] public class AccountTokens { public string access_token; public string token_type; public int expires_in; public string refresh_token; public string account_id; }
+
+    /// <summary>POST /v1/sessions/refresh (new tokens for it, it spent) and DELETE /v1/sessions (logged out) at the account service.</summary>
+    [Serializable] public class RefreshRequest { public string refresh_token; }
+
     // ---- The API
 
-    /// <summary>POST /v1/accounts: register (then log in with Credentials).</summary>
-    [Serializable] public class Registration { public string username; public string password; public string displayName; }
-
-    /// <summary>POST /v1/sessions with a name and password.</summary>
-    [Serializable] public class Credentials { public string username; public string password; }
+    /// <summary>POST /v1/sessions with the account service's access token, taken once for a session.</summary>
+    [Serializable] public class TokenLogin { public string accessToken; }
 
     /// <summary>POST /v1/sessions for a guest, by its key.</summary>
     [Serializable] public class GuestLogin { public string guestKey; }
 
-    /// <summary>POST /v1/guests answers it: keep guestKey on the device, it is the account.</summary>
+    /// <summary>POST /v1/guests answers it: keep guestKey on the device, it is the guest.</summary>
     [Serializable] public class Guest { public long playerId; public string guestKey; public string displayName; }
 
-    /// <summary>POST /v1/sessions answers it: send token as Bearer, and in the lobby's auth.</summary>
-    [Serializable] public class Session { public string token; public long playerId; public int expiresInSeconds; }
+    /// <summary>
+    /// POST /v1/sessions answers it: send token as Bearer, and in the lobby's auth. newPlayer: an account's first session
+    /// made its player.
+    /// </summary>
+    [Serializable] public class Session { public string token; public long playerId; public int expiresInSeconds; public bool newPlayer; }
+
+    /// <summary>POST /v1/accounts/link, with the guest's session: the guest becomes the account's player, its progress kept.</summary>
+    [Serializable] public class LinkRequest { public string accessToken; }
 
     /// <summary>GET /v1/inventory.</summary>
     [Serializable] public class Inventory { public long coins; public long gems; public Item[] items; }

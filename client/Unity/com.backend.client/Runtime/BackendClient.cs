@@ -6,7 +6,8 @@ using UnityEngine;
 namespace Backend.Client.Unity
 {
     /// <summary>
-    /// The one object that owns the core's objects (docs 08 §8): the account, the lobby and the match. Update pumps
+    /// The one object that owns the core's objects (docs 08 §8): the account (detailed-design 10 §5.2), the lobby and
+    /// the match. Update pumps
     /// them on the main thread, the world's only writer (08 §2), and builds the scene the frame draws; the app's
     /// pause is the match's lifecycle (02 §10). Everything it does is the core's; this is the wiring.
     /// </summary>
@@ -14,6 +15,8 @@ namespace Backend.Client.Unity
     {
         [Tooltip("The platform API's endpoints, tried in turn, as https://203.0.113.10: the site's public address (D-82)")]
         [SerializeField] private string[] apiEndpoints = new string[0];        // Array.Empty is 4.6's (D-116)
+        [Tooltip("The account service's endpoints, as https://203.0.113.10/account: the site's, at /account (D-117)")]
+        [SerializeField] private string[] accountEndpoints = new string[0];
         [Tooltip("The lobby's WebSocket, as wss://203.0.113.10/lobby")]
         [SerializeField] private string lobbyUrl = "";
         [Tooltip("The backend's root certificate, ca.pem from scripts/private-ca.sh: trusted alone, for the API, the "
@@ -21,6 +24,9 @@ namespace Backend.Client.Unity
         [SerializeField] private TextAsset trustedRoot;
 
         public ApiClient Api { get; private set; }
+        public AccountClient Accounts { get; private set; }
+        /// <summary>What signs this device in: an account's refresh token or a guest's key (10 §5.1).</summary>
+        public AccountKeeper Keeper { get; private set; }
         public Session Session { get; private set; }
         public LobbyClient Lobby { get; private set; }
         public MatchConnection Match { get; private set; }
@@ -28,6 +34,7 @@ namespace Backend.Client.Unity
         public MatchEnd? LastEnd { get; private set; }
         /// <summary>What went wrong last, for a screen to say: a refusal, nothing answering.</summary>
         public string Problem { get; private set; }
+        /// <summary>A sign-in, a sign-up, a login or a password change on its way: each ends in a session, or a problem.</summary>
         public bool SigningIn => _signingIn != null;
         public bool Deleting => _deleting != null;
         /// <summary>What this frame draws, built in Update; read in LateUpdate.</summary>
@@ -35,7 +42,6 @@ namespace Backend.Client.Unity
 
         private readonly IClock _clock = new SystemClock();
         private TrustRoot _trust;
-        private ISecureStore _store;
         private Task<ApiResult<Session>> _signingIn;
         private Task<ApiResult<bool>> _deleting;
         private Task<ApiResult<ClassTableInfo>> _classes;
@@ -49,22 +55,58 @@ namespace Backend.Client.Unity
             DontDestroyOnLoad(this);            // its object and everything under it, as it is a root's (08 §8)
             _trust = trustedRoot == null ? null : TrustRoot.FromPem(trustedRoot.text);
             Api = new ApiClient(apiEndpoints, _trust?.HttpHandler());
-            _store = SecureStores.ForThisDevice();
+            Accounts = new AccountClient(accountEndpoints, _trust?.HttpHandler());
+            Keeper = new AccountKeeper(Api, Accounts, SecureStores.ForThisDevice());
         }
 
-        /// <summary>Signs in: the guest this device keeps, or a new one on its first launch (AccountKeeper).</summary>
+        /// <summary>Signs in: by the account this device keeps, or its guest, or a new guest on its first launch.</summary>
         public void SignIn()
         {
-            if (_signingIn == null) _signingIn = new AccountKeeper(Api, _store).SignIn();
+            if (_signingIn == null) _signingIn = Keeper.SignIn();
+        }
+
+        /// <summary>A new account, the device's guest linked to it: the same player, its progress kept (10 §5.1).</summary>
+        public void SignUp(string username, string password)
+        {
+            if (_signingIn == null) _signingIn = Keeper.SignUp(username, password);
         }
 
         /// <summary>
-        /// Deletes this device's account (D-84): a guest's, whose session is all it is asked; the key forgotten with it,
-        /// so Play makes a new guest.
+        /// An account logged in, the device's guest linked to it; an account with a player of its own is that player, and the
+        /// guest is left: a screen says so first when the guest has anything to lose.
         /// </summary>
-        public void DeleteAccount()
+        public void LogIn(string username, string password)
         {
-            if (_deleting == null && Session != null) _deleting = new AccountKeeper(Api, _store).DeleteAccount(Session.Token, null);
+            if (_signingIn == null) _signingIn = Keeper.LogIn(username, password);
+        }
+
+        /// <summary>The account's password changed: a new session, and every other device's ended.</summary>
+        public void ChangePassword(string current, string next)
+        {
+            if (_signingIn == null && Keeper.HoldsAccount) _signingIn = Keeper.ChangePassword(current, next);
+        }
+
+        /// <summary>
+        /// Signed out: the session ended, an account's refresh token spent and forgotten. A guest's key is kept, so Play is
+        /// that guest again.
+        /// </summary>
+        public void SignOut()
+        {
+            if (Session == null) return;
+            Keeper.SignOut(Session.Token);              // forgotten at once; what the servers answer changes nothing here
+            Lobby?.Dispose();
+            Lobby = null;
+            Session = null;
+            Problem = null;
+        }
+
+        /// <summary>
+        /// Deletes this device's player (D-84): an account's at the account service, <paramref name="password"/> asked
+        /// again; a guest's by its session alone. What signed it in is forgotten, so Play makes a new guest.
+        /// </summary>
+        public void DeleteAccount(string password)
+        {
+            if (_deleting == null && Session != null) _deleting = Keeper.DeleteAccount(Session.Token, password);
         }
 
         /// <summary>A seat in the public arena.</summary>

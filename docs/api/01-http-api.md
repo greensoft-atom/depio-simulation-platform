@@ -382,8 +382,9 @@ Authorization: Bearer <the guest's token>
 
 **A password changed at the account service** ends the player's sessions made before the change; those made after it,
 with a new access token, stay. The player's lobby connection is told `evt.session.revoked` `{"reason":"signed_out"}`
-and closes, whichever session it was on. On the device that changed the password, open the lobby again with the session
-the new access token gave; on any other, log in again.
+and closes when it was on a session that ended; one on a session made after the change stays, told nothing (T-71). On
+the device that changed the password, open the lobby again with the session the new access token gave; on any other,
+log in again.
 
 ## 3. Content
 

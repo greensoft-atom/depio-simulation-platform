@@ -119,30 +119,38 @@ public class MainThreadExample : MonoBehaviour
 
 ## 1. The API: `BackendHttp`
 
-Make one `BackendHttp` with the site's address and the root, log in, and set `Token`. Every call after that is made
-as the player.
+Make one `BackendHttp` with the site's address and the root, and one with the account service's, the site's
+`/account` (D-117). Log in at the account service, take its access token to the API once for a session, and set
+`Token`. Every call after that is made as the player.
 
 ```csharp
 using Backend.Client.Simple;
-using Backend.Client.Simple.Examples;     // Credentials, Session: Examples/ApiModels.cs
+using Backend.Client.Simple.Examples;     // Credentials, AccountTokens, TokenLogin, Session: Examples/ApiModels.cs
 using UnityEngine;
 
 public class LogInExample : MonoBehaviour
 {
     public TextAsset rootCertificate;     // ca.pem.txt
-    private BackendHttp http;
+    private BackendHttp accounts, http;
 
     private void Awake()
     {
-        http = new BackendHttp("https://203.0.113.10", rootCertificate.text);   // in clear: "http://..." and no root
+        // In clear: "http://..." and no root.
+        accounts = new BackendHttp("https://203.0.113.10/account", rootCertificate.text);
+        http = new BackendHttp("https://203.0.113.10", rootCertificate.text);
     }
 
     public async void LogIn()
     {
         var credentials = new Credentials { username = "ada", password = "secret-123" };
-        HttpAnswer answer = await http.PostAsync("/v1/sessions", JsonUtility.ToJson(credentials));
+        HttpAnswer answer = await accounts.PostAsync("/v1/sessions", JsonUtility.ToJson(credentials));
         if (this == null) return;                                            // destroyed while it waited
-        if (!answer.Ok) { Debug.Log("refused: " + answer.Error); return; }   // "invalid_credentials", "banned"...
+        if (!answer.Ok) { Debug.Log("refused: " + answer.Error); return; }   // "invalid_credentials", "too_many_attempts"...
+        AccountTokens tokens = JsonUtility.FromJson<AccountTokens>(answer.Body);
+        PlayerPrefs.SetString("refreshToken", tokens.refresh_token);         // signs the device in again (the app: its secure store)
+        answer = await http.PostAsync("/v1/sessions", JsonUtility.ToJson(new TokenLogin { accessToken = tokens.access_token }));
+        if (this == null) return;
+        if (!answer.Ok) { Debug.Log("no session: " + answer.Error); return; } // "banned"...
         Session session = JsonUtility.FromJson<Session>(answer.Body);
         http.Token = session.token;                                          // every later call is the player's
 
@@ -156,7 +164,7 @@ public class LogInExample : MonoBehaviour
 |---|---|
 | `new BackendHttp(baseUrl, caPem)` | `baseUrl` is the site's address, as `https://203.0.113.10`. `caPem` is the text of `ca.pem`, for an `https://` address; leave it out (null) for `http://` |
 | `Token` | the session's token. Once set, every call sends it as `Authorization: Bearer`; null sends none |
-| `GetAsync(path)`, `PostAsync(path, json)`, `PutAsync(path, json)`, `DeleteAsync(path, json = null)` | one call each. `json` is the body, or null for none (`DELETE /v1/accounts` takes a body) |
+| `GetAsync(path)`, `PostAsync(path, json)`, `PutAsync(path, json)`, `DeleteAsync(path, json = null)` | one call each. `json` is the body, or null for none (the account service's `DELETE /v1/sessions` takes a body) |
 | `SendAsync(method, path, json)` | any other HTTP method |
 
 A call never throws. It always ends in one `HttpAnswer`:
@@ -166,19 +174,23 @@ A call never throws. It always ends in one `HttpAnswer`:
 | `Ok` | true for a status of 200 to 299 |
 | `Status` | the HTTP status; **0 when no answer came**: no network, the certificate refused, or no answer in 15 s |
 | `Body` | the JSON text, or "" when there is none (a 204). Read it with `JsonUtility.FromJson<T>` (the classes are in `Examples/ApiModels.cs`) |
-| `Error` | null when it went well. Otherwise the API's `code` (`invalid_session`, `username_taken`...); `HTTP <status>`, such as `HTTP 429`, for an answer without a code (nginx's own 429 is not JSON); or what went wrong when no answer came |
+| `Error` | null when it went well. Otherwise the API's `code` (`invalid_session`, `banned`...) or the account service's `error` (`username_taken`, `invalid_grant`...); `HTTP <status>`, such as `HTTP 429`, for an answer without a code (nginx's own 429 is not JSON); or what went wrong when no answer came |
 
-The calls most apps start with are below; [docs/api/01](../docs/api/01-http-api.md) has every route:
+The calls most apps start with are below; [docs/api/01](../docs/api/01-http-api.md) has every route of the API, and
+[detailed-design/10 §3.2](../docs/detailed-design/10-accounts.md#32-the-routes) the account service's:
 
 | Call | Body | Answer |
 |---|---|---|
 | `GET /v1/health` | | `{"status":"ok"}` |
-| `POST /v1/guests` | none | `{"playerId","guestKey","displayName"}`: keep `guestKey` on the device, it is the account |
-| `POST /v1/sessions` | `{"guestKey"}` or `{"username","password"}` | `{"token","playerId","expiresInSeconds"}`: about a day |
-| `POST /v1/accounts` | `{"username","password","displayName"}` | 201 `{"playerId"}`, then log in |
+| the account service's `POST /v1/accounts` | `{"username","password"}` | 201 and its tokens: signed up, logged in at once |
+| the account service's `POST /v1/sessions` | `{"username","password"}` | `{"access_token","refresh_token","expires_in",…}`: keep `refresh_token` on the device |
+| the account service's `POST /v1/sessions/refresh` | `{"refresh_token"}` | new tokens, the one sent spent: keep the new one. 400 `invalid_grant`: log in again |
+| `POST /v1/sessions` | `{"accessToken"}` or `{"guestKey"}` | `{"token","playerId","expiresInSeconds","newPlayer"}`: about a day |
+| `POST /v1/guests` | none | `{"playerId","guestKey","displayName"}`: keep `guestKey` on the device, it is the guest |
+| `POST /v1/accounts/link` | `{"accessToken"}`, as the guest | the guest is the account's player from now on, its progress kept |
 | `GET /v1/inventory` | | `{"coins","gems","items":[...]}` |
 | `GET /v1/shop` | | `{"offers":[...]}` |
-| `DELETE /v1/sessions` | | 204: logged out |
+| `DELETE /v1/sessions` | | 204: logged out; the account service's, `{"refresh_token"}`, spends its family |
 
 `invalid_session` on any call means that the token is no longer valid: log in again.
 
@@ -344,7 +356,7 @@ format.
 
 | Script | Shows |
 |---|---|
-| `HttpExample` | the API, each step awaited: a guest made once and kept in `PlayerPrefs`, logged in, the shop and the inventory read; `Register` and `LogOut` |
+| `HttpExample` | the API, each step awaited: the device's account signed in again by its refresh token, or a guest made once and kept in `PlayerPrefs`; the shop and the inventory read; `SignUp` and `LogIn` at the account service, a guest signed in linked to the account; `LogOut` at both |
 | `LobbyExample` | the lobby: logged in, connected, a seat in the public arena asked for, a duel accepted, pushes handled, reconnecting |
 | `ArenaExample` | a match from a grant: inputs ten a second, snapshots counted, pause, resume, kicks, `LeaveMatch` |
 | `ApiModels` | the `[Serializable]` classes that `JsonUtility` reads and writes |
@@ -405,8 +417,9 @@ editor or on a phone. This is what did run:
   alone (D-116): through nginx with nothing encrypted (`FRONT=plain`), and straight to the processes (no `FRONT`).
   Not through nginx as the site runs it (`FRONT=http`): its grants ask for TLS, and this client's TLS is checked
   offline alone.
-  - the API over `http://`: health, register (and the same name refused), log in, a token used and refused, a
-    display name changed, a guest, a route that does not exist, log out;
+  - the account service (reached straight until the site routes it, D-117) and the API over `http://`: health, a sign-up (the same name refused, its `error` read), its
+    access token taken for a session, a refresh, a token used and refused, a display name changed, a guest, a route
+    that does not exist, logged out at both, the refresh token refused after;
   - the lobby: connect, `auth`, `ping`, an error, a seat in the public arena, kept open for 125 s by its heartbeat, a
     second connection replacing the first;
   - a match: `Join`, a Welcome, snapshots while sending inputs, a Pong, the app paused (snapshots stop) and back, a

@@ -27,8 +27,12 @@ api() { curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$@"; }
 case "${1:-}" in
 build)
     TESTS=$([ "${SKIP_TESTS:-0}" = 1 ] && echo "-DskipTests" || true)
-    # The tests use the development MySQL's account_test (dev-mysql.sh makes it), started for them if it is not running.
-    [ -n "$TESTS" ] || "$B/dev-mysql.sh" start > /dev/null
+    # The tests use the development MySQL's account_test (dev-mysql.sh makes it), started for them and stopped after
+    # when it was not running, as dev-backend.sh's are.
+    if [ -z "$TESTS" ] && [ "$ACCOUNT_JDBC_URL" = "$DEV_ACCOUNT_JDBC_URL" ] && ! "$B/dev-mysql.sh" status > /dev/null; then
+        "$B/dev-mysql.sh" start
+        trap '"$B/dev-mysql.sh" stop' EXIT
+    fi
     echo "--- account-service"
     (cd "$A" && mvn -B -q clean install $TESTS)
     echo "the account service: built, $(jar)" ;;

@@ -25,12 +25,13 @@ From `client/`, in a shell that sourced `unity-env.sh` (it fetches Unity's edito
 
 ```
 build_headless ../work/headless
-MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=$MONO_LIB "$MONO" ../work/headless/Backend.Client.Headless.exe <platform-url> [--lobby <ws-url>] [--trust <cert>] [--wrong-trust <cert>] [scenario ...]
+MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=$MONO_LIB "$MONO" ../work/headless/Backend.Client.Headless.exe <platform-url> [--account <url>] [--lobby <ws-url>] [--trust <cert>] [--wrong-trust <cert>] [scenario ...]
 ```
 
 | Argument | Meaning |
 |---|---|
 | `<platform-url>` | The platform API. It comes first and is required. It is the one endpoint that `ApiClient` is given |
+| `--account <url>` | The account service (D-117), for example `http://127.0.0.1:8097`: every player the driver makes is an account signed up there, its access token exchanged for a session. Without it, every player is a guest |
 | `--lobby <ws-url>` | The gateway's lobby, for example `ws://127.0.0.1:8094/lobby` |
 | `--trust <cert>` | The one root certificate to trust in place of the device's store, for the API, the lobby and matches, as the app trusts the backend's own root (`TrustRoot`, D-82): a test CA's, or `ca.pem` from `private-ca.sh`. The name is still checked (the address dialled, or a grant's `tlsName`), and nothing is pinned. The drills give none: they run in clear (D-116) |
 | `--wrong-trust <cert>` | A root that is not the arena's, for the `untrusted` scenario, which the drills cannot run (D-116) |
@@ -39,8 +40,9 @@ MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=$MONO_LIB "$MONO" ../work/headless
 **Without `--lobby`**, the driver drops from its list the scenarios that need the lobby, as `Program.NeedsLobby`
 names them, and says which (`--- skipped, no --lobby: …`): `lobby replaced badsession duel walkover party decline rffa
 coop banned tournament teammatch teamcup team social rename apply roundrobin milestone season achievements goals pass
-domination tag maze sandbox notice erase`. `removed` needs only the admin API (T-69). `headless-drill.sh` always passes
-`--lobby`.
+domination tag maze sandbox notice erase account`. `removed` needs only the admin API (T-69). **Without `--account`**,
+it drops those that sign in at the account service, as `Program.NeedsAccount` names them, the same way (`--- skipped, no
+--account: …`): `account erase guest banned`. `headless-drill.sh` always passes both.
 
 **Exit status:**
 
@@ -51,9 +53,10 @@ domination tag maze sandbox notice erase`. `removed` needs only the admin API (T
 | 2 | no platform URL was given | the usage line |
 
 **Login limits.** Every scenario makes accounts of its own, faster than people do and all from one address. That
-goes past the 30 attempts a minute that `platform` allows one address (04 §1). So when registering, logging in or
-making a guest is answered 429 `too_many_attempts`, the driver waits for its `Retry-After` and asks again, at most
-twice. A run then takes a little longer on a fast machine, instead of failing (T-56).
+goes past the 30 attempts a minute that the account service allows one address (10 §3.3), and `platform` for making
+guests and their logins (04 §1). So when signing up, logging in or making a guest is answered 429
+`too_many_attempts`, the driver waits for its `Retry-After` and asks again, at most twice. A run then takes a little
+longer on a fast machine, instead of failing (T-56).
 
 ## Environment
 
@@ -77,6 +80,7 @@ The scenarios, in the driver's order. The **Needs** column uses these letters:
 | S | the drill's SQL (`BACKEND_DRILL_SQL`) |
 | C | the drill's own shop items: when one of these scenarios is asked for, `headless-drill.sh` adds a barrel giving 25 % bullet speed and a coins boost, for 1 coin each |
 | T | TLS |
+| U | an account at the account service (`--account`) |
 
 The times are a run's own, roughly.
 
@@ -103,7 +107,7 @@ The times are a run's own, roughly.
 | `achievements` | 49 stays as a fixture; the fiftieth reaches an achievement: 10 gems, told by `evt.rewards` with its id, and listed as reached | L S | seconds |
 | `goals` | A new player with a stays goal today, one stay short as a fixture: one stay meets it and the set; its coins and 3 gems, told and in the wallet | L S | seconds |
 | `social` | A friend request pushed and in the inbox; accepted by asking back; presence online and offline; a block ending a friendship and silently dropping the next request; the inbox read | L | seconds |
-| `guest` | A guest made, in again by its key, paid for a stay, upgraded, in by name as the same player with the same coins; then its key refused | | seconds |
+| `guest` | Through the app's `AccountKeeper` (10 §5.1): a guest made on the first launch, in again by its key, paid for a stay; signed up, the guest linked, the same player; the refresh token kept and the key forgotten; a second launch in by the refresh token as that player, with its coins; the key refused; another device in by the name | U | seconds |
 | `stats` | The operator's figures: a new guest's stay counted as active and new today; day 1 empty until tomorrow has ended; two new guests who made friends counted under `friend` | A | seconds |
 | `domination` | Six queue alone, three a side. One drives to the middle line and sees a neutral dominator. Nobody takes one: a draw, each paid | L | five minutes |
 | `tag` | Six queue alone, three a side. Nobody fires, so nobody goes over to the other side: a draw, each paid | L | five minutes |
@@ -123,9 +127,10 @@ The times are a run's own, roughly.
 | `decline` | A match found and declined: the other player told it is queued again, nobody sent to a room, and the one who declined refused `queue_locked` | L | seconds |
 | `rffa` | Eight queue for ranked free-for-all, are asked, accept, and play one room, each for themselves, for four minutes; each paid and counted | L | four minutes |
 | `coop` | A party of two and one alone queue for co-op: one team against the waves. They drive toward the waves without firing; the wipe ends it, each paid | L | under a minute |
-| `banned` | An operator bans a player who is in the lobby: every session ends, the lobby is told and does not come back, and logging in is refused until the ban is lifted | L A | seconds |
+| `banned` | An operator bans a player who is in the lobby: every session ends, the lobby is told and does not come back, and logging in is refused, a fresh access token exchanged answered 403 `banned`, until the ban is lifted | L A U | seconds |
 | `notice` | An operator's notice, told word for word to two players in the lobby (`evt.notice`) | L A | seconds |
-| `erase` | A player deletes their own account (D-84): a wrong password refused; once deleted, every session ends and the other device's lobby is told why; logging in by the name refused, gone from a friend's list, the name free again; a guest deleted by its session alone, its key logging in no more | L | seconds |
+| `erase` | A player deletes their own account (D-84, D-117): refused at the backend, `delete_at_account_service`; at the account service a wrong password refused, then deleted, and its event erases the player: the other device's lobby told why, every session ended, the name's login refused, its access token still in its minutes making no new player, gone from a friend's list, the name signed up again a new player; a guest deleted by its session alone, its key logging in no more | L U | seconds |
+| `account` | The account service and the backend (D-117): the exchange, `newPlayer` the first time alone; a refresh, and the spent token again within its 30 s, taken; a logout, after which the family refreshes no more; a password changed from a third device: the sessions made before it ended, the lobby on one told `signed_out` and closed, the one made after kept and a lobby on it left open (T-71); the old password refused, the new taken; a link refused `account_in_use` and `not_a_guest` | L U | seconds |
 | `removed` | An operator takes a player out of the public arena, then closes another player's room: each ends `Removed`, `Kick(7)`; a player removed but not banned plays again | A | seconds |
 | `phrase` | The phrase list that platform serves is the one the Welcome names; a phrase said comes back to its speaker by their own handle and name; a second one at once is dropped without a kick, and one two seconds later is heard | | seconds |
 

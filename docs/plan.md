@@ -4747,6 +4747,34 @@ requests and 159 checks, none failed (newman 6.2.3), its first run failing once 
 changed; a password changed by `curl` ended the two sessions of its second, the new one kept. Not yet: the C#
 client, the bots, the drills and every check that signs a player up still register the old way, and cannot log in
 until (e); the account service is not in the release, the site or `run-local.sh` until (f).
+**(e) done 2026-11-26:** the clients as designed (10 §5): the core's `AccountClient` (the account service's six routes, its RFC 6749 refusals read as the backend's codes), `ApiClient.Exchange`, `LinkAccount` and a
+guest's `DeleteAccount` in place of `Register`, `Login` and `UpgradeAccount`, and `AccountKeeper` holding an account's
+refresh token or a guest's key, one player a device: the refresh token kept before the exchange, refused and forgotten
+with no guest made unasked; a sign-up or login linking the device's guest, an account with a player of its own leaving
+it; sign-out, a password change, a deletion at the account service. The Unity layer's `BackendClient` and
+`LobbyScreen`; both simple clients' `HttpExample`, models and live check; the headless driver's `--account`, its players
+signed up at the account service, the `account` scenario and `erase`, `guest` and `banned` rewritten; the tools'
+`LobbyClient.signIn` and `BotClient`'s fifth argument; `headless-drill.sh` starting the account service on 8097;
+`dev-backend.sh` giving the platform the account service's issuer (O-102) and its bots signing up there;
+`run-local.sh` starting the account service and `build-offline.sh` building it, brought forward from (f) since
+`dev-backend.sh test` needs it from here on. Found while designing the password change: **T-71**, a revocation's push
+closing the lobby of the session the change left; fixed in the gateway, test first, six mutants caught. Tests first:
+the core's 207 on Unity's Mono, 17 of the new and changed failing against stubs first; 26 mutants of the core's rules,
+21 caught at once, 3 survivors mended by one test (a guest gone or not answering at a sign-in, `newPlayer` read), 2
+invalid (the compiler refused their unreachable code) rewritten and caught. Compiled: the Unity scripts against stubs
+and by Unity 2019.4's compiler against its `UnityEngine`; the solution by VS 2019's MSBuild 16.11 and 16.7; both
+simple clients' offline checks, 71 and 52. Live, from that day's release, the account service from
+its build on 8097: every one of the 46 scenarios with both simple clients' live checks, the collection (145 requests,
+159 checks, none failed) and `IDLEGUEST=1`; then through nginx's TLS way and run plain (`FRONT=http`, `FRONT=plain`),
+`play lobby duel account erase guest banned` with both simple clients and the collection each time; `BOTS=60:40
+FAILOVER=1`, sixty bots signed up at the account service, the store's primary killed under them, every stay paid
+after the promotion; the arena's own report at its stop put room-1's p99 over its budgets, the simulation 10.8 ms
+against 2 and the whole tick 31.7 ms against 15, with the bots and every process on this loaded VM, which the drill
+reports and does not check, and nothing the arena runs changed in (e); a run
+by hand, `run-local.sh` with the account service, `dev-backend.sh test` and twenty bots; the driver with no
+`--account` against it, its players guests and `erase` said to be skipped. Not yet: the account service is not in the
+release, nginx or the site (the drills and the simple clients reach it straight), and with `MYSQL_FAILOVER` its
+database stays on the development MySQL; that is (f).
 
 ---
 

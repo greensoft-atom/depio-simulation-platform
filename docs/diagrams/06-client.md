@@ -219,7 +219,7 @@ classDiagram
 
 ### 1.3 The lobby, the API and the account
 
-`LobbyClient.cs`, `PartyState.cs`, `ApiClient.cs`, `AccountKeeper.cs`, `Json.cs`, `TrustRoot.cs` and
+`LobbyClient.cs`, `PartyState.cs`, `ApiClient.cs`, `AccountClient.cs`, `AccountKeeper.cs`, `Json.cs`, `TrustRoot.cs` and
 `TlsVersions.cs`.
 
 - The lobby client keeps what the lobby told it.
@@ -289,6 +289,24 @@ classDiagram
     }
     class AccountKeeper {
         +SignIn()
+        +SignUp(username, password)
+        +LogIn(username, password)
+        +SignOut(session)
+        +ChangePassword(current, next)
+        +DeleteAccount(session, password)
+        +bool HoldsAccount
+    }
+    class AccountClient {
+        +SignUp(username, password)
+        +LogIn(username, password)
+        +Refresh(refreshToken)
+        +LogOut(refreshToken)
+        +ChangePassword(accessToken, current, next)
+        +DeleteAccount(accessToken, password)
+    }
+    class AccountTokens {
+        +string AccessToken
+        +string RefreshToken
     }
     class ISecureStore {
         +Get(key) string
@@ -304,6 +322,7 @@ classDiagram
     class Session {
         +string Token
         +long PlayerId
+        +bool NewPlayer
     }
     class MatchGrant {
         +string ArenaHost
@@ -332,8 +351,11 @@ classDiagram
     ApiClient ..> ApiResult : answers
     ApiClient ..> JsonValue : bodies
     ApiClient ..> Session : a login answers
-    AccountKeeper --> ApiClient : makes and logs in a guest
-    AccountKeeper --> ISecureStore : keeps the guest key
+    AccountKeeper --> ApiClient : a guest, the exchange, the link
+    AccountKeeper --> AccountClient : refresh, sign up, log in
+    AccountKeeper --> ISecureStore : keeps a refresh token or a guest key
+    AccountClient ..> ApiClient : calls as it calls
+    AccountClient ..> AccountTokens : answers
     MemorySecureStore ..|> ISecureStore
     LobbyClient ..> TlsVersions : Client, for wss
     ApiClient ..> TlsVersions : ForRequests
@@ -541,14 +563,22 @@ flowchart TD
 
 ## 7. AccountKeeper's sign-in
 
-`AccountKeeper.SignIn` over `ApiClient` and an `ISecureStore`
-([08 §8](../detailed-design/08-client.md#8-the-unity-layer-as-scripts-designed-2026-10-04-plan-item-77)).
-Its continuations stay on the caller's context, so in Unity the store is
-touched on the main thread.
+`AccountKeeper.SignIn` over `ApiClient`, `AccountClient` and an `ISecureStore`
+([08 §8](../detailed-design/08-client.md#8-the-unity-layer-as-scripts-designed-2026-10-04-plan-item-77),
+[10 §5.1](../detailed-design/10-accounts.md#51-the-core)). Its continuations stay on the caller's context, so in
+Unity the store is touched on the main thread.
 
 ```mermaid
 flowchart TD
-    S["AccountKeeper.SignIn"] --> HAS{"A key under backend.guestKey?"}
+    S["AccountKeeper.SignIn"] --> ACC{"A refresh token under backend.refreshToken?"}
+    ACC -->|"yes, an account's device"| REF["Refresh: the account service's POST /v1/sessions/refresh"]
+    REF --> RANS{"The answer"}
+    RANS -->|"200"| RKEEP["The new refresh token kept at once: the old is spent"]
+    RKEEP --> EXCH["Exchange: POST /v1/sessions with the access token"]
+    EXCH --> SESSION
+    RANS -->|"400 invalid_grant"| RFORGET["Forgotten: logged out, its password changed, a year old, deleted. The app asks for a login; a new guest only when SignIn is called again"]
+    RANS -->|"another refusal, or none"| RKEPT["Kept, the refusal answered"]
+    ACC -->|"no"| HAS{"A key under backend.guestKey?"}
     HAS -->|"no, a first launch"| MAKE["CreateGuest: POST /v1/guests"]
     MAKE --> MADE{"Made?"}
     MADE -->|"no"| REFUSED["Its refusal answered: status, code, Retry-After"]

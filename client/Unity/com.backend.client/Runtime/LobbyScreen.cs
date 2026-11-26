@@ -3,7 +3,8 @@ using UnityEngine;
 namespace Backend.Client.Unity
 {
     /// <summary>
-    /// The least screen to play from (docs 08 §8): sign in as the device's guest, then a seat in the public arena or a
+    /// The least screen to play from (docs 08 §8): sign in as the device's account or guest, sign up or log in with a
+    /// name and a password (the guest's progress kept in the account, 10 §5.1), then a seat in the public arena or a
     /// duel's queue, its state, and a match found to accept. IMGUI, so it needs no prefab and no scene set up; the
     /// app's real screens are its designers' to make, on the same calls.
     /// </summary>
@@ -11,6 +12,7 @@ namespace Backend.Client.Unity
     {
         [SerializeField] private BackendClient client;
         private bool _confirmingDeletion;
+        private string _username = "", _password = "";
 
         private void OnGUI()
         {
@@ -20,16 +22,23 @@ namespace Backend.Client.Unity
             GUILayout.BeginArea(new Rect(20f, 20f, 360f, 680f));
             if (client.Problem != null) GUILayout.Label(client.Problem);
             if (client.LastEnd != null) GUILayout.Label("The match ended: " + client.LastEnd);
-            if (client.Session == null)
+            if (client.SigningIn) GUILayout.Label("Signing in...");
+            else if (client.Session == null && GUILayout.Button("Play")) client.SignIn();
+            if (!client.SigningIn && (client.Session == null || !client.Keeper.HoldsAccount))
             {
-                if (client.SigningIn) GUILayout.Label("Signing in...");
-                else if (GUILayout.Button("Play")) client.SignIn();
+                // A guest's progress goes with it into a new account, or into one with no player yet; logging in to an
+                // account that has its own player leaves the guest behind.
+                GUILayout.Label(client.Session == null ? "Or an account:" : "Keep this guest's progress in an account:");
+                _username = GUILayout.TextField(_username, 32);
+                _password = GUILayout.PasswordField(_password, '*', 128);
+                if (GUILayout.Button("Sign up")) client.SignUp(_username, _password);
+                if (GUILayout.Button("Log in")) client.LogIn(_username, _password);
             }
-            else if (client.Lobby == null || client.Lobby.State != Backend.Client.Core.LobbyState.Ready)
+            if (client.Session != null && (client.Lobby == null || client.Lobby.State != Backend.Client.Core.LobbyState.Ready))
             {
                 GUILayout.Label("Lobby: " + (client.Lobby == null ? "none" : client.Lobby.State.ToString()));
             }
-            else
+            else if (client.Session != null)
             {
                 var lobby = client.Lobby;
                 if (lobby.Ready != null)
@@ -51,11 +60,12 @@ namespace Backend.Client.Unity
                 if (lobby.GrantRefusal != null) GUILayout.Label(lobby.GrantRefusal);
                 if (lobby.QueueRefusal != null) GUILayout.Label(lobby.QueueRefusal);
             }
-            // The player's right to have it erased (D-84), asked twice: there is no undo. And what becomes of a guest
-            // nobody plays (D-87): this screen signs in as the device's guest alone.
+            // The player's right to have it erased (D-84), asked twice: there is no undo; an account's, by its password
+            // again. And what becomes of a guest nobody plays (D-87).
             if (client.Session != null)
             {
-                GUILayout.Label("A guest nobody plays for 180 days is erased, its progress with it.");
+                if (GUILayout.Button("Sign out")) client.SignOut();
+                if (!client.Keeper.HoldsAccount) GUILayout.Label("A guest nobody plays for 180 days is erased, its progress with it.");
                 if (client.Deleting) GUILayout.Label("Deleting the account...");
                 else if (!_confirmingDeletion)
                 {
@@ -64,7 +74,8 @@ namespace Backend.Client.Unity
                 else
                 {
                     GUILayout.Label("Delete this account for good? Its progress and what it bought cannot be brought back.");
-                    if (GUILayout.Button("Delete it")) { client.DeleteAccount(); _confirmingDeletion = false; }
+                    if (client.Keeper.HoldsAccount) _password = GUILayout.PasswordField(_password, '*', 128);
+                    if (GUILayout.Button("Delete it")) { client.DeleteAccount(_password); _confirmingDeletion = false; }
                     if (GUILayout.Button("Keep it")) _confirmingDeletion = false;
                 }
             }

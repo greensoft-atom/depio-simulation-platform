@@ -29,7 +29,8 @@ import io.netty.channel.socket.nio.NioSocketChannel;
  *
  * <h2>Every bot takes the path a real client takes</h2>
  *
- * Register, log in, open a lobby connection, ask for a match, then connect to whichever
+ * Sign in at the account service (D-117), take its token for a session, open a lobby connection, ask for a match,
+ * then connect to whichever
  * arena platform named. An earlier version wrote tickets straight into the store, which
  * meant a load run never touched {@code platform} or {@code gateway} at all and measured a
  * path no client will ever use.
@@ -37,7 +38,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
  * The lobby part is the JDK's HTTP and WebSocket client, once per bot. The arena
  * connection is Netty, because that one carries ten inputs a second, and the snapshots, for the whole match.
  *
- * Usage: BotClient [bots] [seconds] [platformUrl] [lobbyUrl]
+ * Usage: BotClient [bots] [seconds] [platformUrl] [lobbyUrl] [accountUrl]
  *
  * <p>With {@code BACKEND_BOT_STAYS=<min>:<max>} seconds, a stay ends: the bot leaves as a player
  * does and plays another, closing its lobby connection and opening another every fourth stay,
@@ -51,9 +52,9 @@ public final class BotClient {
     private static final int PING_EVERY_MS = 10_000;
 
     /**
-     * Up to three Argon2 operations per bot on a fresh database (a refused login's decoy
-     * verify, the registration's hash, the login), one on a rerun; the server admits eight at
-     * a time.
+     * Two Argon2 operations per bot on a fresh database (a refused login's decoy verify, the
+     * sign-up's hash, which logs it in), one on a rerun; the account service admits eight at a
+     * time (10 §3.3).
      */
     private static final int ONBOARD_CONCURRENCY = 16;
 
@@ -94,17 +95,18 @@ public final class BotClient {
         int seconds = args.length > 1 ? Integer.parseInt(args[1]) : 10;
         String platformUrl = args.length > 2 ? args[2] : "http://127.0.0.1:8080";
         String lobbyUrl = args.length > 3 ? args[3] : "ws://127.0.0.1:8081/lobby";
+        String accountUrl = args.length > 4 ? args[4] : "http://127.0.0.1:8083";
 
 
         // The whole lobby journey, per bot, before a single packet of match traffic.
-        // Registration costs an Argon2 hash each and logging in costs another, so this is
-        // the slow part of starting a run and it is reported separately for that reason.
+        // A sign-up costs the account service an Argon2 hash, and a refused login a decoy's,
+        // so this is the slow part of starting a run and it is reported separately for that reason.
         long lobbyStart = System.nanoTime();
         List<LobbyClient.Grant> grants = java.util.Collections.synchronizedList(new ArrayList<>(bots));
         List<LobbyClient> lobbies = java.util.Collections.synchronizedList(new ArrayList<>(bots));
 
-        // Bounded, not unbounded. Registering and logging in cost an Argon2 hash each and
-        // the server admits eight at a time, so a thousand at once would simply queue past
+        // Bounded, not unbounded. Signing up and logging in cost an Argon2 hash each and
+        // the account service admits eight at a time, so a thousand at once would simply queue past
         // the client's own request timeout and report failures the server never caused.
         // Sequentially this measured 657 ms a bot, which is eleven minutes for a thousand.
         java.util.concurrent.Semaphore permits = new java.util.concurrent.Semaphore(ONBOARD_CONCURRENCY);
@@ -122,14 +124,7 @@ public final class BotClient {
                     LobbyClient lobby = new LobbyClient(platformUrl, lobbyUrl, sharedHttp)
                             .forwardedFor("198.18." + ((index >> 8) & 0xff) + "." + (index & 0xff));
                     try {
-                        // Login first: a rerun against the same database would otherwise
-                        // pay an Argon2 hash per bot to be told the name is taken.
-                        try {
-                            lobby.login(name, "hunter2-hunter2");
-                        } catch (LobbyClient.LobbyException notYet) {
-                            lobby.registerIfNeeded(name, name, "hunter2-hunter2");
-                            lobby.login(name, "hunter2-hunter2");
-                        }
+                        lobby.signIn(accountUrl, name, "hunter2-hunter2");
                         lobby.openLobby();
                         LobbyClient.Grant grant = lobby.requestMatch();
                         synchronized (grants) {           // a bot's grant and lobby at one index
@@ -155,7 +150,7 @@ public final class BotClient {
         String host = grants.get(0).arenaHost();
         int port = grants.get(0).arenaPort();
         System.out.printf(Locale.ROOT,
-                "lobby: %d of %d bots registered, logged in and got a ticket in %.1f s (%.0f ms of wall"
+                "lobby: %d of %d bots signed in and got a ticket in %.1f s (%.0f ms of wall"
                         + " time per bot)%n",
                 grants.size(), bots, lobbySeconds, lobbySeconds * 1000 / bots);
 

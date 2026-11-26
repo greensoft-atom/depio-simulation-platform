@@ -16,8 +16,9 @@ namespace Backend.Client.Simple
         /// <summary>The answer's JSON text; "" when it has none (a 204).</summary>
         public string Body = "";
         /// <summary>
-        /// Null when it went well. Otherwise the API's own code (<c>invalid_session</c>, <c>username_taken</c>...),
-        /// "HTTP 429" for an answer without one, or what went wrong when no answer came.
+        /// Null when it went well. Otherwise the API's own code (<c>invalid_session</c>, <c>banned</c>...), or the account
+        /// service's error (<c>username_taken</c>, <c>invalid_grant</c>...), "HTTP 429" for an answer without one, or what
+        /// went wrong when no answer came.
         /// </summary>
         public string Error;
 
@@ -55,7 +56,7 @@ namespace Backend.Client.Simple
 
         public Task<HttpAnswer> PutAsync(string path, string json) => SendAsync(HttpMethod.Put, path, json);
 
-        /// <param name="json">the body, which DELETE /v1/accounts takes; null sends none</param>
+        /// <param name="json">the body, which the account service's DELETE /v1/sessions takes; null sends none</param>
         public Task<HttpAnswer> DeleteAsync(string path, string json = null) => SendAsync(HttpMethod.Delete, path, json);
 
         public async Task<HttpAnswer> SendAsync(HttpMethod method, string path, string json)
@@ -71,7 +72,8 @@ namespace Backend.Client.Simple
                     answer.Status = (int)response.StatusCode;
                     answer.Body = await response.Content.ReadAsStringAsync();      // 4xx and 5xx too: their body has the code
                 }
-                if (!answer.Ok) answer.Error = Json.GetString(answer.Body, "code") ?? "HTTP " + answer.Status;
+                // The API's code, or the account service's error (RFC 6749's name).
+                if (!answer.Ok) answer.Error = Json.GetString(answer.Body, "code") ?? Json.GetString(answer.Body, "error") ?? "HTTP " + answer.Status;
             }
             catch (OperationCanceledException)
             {

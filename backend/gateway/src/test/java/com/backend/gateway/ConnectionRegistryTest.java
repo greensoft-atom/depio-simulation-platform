@@ -53,7 +53,7 @@ class ConnectionRegistryTest {
     @Timeout(20)
     @DisplayName("a refresh the store fails is counted and said, not lost in a future nobody reads (the gateway review)")
     void aFailedRefreshIsCounted() throws Exception {
-        g1.register(ADA, new EmbeddedChannel()).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        g1.register(ADA, new EmbeddedChannel(), "a-session").get(5, java.util.concurrent.TimeUnit.SECONDS);
         g1.refresh();
         settle();
         org.assertj.core.api.Assertions.assertThat(g1.refreshFailures()).as("refreshed").isZero();
@@ -72,8 +72,8 @@ class ConnectionRegistryTest {
     @DisplayName("the old gateway's late cleanup leaves the new gateway's registration alone")
     void lateCleanupElsewhere() throws Exception {
         EmbeddedChannel old = new EmbeddedChannel();
-        g1.register(ADA, old);
-        g2.register(ADA, new EmbeddedChannel());
+        g1.register(ADA, old, "a-session");
+        g2.register(ADA, new EmbeddedChannel(), "a-session");
         String atG2 = entry();
         assertThat(atG2).startsWith("g2");
 
@@ -87,8 +87,8 @@ class ConnectionRegistryTest {
     @Timeout(20)
     @DisplayName("a refresh from a gateway still holding a half-dead socket does not take the player back")
     void refreshDoesNotReclaim() throws Exception {
-        g1.register(ADA, new EmbeddedChannel());   // looks alive to g1: nothing has told it otherwise
-        g2.register(ADA, new EmbeddedChannel());
+        g1.register(ADA, new EmbeddedChannel(), "a-session");   // looks alive to g1: nothing has told it otherwise
+        g2.register(ADA, new EmbeddedChannel(), "a-session");
         String atG2 = entry();
 
         g1.refresh();
@@ -101,8 +101,8 @@ class ConnectionRegistryTest {
     @Timeout(20)
     @DisplayName("a gateway shutting down does not erase players who have moved on")
     void shutdownLeavesOthersAlone() throws Exception {
-        g1.register(ADA, new EmbeddedChannel());
-        g2.register(ADA, new EmbeddedChannel());
+        g1.register(ADA, new EmbeddedChannel(), "a-session");
+        g2.register(ADA, new EmbeddedChannel(), "a-session");
         String atG2 = entry();
 
         g1.close();
@@ -116,7 +116,7 @@ class ConnectionRegistryTest {
     @DisplayName("a player's own disconnect still removes their registration")
     void ownCleanupStillWorks() throws Exception {
         EmbeddedChannel ch = new EmbeddedChannel();
-        g1.register(ADA, ch);
+        g1.register(ADA, ch, "a-session");
         assertThat(entry()).startsWith("g1");
 
         g1.unregister(ADA, ch);
@@ -130,7 +130,7 @@ class ConnectionRegistryTest {
     @Timeout(20)
     @DisplayName("an entry the store lost is restored by the next refresh")
     void refreshRestoresALostEntry() throws Exception {
-        g1.register(ADA, new EmbeddedChannel());
+        g1.register(ADA, new EmbeddedChannel(), "a-session");
         client.sync().del("conn:" + ADA);
 
         g1.refresh();
@@ -144,8 +144,8 @@ class ConnectionRegistryTest {
     @DisplayName("a second login on one gateway tells the first connection why it is closed")
     void replacedConnectionIsTold() throws Exception {
         EmbeddedChannel first = new EmbeddedChannel();
-        g1.register(ADA, first);
-        g1.register(ADA, new EmbeddedChannel());
+        g1.register(ADA, first, "a-session");
+        g1.register(ADA, new EmbeddedChannel(), "a-session");
 
         // A bare close looked like a network fault: the first device reconnected with its
         // still-valid token, displaced the second, which did the same - two devices evicting
@@ -171,8 +171,8 @@ class ConnectionRegistryTest {
     void replacedAcrossGateways() throws Exception {
         java.util.concurrent.LinkedBlockingQueue<byte[]> toG1 = listen("g1");
         EmbeddedChannel first = new EmbeddedChannel();
-        g1.register(ADA, first).get(5, java.util.concurrent.TimeUnit.SECONDS);
-        g2.register(ADA, new EmbeddedChannel()).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        g1.register(ADA, first, "a-session").get(5, java.util.concurrent.TimeUnit.SECONDS);
+        g2.register(ADA, new EmbeddedChannel(), "a-session").get(5, java.util.concurrent.TimeUnit.SECONDS);
 
         byte[] heard = toG1.poll(5, java.util.concurrent.TimeUnit.SECONDS);
         assertThat(heard).as("g1 told its connection was replaced").isNotNull();
@@ -191,18 +191,43 @@ class ConnectionRegistryTest {
     @DisplayName("a replacement told late leaves a newer connection at the old gateway alone (T-60)")
     void aLateReplacementSparesANewerConnection() throws Exception {
         java.util.concurrent.LinkedBlockingQueue<byte[]> toG1 = listen("g1");
-        g1.register(ADA, new EmbeddedChannel()).get(5, java.util.concurrent.TimeUnit.SECONDS);
-        g2.register(ADA, new EmbeddedChannel()).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        g1.register(ADA, new EmbeddedChannel(), "a-session").get(5, java.util.concurrent.TimeUnit.SECONDS);
+        g2.register(ADA, new EmbeddedChannel(), "a-session").get(5, java.util.concurrent.TimeUnit.SECONDS);
         byte[] heard = toG1.poll(5, java.util.concurrent.TimeUnit.SECONDS);
         assertThat(heard).isNotNull();
         // Before the message is heard, the player comes back to g1: a connection newer than the one replaced.
         EmbeddedChannel newer = new EmbeddedChannel();
-        g1.register(ADA, newer).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        g1.register(ADA, newer, "a-session").get(5, java.util.concurrent.TimeUnit.SECONDS);
         g1.deliver(com.backend.handoff.LobbyPush.Delivery.parse(heard));
         newer.runPendingTasks();
         assertThat((Object) newer.readOutbound()).as("told nothing").isNull();
         assertThat(newer.isActive()).as("still open").isTrue();
         assertThat(toG1.poll(500, java.util.concurrent.TimeUnit.MILLISECONDS))
                 .as("a login on the gateway that already holds the player tells it nothing over the store").isNull();
+    }
+    @Test
+    @Timeout(20)
+    @DisplayName("a revocation whose session cannot be looked up closes the connection, as the push asks (T-71)")
+    void aRevocationUncheckedCloses() throws Exception {
+        io.netty.channel.DefaultEventLoopGroup loop = new io.netty.channel.DefaultEventLoopGroup(1);
+        try {
+            io.netty.channel.local.LocalAddress at = new io.netty.channel.local.LocalAddress("t71-" + System.nanoTime());
+            new io.netty.bootstrap.ServerBootstrap().group(loop).channel(io.netty.channel.local.LocalServerChannel.class)
+                    .childHandler(new io.netty.channel.ChannelInboundHandlerAdapter()).bind(at).sync();
+            io.netty.channel.Channel ch = new io.netty.bootstrap.Bootstrap().group(loop)
+                    .channel(io.netty.channel.local.LocalChannel.class)
+                    .handler(new Pushes(new com.backend.common.Metrics.LabeledCounter(), new java.util.concurrent.atomic.LongAdder(),
+                            new com.backend.common.Metrics.LabeledHistogram(Pushes.UNWRITABLE_BUCKETS)))
+                    .connect(at).sync().channel();
+            String session = new com.backend.handoff.SessionStore(client).create(ADA).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            g1.register(ADA, ch, session).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            store.close();                                    // the store gone: the session cannot be looked up
+            assertThat(g1.deliver(new com.backend.handoff.LobbyPush.Delivery(ADA, ConnectionRegistry.SESSION_REVOKED,
+                    "{\"t\":\"evt.session.revoked\",\"d\":{\"reason\":\"signed_out\"}}"))).isTrue();
+            assertThat(ch.closeFuture().await(15, java.util.concurrent.TimeUnit.SECONDS)).as("closed").isTrue();
+            store = JRedisEmbedded.start();                   // for tearDown
+        } finally {
+            loop.shutdownGracefully().sync();
+        }
     }
 }

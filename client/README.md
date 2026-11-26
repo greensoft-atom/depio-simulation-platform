@@ -76,7 +76,8 @@ client/
 │   ├── PartyState.cs           the party as told, the newest state kept (04 §4, D-74)
 │   ├── Scene.cs                what a frame draws where, at a render tick, and the render clock: 08 §8
 │   ├── TouchSticks.cs          two sticks, or keys and a mouse, to an input: 08 §8
-│   ├── AccountKeeper.cs        the account kept across launches, in a secure store: 08 §8
+│   ├── AccountClient.cs        the account service: sign up, log in, refresh, log out, a password, a deletion (D-117)
+│   ├── AccountKeeper.cs        what signs the device in, a refresh token or a guest's key, in a secure store: 10 §5.1
 │   └── Json.cs                 strict JSON for the API and the lobby, so the core needs no package
 ├── Core.Tests/                 NUnit, and the vectors the server's tests read, linked, never copied
 │   └── Pki/                    the tests' certificates, made by Pki/make.sh
@@ -166,19 +167,23 @@ its own two ends, at TLS 1.0.
   with its compiler for each run, and runs it on its Mono.
 - python3.
 - The development MySQL (`dev-mysql.sh`, 127.0.0.1:3314). The drill starts it when it is not running, and stops it
-  after. The drill uses the database `backend_dev`, which a run by hand uses too, so do not run the two at once.
+  after. The drill uses the databases `backend_dev` and `account_dev`, which a run by hand uses too, so do not run the
+  two at once.
+- The account service built (`dev-account.sh build`, D-117): the drill runs it from `account-service/target` on 8097,
+  with a signing key of its own, until the release carries it (plan item 142 (f)).
 - With `NEWMAN=1`: `npx`, which runs newman.
 
 **What it runs.** The headless driver, built for the run (`build_headless`, in `unity-env.sh`) and run on Unity's
-Mono with `float32`. It is given the API at `http://127.0.0.1:8093` and `--lobby ws://127.0.0.1:8094/lobby` (with
-`FRONT`, nginx's addresses on 8095 instead). It also gives the driver the
+Mono with `float32`. It is given the API at `http://127.0.0.1:8093`, `--account http://127.0.0.1:8097` and `--lobby
+ws://127.0.0.1:8094/lobby` (with `FRONT`, nginx's addresses on 8095 for the API and the lobby; the account service is
+reached straight until the site routes it). It also gives the driver the
 operator's API and a way to write the drill's fixtures (see [Headless/README.md](Headless/README.md)). With no
 scenario named, it runs `play resume badticket lifecycle`.
 
 **The scenarios**, in the driver's order: `play prediction equip boost team tournament teammatch teamcup rename apply
 roundrobin levels gems purchase pass skin milestone season achievements goals social guest stats domination tag maze
 sandbox resume coldresume badticket lifecycle untrusted lobby replaced badsession duel walkover party decline rffa
-coop banned notice erase removed phrase`. `untrusted` needs a match over TLS and a second root, which the drill
+coop banned notice erase account removed phrase`. `untrusted` needs a match over TLS and a second root, which the drill
 cannot give the client on Unity's Mono: it refuses that scenario (D-116). What each scenario checks, and what it
 needs, is in [Headless/README.md](Headless/README.md#scenarios).
 
@@ -209,6 +214,7 @@ needs, is in [Headless/README.md](Headless/README.md#scenarios).
 |---|---|
 | 6390, 6392 | j-redis; its replica with `FAILOVER` |
 | 8093, 8094, 9011 | platform, the gateway, the arena |
+| 8097 | the account service (D-117) |
 | 9195, 9196 | platform's metrics, platform's admin API |
 | 9197, 9198, 9199 | the metrics of the arena, the gateway and the worker |
 | 3314 | the development MySQL (`dev-mysql.sh`), started when it is not running |
@@ -296,3 +302,14 @@ A second phrase said at once was dropped without a kick, and one said two second
 for help from one of the three reached all three, by name, before the first wave came. Before the queue, the party
 of two said "Good luck!" in the lobby. Both heard it, the third player did not, and a second phrase said at once was
 refused `too_soon`.
+
+**Accounts at the account service, 2026-11-26** (D-117, plan item 142 (e)). The drill started the account service
+on 8097 beside the release, and every player the driver made was an account signed up there, its access token
+exchanged for a session. All 46 scenarios passed, `account` among them: a refresh, the spent token taken again in its
+overlap, a logout ending its family, and a password changed from a third device, which ended the two older sessions
+and closed the lobby on one, `signed_out`, while a lobby opened on the session made after the change stayed open
+(T-71). `erase` deleted an account at the account service, its event erasing the player and closing the other
+device's lobby; `guest` linked a guest through `AccountKeeper`, and a second launch signed in by the refresh token as
+the same player. Both simple clients' live checks and the Postman collection (145 requests, 159 checks) passed, and
+again through nginx in both its ways (`FRONT=http`, `FRONT=plain`) with `play lobby duel account erase guest banned`.
+Sixty bots signed up at the account service and played through the store's failover, each stay paid.

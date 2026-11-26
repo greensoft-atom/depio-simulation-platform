@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.backend.handoff.LobbyPush;
+import com.backend.handoff.SessionStore;
 import com.jredis.client.JRedisClient;
 
 import io.netty.channel.Channel;
@@ -73,10 +74,11 @@ final class ConnectionRegistry implements AutoCloseable {
 
     private static final String KEY_PREFIX = LobbyPush.CONNECTION_PREFIX;
 
-    /** One socket, and the value its registration wrote. */
-    private record Registration(Channel channel, String value) { }
+    /** One socket, the value its registration wrote, and the session it authenticated with. */
+    private record Registration(Channel channel, String value, String session) { }
 
     private final JRedisClient store;
+    private final SessionStore sessions;
     private final String gatewayId;
     private final Map<Long, Registration> local = new ConcurrentHashMap<>();
 
@@ -98,6 +100,7 @@ final class ConnectionRegistry implements AutoCloseable {
 
     ConnectionRegistry(JRedisClient store, String gatewayId) {
         this.store = store;
+        this.sessions = new SessionStore(store);
         this.gatewayId = gatewayId;
     }
 
@@ -107,9 +110,9 @@ final class ConnectionRegistry implements AutoCloseable {
     }
 
     /** @return when the store has the registration: until then a push to the player goes nowhere (T-39) */
-    CompletableFuture<?> register(long playerId, Channel channel) {
+    CompletableFuture<?> register(long playerId, Channel channel, String session) {
         Registration mine = new Registration(channel,
-                gatewayId + "#" + processNonce + "-" + registrations.incrementAndGet());
+                gatewayId + "#" + processNonce + "-" + registrations.incrementAndGet(), session);
         Registration previous = local.put(playerId, mine);
         if (previous != null && previous.channel() != channel) {
             log.info("player {} connected again; closing the older connection", playerId);
@@ -210,9 +213,22 @@ final class ConnectionRegistry implements AutoCloseable {
             return true;
         }
         Pushes pushes = r.channel().pipeline().get(Pushes.class);
-        // Banned (04 §10): told why, then closed once that is written, as a replaced one is.
-        boolean revoked = SESSION_REVOKED.equals(delivery.type());
-        r.channel().eventLoop().execute(() -> pushes.offer(delivery.message(), revoked));
+        if (SESSION_REVOKED.equals(delivery.type())) {
+            // Told why, then closed once that is written, as a replaced one is: but only once its own session has
+            // ended (T-71). Every sender ends sessions in the store before it pushes; a ban or a deletion ended all of
+            // them, a password change those older than itself, and the device that changed it may be here on a newer.
+            // A lookup that fails closes it, as the push asks.
+            r.channel().eventLoop().execute(() -> sessions.playerIdOf(r.session()).whenComplete((id, error) ->
+                    r.channel().eventLoop().execute(() -> {
+                        if (error == null && id >= 0) {
+                            log.info("player {}: sessions revoked, not this connection's; it stays", delivery.to());
+                            return;
+                        }
+                        pushes.offer(delivery.message(), true);
+                    })));
+            return true;
+        }
+        r.channel().eventLoop().execute(() -> pushes.offer(delivery.message(), false));
         return true;
     }
 

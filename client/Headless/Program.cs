@@ -12,11 +12,13 @@ namespace Backend.Client.Headless
     /// Drives the client's core against a running stack, as a player would, and says whether
     /// each scenario did what docs 02 and 08 say it should. Exit status 0 only if all did.
     ///
-    ///   Backend.Client.Headless &lt;platform-url&gt; [--lobby ws-url] [--trust cert] [--wrong-trust cert] [scenario ...]
+    ///   Backend.Client.Headless &lt;platform-url&gt; [--account url] [--lobby ws-url] [--trust cert] [--wrong-trust cert] [scenario ...]
     ///
     /// With none named: play, resume, badticket, lifecycle. Every scenario is a case of the switch below, each
-    /// with one line in client/Headless/README.md. Those that need the lobby (<see cref="NeedsLobby"/>) are
-    /// skipped without --lobby; untrusted needs --wrong-trust; several need the operator's API
+    /// with one line in client/Headless/README.md. A player is an account signed up at the account service (--account,
+    /// D-117) and its access token exchanged, or without it a guest; those that need an account (<see cref="NeedsAccount"/>)
+    /// are skipped without --account, those that need the lobby (<see cref="NeedsLobby"/>) without --lobby; untrusted
+    /// needs --wrong-trust; several need the operator's API
     /// (BACKEND_ADMIN_URL, BACKEND_ADMIN_TOKEN) or the drill's database helper (BACKEND_DRILL_SQL), which
     /// headless-drill.sh sets. With TLS, --trust names the one certificate to trust in place of the device's
     /// store, as a test CA would be; the host name is still checked, and nothing is pinned.
@@ -24,6 +26,8 @@ namespace Backend.Client.Headless
     public static class Program
     {
         private static ApiClient Api;
+        /// <summary>The account service (--account); null: every player a guest.</summary>
+        private static AccountClient Accounts;
         private static Uri _lobby;
         private static string _platform;
         private static int _failures;
@@ -34,28 +38,42 @@ namespace Backend.Client.Headless
         {
             "lobby", "replaced", "badsession", "duel", "walkover", "party", "decline", "rffa", "coop", "banned",
             "tournament", "teammatch", "teamcup", "team", "social", "rename", "apply", "roundrobin", "milestone", "season",
-            "achievements", "goals", "pass", "domination", "tag", "maze", "sandbox", "notice", "erase",
+            "achievements", "goals", "pass", "domination", "tag", "maze", "sandbox", "notice", "erase", "account",
         };
+
+        /// <summary>The scenarios that sign in at the account service: without --account they are skipped and said.</summary>
+        private static readonly HashSet<string> NeedsAccount = new HashSet<string> { "account", "erase", "guest", "banned" };
+
+        private const string Password = "hunter2-hunter2", NewPassword = "hunter3-hunter3";
 
         public static int Main(string[] args)
         {
             if (args.Length < 1)
             {
-                Console.Error.WriteLine("usage: Backend.Client.Headless <platform-url> [--lobby ws-url] [--trust cert] [--wrong-trust cert] [scenario ...]");
+                Console.Error.WriteLine("usage: Backend.Client.Headless <platform-url> [--account url] [--lobby ws-url] [--trust cert] [--wrong-trust cert] [scenario ...]");
                 return 2;
             }
             _platform = args[0].TrimEnd('/');
             var scenarios = new List<string>();
+            string account = null;
             for (int i = 1; i < args.Length; i++)
             {
-                if (args[i] == "--lobby") _lobby = new Uri(args[++i]);
+                if (args[i] == "--account") account = args[++i];
+                else if (args[i] == "--lobby") _lobby = new Uri(args[++i]);
                 else if (args[i] == "--trust") _trust = new X509Certificate2(args[++i]);
                 else if (args[i] == "--wrong-trust") _wrongTrust = new X509Certificate2(args[++i]);
                 else scenarios.Add(args[i]);
             }
             // --trust is the backend's root, trusted alone for the API, the lobby and matches, as the app does (D-82).
             Api = new ApiClient(new[] { _platform }, _trust == null ? null : new TrustRoot(_trust).HttpHandler());
+            if (account != null) Accounts = new AccountClient(new[] { account }, _trust == null ? null : new TrustRoot(_trust).HttpHandler());
             if (scenarios.Count == 0) scenarios.AddRange(new[] { "play", "resume", "badticket", "lifecycle" });
+            if (Accounts == null)
+            {
+                List<string> skipped = scenarios.FindAll(NeedsAccount.Contains);
+                if (skipped.Count > 0) Console.WriteLine("--- skipped, no --account: " + string.Join(" ", skipped));
+                scenarios.RemoveAll(NeedsAccount.Contains);
+            }
             if (_lobby == null)
             {
                 // Said, so a run that dropped a scenario is not read as having passed it (T-69).
@@ -114,6 +132,7 @@ namespace Backend.Client.Headless
                         case "banned": Banned(); break;
                         case "notice": Notice(); break;
                         case "erase": Erase(); break;
+                        case "account": AccountPlay(); break;
                         case "removed": Removed(); break;
                         case "phrase": Phrase(); break;
                         default: Fail($"no scenario called {s}"); break;
@@ -835,15 +854,17 @@ namespace Backend.Client.Headless
         }
 
         /// <summary>
-        /// Deleting an account (04 §1, D-84): a wrong password refused; the right one erases it, the player's lobby on
-        /// another device told and closed through the gateway, that session ended too, the name refused at login and
-        /// free to register again, the friend's list without them; and a guest deleted by its session alone.
+        /// Deleting an account (04 §1, D-84, D-117): an account's player refused at the backend, its account the account
+        /// service's; there a wrong password refused, and the right one deletes it, its event erasing the player: the lobby
+        /// on another device told and closed through the gateway, every session ended, the name's login refused, a token
+        /// still in its minutes making no new player, the friend's list without them, and the name signed up again a new
+        /// player. And a guest deleted by its session alone.
         /// </summary>
         private static void Erase()
         {
             var (ada, name) = NewSession();
             var (bob, _) = NewSession();
-            ApiResult<Session> phone = Patiently(() => Api.Login(name, "hunter2-hunter2"));
+            ApiResult<Session> phone = LogIn(name);
             Check(phone.Ok, $"a second device logged in ({phone})");
             Api.AskFriend(ada.Token, bob.PlayerId).Wait();
             Check(Api.AskFriend(bob.Token, ada.PlayerId).Result.Value == "friends", "friends");
@@ -852,19 +873,28 @@ namespace Backend.Client.Headless
             {
                 lobby.Connect(phone.Value.Token);
                 Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.Ready), "the other device in the lobby");
-                ApiResult<bool> wrong = Api.DeleteAccount(ada.Token, "not-the-password").Result;
-                Check(!wrong.Ok && wrong.Status == 403 && wrong.Code == "wrong_password", $"a wrong password refused ({wrong})");
-                ApiResult<bool> erased = Api.DeleteAccount(ada.Token, "hunter2-hunter2").Result;
-                Check(erased.Ok, $"the account deleted ({erased})");
-                Check(RunLobbyUntil(lobby, 5_000, () => lobby.State == LobbyState.InvalidSession),
-                    "the other device's lobby told, through the gateway");
+                ApiResult<bool> here = Api.DeleteAccount(ada.Token).Result;
+                Check(!here.Ok && here.Status == 409 && here.Code == "delete_at_account_service",
+                    $"deleting it at the backend refused: the account is the account service's ({here.Code})");
+                ApiResult<AccountTokens> t = Patiently(() => Accounts.LogIn(name, Password));
+                ApiResult<bool> wrong = Accounts.DeleteAccount(t.Value.AccessToken, "not-the-password").Result;
+                Check(!wrong.Ok && wrong.Status == 401 && wrong.Code == "invalid_credentials", $"a wrong password refused ({wrong})");
+                ApiResult<bool> deleted = Accounts.DeleteAccount(t.Value.AccessToken, Password).Result;
+                Check(deleted.Ok, $"the account deleted at the account service ({deleted})");
+                Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.InvalidSession),
+                    "its event taken: the other device's lobby told, through the gateway");
                 Check(lobby.LastError == "session revoked: deleted", $"and why ({lobby.LastError})");
-                Check(Api.Queue(phone.Value.Token).Result.Status == 401, "its session ended too");
-                ApiResult<Session> login = Patiently(() => Api.Login(name, "hunter2-hunter2"));
-                Check(!login.Ok && login.Status == 401, $"logging in by the name refused ({login.Code})");
+                Check(Api.Queue(phone.Value.Token).Result.Status == 401 && Api.Queue(ada.Token).Result.Status == 401,
+                    "every session ended");
+                ApiResult<AccountTokens> login = Patiently(() => Accounts.LogIn(name, Password));
+                Check(!login.Ok && login.Status == 401 && login.Code == "invalid_credentials", $"logging in by the name refused ({login.Code})");
+                ApiResult<Session> late = Api.Exchange(t.Value.AccessToken).Result;
+                Check(!late.Ok && late.Status == 401 && late.Code == "invalid_token",
+                    $"its access token, still in its 15 minutes, makes no new player ({late.Code})");
                 ApiResult<FriendsInfo> friends = Api.Friends(bob.Token).Result;
                 Check(friends.Ok && !friends.Value.Friends.Exists(f => f.PlayerId == ada.PlayerId), "gone from the friend's list");
-                Check(Patiently(() => Api.Register(name, null, "hunter2-hunter2")).Ok, "the name free again");
+                var (again, _) = SignUp(name);
+                Check(again.NewPlayer && again.PlayerId != ada.PlayerId, "the name free again: signed up anew, a new player");
             }
             finally
             {
@@ -872,8 +902,86 @@ namespace Backend.Client.Headless
             }
             ApiResult<Guest> guest = Patiently(() => Api.CreateGuest());
             ApiResult<Session> guestIn = Patiently(() => Api.LoginGuest(guest.Value.GuestKey));
-            Check(Api.DeleteAccount(guestIn.Value.Token, null).Result.Ok, "a guest deleted by its session alone");
+            Check(Api.DeleteAccount(guestIn.Value.Token).Result.Ok, "a guest deleted by its session alone");
             Check(Patiently(() => Api.LoginGuest(guest.Value.GuestKey)).Status == 401, "and its key logs in no more");
+        }
+
+        /// <summary>
+        /// The account service and the backend together (D-117, 10 §5.4): the exchange, newPlayer the first time alone; a
+        /// refresh, and the spent token again within its 30 s, taken, as an app's retry is; a logout, after which the family
+        /// refreshes no more; a password changed from a third device: the sessions made before it ended, the lobby on one
+        /// told signed_out and closed, the session made after it kept and a lobby on it left open (T-71); the old password
+        /// refused, the new taken; and a link refused for an account with a player, and for an account's own session.
+        /// </summary>
+        private static void AccountPlay()
+        {
+            string name = "ac" + Guid.NewGuid().ToString("N").Substring(0, 12);
+            ApiResult<AccountTokens> made = Patiently(() => Accounts.SignUp(name, Password));
+            Check(made.Ok && made.Status == 201 && made.Value.RefreshToken?.Length == 43, $"signed up: 201, logged in at once ({made})");
+            if (!made.Ok) return;
+            ApiResult<Session> first = Api.Exchange(made.Value.AccessToken).Result;
+            Check(first.Ok && first.Value.NewPlayer, $"its access token exchanged: a session, and the player made ({first})");
+            if (!first.Ok) return;
+            ApiResult<Session> again = Api.Exchange(made.Value.AccessToken).Result;
+            Check(again.Ok && !again.Value.NewPlayer && again.Value.PlayerId == first.Value.PlayerId, "again: the same player, not made again");
+
+            ApiResult<AccountTokens> turned = Accounts.Refresh(made.Value.RefreshToken).Result;
+            Check(turned.Ok && turned.Value.RefreshToken != made.Value.RefreshToken, $"refreshed: a new refresh token, the old one spent ({turned})");
+            ApiResult<AccountTokens> retried = Accounts.Refresh(made.Value.RefreshToken).Result;
+            Check(retried.Ok, $"the spent one again within 30 s, as an app's retry: taken ({retried})");
+            ApiResult<Session> byRefresh = Api.Exchange(turned.Value.AccessToken).Result;
+            Check(byRefresh.Ok && byRefresh.Value.PlayerId == first.Value.PlayerId, "the refreshed access token exchanged: the same player");
+            Check(Accounts.LogOut(turned.Value.RefreshToken).Result.Ok, "logged out at the account service");
+            ApiResult<AccountTokens> spent = Accounts.Refresh(retried.Value.RefreshToken).Result;
+            Check(!spent.Ok && spent.Status == 400 && spent.Code == "invalid_grant", $"its family refreshes no more, the retry's token too ({spent.Code})");
+
+            ApiResult<Session> phone = LogIn(name);
+            Session fresh = null;
+            var lobby = NewLobby();
+            try
+            {
+                lobby.Connect(phone.Value.Token);
+                Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.Ready), "a second device in the lobby");
+                ApiResult<AccountTokens> third = Patiently(() => Accounts.LogIn(name, Password));
+                ApiResult<AccountTokens> changed = Accounts.ChangePassword(third.Value.AccessToken, Password, NewPassword).Result;
+                Check(changed.Ok, $"the password changed from a third ({changed})");
+                ApiResult<Session> after = Api.Exchange(changed.Value.AccessToken).Result;
+                Check(after.Ok, $"the new family's access token exchanged ({after})");
+                fresh = after.Value;
+                Check(RunLobbyUntil(lobby, 10_000, () => lobby.State == LobbyState.InvalidSession),
+                    "its event taken: the second device's lobby told, through the gateway");
+                Check(lobby.LastError == "session revoked: signed_out", $"and why ({lobby.LastError})");
+                Check(Api.Queue(phone.Value.Token).Result.Status == 401 && Api.Queue(first.Value.Token).Result.Status == 401
+                      && Api.Queue(byRefresh.Value.Token).Result.Status == 401, "every session made before the change ended");
+                Check(fresh != null && Api.Queue(fresh.Token).Result.Ok, "the one made after it kept");
+            }
+            finally
+            {
+                lobby.Dispose();
+            }
+            if (fresh != null)
+            {
+                using (var kept = NewLobby())
+                {
+                    kept.Connect(fresh.Token);
+                    Check(RunLobbyUntil(kept, 10_000, () => kept.State == LobbyState.Ready), "a lobby on the new session");
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    while (watch.ElapsedMilliseconds < 3_000 && kept.State == LobbyState.Ready) { kept.Poll(); Thread.Sleep(50); }
+                    Check(kept.State == LobbyState.Ready, "stays open: the change ended the sessions before it alone (T-71)");
+                }
+            }
+            ApiResult<AccountTokens> old = Patiently(() => Accounts.LogIn(name, Password));
+            Check(!old.Ok && old.Status == 401 && old.Code == "invalid_credentials", $"the old password refused ({old.Code})");
+            ApiResult<AccountTokens> now = Patiently(() => Accounts.LogIn(name, NewPassword));
+            Check(now.Ok, "the new one taken");
+            if (!now.Ok || fresh == null) return;
+
+            ApiResult<Guest> guest = Patiently(() => Api.CreateGuest());
+            ApiResult<Session> guestIn = Patiently(() => Api.LoginGuest(guest.Value.GuestKey));
+            ApiResult<long> inUse = Api.LinkAccount(guestIn.Value.Token, now.Value.AccessToken).Result;
+            Check(!inUse.Ok && inUse.Status == 409 && inUse.Code == "account_in_use", $"a guest linking an account with a player: refused ({inUse.Code})");
+            ApiResult<long> notGuest = Api.LinkAccount(fresh.Token, now.Value.AccessToken).Result;
+            Check(!notGuest.Ok && notGuest.Status == 409 && notGuest.Code == "not_a_guest", $"an account's own session linking: refused ({notGuest.Code})");
         }
 
         /// <summary>
@@ -1828,26 +1936,35 @@ namespace Backend.Client.Headless
         }
 
         /// <summary>
-        /// A guest (04 §1, Q-22): made with nothing asked, in again by its key, playing and paid;
-        /// upgraded to a full account, it logs in by name as the same player with what it earned,
-        /// and its key no longer works.
+        /// A guest (04 §1, Q-22), through the app's AccountKeeper and a memory store (10 §5.1): made on the first launch, in
+        /// again by its key, playing and paid; signed up, the guest linked into the account (D-117): the same player, with
+        /// what it earned, its key forgotten and refused; a second launch signs in by the refresh token as that player, and
+        /// another device logs in by the name to it.
         /// </summary>
         private static void GuestPlay()
         {
-            ApiResult<Guest> made = Patiently(() => Api.CreateGuest());
-            Check(made.Ok && made.Value.DisplayName.StartsWith("Guest"), $"a guest made, {made.Value?.DisplayName}");
+            var store = new MemorySecureStore();
+            var keeper = new AccountKeeper(Api, Accounts, store);
+            ApiResult<Session> made = Patiently(() => keeper.SignIn());
+            string key = store.Get(AccountKeeper.GuestKeyName);
+            Check(made.Ok && key != null, $"a guest made on the first launch, its key kept ({made})");
             if (!made.Ok) return;
-            ApiResult<Session> back = Patiently(() => Api.LoginGuest(made.Value.GuestKey));
+            ApiResult<Session> back = Patiently(() => new AccountKeeper(Api, Accounts, store).SignIn());
             Check(back.Ok && back.Value.PlayerId == made.Value.PlayerId, "in again by its key, as after a restart");
             long earned = PaidStay(back.Value);
             Check(earned > 0, $"played, and paid {earned} coins");
             string name = "gu" + Guid.NewGuid().ToString("N").Substring(0, 10);
-            Check(Patiently(() => Api.UpgradeAccount(back.Value.Token, name, "hunter2-hunter2", null)).Ok, "upgraded to a full account");
-            ApiResult<Session> byName = Patiently(() => Api.Login(name, "hunter2-hunter2"));
-            Check(byName.Ok && byName.Value.PlayerId == made.Value.PlayerId, "in by name, the same player");
-            Check(Api.Inventory(byName.Value.Token).Result.Value.Coins == earned, "with what it earned");
-            ApiResult<Session> refused = Patiently(() => Api.LoginGuest(made.Value.GuestKey));
-            Check(!refused.Ok && refused.Status == 401, "and the key works no more");
+            ApiResult<Session> linked = Patiently(() => keeper.SignUp(name, Password));
+            Check(linked.Ok && linked.Value.PlayerId == made.Value.PlayerId, $"signed up: the guest linked, the same player ({linked})");
+            Check(keeper.HoldsAccount && store.Get(AccountKeeper.GuestKeyName) == null, "the refresh token kept, the guest's key forgotten");
+            ApiResult<Session> relaunch = new AccountKeeper(Api, Accounts, store).SignIn().Result;
+            Check(relaunch.Ok && relaunch.Value.PlayerId == made.Value.PlayerId && !relaunch.Value.NewPlayer,
+                $"a second launch signs in by the refresh token, as that player ({relaunch})");
+            Check(relaunch.Ok && Api.Inventory(relaunch.Value.Token).Result.Value.Coins == earned, "with what it earned");
+            ApiResult<Session> refused = Patiently(() => Api.LoginGuest(key));
+            Check(!refused.Ok && refused.Status == 401, "and the guest's key works no more");
+            ApiResult<Session> byName = LogIn(name);
+            Check(byName.Ok && byName.Value.PlayerId == made.Value.PlayerId, "another device logs in by the name, the same player");
         }
 
         /// <summary>
@@ -2406,10 +2523,11 @@ namespace Backend.Client.Headless
                     while (watch.ElapsedMilliseconds < 3_000) { lobby.Poll(); Thread.Sleep(50); }
                     Check(lobby.State == LobbyState.InvalidSession, "and did not reconnect");
                     Check(Api.Queue(session.Token).Result.Status == 401, "the session is gone");
-                    ApiResult<Session> refused = Patiently(() => Api.Login(name, "hunter2-hunter2"));
-                    Check(!refused.Ok && refused.Code == "banned", $"logging in is refused ({refused.Code})");
+                    ApiResult<Session> refused = LogIn(name);
+                    Check(!refused.Ok && refused.Status == 403 && refused.Code == "banned",
+                        $"logging in is refused: a fresh access token exchanged, 403 ({refused.Code})");
                     Check((int) Call("unban").StatusCode == 200, "the operator lifted it");
-                    Check(Patiently(() => Api.Login(name, "hunter2-hunter2")).Ok, "and the player logs in again");
+                    Check(LogIn(name).Ok, "and the player logs in again");
                 }
             }
         }
@@ -2688,7 +2806,7 @@ namespace Backend.Client.Headless
 
         private static void RunFor(MatchConnection m, int ms) => RunUntil(m, ms, () => false, quiet: true);
 
-        /// <summary>A new account, logged in, with a match grant, through the core's own API client.</summary>
+        /// <summary>A new player, logged in, with a match grant, through the core's own API client.</summary>
         private static (long playerId, Grant grant) NewPlayerWithGrant()
         {
             var (session, _) = NewSession();
@@ -2697,20 +2815,46 @@ namespace Backend.Client.Headless
             return (session.PlayerId, new Grant { Host = g.Value.ArenaHost, Port = g.Value.ArenaPort, TicketId = g.Value.TicketId, Tls = g.Value.Tls, TlsName = g.Value.TlsName });
         }
 
+        /// <summary>
+        /// A new player, logged in: an account signed up at the account service and its access token exchanged (D-117),
+        /// named from its username; without --account, a guest, by its own name.
+        /// </summary>
         private static (Session session, string name) NewSession()
         {
+            if (Accounts == null)
+            {
+                ApiResult<Guest> guest = Patiently(() => Api.CreateGuest());
+                if (!guest.Ok) throw new InvalidOperationException("a guest: " + guest);
+                ApiResult<Session> byKey = Patiently(() => Api.LoginGuest(guest.Value.GuestKey));
+                if (!byKey.Ok) throw new InvalidOperationException("the guest's login: " + byKey);
+                return (byKey.Value, guest.Value.DisplayName);
+            }
             string name = "hl" + Guid.NewGuid().ToString("N").Substring(0, 12);
-            ApiResult<long> reg = Patiently(() => Api.Register(name, null, "hunter2-hunter2"));
-            if (!reg.Ok) throw new InvalidOperationException("register: " + reg);
-            ApiResult<Session> login = Patiently(() => Api.Login(name, "hunter2-hunter2"));
-            if (!login.Ok) throw new InvalidOperationException("login: " + login);
-            return (login.Value, name);
+            return (SignUp(name).session, name);
+        }
+
+        /// <summary>An account signed up at the account service, and its access token exchanged for its first session.</summary>
+        private static (Session session, AccountTokens tokens) SignUp(string name)
+        {
+            ApiResult<AccountTokens> made = Patiently(() => Accounts.SignUp(name, Password));
+            if (!made.Ok) throw new InvalidOperationException("sign-up: " + made);
+            ApiResult<Session> session = Api.Exchange(made.Value.AccessToken).Result;
+            if (!session.Ok) throw new InvalidOperationException("the exchange: " + session);
+            return (session.Value, made.Value);
+        }
+
+        /// <summary>Another device's login: at the account service by name and password, its access token exchanged.</summary>
+        private static ApiResult<Session> LogIn(string name)
+        {
+            ApiResult<AccountTokens> t = Patiently(() => Accounts.LogIn(name, Password));
+            return t.Ok ? Api.Exchange(t.Value.AccessToken).Result
+                : new ApiResult<Session> { Status = t.Status, Code = t.Code, Message = t.Message };
         }
 
         /// <summary>
-        /// A call the platform throttles by address: the drill makes accounts and sessions faster than people do, past
-        /// the 30 a minute one address may try (04 §1), so a 429 waits its Retry-After and asks again, as a client
-        /// would, twice at most (T-56). Without it, how many scenarios passed hung on how fast the machine ran them.
+        /// A call throttled by address: the drill makes accounts and sessions faster than people do, past the 30 a minute
+        /// one address may try at the account service (10 §3.3) and at the platform for guests (04 §1), so a 429 waits its
+        /// Retry-After and asks again, as a client would, twice at most (T-56). Without it, how many scenarios passed hung on how fast the machine ran them.
         /// </summary>
         private static ApiResult<T> Patiently<T>(Func<Task<ApiResult<T>>> call)
         {

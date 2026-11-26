@@ -234,9 +234,11 @@ its reason logged, never told:
   once, and again changes nothing;
 - `sessions-revoked`: every session of the player made before the event's `before_ms` ended; a session made after
   it stays, so a replayed event ends nothing new. When a session ended, the player's lobby is told
-  (`evt.session.revoked`, reason `signed_out`) and closes: a player has one lobby connection, and it may be an older
-  session's, whose device must not go on receiving the player's pushes, a match's ticket among them. The device that
-  changed the password opens its lobby again with its new session.
+  (`evt.session.revoked`, reason `signed_out`): a player has one lobby connection, and it may be an older session's,
+  whose device must not go on receiving the player's pushes, a match's ticket among them. The gateway closes it if
+  its own session is no longer in the store, and drops the push if it is: the device that changed the password may be
+  connected again already on its new session, which the event leaves (T-71). Otherwise that device opens its lobby
+  again with its new session.
 
 ### 4.4 The schema, `V3`
 
@@ -252,17 +254,86 @@ limit stays for making guests.
 
 ## 5. The clients
 
-All three clients change together (the rule since D-111).
+All three clients change together (the rule since D-111). **Designed and built 2026-11-26, plan item 142 (e).**
 
-- **The core**: `AccountClient` (sign up, log in, refresh, log out, change password, delete), `ApiClient.Exchange`
-  and `LinkAccount` in place of `Register`, `Login` and `UpgradeAccount`; `AccountKeeper` keeps a refresh token or a
-  guest's key, and signs in by whichever it holds.
-- **The Unity layer**: `BackendClient` signs up, logs in, links and signs out through the keeper.
-- **`client-simple` and `client-simple-no-tls`**: the account service's calls in `HttpExample`, their models in
-  `ApiModels`.
-- **The headless driver**: `--account <url>`; a player is an account signed up and exchanged, or a guest without it,
-  and the scenarios that need an account say they are skipped. A new scenario, `account`: refresh, reuse, a password
-  change ending the backend's sessions, a link, a deletion erasing the player.
+### 5.1 The core
+
+- **`AccountClient`**: the account service's routes (§3.2) on `ApiClient`'s own way of calling (its endpoints tried
+  in turn, its timeout, the backend's root as the certificate check): `SignUp`, `LogIn`, `Refresh`, `LogOut`,
+  `ChangePassword` and `DeleteAccount`. Its endpoint is the account service's base: `https://203.0.113.10/account`
+  behind the site (§6), `http://127.0.0.1:8083` run by hand. A token answer is `AccountTokens` (`AccessToken`,
+  `RefreshToken`, `ExpiresInSeconds`, `AccountId`). A refusal's RFC 6749 `error` and `error_description` are read
+  into the `Code` and `Message` the backend's `code` and `message` fill, so `ApiResult` is one type for both.
+- **`ApiClient`**: `Exchange(accessToken)` (`POST /v1/sessions`), whose `Session` gains `NewPlayer`;
+  `LinkAccount(session, accessToken)`; `DeleteAccount(session)`, a guest's, with no body. `Register`, `Login` and
+  `UpgradeAccount` go.
+- **`AccountKeeper`** holds what signs the device in, in its secure store: an account's refresh token
+  (`backend.refreshToken`) or a guest's key (`backend.guestKey`), one of the two, never a password. One player a
+  device:
+  - `SignIn()`: by the refresh token, refreshed, the new one kept before anything else, its access token exchanged;
+    else by the guest's key; else a new guest, its key kept. A refresh token refused (`invalid_grant`: logged out, its
+    password changed, a year old, its account deleted) is forgotten and the refusal answered, so the app asks for a
+    login; `SignIn` again makes a new guest, so nobody is made a stranger unasked. A guest's key refused (401) is
+    forgotten the same way.
+  - `SignUp(username, password)` and `LogIn(username, password)`: the account's tokens, then the device's guest, if
+    it holds one, linked to the account: the guest logged in by its key, its session linked, the same player, its
+    progress kept, and that session the answer. A link refused `account_in_use`, the account having a player from
+    another device, signs that player in by the exchange and leaves the guest, its key forgotten: the app says so
+    first when the guest has anything to lose, and a guest left is erased once nobody has played it for 180 days
+    (D-87). Any other failure keeps nothing new: the guest stays the device's, and an account signed up is entered
+    by logging in later. The refresh token is kept once the device is in, not before.
+  - `SignOut(session)`: the backend's session ended, and an account's refresh token spent at the account service and
+    forgotten. A guest's key is kept, since forgetting it loses the guest: `SignIn` after is the device's guest
+    again.
+  - `ChangePassword(current, new)`: an access token by the refresh token, the change, the new family's refresh token
+    kept, its access token exchanged: the answer is a session made after the change, which its event leaves (§4.3).
+  - `DeleteAccount(session, password)`: an account's at the account service, by an access token from the refresh
+    token and the password asked again, its event erasing the player (§4.3); a guest's at the backend, by its session
+    alone. Either way what the keeper held is forgotten.
+  - Its continuations run on the caller's context, Unity's main thread, where the store is touched (08 §2).
+
+### 5.2 The Unity layer
+
+`BackendClient` gains the account service's endpoints (`accountEndpoints`), one `AccountKeeper`, and `SignUp`,
+`LogIn`, `SignOut`, `ChangePassword` and `DeleteAccount(password)` beside `SignIn`. A result that is a session
+replaces the one held and connects the lobby again with it. `LobbyScreen` gains a name, a password and the buttons;
+the app's own screens are its designers' (08 §8).
+
+### 5.3 The simple clients
+
+`client-simple` and `client-simple-no-tls`: `HttpExample` signs up or logs in at the account service, exchanges the
+access token for a session, and refreshes and logs out; `ApiModels` gains the account service's bodies in RFC 6749's
+names (`access_token`, `refresh_token`); `BackendHttp` reads a refusal's `error` where there is no `code`. The live
+check takes the account service's address after the API's.
+
+### 5.4 The headless driver, the tools and the drills
+
+- **`--account <url>`.** A player is an account signed up at the account service, its access token exchanged; without
+  `--account`, a guest, and the scenarios that need an account (`account`, `erase`, `guest`, `banned`) are said to
+  be skipped, as those that need the lobby are without `--lobby`.
+- **`account`**, a new scenario: the exchange, `newPlayer` the first time alone; a refresh, and the spent token again
+  within its 30 s overlap, taken, as an app's retry is; a logout, after which the family refreshes no more; two
+  devices' sessions and a lobby on one, the password changed from a third: both sessions ended, the lobby told
+  `signed_out` and closed, the new session kept, and a lobby on it left open; the old password refused, the new
+  taken; a link refused `account_in_use` for an account with a player, and `not_a_guest` for an account's session.
+- **`erase`**: an account's player refused at the backend (`delete_at_account_service`); at the account service a
+  wrong password refused, then the account deleted and the player erased by its event: the other device's lobby told
+  `deleted`, its session ended, the name's login refused, the friend's list without it, and the name signed up again
+  a new player. A guest deleted by its session alone.
+- **`guest`**, through `AccountKeeper` and a memory store: a guest, paid for a stay, signed up and linked: the same
+  player, with what it earned, its key refused; a second keeper on the same store signs in by the refresh token as
+  the same player.
+- **`banned`**: an access token exchanged while the player is banned is 403 `banned`; after the ban is lifted, taken.
+- **The tools**: `LobbyClient.signIn(accountUrl, username, password)` logs in at the account service, or signs up on
+  a 401, and exchanges the access token; `BotClient` takes the account service's address as its fifth argument
+  (default `http://127.0.0.1:8083`). Every bot is an account, as a player is, and its Argon2 is the account
+  service's.
+- **The drills**: `headless-drill.sh` starts the account service from its build on 8097 (`account_dev`, a key of its
+  own in the drill's directory, the issuer `http://127.0.0.1:8097`, its events to the drill's platform), points the
+  platform at it, and gives its address to the driver, both simple clients' checks, the collection and the bots.
+  Through each `FRONT=` it is reached straight until the site routes it (§6, part (f)); with `MYSQL_FAILOVER`, its
+  database stays on the development MySQL. `dev-backend.sh test` and `bots` sign the bots up at the account service
+  run by hand, which `run-local.sh` starts after j-redis and before the backend, and `build-offline.sh` builds.
 
 ## 6. The site
 

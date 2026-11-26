@@ -83,17 +83,19 @@ its numbers move between runs. Results are recorded in `backend/README.md` and i
 
 ```bash
 java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.BotClient \
-     [bots] [seconds] [platformUrl] [lobbyUrl]
-# defaults: 50 10 http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby
+     [bots] [seconds] [platformUrl] [lobbyUrl] [accountUrl]
+# defaults: 50 10 http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby http://127.0.0.1:8083
 ```
 
 The bots are headless players that take the same path as a real client. Sixteen bots are onboarded at a time.
-The platform runs at most eight Argon2 hashes at once, so more at a time would only wait in its queue past the
-client's timeout. Each bot:
-1. Logs in as `bot<i>`. If that fails, it registers and then logs in. Its HTTP calls carry an address of its own
-   from 198.18.0.0/15 in `X-Forwarded-For`, so a hundred bots look like a hundred clients to the login throttle.
-   The platform believes that header only from loopback or a trusted proxy (`BACKEND_TRUSTED_PROXIES`, D-82). So
-   the header counts only when the bots run on the platform's machine, or from an address it trusts.
+The account service runs at most eight Argon2 hashes at once (10 §3.3), so more at a time would only wait in its
+queue past the client's timeout. Each bot:
+1. Logs in as `bot<i>` at the account service (D-117), or signs up there when the name has no account, and takes
+   the access token to the platform for a session; its player is named `bot<i>`. Its HTTP calls carry an address of
+   its own from 198.18.0.0/15 in `X-Forwarded-For`, so a hundred bots look like a hundred clients to the limits.
+   The account service and the platform believe that header only from loopback or a trusted proxy
+   (`ACCOUNT_TRUSTED_PROXIES`, `BACKEND_TRUSTED_PROXIES`, D-82). So the header counts only when the bots run on their
+   machine, or from an address they trust.
 2. Opens the lobby and sends `match.request`.
 3. Dials the arena that the grant names, with TLS when the grant asks for it, and sends `Join` with the ticket.
    The bots dial the grant's host and port directly; they do not take the way through nginx's port 80 that a
@@ -129,8 +131,7 @@ root) is the load run, with `n` bots for `s` seconds (120 by default) once all a
 
 | Method | Does |
 |---|---|
-| `registerIfNeeded(user, name, password)` | `POST /v1/accounts`. Both 201 (created) and 409 (the name is taken) count as success |
-| `login(user, password)` | `POST /v1/sessions`. Keeps the session token and the player id |
+| `signIn(accountUrl, user, password)` | The account service's `POST /v1/sessions`, or on a 401 its `POST /v1/accounts` (and on a 409, the login again); then the platform's `POST /v1/sessions` with the access token. Keeps the session token and the player id |
 | `openLobby()` | Opens the WebSocket and sends `auth` with the token. Expects `auth.ok` |
 | `requestMatch()` | Sends `match.request`. Returns a `Grant`: the arena's host and port, the ticket id, `tls`, and `tlsName` (null when the grant has none) |
 | `ping()` | Sends `ping`. A lobby connection must send one at least every 30 s |

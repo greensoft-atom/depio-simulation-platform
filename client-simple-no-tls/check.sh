@@ -4,6 +4,6 @@
 # .NET 4.x level (D-116), offline on its Mono, and live against a backend in clear: run plain, or the site's 80.
 #
 #   client-simple-no-tls/check.sh
-#   client-simple-no-tls/check.sh live <http://api> <ws://lobby>
+#   client-simple-no-tls/check.sh live <http://api> <http://account> <ws://lobby>
 export NO_TLS=1
 exec "$(cd "$(dirname "$0")" && pwd)/../client-simple/check.sh" "$@"

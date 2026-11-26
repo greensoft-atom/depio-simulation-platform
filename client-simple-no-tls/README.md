@@ -136,30 +136,37 @@ public class MainThreadExample : MonoBehaviour
 
 ## 1. The API: `BackendHttp`
 
-Make one `BackendHttp` with the API's `http://` address, log in, and set `Token`. Every call after that is made as
-the player. An `https://` address is refused: the constructor throws an `ArgumentException`, because this client has
+Make one `BackendHttp` with the API's `http://` address, and one with the account service's (the site's `/account`,
+D-117). Log in at the account service, take its access token to the API once for a session, and set `Token`. Every
+call after that is made as the player. An `https://` address is refused: the constructor throws an `ArgumentException`, because this client has
 no TLS.
 
 ```csharp
 using Backend.Client.Simple;
-using Backend.Client.Simple.Examples;     // Credentials, Session: Examples/ApiModels.cs
+using Backend.Client.Simple.Examples;     // Credentials, AccountTokens, TokenLogin, Session: Examples/ApiModels.cs
 using UnityEngine;
 
 public class LogInExample : MonoBehaviour
 {
-    private BackendHttp http;
+    private BackendHttp accounts, http;
 
     private void Awake()
     {
-        http = new BackendHttp("http://192.168.1.20");     // an https:// address throws: no TLS here
+        accounts = new BackendHttp("http://192.168.1.20/account");    // an https:// address throws: no TLS here
+        http = new BackendHttp("http://192.168.1.20");
     }
 
     public async void LogIn()
     {
         var credentials = new Credentials { username = "ada", password = "secret-123" };
-        HttpAnswer answer = await http.PostAsync("/v1/sessions", JsonUtility.ToJson(credentials));
+        HttpAnswer answer = await accounts.PostAsync("/v1/sessions", JsonUtility.ToJson(credentials));
         if (this == null) return;                                            // destroyed while it waited
-        if (!answer.Ok) { Debug.Log("refused: " + answer.Error); return; }   // "invalid_credentials", "banned"...
+        if (!answer.Ok) { Debug.Log("refused: " + answer.Error); return; }   // "invalid_credentials", "too_many_attempts"...
+        AccountTokens tokens = JsonUtility.FromJson<AccountTokens>(answer.Body);
+        PlayerPrefs.SetString("refreshToken", tokens.refresh_token);         // signs the device in again (the app: its secure store)
+        answer = await http.PostAsync("/v1/sessions", JsonUtility.ToJson(new TokenLogin { accessToken = tokens.access_token }));
+        if (this == null) return;
+        if (!answer.Ok) { Debug.Log("no session: " + answer.Error); return; } // "banned"...
         Session session = JsonUtility.FromJson<Session>(answer.Body);
         http.Token = session.token;                                          // every later call is the player's
 
@@ -176,7 +183,7 @@ A call never throws. It always ends in one `HttpAnswer`:
 | `Ok` | true for a status of 200 to 299 |
 | `Status` | the HTTP status; **0 when no answer came**: no network, or no answer in 15 s |
 | `Body` | the JSON text, or "" when there is none (a 204). Read it with `JsonUtility.FromJson<T>` (the classes are in `Examples/ApiModels.cs`) |
-| `Error` | null when it went well. Otherwise the API's `code` (`invalid_session`, `username_taken`...); `HTTP <status>`, such as `HTTP 429`, for an answer without a code; or what went wrong when no answer came |
+| `Error` | null when it went well. Otherwise the API's `code` (`invalid_session`, `banned`...) or the account service's `error` (`username_taken`, `invalid_grant`...); `HTTP <status>`, such as `HTTP 429`, for an answer without a code; or what went wrong when no answer came |
 
 `Token`, the calls and their bodies are as in `client-simple`. The calls most apps start with are in
 [client-simple's README](../client-simple/README.md#1-the-api-backendhttp), and
@@ -298,7 +305,7 @@ drawing. The snapshot is handed over as its bytes, with the server's tick.
 
 | Script | Shows |
 |---|---|
-| `HttpExample` | the API, each step awaited: a guest made once and kept in `PlayerPrefs`, logged in, the shop and the inventory read; `Register` and `LogOut` |
+| `HttpExample` | the API, each step awaited: the device's account signed in again by its refresh token, or a guest made once and kept in `PlayerPrefs`; the shop and the inventory read; `SignUp` and `LogIn` at the account service, a guest signed in linked to the account; `LogOut` at both |
 | `LobbyExample` | the lobby: logged in, connected, a seat in the public arena asked for, a duel accepted, pushes handled, reconnecting |
 | `ArenaExample` | a match from a grant, through the site's 80 or straight, as the grant needs (`Play(grant, apiUrl)`): inputs ten a second, snapshots counted, pause, resume, kicks, `LeaveMatch` |
 | `ApiModels` | the `[Serializable]` classes that `JsonUtility` reads and writes |
@@ -350,7 +357,7 @@ with `NO_TLS=1`. Nothing ran inside the Unity editor or on a phone.
   - through nginx run plain (`FRONT=plain`);
   - straight to the processes (no `FRONT`).
 
-  Each way: the API; the lobby (kept open 125 s by its heartbeat, then replaced by a second connection); a match
+  Each way: the account service, reached straight until the site routes it (D-117), and the API; the lobby (kept open 125 s by its heartbeat, then replaced by a second connection); a match
   (snapshots while sending inputs, a Pong, the app paused and back, a lost connection resumed, `Leave`); and every
   lobby and match callback on the thread that calls `Update()`.
 

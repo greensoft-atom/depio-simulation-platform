@@ -21,7 +21,7 @@ namespace Backend.Client.Simple
         public string Text;
 
         public bool IsError => Type == "error";
-        /// <summary>An error's code ("unknown_type", "invalid_session", "username_taken"...); null for any other message.</summary>
+        /// <summary>An error's code ("unknown_type", "invalid_session", "rate_limited"...); null for any other message.</summary>
         public string ErrorCode => IsError ? Json.GetString(Data, "code") : null;
 
         public string GetString(string field) => Json.GetString(Data, field);

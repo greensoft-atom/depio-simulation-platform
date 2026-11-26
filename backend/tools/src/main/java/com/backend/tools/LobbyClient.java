@@ -16,8 +16,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * Everything a client does before it reaches an arena: register, log in, hold a lobby
- * connection, and ask for a match.
+ * Everything a client does before it reaches an arena: sign in at the account service and
+ * take its token for a session, hold a lobby connection, and ask for a match.
  *
  * <h2>Why this exists in Java</h2>
  *
@@ -90,10 +90,11 @@ public final class LobbyClient implements AutoCloseable {
     /**
      * Tells platform this client's address the way nginx does, as {@code X-Forwarded-For}.
      *
-     * Platform believes the header only from a peer on its own machine or one named in
-     * {@code BACKEND_TRUSTED_PROXIES} (the front's nginx, D-82), so this works for a local load
-     * run and nowhere else. There it makes a hundred bots a hundred clients,
-     * rather than one address the login throttle stops at thirty attempts a minute.
+     * Platform and the account service believe the header only from a peer on their own machine
+     * or one named in {@code BACKEND_TRUSTED_PROXIES} and {@code ACCOUNT_TRUSTED_PROXIES} (the
+     * front's nginx, D-82), so this works for a local load run and nowhere else. There it makes a
+     * hundred bots a hundred clients, rather than one address the account service's limit stops at
+     * thirty attempts a minute.
      */
     public LobbyClient forwardedFor(String address) {
         this.forwardedFor = address;
@@ -119,50 +120,44 @@ public final class LobbyClient implements AutoCloseable {
     // ---- HTTP: account and session ------------------------------------------------------
 
     /**
-     * Creates the account, or accepts that it already exists.
+     * Signs in as a player does (D-117, docs/detailed-design/10-accounts.md §2): logs in at the account service, or
+     * signs up there when the name has no account, and takes the access token to the platform for a session once.
      *
-     * A load run restarted against the same database would otherwise fail on every bot at
-     * the first step, which says nothing about the system under test.
+     * Login first: a load run restarted against the same databases would otherwise pay a sign-up's hash per bot to
+     * be told the name is taken. A sign-up refused as taken, another run's bot made in between, logs in after all.
      */
-    public void registerIfNeeded(String username, String displayName, String password)
-            throws Exception {
-        HttpResponse<String> response = http.send(
-                HttpRequest.newBuilder(URI.create(platformUrl + "/v1/accounts"))
-                        .timeout(TIMEOUT)
-                        .header("Content-Type", "application/json")
-                        .headers(forwardedHeader())
-                        .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(
-                                MAPPER.createObjectNode()
-                                        .put("username", username)
-                                        .put("displayName", displayName)
-                                        .put("password", password))))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 201 && response.statusCode() != 409) {
-            throw new LobbyException("register failed: " + response.statusCode()
-                    + " " + response.body());
+    public void signIn(String accountUrl, String username, String password) throws Exception {
+        String credentials = MAPPER.writeValueAsString(
+                MAPPER.createObjectNode().put("username", username).put("password", password));
+        HttpResponse<String> answer = post(accountUrl + "/v1/sessions", credentials);
+        if (answer.statusCode() == 401) {
+            answer = post(accountUrl + "/v1/accounts", credentials);
+            if (answer.statusCode() == 409) {
+                answer = post(accountUrl + "/v1/sessions", credentials);
+            }
         }
-    }
-
-    public void login(String username, String password) throws Exception {
-        HttpResponse<String> response = http.send(
-                HttpRequest.newBuilder(URI.create(platformUrl + "/v1/sessions"))
-                        .timeout(TIMEOUT)
-                        .header("Content-Type", "application/json")
-                        .headers(forwardedHeader())
-                        .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(
-                                MAPPER.createObjectNode()
-                                        .put("username", username)
-                                        .put("password", password))))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) {
-            throw new LobbyException("login failed: " + response.statusCode()
-                    + " " + response.body());
+        if (answer.statusCode() != 200 && answer.statusCode() != 201) {
+            throw new LobbyException("the account service: " + answer.statusCode() + " " + answer.body());
         }
-        JsonNode body = MAPPER.readTree(response.body());
+        String access = MAPPER.readTree(answer.body()).get("access_token").asText();
+        HttpResponse<String> session = post(platformUrl + "/v1/sessions",
+                MAPPER.writeValueAsString(MAPPER.createObjectNode().put("accessToken", access)));
+        if (session.statusCode() != 200) {
+            throw new LobbyException("the exchange: " + session.statusCode() + " " + session.body());
+        }
+        JsonNode body = MAPPER.readTree(session.body());
         token = body.get("token").asText();
         playerId = body.get("playerId").asLong();
+    }
+
+    private HttpResponse<String> post(String url, String json) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create(url))
+                        .timeout(TIMEOUT)
+                        .header("Content-Type", "application/json")
+                        .headers(forwardedHeader())
+                        .POST(HttpRequest.BodyPublishers.ofString(json))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
     }
 
     // ---- WebSocket: the lobby connection -------------------------------------------------

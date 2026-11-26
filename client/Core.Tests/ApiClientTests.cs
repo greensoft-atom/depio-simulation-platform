@@ -39,7 +39,7 @@ namespace Backend.Client.Core.Tests
             var hosts = new Hosts { Answer = _ => Json(HttpStatusCode.OK, "{\"token\":\"t\",\"playerId\":7,\"expiresInSeconds\":86400}") };
             hosts.Down.Add("a.example.test");
             var api = new ApiClient(Three, hosts);
-            ApiResult<Session> login = api.Login("ada", "hunter2-hunter2").Result;
+            ApiResult<Session> login = api.Exchange("at-1").Result;
             Assert.That(login.Ok, Is.True);
             Assert.That(login.Value.PlayerId, Is.EqualTo(7));
             Assert.That(hosts.Asked, Is.EqualTo(new[] { "a.example.test", "b.example.test" }));
@@ -105,7 +105,7 @@ namespace Backend.Client.Core.Tests
                 },
             };
             var api = new ApiClient(Three, hosts);
-            ApiResult<Session> login = api.Login("ada", "wrong").Result;
+            ApiResult<Session> login = api.Exchange("at-1").Result;
             Assert.That((login.Ok, login.Status, login.Code, login.RetryAfterSeconds), Is.EqualTo((false, 429, "throttled", 17)));
             Assert.That(hosts.Asked, Has.Count.EqualTo(1));
         }
@@ -271,13 +271,13 @@ namespace Backend.Client.Core.Tests
                 },
             };
             var store = new MemorySecureStore();
-            var keeper = new AccountKeeper(new ApiClient(Three, hosts), store);
+            var keeper = Keeper(hosts, store);
             ApiResult<Session> first = keeper.SignIn().Result;
             Assert.That((first.Ok, first.Value.Token, store.Get(AccountKeeper.GuestKeyName)), Is.EqualTo((true, "t-7", "k-123")));
             Assert.That(asked, Is.EqualTo(new[] { "/v1/guests", "/v1/sessions" }));
 
             asked.Clear();
-            ApiResult<Session> next = new AccountKeeper(new ApiClient(Three, hosts), store).SignIn().Result;
+            ApiResult<Session> next = Keeper(hosts, store).SignIn().Result;
             Assert.That((next.Ok, next.Value.PlayerId), Is.EqualTo((true, 7L)));
             Assert.That(asked, Is.EqualTo(new[] { "/v1/sessions" }), "by the key kept: no second guest");
         }
@@ -347,21 +347,34 @@ namespace Backend.Client.Core.Tests
                     : Json(HttpStatusCode.OK, "{\"token\":\"t-7\",\"playerId\":7,\"expiresInSeconds\":86400}"),
             };
             var store = new OneThreadStore();
-            ApiResult<Session> made = new OneThread().Run(() => new AccountKeeper(new ApiClient(Three, later), store).SignIn());
+            ApiResult<Session> made = new OneThread().Run(() => Keeper(later, store).SignIn());
             Assert.That(made.Ok, Is.True);
             Assert.That(store.Get(AccountKeeper.GuestKeyName), Is.EqualTo("k-123"));
 
             var refused = new Later { Answer = _ => Json(HttpStatusCode.Unauthorized, "{\"code\":\"invalid_credentials\"}") };
-            ApiResult<Session> gone = new OneThread().Run(() => new AccountKeeper(new ApiClient(Three, refused), store).SignIn());
+            ApiResult<Session> gone = new OneThread().Run(() => Keeper(refused, store).SignIn());
             Assert.That((gone.Ok, store.Get(AccountKeeper.GuestKeyName)), Is.EqualTo((false, (string)null)));
-            Assert.That(store.Off, Is.Empty, "the key kept and forgotten on the caller's thread, which Unity's stores require");
+
+            // An account's refresh token, kept and forgotten the same way.
+            var signedUp = new Later
+            {
+                Answer = r => r.RequestUri.AbsolutePath == "/account/v1/accounts"
+                    ? Json(HttpStatusCode.Created, Tokens("a-1", "r-1"))
+                    : Json(HttpStatusCode.OK, "{\"token\":\"t-8\",\"playerId\":8,\"expiresInSeconds\":86400,\"newPlayer\":true}"),
+            };
+            Assert.That(new OneThread().Run(() => Keeper(signedUp, store).SignUp("ada", "hunter2-hunter2")).Ok, Is.True);
+            Assert.That(store.Get(AccountKeeper.RefreshTokenName), Is.EqualTo("r-1"));
+            var spent = new Later { Answer = _ => Json(HttpStatusCode.BadRequest, "{\"error\":\"invalid_grant\"}") };
+            Assert.That(new OneThread().Run(() => Keeper(spent, store).SignIn()).Code, Is.EqualTo("invalid_grant"));
+            Assert.That(store.Get(AccountKeeper.RefreshTokenName), Is.Null);
+            Assert.That(store.Off, Is.Empty, "kept and forgotten on the caller's thread, which Unity's stores require");
         }
 
         [Test]
-        public void ADeletedAccountsKeyIsForgottenAndARefusedDeletionKeepsIt()
+        public void ADeletedGuestsKeyIsForgottenAndARefusedDeletionKeepsIt()
         {
             var asked = new List<string>();
-            HttpStatusCode answer = HttpStatusCode.Forbidden;
+            HttpStatusCode answer = HttpStatusCode.Conflict;
             var hosts = new Hosts
             {
                 Answer = r =>
@@ -370,15 +383,15 @@ namespace Backend.Client.Core.Tests
                         + (r.Content == null ? "-" : r.Content.ReadAsStringAsync().Result));
                     return answer == HttpStatusCode.NoContent
                         ? new HttpResponseMessage(HttpStatusCode.NoContent)
-                        : Json(answer, "{\"code\":\"wrong_password\",\"message\":\"no\"}");
+                        : Json(answer, "{\"code\":\"leader_with_members\",\"message\":\"no\"}");
                 },
             };
             var store = new MemorySecureStore();
             store.Set(AccountKeeper.GuestKeyName, "k-1");
-            var keeper = new AccountKeeper(new ApiClient(Three, hosts), store);
+            var keeper = Keeper(hosts, store);
 
-            ApiResult<bool> refused = keeper.DeleteAccount("t-1", "not-it").Result;
-            Assert.That((refused.Ok, refused.Status, refused.Code), Is.EqualTo((false, 403, "wrong_password")));
+            ApiResult<bool> refused = keeper.DeleteAccount("t-1", null).Result;
+            Assert.That((refused.Ok, refused.Status, refused.Code), Is.EqualTo((false, 409, "leader_with_members")));
             Assert.That(store.Get(AccountKeeper.GuestKeyName), Is.EqualTo("k-1"), "refused: nothing is gone");
 
             answer = HttpStatusCode.NoContent;
@@ -387,9 +400,9 @@ namespace Backend.Client.Core.Tests
             Assert.That(store.Get(AccountKeeper.GuestKeyName), Is.Null, "erased: the key would sign in to nothing");
             Assert.That(asked, Is.EqualTo(new[]
             {
-                "DELETE /v1/accounts Bearer t-1 {\"password\":\"not-it\"}",
                 "DELETE /v1/accounts Bearer t-1 -",
-            }), "a guest sends no password");
+                "DELETE /v1/accounts Bearer t-1 -",
+            }), "a guest's, by its session alone: no password");
         }
 
         [Test]
@@ -406,22 +419,356 @@ namespace Backend.Client.Core.Tests
             };
             var store = new MemorySecureStore();
             store.Set(AccountKeeper.GuestKeyName, "k-old");
-            ApiResult<Session> refused = new AccountKeeper(new ApiClient(Three, hosts), store).SignIn().Result;
+            ApiResult<Session> refused = Keeper(hosts, store).SignIn().Result;
             Assert.That((refused.Ok, refused.Status), Is.EqualTo((false, 401)));
-            Assert.That(store.Get(AccountKeeper.GuestKeyName), Is.Null, "an upgraded guest's key: sign in by name from here");
-            Assert.That(asked, Is.EqualTo(new[] { "/v1/sessions" }), "a player who upgraded is not made a stranger");
+            Assert.That(store.Get(AccountKeeper.GuestKeyName), Is.Null, "a linked guest's key: log in from here");
+            Assert.That(asked, Is.EqualTo(new[] { "/v1/sessions" }), "a player who linked an account is not made a stranger");
 
             var down = new Hosts();
             foreach (string h in new[] { "a.example.test", "b.example.test", "c.example.test" }) down.Down.Add(h);
-            ApiResult<Session> firstOffline = new AccountKeeper(new ApiClient(Three, down), store).SignIn().Result;
+            ApiResult<Session> firstOffline = Keeper(down, store).SignIn().Result;
             Assert.That((firstOffline.Unreachable, store.Get(AccountKeeper.GuestKeyName)), Is.EqualTo((true, (string)null)),
                 "a first launch with no answer keeps nothing");
             store.Set(AccountKeeper.GuestKeyName, "k-kept");
-            ApiResult<Session> unreachable = new AccountKeeper(new ApiClient(Three, down), store).SignIn().Result;
+            ApiResult<Session> unreachable = Keeper(down, store).SignIn().Result;
             Assert.That((unreachable.Unreachable, store.Get(AccountKeeper.GuestKeyName)), Is.EqualTo((true, "k-kept")),
                 "no answer is not a refusal: the key is kept");
             store.Delete(AccountKeeper.GuestKeyName);
             Assert.That(store.Get(AccountKeeper.GuestKeyName), Is.Null);
+        }
+
+        /// <summary>The account service behind the site, at /account (10 §6), on the API's first host.</summary>
+        private static readonly string[] AccountBase = { "https://a.example.test/account" };
+
+        private static AccountKeeper Keeper(HttpMessageHandler handler, ISecureStore store) =>
+            new AccountKeeper(new ApiClient(Three, handler), new AccountClient(AccountBase, handler), store);
+
+        /// <summary>The account service's token answer (10 §3.2).</summary>
+        private static string Tokens(string access, string refresh) =>
+            "{\"access_token\":\"" + access + "\",\"token_type\":\"Bearer\",\"expires_in\":900,\"refresh_token\":\"" + refresh
+            + "\",\"account_id\":\"acc-1\"}";
+
+        private static string SessionJson(string token, long player, bool newPlayer = false) =>
+            "{\"token\":\"" + token + "\",\"playerId\":" + player + ",\"expiresInSeconds\":86400,\"newPlayer\":"
+            + (newPlayer ? "true" : "false") + "}";
+
+        /// <summary>Answers each "METHOD /path" as given, 404 any other, and notes every call as "METHOD /path bearer body".</summary>
+        private static Hosts Answering(List<string> asked, Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>> routes) =>
+            new Hosts
+            {
+                Answer = r =>
+                {
+                    string route = r.Method + " " + r.RequestUri.AbsolutePath;
+                    asked.Add(route + " " + (r.Headers.Authorization?.Parameter ?? "-") + " "
+                        + (r.Content == null ? "-" : r.Content.ReadAsStringAsync().Result));
+                    return routes.TryGetValue(route, out Func<HttpRequestMessage, HttpResponseMessage> answer)
+                        ? answer(r) : Json(HttpStatusCode.NotFound, "{\"code\":\"no_such_route\"}");
+                },
+            };
+
+        private static string BodyOf(HttpRequestMessage r) => r.Content == null ? "" : r.Content.ReadAsStringAsync().Result;
+
+        [Test]
+        public void AccountCallsGoToTheAccountServicesRoutesAndItsTokensAreRead()
+        {
+            var asked = new List<string>();
+            var hosts = new Hosts
+            {
+                Answer = r =>
+                {
+                    asked.Add(r.Method + " " + r.RequestUri.AbsolutePath + " " + (r.Headers.Authorization?.Parameter ?? "-") + " "
+                        + (r.Content == null ? "-" : r.Content.ReadAsStringAsync().Result));
+                    if (r.Method == HttpMethod.Delete) return new HttpResponseMessage(HttpStatusCode.NoContent);
+                    return Json(r.RequestUri.AbsolutePath == "/account/v1/accounts" ? HttpStatusCode.Created : HttpStatusCode.OK,
+                        Tokens("a-1", "r-1"));
+                },
+            };
+            var accounts = new AccountClient(new[] { "https://a.example.test/account/" }, hosts);
+            ApiResult<AccountTokens> made = accounts.SignUp("ada", "hunter2-hunter2").Result;
+            Assert.That((made.Ok, made.Status, made.Value.AccessToken, made.Value.RefreshToken, made.Value.ExpiresInSeconds,
+                made.Value.AccountId), Is.EqualTo((true, 201, "a-1", "r-1", 900, "acc-1")));
+            Assert.That(accounts.LogIn("ada", "hunter2-hunter2").Result.Value.AccessToken, Is.EqualTo("a-1"));
+            Assert.That(accounts.Refresh("r-1").Result.Value.RefreshToken, Is.EqualTo("r-1"));
+            Assert.That(accounts.ChangePassword("a-1", "hunter2-hunter2", "hunter3-hunter3").Result.Ok, Is.True);
+            Assert.That(accounts.LogOut("r-1").Result.Ok, Is.True);
+            Assert.That(accounts.DeleteAccount("a-1", "hunter3-hunter3").Result.Ok, Is.True);
+            Assert.That(asked, Is.EqualTo(new[]
+            {
+                "POST /account/v1/accounts - {\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}",
+                "POST /account/v1/sessions - {\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}",
+                "POST /account/v1/sessions/refresh - {\"refresh_token\":\"r-1\"}",
+                "PUT /account/v1/accounts/me/password a-1 {\"current_password\":\"hunter2-hunter2\",\"new_password\":\"hunter3-hunter3\"}",
+                "DELETE /account/v1/sessions - {\"refresh_token\":\"r-1\"}",
+                "DELETE /account/v1/accounts/me a-1 {\"password\":\"hunter3-hunter3\"}",
+            }), "each under the account service's base, the site's /account, the access token as the bearer where asked");
+        }
+
+        [Test]
+        public void TheAccountServicesRefusalsAreReadIntoTheCodeAndMessage()
+        {
+            var hosts = new Hosts
+            {
+                Answer = r =>
+                {
+                    if (r.RequestUri.AbsolutePath.EndsWith("/refresh"))
+                        return Json(HttpStatusCode.BadRequest, "{\"error\":\"invalid_grant\",\"error_description\":\"spent\"}");
+                    var slow = Json((HttpStatusCode)429, "{\"error\":\"too_many_attempts\",\"error_description\":\"wait\"}");
+                    slow.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(42));
+                    return slow;
+                },
+            };
+            var accounts = new AccountClient(AccountBase, hosts);
+            ApiResult<AccountTokens> busy = accounts.LogIn("ada", "x").Result;
+            Assert.That((busy.Ok, busy.Status, busy.Code, busy.Message, busy.RetryAfterSeconds),
+                Is.EqualTo((false, 429, "too_many_attempts", "wait", 42)));
+            ApiResult<AccountTokens> spent = accounts.Refresh("r-old").Result;
+            Assert.That((spent.Status, spent.Code, spent.Message), Is.EqualTo((400, "invalid_grant", "spent")),
+                "RFC 6749's error and error_description, read as the backend's code and message");
+        }
+
+        [Test]
+        public void AnAccountSignsInByItsRefreshTokenTheNewOneKeptBeforeAnythingElse()
+        {
+            var asked = new List<string>();
+            HttpStatusCode exchange = HttpStatusCode.ServiceUnavailable;
+            var hosts = Answering(asked, new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+            {
+                ["POST /account/v1/sessions/refresh"] = _ => Json(HttpStatusCode.OK, Tokens("a-2", "r-2")),
+                ["POST /v1/sessions"] = _ => exchange == HttpStatusCode.OK
+                    ? Json(exchange, SessionJson("t-9", 9)) : Json(exchange, "{\"code\":\"keys_unavailable\"}"),
+            });
+            var store = new MemorySecureStore();
+            store.Set(AccountKeeper.RefreshTokenName, "r-1");
+            ApiResult<Session> down = Keeper(hosts, store).SignIn().Result;
+            Assert.That((down.Ok, down.Status, down.Code), Is.EqualTo((false, 503, "keys_unavailable")));
+            Assert.That(store.Get(AccountKeeper.RefreshTokenName), Is.EqualTo("r-2"),
+                "the new token kept before the exchange: the one it replaced is spent");
+            exchange = HttpStatusCode.OK;
+            ApiResult<Session> back = Keeper(hosts, store).SignIn().Result;
+            Assert.That((back.Ok, back.Value.Token, back.Value.PlayerId), Is.EqualTo((true, "t-9", 9L)));
+            Assert.That(asked, Is.EqualTo(new[]
+            {
+                "POST /account/v1/sessions/refresh - {\"refresh_token\":\"r-1\"}",
+                "POST /v1/sessions - {\"accessToken\":\"a-2\"}",
+                "POST /account/v1/sessions/refresh - {\"refresh_token\":\"r-2\"}",
+                "POST /v1/sessions - {\"accessToken\":\"a-2\"}",
+            }), "by the refresh token alone: no guest asked for, none made");
+        }
+
+        [Test]
+        public void ARefreshTokenRefusedIsForgottenAndNoGuestMadeUnasked()
+        {
+            var asked = new List<string>();
+            string answer = "invalid_grant";
+            var hosts = Answering(asked, new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+            {
+                ["POST /account/v1/sessions/refresh"] = _ => answer == "busy"
+                    ? Json(HttpStatusCode.ServiceUnavailable, "{\"error\":\"busy\"}")
+                    : Json(HttpStatusCode.BadRequest, "{\"error\":\"invalid_grant\"}"),
+            });
+            var store = new MemorySecureStore();
+            store.Set(AccountKeeper.RefreshTokenName, "r-1");
+            answer = "busy";
+            ApiResult<Session> busy = Keeper(hosts, store).SignIn().Result;
+            Assert.That((busy.Status, busy.Code, store.Get(AccountKeeper.RefreshTokenName)), Is.EqualTo((503, "busy", "r-1")),
+                "busy is not a refusal: kept");
+            answer = "invalid_grant";
+            ApiResult<Session> refused = Keeper(hosts, store).SignIn().Result;
+            Assert.That((refused.Ok, refused.Status, refused.Code), Is.EqualTo((false, 400, "invalid_grant")));
+            Assert.That(store.Get(AccountKeeper.RefreshTokenName), Is.Null, "logged out, its password changed or a year old: forgotten");
+            Assert.That(asked.Count(a => a.StartsWith("POST /v1/")), Is.Zero, "the app asks for a login: no guest made unasked");
+        }
+
+        [Test]
+        public void SigningUpLinksTheDevicesGuestSoItsProgressIsTheAccounts()
+        {
+            var asked = new List<string>();
+            var hosts = Answering(asked, new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+            {
+                ["POST /account/v1/accounts"] = _ => Json(HttpStatusCode.Created, Tokens("a-1", "r-1")),
+                ["POST /v1/sessions"] = _ => Json(HttpStatusCode.OK, SessionJson("t-g", 5)),
+                ["POST /v1/accounts/link"] = _ => Json(HttpStatusCode.OK, "{\"playerId\":5}"),
+            });
+            var store = new MemorySecureStore();
+            store.Set(AccountKeeper.GuestKeyName, "k-1");
+            var keeper = Keeper(hosts, store);
+            Assert.That(keeper.HoldsAccount, Is.False, "a guest's device");
+            ApiResult<Session> linked = keeper.SignUp("ada", "hunter2-hunter2").Result;
+            Assert.That((linked.Ok, linked.Value.Token, linked.Value.PlayerId), Is.EqualTo((true, "t-g", 5L)),
+                "the guest's own player, now the account's");
+            Assert.That((store.Get(AccountKeeper.RefreshTokenName), store.Get(AccountKeeper.GuestKeyName)), Is.EqualTo(("r-1", (string)null)),
+                "the refresh token kept, the guest's key, which works no more, forgotten");
+            Assert.That(keeper.HoldsAccount, Is.True);
+            Assert.That(asked, Is.EqualTo(new[]
+            {
+                "POST /account/v1/accounts - {\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}",
+                "POST /v1/sessions - {\"guestKey\":\"k-1\"}",
+                "POST /v1/accounts/link t-g {\"accessToken\":\"a-1\"}",
+            }));
+        }
+
+        [Test]
+        public void LoggingInToAnAccountThatHasAPlayerSignsThatPlayerInAndLeavesTheGuest()
+        {
+            var asked = new List<string>();
+            var hosts = Answering(asked, new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+            {
+                ["POST /account/v1/sessions"] = _ => Json(HttpStatusCode.OK, Tokens("a-1", "r-1")),
+                ["POST /v1/sessions"] = r => Json(HttpStatusCode.OK,
+                    BodyOf(r).Contains("guestKey") ? SessionJson("t-g", 5) : SessionJson("t-a", 8)),
+                ["POST /v1/accounts/link"] = _ => Json(HttpStatusCode.Conflict, "{\"code\":\"account_in_use\",\"message\":\"m\"}"),
+            });
+            var store = new MemorySecureStore();
+            store.Set(AccountKeeper.GuestKeyName, "k-1");
+            ApiResult<Session> account = Keeper(hosts, store).LogIn("ada", "hunter2-hunter2").Result;
+            Assert.That((account.Ok, account.Value.Token, account.Value.PlayerId), Is.EqualTo((true, "t-a", 8L)), "the account's own player");
+            Assert.That((store.Get(AccountKeeper.RefreshTokenName), store.Get(AccountKeeper.GuestKeyName)), Is.EqualTo(("r-1", (string)null)),
+                "one player a device: the guest left, its key forgotten");
+            Assert.That(asked.Select(a => a.Substring(0, a.IndexOf(' ', a.IndexOf(' ') + 1))), Is.EqualTo(new[]
+            {
+                "POST /account/v1/sessions", "POST /v1/sessions", "POST /v1/accounts/link", "POST /v1/sessions",
+            }));
+            Assert.That(asked[3], Does.EndWith("{\"accessToken\":\"a-1\"}"), "the exchange, after the link refused");
+        }
+
+        [Test]
+        public void ALinkOrAnExchangeThatFailsKeepsNothingNew()
+        {
+            var asked = new List<string>();
+            HttpStatusCode link = HttpStatusCode.ServiceUnavailable;
+            var hosts = Answering(asked, new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+            {
+                ["POST /account/v1/accounts"] = _ => Json(HttpStatusCode.Conflict, "{\"error\":\"username_taken\"}"),
+                ["POST /account/v1/sessions"] = _ => Json(HttpStatusCode.OK, Tokens("a-1", "r-1")),
+                ["POST /v1/sessions"] = r => BodyOf(r).Contains("guestKey")
+                    ? Json(HttpStatusCode.OK, SessionJson("t-g", 5))
+                    : Json(HttpStatusCode.Forbidden, "{\"code\":\"banned\",\"message\":\"m\"}"),
+                ["POST /v1/accounts/link"] = _ => Json(link, "{\"code\":\"storage_unavailable\",\"message\":\"m\"}"),
+            });
+            var store = new MemorySecureStore();
+            store.Set(AccountKeeper.GuestKeyName, "k-1");
+            ApiResult<Session> taken = Keeper(hosts, store).SignUp("ada", "hunter2-hunter2").Result;
+            Assert.That((taken.Status, taken.Code), Is.EqualTo((409, "username_taken")));
+            Assert.That(asked, Has.Count.EqualTo(1), "refused at the account service: nothing asked of the backend");
+            ApiResult<Session> failed = Keeper(hosts, store).LogIn("ada", "hunter2-hunter2").Result;
+            Assert.That((failed.Status, failed.Code), Is.EqualTo((503, "storage_unavailable")));
+            Assert.That((store.Get(AccountKeeper.GuestKeyName), store.Get(AccountKeeper.RefreshTokenName)), Is.EqualTo(("k-1", (string)null)),
+                "the guest stays the device's; logging in again links it");
+
+            store.Delete(AccountKeeper.GuestKeyName);
+            ApiResult<Session> banned = Keeper(hosts, store).LogIn("ada", "hunter2-hunter2").Result;
+            Assert.That((banned.Status, banned.Code, store.Get(AccountKeeper.RefreshTokenName)), Is.EqualTo((403, "banned", (string)null)),
+                "kept once the device is in, not before");
+        }
+
+        [Test]
+        public void AGuestGoneIsLeftForTheAccountsOwnPlayerAndAGuestNotAnsweringKeepsItsKey()
+        {
+            var asked = new List<string>();
+            HttpStatusCode guest = HttpStatusCode.Unauthorized;
+            var hosts = Answering(asked, new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+            {
+                ["POST /account/v1/sessions"] = _ => Json(HttpStatusCode.OK, Tokens("a-1", "r-1")),
+                ["POST /v1/sessions"] = r => BodyOf(r).Contains("guestKey")
+                    ? Json(guest, "{\"code\":\"" + (guest == HttpStatusCode.Unauthorized ? "invalid_credentials" : "storage_unavailable") + "\"}")
+                    : Json(HttpStatusCode.OK, SessionJson("t-a", 8, newPlayer: true)),
+            });
+            var store = new MemorySecureStore();
+            store.Set(AccountKeeper.GuestKeyName, "k-erased");
+            ApiResult<Session> account = Keeper(hosts, store).LogIn("ada", "hunter2-hunter2").Result;
+            Assert.That((account.Ok, account.Value.Token, account.Value.NewPlayer), Is.EqualTo((true, "t-a", true)),
+                "a guest erased (a key refused): the account's own player, made by this first exchange");
+            Assert.That((store.Get(AccountKeeper.RefreshTokenName), store.Get(AccountKeeper.GuestKeyName)), Is.EqualTo(("r-1", (string)null)));
+            Assert.That(asked.Any(a => a.Contains("/link")), Is.False, "nothing to link");
+
+            guest = HttpStatusCode.ServiceUnavailable;
+            store.Delete(AccountKeeper.RefreshTokenName);
+            store.Set(AccountKeeper.GuestKeyName, "k-1");
+            ApiResult<Session> later = Keeper(hosts, store).LogIn("ada", "hunter2-hunter2").Result;
+            Assert.That((later.Ok, later.Status, later.Code), Is.EqualTo((false, 503, "storage_unavailable")));
+            Assert.That((store.Get(AccountKeeper.GuestKeyName), store.Get(AccountKeeper.RefreshTokenName)), Is.EqualTo(("k-1", (string)null)),
+                "the guest not answering is not the guest gone: kept, to be linked when it answers");
+        }
+
+        [Test]
+        public void SigningOutSpendsAnAccountsFamilyAndKeepsAGuestsKey()
+        {
+            var asked = new List<string>();
+            var hosts = Answering(asked, new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+            {
+                ["DELETE /v1/sessions"] = _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+                ["DELETE /account/v1/sessions"] = _ => new HttpResponseMessage(HttpStatusCode.NoContent),
+            });
+            var store = new MemorySecureStore();
+            store.Set(AccountKeeper.RefreshTokenName, "r-1");
+            Assert.That(Keeper(hosts, store).SignOut("t-1").Result.Ok, Is.True);
+            Assert.That(store.Get(AccountKeeper.RefreshTokenName), Is.Null);
+            Assert.That(asked, Is.EqualTo(new[]
+            {
+                "DELETE /v1/sessions t-1 -",
+                "DELETE /account/v1/sessions - {\"refresh_token\":\"r-1\"}",
+            }), "the backend's session ended, and the family spent");
+
+            asked.Clear();
+            store.Set(AccountKeeper.GuestKeyName, "k-1");
+            Assert.That(Keeper(hosts, store).SignOut("t-g").Result.Ok, Is.True);
+            Assert.That(store.Get(AccountKeeper.GuestKeyName), Is.EqualTo("k-1"), "forgotten, the guest would be lost");
+            Assert.That(asked, Is.EqualTo(new[] { "DELETE /v1/sessions t-g -" }));
+        }
+
+        [Test]
+        public void APasswordChangedKeepsTheNewFamilyAndAnswersASessionMadeAfterIt()
+        {
+            var asked = new List<string>();
+            bool right = false;
+            var hosts = Answering(asked, new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+            {
+                ["POST /account/v1/sessions/refresh"] = _ => Json(HttpStatusCode.OK, Tokens("a-2", "r-2")),
+                ["PUT /account/v1/accounts/me/password"] = _ => right
+                    ? Json(HttpStatusCode.OK, Tokens("a-3", "r-3"))
+                    : Json(HttpStatusCode.Unauthorized, "{\"error\":\"invalid_credentials\"}"),
+                ["POST /v1/sessions"] = _ => Json(HttpStatusCode.OK, SessionJson("t-3", 8)),
+            });
+            var store = new MemorySecureStore();
+            store.Set(AccountKeeper.RefreshTokenName, "r-1");
+            ApiResult<Session> wrong = Keeper(hosts, store).ChangePassword("not-it", "hunter3-hunter3").Result;
+            Assert.That((wrong.Status, wrong.Code, store.Get(AccountKeeper.RefreshTokenName)), Is.EqualTo((401, "invalid_credentials", "r-2")),
+                "refused, the token the refresh gave kept");
+            right = true;
+            asked.Clear();
+            ApiResult<Session> changed = Keeper(hosts, store).ChangePassword("hunter2-hunter2", "hunter3-hunter3").Result;
+            Assert.That((changed.Ok, changed.Value.Token, store.Get(AccountKeeper.RefreshTokenName)), Is.EqualTo((true, "t-3", "r-3")));
+            Assert.That(asked, Is.EqualTo(new[]
+            {
+                "POST /account/v1/sessions/refresh - {\"refresh_token\":\"r-2\"}",
+                "PUT /account/v1/accounts/me/password a-2 {\"current_password\":\"hunter2-hunter2\",\"new_password\":\"hunter3-hunter3\"}",
+                "POST /v1/sessions - {\"accessToken\":\"a-3\"}",
+            }), "the new family's access token exchanged: a session made after the change, which its event leaves");
+            Assert.That(() => Keeper(hosts, new MemorySecureStore()).ChangePassword("a", "b").GetAwaiter().GetResult(),
+                Throws.InvalidOperationException, "a guest has no password");
+        }
+
+        [Test]
+        public void AnAccountIsDeletedAtTheAccountServiceItsPasswordAskedAgain()
+        {
+            var asked = new List<string>();
+            bool right = false;
+            var hosts = Answering(asked, new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+            {
+                ["POST /account/v1/sessions/refresh"] = _ => Json(HttpStatusCode.OK, Tokens("a-2", "r-2")),
+                ["DELETE /account/v1/accounts/me"] = _ => right
+                    ? new HttpResponseMessage(HttpStatusCode.NoContent)
+                    : Json(HttpStatusCode.Unauthorized, "{\"error\":\"invalid_credentials\"}"),
+            });
+            var store = new MemorySecureStore();
+            store.Set(AccountKeeper.RefreshTokenName, "r-1");
+            ApiResult<bool> wrong = Keeper(hosts, store).DeleteAccount("t-1", "not-it").Result;
+            Assert.That((wrong.Status, wrong.Code, store.Get(AccountKeeper.RefreshTokenName)), Is.EqualTo((401, "invalid_credentials", "r-2")));
+            right = true;
+            Assert.That(Keeper(hosts, store).DeleteAccount("t-1", "hunter2-hunter2").Result.Ok, Is.True);
+            Assert.That(store.Get(AccountKeeper.RefreshTokenName), Is.Null, "deleted: it would sign in to nothing");
+            Assert.That(asked.Last(), Is.EqualTo("DELETE /account/v1/accounts/me a-2 {\"password\":\"hunter2-hunter2\"}"));
+            Assert.That(asked.Any(a => a.StartsWith("DELETE /v1/")), Is.False, "its event erases the player: the backend is not asked");
         }
 
         [Test]
@@ -453,7 +800,7 @@ namespace Backend.Client.Core.Tests
         public void ASuccessThatIsNotJsonIsNotTakenForOne()
         {
             var hosts = new Hosts { Answer = _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html>a proxy's page</html>") } };
-            ApiResult<Session> session = new ApiClient(Three, hosts).Login("ada", "hunter2-hunter2").Result;
+            ApiResult<Session> session = new ApiClient(Three, hosts).Exchange("at-1").Result;
             Assert.That((session.Ok, session.Status, session.Code), Is.EqualTo((false, 200, "bad_response")),
                 "not a session with no token, which the lobby would then be refused for, again and again");
             var empty = new Hosts { Answer = _ => new HttpResponseMessage(HttpStatusCode.NoContent) };
@@ -675,6 +1022,7 @@ namespace Backend.Client.Core.Tests
                         return Json(HttpStatusCode.Created, "{\"playerId\":5,\"guestKey\":\"k-123\",\"displayName\":\"Guest0042\"}");
                     if (path == "/v1/sessions")
                         return Json(HttpStatusCode.OK, "{\"token\":\"t-5\",\"playerId\":5,\"expiresInSeconds\":86400}");
+                    if (path == "/v1/accounts/link") return Json(HttpStatusCode.OK, "{\"playerId\":5}");
                     return Json(HttpStatusCode.OK, "{}");
                 },
             };
@@ -686,14 +1034,13 @@ namespace Backend.Client.Core.Tests
             Session session = api.LoginGuest("k-123").Result.Value;
             Assert.That((path, JsonValue.Parse(sent)["guestKey"].AsString), Is.EqualTo(("/v1/sessions", "k-123")));
             Assert.That(JsonValue.Parse(sent)["username"].IsNull, "a key, not a name");
-            Assert.That((session.Token, session.PlayerId), Is.EqualTo(("t-5", 5L)));
-            Assert.That(api.UpgradeAccount("t-5", "adaline", "hunter2-hunter2", "Adaline").Result.Ok, Is.True);
-            JsonValue body = JsonValue.Parse(sent);
-            Assert.That((method, path, token), Is.EqualTo(("POST", "/v1/accounts/upgrade", "t-5")));
-            Assert.That((body["username"].AsString, body["password"].AsString, body["displayName"].AsString),
-                Is.EqualTo(("adaline", "hunter2-hunter2", "Adaline")));
-            api.UpgradeAccount("t-5", "bobby", "hunter2-hunter2", null).Wait();
-            Assert.That(JsonValue.Parse(sent)["displayName"].IsNull, "kept when none is given");
+            Assert.That((session.Token, session.PlayerId, session.NewPlayer), Is.EqualTo(("t-5", 5L, false)));
+            ApiResult<long> linked = api.LinkAccount("t-5", "at-ada").Result;
+            Assert.That((method, path, token, JsonValue.Parse(sent)["accessToken"].AsString),
+                Is.EqualTo(("POST", "/v1/accounts/link", "t-5", "at-ada")), "the account's access token, with the guest's session");
+            Assert.That((linked.Ok, linked.Value), Is.EqualTo((true, 5L)), "the same player");
+            Assert.That(api.DeleteAccount("t-5").Result.Ok, Is.True);
+            Assert.That((method, path, token, sent), Is.EqualTo(("DELETE", "/v1/accounts", "t-5", (string)null)), "a guest's, no body");
         }
 
         [Test]

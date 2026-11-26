@@ -1,6 +1,7 @@
 #!/bin/bash
 # The client's core, headless, against the real stack from a release: j-redis, platform, an
-# arena and a worker, on ports of their own. Stops everything on the way out (docs 08 §6).
+# arena and a worker, on ports of their own, and the account service from its own build (D-117,
+# until the release carries it). Stops everything on the way out (docs 08 §6).
 #
 #   client/headless-drill.sh [scenario ...]          the client on Unity 2019's Mono, in clear alone (D-116)
 #   DRAIN_AFTER=<s> client/headless-drill.sh duel     stops the arena <s> seconds in: it drains
@@ -75,7 +76,10 @@
 # others. An older release without them: a JDK 21 (/opt/jdk21), j-redis-service built, and
 # /usr/sbin/mysqld. Ports: 6390 j-redis, 8093 platform, 8094 gateway,
 # 9011 arena, 9195 platform's metrics, 9196 platform's admin API, 9197 the arena's metrics,
-# 9198 the gateway's metrics, 9199 the worker's metrics.
+# 9198 the gateway's metrics, 9199 the worker's metrics, 8097 the account service: its build,
+# account-service/target (dev-account.sh build), on the development MySQL's account_dev, a key of
+# the drill's own, its issuer http://127.0.0.1:8097; reached straight in every FRONT mode until the
+# site routes it (10 §5.4). Every player the driver makes is an account signed up there.
 set -u
 C="$(cd "$(dirname "$0")" && pwd)"
 B="$(dirname "$C")"
@@ -115,14 +119,21 @@ if [ -n "$FRONT" ]; then
     *) echo "FRONT is http or plain, not $FRONT"; exit 2 ;; esac
   MODE_PORTS+=(8095 8096 9095)
 fi
-"$B/backend/scripts/check-bind.sh" 6390 8093 8094 9011 9195 9196 9197 9198 9199 "${MODE_PORTS[@]}" || exit 1
+"$B/backend/scripts/check-bind.sh" 6390 8093 8094 9011 9195 9196 9197 9198 9199 8097 "${MODE_PORTS[@]}" || exit 1
 D=$(mktemp -d); mkdir -p "$D/data" "$D/spool"
 echo "logs in $D"
 # The headless client for .NET Framework 4.5, built here by Unity 2019's compiler, run on its Mono (D-116).
 build_headless "$D/headless" || { echo "DRILL FAILED: the headless client does not compile"; exit 1; }
-# The store's jars copied, and the tools' below: a build beside a long drill deletes its target
-# directory, and every sample of the store starts the command-line client afresh (T-31).
+# The store's jars copied, and the tools' below, and the account service's: a build beside a long drill deletes its
+# target directory, and every sample of the store starts the command-line client afresh (T-31).
 cp "$JREDIS" "$JREDIS_CLI" "$D/"; JREDIS=$D/${JREDIS##*/}; JREDIS_CLI=$D/${JREDIS_CLI##*/}
+ACC_JAR=$(ls "$B"/account-service/target/account-service-*.jar 2> /dev/null | grep -v -- -sources | head -1)
+[ -n "$ACC_JAR" ] && [ -d "$B/account-service/target/lib" ] \
+  || { echo "DRILL FAILED: the account service is not built (./dev-account.sh build)"; exit 1; }
+mkdir -p "$D/account"; cp -r "$ACC_JAR" "$B/account-service/target/lib" "$D/account/"
+(umask 077 && "$B/account-service/scripts/account-key.sh" | sed -n 's/^ACCOUNT_SIGNING_KEY=//p' > "$D/account/signing.key") \
+  && [ -s "$D/account/signing.key" ] || { echo "DRILL FAILED: no signing key for the account service"; exit 1; }
+ACCOUNT=http://127.0.0.1:8097
 PIDS=()
 # Every background job too, the probe, the soak's loops, the bots and a drain still waiting: a drill ended
 # early left them on, at the next drill's ports (O-80).
@@ -280,7 +291,8 @@ if [ "${WATCH:-0}" = 1 ]; then
   WATCH_ENV=(BACKEND_WATCH_TARGETS=platform=127.0.0.1:9195,gateway=127.0.0.1:9198,arena=127.0.0.1:9197,worker=127.0.0.1:9199
              BACKEND_WATCH_MACHINE=drill BACKEND_ALERT_WEBHOOK_URL=http://127.0.0.1:9194/hook)
 fi
-env "${WATCH_ENV[@]}" BACKEND_ADMIN_ADDR=127.0.0.1:9196 BACKEND_ADMIN_TOKEN=drill-admin-secret BACKEND_METRICS_ADDR=127.0.0.1:9195 BACKEND_PAYMENT_PROVIDER=simulated $J $OPENS -cp "$CONTENT$R/lib/platform/*" com.backend.platform.PlatformMain 127.0.0.1 8093 127.0.0.1 6390 > "$D/platform.log" 2>&1 & PIDS+=($!)
+env "${WATCH_ENV[@]}" BACKEND_ADMIN_ADDR=127.0.0.1:9196 BACKEND_ADMIN_TOKEN=drill-admin-secret BACKEND_METRICS_ADDR=127.0.0.1:9195 BACKEND_PAYMENT_PROVIDER=simulated \
+  BACKEND_ACCOUNT_ISSUER=$ACCOUNT BACKEND_ACCOUNT_JWKS_URL=$ACCOUNT/.well-known/jwks.json $J $OPENS -cp "$CONTENT$R/lib/platform/*" com.backend.platform.PlatformMain 127.0.0.1 8093 127.0.0.1 6390 > "$D/platform.log" 2>&1 & PIDS+=($!)
 BACKEND_METRICS_ADDR=127.0.0.1:9198 $J $OPENS -cp "$R/lib/gateway/*" com.backend.gateway.GatewayMain 127.0.0.1 8094 http://127.0.0.1:8093 127.0.0.1 6390 \
    gateway-drill > "$D/gateway.log" 2>&1 & PIDS+=($!)
 BACKEND_METRICS_ADDR=127.0.0.1:9199 $J $OPENS -cp "$R/lib/worker/*" com.backend.worker.WorkerMain 127.0.0.1 6390 worker-drill > "$D/worker.log" 2>&1 & PIDS+=($!)
@@ -295,7 +307,16 @@ class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 http.server.HTTPServer(("127.0.0.1", 9194), H).serve_forever()' "$D/webhook.log" & PIDS+=($!)
 fi
+# The account service (D-117), after the indexed five: its database the development MySQL's account_dev in every mode,
+# its events to this platform.
+ACCOUNT_PORT=8097 ACCOUNT_BIND=127.0.0.1 ACCOUNT_ISSUER=$ACCOUNT ACCOUNT_SIGNING_KEY_FILE="$D/account/signing.key" \
+  ACCOUNT_DB_URL="jdbc:mysql://127.0.0.1:$DEV_DBPORT/account_dev?useSSL=false&allowPublicKeyRetrieval=true" \
+  ACCOUNT_DB_USER=account ACCOUNT_DB_PASSWORD=account-dev-password ACCOUNT_EVENTS_URL=http://127.0.0.1:8093/v1/account-events \
+  $J -cp "$D/account/${ACC_JAR##*/}:$D/account/lib/*" com.backend.account.AccountMain > "$D/account.log" 2>&1 & PIDS+=($!)
 for i in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8093/health && break; sleep 1; done
+for i in $(seq 1 60); do [ "$(curl -s -o /dev/null -w '%{http_code}' $ACCOUNT/v1/health)" = 200 ] && break; sleep 1; done
+[ "$(curl -s -o /dev/null -w '%{http_code}' $ACCOUNT/v1/health)" = 200 ] \
+  || { echo "DRILL FAILED: the account service does not answer after 60 s: $(tail -3 "$D/account.log")"; exit 1; }
 curl -s -o /dev/null http://127.0.0.1:8093/health || { echo "DRILL FAILED: the platform does not answer after 60 s"; exit 1; }
 sleep 3
 # A process that ended here fails the drill: the scenarios that do not need it passed without it (O-80).
@@ -309,7 +330,7 @@ fi
 if [ "${NEWMAN:-0}" = 1 ]; then
   echo "--- the Postman collection through $API, every HTTP route ($(date +%T))"
   NEWMAN_CA=()
-  npx --yes newman run "$B/docs/api/backend.postman_collection.json" --env-var baseUrl="$API" \
+  npx --yes newman run "$B/docs/api/backend.postman_collection.json" --env-var baseUrl="$API" --env-var accountUrl="$ACCOUNT" \
       --env-var adminUrl=http://127.0.0.1:9196 --env-var adminToken=drill-admin-secret "${NEWMAN_CA[@]}" \
       --reporters cli --reporter-cli-no-banner --reporter-cli-no-console > "$D/newman.log" 2>&1
   NEWMAN_RC=$?
@@ -323,7 +344,7 @@ if [ "${SIMPLE:-0}" = 1 ]; then
     echo "--- client-simple: not through FRONT=http, whose grants ask for TLS, which Unity 2019's Mono cannot speak to nginx (D-116)"
   else
     echo "--- client-simple through $API and $LOBBY ($(date +%T))"
-    "$B/client-simple/check.sh" live "$API" "$LOBBY" > "$D/simple.log" 2>&1
+    "$B/client-simple/check.sh" live "$API" "$ACCOUNT" "$LOBBY" > "$D/simple.log" 2>&1
     SIMPLE_RC=$?
     sed 's/^/  /' "$D/simple.log"
     [ "$SIMPLE_RC" = 0 ] || echo "CLIENT-SIMPLE FAILED (exit $SIMPLE_RC): $D/simple.log"
@@ -331,7 +352,7 @@ if [ "${SIMPLE:-0}" = 1 ]; then
   # client-simple-no-tls (D-114, D-115) wherever its addresses are in clear: straight to the processes, or nginx's 80,
   # where a grant of the TLS way's, which asks for TLS, is reached through /match/ by the arena's name.
   echo "--- client-simple-no-tls through $API and $LOBBY ($(date +%T))"
-  "$B/client-simple-no-tls/check.sh" live "$API" "$LOBBY" > "$D/simple-no-tls.log" 2>&1
+  "$B/client-simple-no-tls/check.sh" live "$API" "$ACCOUNT" "$LOBBY" > "$D/simple-no-tls.log" 2>&1
   NOTLS_RC=$?
   sed 's/^/  /' "$D/simple-no-tls.log"
   [ "$NOTLS_RC" = 0 ] || echo "CLIENT-SIMPLE-NO-TLS FAILED (exit $NOTLS_RC): $D/simple-no-tls.log"
@@ -358,7 +379,8 @@ run_client() {
   drill_sql
   BACKEND_DRILL_SQL="$D/drill-sql.sh" \
   BACKEND_ADMIN_URL=http://127.0.0.1:9196 BACKEND_ADMIN_TOKEN=drill-admin-secret \
-  MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=$MONO_LIB "$MONO" "$D/headless/Backend.Client.Headless.exe" "$API" --lobby "$LOBBY" "${TRUST[@]}" "$@"
+  MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=$MONO_LIB "$MONO" "$D/headless/Backend.Client.Headless.exe" "$API" --account "$ACCOUNT" \
+    --lobby "$LOBBY" "${TRUST[@]}" "$@"
 }
 # The failovers in steps, so that a load run can put the bots' leaving between the kill and the
 # promotion (architecture/02 §6).
@@ -455,9 +477,17 @@ mysql_promote() {
 }
 dbq() { mysql -h127.0.0.1 -P"$1" --protocol=TCP -ubackend -p"${BACKEND_DB_PASSWORD:-backend-dev-password}" backend_dev -N -B -e "$2" 2>/dev/null; }
 # The bots' stays applied since match M0, and by how many players: each bot one stay, left on
-# purpose, so one row a bot.
-stays() { dbq "$DBPORT" "SELECT COUNT(*), COUNT(DISTINCT mp.player_id) FROM match_player mp JOIN account a ON a.id = mp.player_id
-                          WHERE mp.match_id > $M0 AND a.username REGEXP '^bot[0-9]+$'"; }
+# purpose, so one row a bot. A bot's player is named by its username, botN (D-117).
+stays() { dbq "$DBPORT" "SELECT COUNT(*), COUNT(DISTINCT mp.player_id) FROM match_player mp JOIN player p ON p.id = mp.player_id
+                          WHERE mp.match_id > $M0 AND p.display_name REGEXP '^bot[0-9]+$'"; }
+# A session for a probe: an account signed up at the account service, its access token taken by the platform.
+probe_session() {
+  local access
+  access=$(curl -s -X POST -H 'Content-Type: application/json' $ACCOUNT/v1/accounts \
+    -d "{\"username\":\"$1\",\"password\":\"hunter2-hunter2\"}" | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
+  curl -s -X POST -H 'Content-Type: application/json' http://127.0.0.1:8093/v1/sessions -d "{\"accessToken\":\"$access\"}" \
+    | sed -E 's/.*"token":"([^"]+)".*/\1/'
+}
 if [ -n "${BOTS:-}" ]; then
   # The load run: the bots instead of the scenarios. Cores are read from /proc over the window in
   # which every bot plays, for each process, the bots' own included: the machine is shared.
@@ -467,7 +497,7 @@ if [ -n "${BOTS:-}" ]; then
     export BACKEND_BOT_STAYS=${STAYS:-60:300}
     M0=$(dbq "$DBPORT" "SELECT COALESCE(MAX(id), 0) FROM matches")
   fi
-  $J -cp "$TOOLS" com.backend.tools.BotClient "$N" "$SECS" http://127.0.0.1:8093 ws://127.0.0.1:8094/lobby \
+  $J -cp "$TOOLS" com.backend.tools.BotClient "$N" "$SECS" http://127.0.0.1:8093 ws://127.0.0.1:8094/lobby "$ACCOUNT" \
     > "$D/bots.log" 2>&1 & BOTS_PID=$!
   until grep -q "bots connected" "$D/bots.log" || ! kill -0 $BOTS_PID 2>/dev/null; do sleep 1; done
   # None connected, the run would measure an idle stack and pass (O-80).
@@ -480,10 +510,7 @@ if [ -n "${BOTS:-}" ]; then
     PRIMARY_PORT=$DBPORT; [ "$MYSQL_FAILOVER" != 0 ] && PRIMARY_PORT=3307 && mysql_prepare
     M0=$(dbq "$PRIMARY_PORT" "SELECT COALESCE(MAX(id), 0) FROM matches")
     PROBE=probe$(date +%s%N | tail -c 9)
-    curl -s -o /dev/null -X POST -H 'Content-Type: application/json' http://127.0.0.1:8093/v1/accounts \
-      -d "{\"username\":\"$PROBE\",\"displayName\":\"Probe\",\"password\":\"hunter2-hunter2\"}"
-    PROBE_TOKEN=$(curl -s -X POST -H 'Content-Type: application/json' http://127.0.0.1:8093/v1/sessions \
-      -d "{\"username\":\"$PROBE\",\"password\":\"hunter2-hunter2\"}" | sed -E 's/.*"token":"([^"]+)".*/\1/')
+    PROBE_TOKEN=$(probe_session "$PROBE")
     while :; do                                        # stamped when answered, not when asked (T-25)
       code=$(curl -s -o /dev/null -m 2 -w '%{http_code}' -H "Authorization: Bearer $PROBE_TOKEN" \
         http://127.0.0.1:8093/v1/inventory)
@@ -745,10 +772,7 @@ if [ "$MYSQL_FAILOVER" != 0 ] && [ -z "${UNDER_LOAD:-}" ]; then
   elif [ "$MYSQL_FAILOVER" = freeze ]; then
     # A session made while MySQL answers, for an authenticated read after (O-9).
     PROBE=probe$(date +%s%N | tail -c 9)
-    curl -s -o /dev/null -X POST -H 'Content-Type: application/json' http://127.0.0.1:8093/v1/accounts \
-      -d "{\"username\":\"$PROBE\",\"displayName\":\"Probe\",\"password\":\"hunter2-hunter2\"}"
-    PROBE_TOKEN=$(curl -s -X POST -H 'Content-Type: application/json' http://127.0.0.1:8093/v1/sessions \
-      -d "{\"username\":\"$PROBE\",\"password\":\"hunter2-hunter2\"}" | sed -E 's/.*"token":"([^"]+)".*/\1/')
+    PROBE_TOKEN=$(probe_session "$PROBE")
     echo "--- MySQL's primary frozen (SIGSTOP), its replica promoted, the scenarios again ($(date +%T))"
     kill -STOP "${MYSQL_PIDS[0]}"
     FROZEN=$(date +%s.%N)
@@ -866,9 +890,10 @@ if [ "${IDLEGUEST:-0}" = 1 ]; then
   echo "worker-drill, during the scenarios: $(grep -o 'retention: guests idle.*' "$D/worker.log" | head -1)"
   echo "backend_worker_guests_erased_total: worker-drill $(curl -s http://127.0.0.1:9199/metrics | awk '$1 == "backend_worker_guests_erased_total" { print $2 }'), worker-drill-c $(curl -s http://127.0.0.1:9193/metrics | awk '$1 == "backend_worker_guests_erased_total" { print $2 }')"
   code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"guestKey\":\"$GKEY\"}" http://127.0.0.1:8093/v1/sessions)
-  row=$(dbq "$DBPORT" "SELECT CONCAT(username, ' status ', status) FROM account WHERE id = $GID")
+  row=$(dbq "$DBPORT" "SELECT CONCAT(p.display_name, ', status ', a.status, ', key ', IF(a.guest_key_hash IS NULL, 'none', 'kept'))
+                       FROM account a JOIN player p ON p.id = a.id WHERE a.id = $GID")
   echo "its key at login now: $code; the account's row: $row"
-  [ "$code" = 401 ] && [ "$row" = "~deleted~$GID status 3" ] || { echo "IDLEGUEST FAILED"; STATUS=1; }
+  [ "$code" = 401 ] && [ "$row" = "Deleted player, status 3, key none" ] || { echo "IDLEGUEST FAILED"; STATUS=1; }
 fi
 if [ "${WATCH:-0}" = 1 ]; then
   echo "--- the watch (04 §12, D-86): the worker killed, TargetDown listed by the admin API and sent to the webhook within three minutes, then silenced"

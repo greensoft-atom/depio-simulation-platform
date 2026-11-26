@@ -3934,3 +3934,14 @@ apart. Design: [detailed-design/10](../detailed-design/10-accounts.md).
 - The backend's `V3` drops `account`'s username and password hash in one step, an exception to expand and contract
   ([06 §8](../detailed-design/06-persistence-mysql.md#8-migrations)): nothing has launched, so no database that
   matters holds them and no older process runs beside the new one.
+
+**The clients (2026-11-26, part (e), [10 §5](../detailed-design/10-accounts.md#5-the-clients)).**
+- **A device holds one player**: an account's refresh token or a guest's key, never both. Signing up or logging in
+  links the device's guest to the account when the account has no player yet, so a guest's progress is kept; an
+  account with a player from another device is signed in and the guest left, its key forgotten, which the app says
+  before. Keeping both, so that a sign-out came back to the guest, was not chosen: two identities on one device, and
+  each launch would ask which.
+- **Bots are accounts**, signed up at the account service as a player is, so a load run measures the account
+  service's Argon2 and the exchange, the path a new player takes; not guests, which skip both.
+- **The gateway closes a lobby on a revocation only when its own session has ended** (T-71), where it closed on any:
+  a password change ends older sessions alone, and the device that made it may be connected again on a newer one.

@@ -336,13 +336,15 @@ What the client adds is below.
   the backend's choice, and the site's grants ask for TLS. With an `https://` API the full client plays them over TLS
   on port 9001. With an `http://` API it asks the site's port 80 for the arena by name, and plays in clear (§3,
   D-116).
-- **The account's key lives in the device's secure store** (the Keychain on iOS, the Android Keystore).
-  `AccountKeeper` keeps a guest's key, and logs in by it on every launch (§8). Keeping the session token there too, so
+- **What signs the device in lives in its secure store** (the Keychain on iOS, the Android Keystore).
+  `AccountKeeper` keeps an account's refresh token or a guest's key, one of the two, and signs in by it on every
+  launch (§8, [10 §5.1](10-accounts.md#51-the-core)). Keeping the session token there too, so
   that a restarted app skips the login, is the layer above's, and **not built**: the package holds the session in
   memory. A 401 means: log in again.
 - **429 and 503 are waits, not errors**: honour `Retry-After`. `ApiResult` carries it as `RetryAfterSeconds`. Waiting
   it out before asking again is the layer above's, and **not in the package's scripts yet**. `ApiClient` gives every
-  call 10 seconds, which a login queued behind Argon2, the password hash, needs
+  call 10 seconds, which a login queued behind Argon2, the password hash, needs (`AccountClient`, at the account
+  service, the same)
   ([04 §1](04-platform-services.md#1-auth-and-sessions)).
 - **A purchase key is made when Buy is tapped, and kept until the answer arrives**, so that a retry after a lost
   answer is the same purchase ([04 §8](04-platform-services.md#8-economy-shop-inventory-and-equipment)). Keep it on
@@ -458,9 +460,10 @@ What the client adds is below.
 - **Guests** ([04 §1](04-platform-services.md#1-auth-and-sessions), designed 2026-09-30). `ApiClient.CreateGuest`
   answers a `Guest`, with its `GuestKey` and `DisplayName`. The key goes to the device's secure store (`AccountKeeper`
   over `ISecureStore`, which the package's `SecureStores` implements, §8), and `LoginGuest` takes it on every launch.
-  The session token is held in memory only (above). `UpgradeAccount`, called with the guest's session, a username, a
-  password, and a display name or none, makes the guest a full account, the same player. From then on the player logs
-  in by name with `Login`, and the key is refused.
+  The session token is held in memory only (above). `LinkAccount`, called with the guest's session and an account's
+  access token from the account service, makes the guest that account's player, the same player, its progress kept
+  (D-117); `AccountKeeper.SignUp` and `LogIn` do it for the device's guest. From then on the device signs in by the
+  account's refresh token, and the key is refused.
 - **The class table is fetched, not built in**
   ([D-24](../architecture/03-decision-log.md#d-24--the-class-table-reaches-the-device-from-platform-versioned-by-its-content)).
   `ApiClient.Classes()` reads `GET /v1/content/classes` into the core's own `ClassTableInfo`, whose version is the one
@@ -598,8 +601,10 @@ layer would otherwise work out for itself. **Built 2026-10-04**: `Scene`, `Rende
   editor.
 - **Keeping the account across launches.** `ISecureStore` has three calls: get, set and delete a string. In the Unity
   layer the device's keychain or keystore answers them; in the tests, memory does. `AccountKeeper` makes the first
-  launch a guest (`POST /v1/guests`), keeps the guest's key in the store, and signs in by it on every launch after. A
-  key that is refused is forgotten, and a new guest is made only if asked. Its continuations stay on the caller's
+  launch a guest (`POST /v1/guests`), keeps the guest's key in the store, and signs in by it on every launch after;
+  once an account is signed up or logged in, it keeps the account's refresh token instead, and signs in by that
+  ([10 §5.1](10-accounts.md#51-the-core), D-117). A key or a refresh token that is refused is forgotten, and a new
+  guest is made only if asked. Its continuations stay on the caller's
   context, so in Unity the store is touched on the main thread, which `PlayerPrefs` requires.
 
 **(b) The Unity package** (**written 2026-10-04**; compiled as below, and run nowhere). It is

@@ -155,6 +155,9 @@ namespace UnityEngine
         public static void EndArea() => throw Object.Stub();
         public static void Label(string text, params GUILayoutOption[] options) => throw Object.Stub();
         public static bool Button(string text, params GUILayoutOption[] options) => throw Object.Stub();
+        public static string TextField(string text, int maxLength, params GUILayoutOption[] options) => throw Object.Stub();
+        public static string PasswordField(string password, char maskChar, int maxLength, params GUILayoutOption[] options) =>
+            throw Object.Stub();
     }
 
     [AttributeUsage(AttributeTargets.Field)]

@@ -72,7 +72,8 @@ in again (`client/unity-package.sh`) whenever the core changes.
    come from the backend's own CA (certificate authority).
 4. **Build the scene.** Add these objects:
    - an object with **BackendClient**, at the scene's root. Set **Api Endpoints** (the API's endpoints, tried in
-     turn, as `https://203.0.113.10`, the site's public address), **Lobby Url** (the lobby's `wss://` address, whose
+     turn, as `https://203.0.113.10`, the site's public address), **Account Endpoints** (the account service's, the
+     site's `/account`, as `https://203.0.113.10/account`, D-117), **Lobby Url** (the lobby's `wss://` address, whose
      path is `/lobby`, as `wss://203.0.113.10/lobby`) and **Trusted Root** (the `ca.pem.txt` asset; left empty, the
      device's own store is used, for a backend that a public CA certifies);
    - an object with **WorldView**. Give it the client; a **LookTable** asset (Create, Backend, Look table); a prefab
@@ -101,13 +102,13 @@ clear.
 
 | Script | What it does |
 |---|---|
-| `BackendClient` | Owns the core's objects. It dials what its settings give, `https://` and `wss://` or `http://` and `ws://`, in any build (D-115). With an `http://` API, a match goes through the site's 80 by the arena's name (D-116). `SignIn()` signs in by `AccountKeeper`. `Update` completes the sign-in, or puts its failure in `Problem` so that Play is offered again. A session that ends (`InvalidSession`: expired, or revoked by an operator) is reported and signed out the same way. `Update` also pumps the lobby, takes a grant from it (`TakeGrant`, which sets the lobby's queue back to "none") and joins it, pumps the match, feeds a `RenderClock` (a new one for each world) and builds the `Scene`. A match that has ended leaves how it ended in `LastEnd`. `OnApplicationPause` is the match's lifecycle. Other calls: `PlayNow()`, `Queue(mode)`, `DeleteAccount()` |
+| `BackendClient` | Owns the core's objects. It dials what its settings give, `https://` and `wss://` or `http://` and `ws://`, in any build (D-115). With an `http://` API, a match goes through the site's 80 by the arena's name (D-116). Its account service is `accountEndpoints`, the site's `/account` (D-117). `SignIn()` signs in by its one `AccountKeeper` (`Keeper`): the device's account by its refresh token, or its guest. `SignUp` and `LogIn` keep a guest's progress in the account (10 §5.1), `ChangePassword` answers a new session, and `SignOut` forgets an account's refresh token. `Update` completes each of them, or puts its failure in `Problem` so that Play is offered again. A session that ends (`InvalidSession`: expired, or revoked by an operator) is reported and signed out the same way. `Update` also pumps the lobby, takes a grant from it (`TakeGrant`, which sets the lobby's queue back to "none") and joins it, pumps the match, feeds a `RenderClock` (a new one for each world) and builds the `Scene`. A match that has ended leaves how it ended in `LastEnd`. `OnApplicationPause` is the match's lifecycle. Other calls: `PlayNow()`, `Queue(mode)`, `DeleteAccount(password)`: an account's at the account service, a guest's with no password |
 | `WorldView` | Draws the `Scene` in `LateUpdate`: one pooled `SpriteRenderer` for each handle, placed, turned and sized. The world's y grows down and Unity's grows up; this script, and no other, turns it over |
 | `TouchControls` | The left half of the screen moves and the right half aims and fires (`TouchSticks`). Each stick is where its thumb lands, and its reach is 0.12 of the screen's height. Keys (W A S D) and the mouse in the editor and a desktop build. It calls `SetInput` every frame |
 | `FollowCamera` | An orthographic camera on the own tank, 1 600 world units high |
-| `LobbyScreen` | IMGUI (Unity's immediate-mode GUI), the smallest screen to play from: sign in, play now, a duel's queue and its state, a match found to accept or decline, the refusals, and the account deleted after a second confirmation (D-84) |
+| `LobbyScreen` | IMGUI (Unity's immediate-mode GUI), the smallest screen to play from: sign in, sign up or log in with a name and a password, sign out, play now, a duel's queue and its state, a match found to accept or decline, the refusals, and the account deleted after a second confirmation, an account's with its password (D-84) |
 | `Hud` | IMGUI: level and experience, the last kills (five by default), respawn when dead, leave |
-| `SecureStores` | Where the account's key is kept: the keychain (iOS), the keystore (Android), and `PlayerPrefs` in the editor and any other build (a desktop's), which is not secure |
+| `SecureStores` | Where the account's refresh token or the guest's key is kept: the keychain (iOS), the keystore (Android), and `PlayerPrefs` in the editor and any other build (a desktop's), which is not secure |
 | `LookTable` | How each thing looks: an asset |
 
 `LobbyScreen` and `Hud` need no prefab and no scene set-up. The app's own screens are its designers' work, on the

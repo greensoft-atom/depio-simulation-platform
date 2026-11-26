@@ -17,7 +17,7 @@ namespace Backend.Client.Core
         public T Value;
         /// <summary>The HTTP status, or 0 when nothing answered.</summary>
         public int Status;
-        /// <summary>The server's code: invalid_credentials, too_many_attempts, busy, insufficient_funds, …; bad_response or timeout from this client.</summary>
+        /// <summary>The server's code: invalid_session, too_many_attempts, insufficient_funds, …, or the account service's error (invalid_grant, …); bad_response or timeout from this client.</summary>
         public string Code;
         public string Message;
         /// <summary>From Retry-After on a 429 or 503: how long to wait, which is not an error (08 §5).</summary>
@@ -42,6 +42,8 @@ namespace Backend.Client.Core
         public string Token;
         public long PlayerId;
         public int ExpiresInSeconds;
+        /// <summary>The first exchange of an account's access token made its player (10 §4.3); false for every login after, and a guest's.</summary>
+        public bool NewPlayer;
     }
 
     /// <summary>Where to play, and the single-use ticket to get in with.</summary>
@@ -537,21 +539,13 @@ namespace Backend.Client.Core
         /// <summary>The endpoint the last call reached, for the log.</summary>
         public string Current => _endpoints[_preferred];
 
-        public Task<ApiResult<long>> Register(string username, string displayName, string password)
-        {
-            var body = JsonValue.NewObject().Set("username", username).Set("password", password);
-            if (!string.IsNullOrEmpty(displayName)) body.Set("displayName", displayName);
-            return Call(HttpMethod.Post, "/v1/accounts", body, null, j => j["playerId"].AsLong);
-        }
-
-        public Task<ApiResult<Session>> Login(string username, string password) =>
-            Call(HttpMethod.Post, "/v1/sessions", JsonValue.NewObject().Set("username", username).Set("password", password),
-                null, j => new Session
-                {
-                    Token = j["token"].AsString,
-                    PlayerId = j["playerId"].AsLong,
-                    ExpiresInSeconds = j["expiresInSeconds"].AsInt,
-                });
+        /// <summary>
+        /// The account service's access token taken once for a session (10 §4.3): its account's player, made the first time
+        /// (<see cref="Session.NewPlayer"/>). 401 invalid_token for a token refused, its account deleted among them; 403
+        /// banned; 503 keys_unavailable while the account service's keys cannot be had.
+        /// </summary>
+        public Task<ApiResult<Session>> Exchange(string accessToken) =>
+            Call(HttpMethod.Post, "/v1/sessions", JsonValue.NewObject().Set("accessToken", accessToken), null, ReadSession);
 
         /// <summary>A guest, made with nothing asked (04 §1).</summary>
         public Task<ApiResult<Guest>> CreateGuest() =>
@@ -562,31 +556,31 @@ namespace Backend.Client.Core
 
         /// <summary>A guest's login by its key.</summary>
         public Task<ApiResult<Session>> LoginGuest(string guestKey) =>
-            Call(HttpMethod.Post, "/v1/sessions", JsonValue.NewObject().Set("guestKey", guestKey), null, j => new Session
-            {
-                Token = j["token"].AsString,
-                PlayerId = j["playerId"].AsLong,
-                ExpiresInSeconds = j["expiresInSeconds"].AsInt,
-            });
+            Call(HttpMethod.Post, "/v1/sessions", JsonValue.NewObject().Set("guestKey", guestKey), null, ReadSession);
 
-        /// <summary>The session's guest made a full account, the same player; its key stops working.</summary>
-        public Task<ApiResult<bool>> UpgradeAccount(string token, string username, string password, string displayName)
+        private static Session ReadSession(JsonValue j) => new Session
         {
-            var body = JsonValue.NewObject().Set("username", username).Set("password", password);
-            if (!string.IsNullOrEmpty(displayName)) body.Set("displayName", displayName);
-            return Call(HttpMethod.Post, "/v1/accounts/upgrade", body, token, _ => true);
-        }
+            Token = j["token"].AsString, PlayerId = j["playerId"].AsLong, ExpiresInSeconds = j["expiresInSeconds"].AsInt,
+            NewPlayer = j["newPlayer"].AsBool,
+        };
+
+        /// <summary>
+        /// The session's guest made the account's player, by the account's access token (10 §4.3): the same player, its
+        /// progress kept, its key stopped. 409 not_a_guest, or account_in_use for an account that has a player already.
+        /// </summary>
+        public Task<ApiResult<long>> LinkAccount(string token, string accessToken) =>
+            Call(HttpMethod.Post, "/v1/accounts/link", JsonValue.NewObject().Set("accessToken", accessToken), token,
+                j => j["playerId"].AsLong);
 
         public Task<ApiResult<bool>> Logout(string token) =>
             Call(HttpMethod.Delete, "/v1/sessions", null, token, _ => true);
 
         /// <summary>
-        /// The session's own account erased (D-84): a registered account's password asked again; a guest's session is
-        /// enough, with no password. A 503 after the erasure leaves the session working, and the same call finishes it.
+        /// The session's guest erased (D-84), by its session alone. An account's player is 409 delete_at_account_service:
+        /// its account is deleted at the account service (<see cref="AccountClient.DeleteAccount"/>), whose event erases it.
+        /// A 503 after the erasure leaves the session working, and the same call finishes it.
         /// </summary>
-        public Task<ApiResult<bool>> DeleteAccount(string token, string password) =>
-            Call(HttpMethod.Delete, "/v1/accounts", password == null ? null : JsonValue.NewObject().Set("password", password),
-                token, _ => true);
+        public Task<ApiResult<bool>> DeleteAccount(string token) => Call(HttpMethod.Delete, "/v1/accounts", null, token, _ => true);
 
         /// <summary>Straight to platform. The lobby's match.request is the other way in.</summary>
         public Task<ApiResult<MatchGrant>> RequestMatch(string token) =>
@@ -1226,7 +1220,7 @@ namespace Backend.Client.Core
             return rows;
         }
 
-        private async Task<ApiResult<T>> Call<T>(HttpMethod method, string path, JsonValue body, string token, Func<JsonValue, T> read)
+        internal async Task<ApiResult<T>> Call<T>(HttpMethod method, string path, JsonValue body, string token, Func<JsonValue, T> read)
         {
             string lastProblem = null;
             for (int tried = 0; tried < _endpoints.Length; tried++)
@@ -1275,8 +1269,9 @@ namespace Backend.Client.Core
                     }
                     else
                     {
-                        result.Code = json?["code"].AsString ?? "http_" + result.Status;
-                        result.Message = json?["message"].AsString ?? text;
+                        // The backend's code and message, or the account service's error and error_description (RFC 6749).
+                        result.Code = json?["code"].AsString ?? json?["error"].AsString ?? "http_" + result.Status;
+                        result.Message = json?["message"].AsString ?? json?["error_description"].AsString ?? text;
                     }
                     return result;
                 }

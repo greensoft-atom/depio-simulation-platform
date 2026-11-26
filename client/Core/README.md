@@ -118,7 +118,7 @@ arena).
 
 | Area | Calls |
 |---|---|
-| Accounts | `Register`, `Login`, `CreateGuest`, `LoginGuest`, `UpgradeAccount`, `Logout`, `DeleteAccount`, `Rename` |
+| Accounts | `Exchange` (the account service's access token, once, for a session; `Session.NewPlayer`), `CreateGuest`, `LoginGuest`, `LinkAccount` (a guest made the account's player), `Logout`, `DeleteAccount` (a guest's), `Rename` |
 | Matches | `RequestMatch`, `JoinQueue`, `LeaveQueue`, `Queue`, `OpenSandbox`, `Party` |
 | Content | `Classes`, `Phrases`, `Skins` |
 | The economy | `Shop`, `Inventory`, `RaiseItemLevel`, `Purchase`, `Packs`, `PlaceOrder`, `GetOrder`, `SimulatePayment`, `SeasonPass`, `BuyPremium`, `Equipment`, `Wear`, `TakeOff`, `Boosts`, `ActivateBoost`; and `NewPurchaseKey()`, a key for one tap of Buy |
@@ -155,7 +155,8 @@ arena).
 
 | Type | What it is for |
 |---|---|
-| `AccountKeeper` | `SignIn()`: on the first launch it makes a guest and keeps the guest's key in the store (`backend.guestKey`); on every launch after, it logs in by that key. A key that the server refuses (401) is forgotten, and a new guest is made only when `SignIn` is called again. `DeleteAccount(token, password)` deletes the account (D-84) and forgets a guest's key with it |
+| `AccountClient` | The account service (D-117, [10 §3.2](../../docs/detailed-design/10-accounts.md#32-the-routes)), at the site's `/account`: `SignUp`, `LogIn`, `Refresh`, `LogOut`, `ChangePassword`, `DeleteAccount`, each answering `AccountTokens` (`AccessToken`, `RefreshToken`, `ExpiresInSeconds`, `AccountId`) or nothing. Called as `ApiClient` calls the API; a refusal's RFC 6749 `error` is its `Code` |
+| `AccountKeeper` | What signs the device in, one of two in the store: an account's refresh token (`backend.refreshToken`) or a guest's key (`backend.guestKey`), never a password ([10 §5.1](../../docs/detailed-design/10-accounts.md#51-the-core)). `SignIn()`: by the refresh token, refreshed and its new one kept before anything else, its access token exchanged; else by the guest's key; else a new guest. `SignUp` and `LogIn` link the device's guest to the account, or, the account having a player of its own, sign that player in and leave the guest. `SignOut`, `ChangePassword`, and `DeleteAccount(session, password)`: an account's at the account service, a guest's at the backend. A refresh token or a key refused is forgotten, and a new guest is made only when `SignIn` is called again. `HoldsAccount` |
 | `ISecureStore`, `MemorySecureStore` | Where the key survives restarts: three calls, `Get`, `Set`, `Delete`. In the Unity layer it is the device's keychain or keystore; in the tests, memory |
 | `JsonValue` | Strict JSON (RFC 8259, nested at most 32 deep) for the small messages of the API and the lobby: `Parse`, `ToString`, members by name or index, `AsString`, `AsLong`, `AsInt`, `AsFloat`, `AsBool` |
 
@@ -181,6 +182,7 @@ public sealed class Player
     private readonly IClock _clock = new SystemClock();
     private readonly TrustRoot _root;
     private readonly ApiClient _api;
+    private readonly AccountClient _accounts;
     private readonly Scene _scene = new Scene();
     private LobbyClient _lobby;
     private MatchConnection _match;
@@ -193,12 +195,14 @@ public sealed class Player
     {
         _root = TrustRoot.FromPem(caPem);
         _api = new ApiClient(new[] { "https://203.0.113.10" }, _root.HttpHandler());
+        _accounts = new AccountClient(new[] { "https://203.0.113.10/account" }, _root.HttpHandler());
     }
 
-    // 1. Log in: the device's guest, made on the first launch, its key kept in the store.
+    // 1. Log in: the device's account by its refresh token, or its guest, made on the first launch, its key kept in the
+    // store. A name and a password: keeper.SignUp or keeper.LogIn, which keep the guest's progress in the account.
     public async Task<bool> SignIn(ISecureStore store)
     {
-        ApiResult<Session> session = await new AccountKeeper(_api, store).SignIn();
+        ApiResult<Session> session = await new AccountKeeper(_api, _accounts, store).SignIn();
         if (!session.Ok) return false;                 // session.Status, Code, RetryAfterSeconds
         // 2. The lobby, authenticated with the session's token.
         _lobby = new LobbyClient(new Uri("wss://203.0.113.10/lobby"), _clock, _root);

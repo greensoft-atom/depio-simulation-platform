@@ -466,12 +466,13 @@ class GatewayServerTest {
 
     @Test
     @Timeout(60)
-    @DisplayName("evt.session.revoked is written, then the connection closed: the player was banned (04 §10)")
+    @DisplayName("evt.session.revoked is written, then the connection closed: the player was banned, every session ended first (04 §10)")
     void aRevokedSessionIsClosed() throws Exception {
         String token = issueSession(4711);
         try (JRedisClient elsewhere = store.newClient(); Lobby lobby = new Lobby()) {
             lobby.auth(token, 1);
             assertThat(lobby.next().get("t").asText()).isEqualTo("auth.ok");
+            sessions.revokeAll(4711).get(5, TimeUnit.SECONDS);
             new com.backend.handoff.LobbyPush(elsewhere).send(4711, "evt.session.revoked", null)
                     .get(5, TimeUnit.SECONDS);
             assertThat(lobby.next().get("t").asText()).isEqualTo("evt.session.revoked");
@@ -479,6 +480,35 @@ class GatewayServerTest {
                 Thread.sleep(20);
             }
             assertThat(lobby.isClosed()).as("closed by the gateway").isTrue();
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("a revocation leaves a connection whose own session lives: a password change ended older ones, and the device came back on a newer (T-71)")
+    void aRevocationOfOtherSessionsLeavesThisOne() throws Exception {
+        String older = issueSession(4712);
+        String newer = issueSession(4712);
+        try (JRedisClient elsewhere = store.newClient(); Lobby lobby = new Lobby()) {
+            lobby.auth(newer, 1);
+            assertThat(lobby.next().get("t").asText()).isEqualTo("auth.ok");
+            sessions.revoke(older).get(5, TimeUnit.SECONDS);
+            com.backend.handoff.LobbyPush push = new com.backend.handoff.LobbyPush(elsewhere);
+            assertThat(push.send(4712, "evt.session.revoked", MAPPER.createObjectNode().put("reason", "signed_out"))
+                    .get(5, TimeUnit.SECONDS)).as("routed to this connection").isTrue();
+            Thread.sleep(500);                         // the gateway's lookup, and a close if it were to close
+            push.send(4712, "evt.inbox", null).get(5, TimeUnit.SECONDS);
+            assertThat(lobby.next().get("t").asText()).as("the revocation dropped: the push after it comes next")
+                    .isEqualTo("evt.inbox");
+            assertThat(lobby.isClosed()).as("and the connection open").isFalse();
+
+            sessions.revoke(newer).get(5, TimeUnit.SECONDS);
+            push.send(4712, "evt.session.revoked", null).get(5, TimeUnit.SECONDS);
+            assertThat(lobby.next().get("t").asText()).as("its own session ended, the same push").isEqualTo("evt.session.revoked");
+            for (int i = 0; i < 250 && !lobby.isClosed(); i++) {
+                Thread.sleep(20);
+            }
+            assertThat(lobby.isClosed()).as("closes it").isTrue();
         }
     }
 
@@ -511,6 +541,7 @@ class GatewayServerTest {
             try (Lobby lobby = new Lobby("ws://127.0.0.1:" + at + "/lobby")) {
                 lobby.auth(token, 1);
                 assertThat(lobby.next().get("t").asText()).isEqualTo("auth.ok");
+                new SessionStore(direct).revokeAll(4751).get(10, TimeUnit.SECONDS);     // a revocation's order (T-71)
                 assertThat(new com.backend.handoff.LobbyPush(direct).send(4751, "evt.session.revoked", null)
                         .get(5, TimeUnit.SECONDS)).as("routed: the registration is there").isTrue();
                 assertThat(lobby.next().get("t").asText()).isEqualTo("evt.session.revoked");

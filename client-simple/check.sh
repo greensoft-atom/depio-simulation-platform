@@ -16,7 +16,7 @@
 # type in its Runtime/, and live on Unity's Mono against http:// and ws:// alone.
 #
 #   client-simple/check.sh
-#   client-simple/check.sh live <api-url> <lobby-url> [<ca.pem> [<another root's ca.pem>]]
+#   client-simple/check.sh live <api-url> <account-url> <lobby-url>     the account service's address too (D-117)
 set -euo pipefail
 S="$(cd "$(dirname "$0")" && pwd)"       # client-simple: the check program, and the client checked unless NO_TLS
 B="$(dirname "$S")"
@@ -92,17 +92,18 @@ compile "the check program" "$OUT/run/check.exe" -target:exe $DEFINE $(level_ref
 run() { (cd "$OUT/run" && MONO_PATH=$MONO_LIB timeout 600 "$MONO" check.exe "$@"); }
 
 if [ "${QUIET:-0}" = 1 ]; then
-    [ $# -ge 2 ] || { echo "check.sh live <api-url> <lobby-url> [<ca.pem> [<another root's ca.pem>]]"; exit 2; }
-    [[ $1 == http://* ]] || { echo "check.sh live: the API at http:// (D-112): its https:// is checked offline, on Unity's Mono"; exit 2; }
-    if [ "${NO_TLS:-0}" = 1 ] && { [ $# -gt 2 ] || [[ $2 != ws://* ]]; }; then
-        echo "client-simple-no-tls/check.sh live <http://api> <ws://lobby>: no TLS, no root (D-114)"; exit 2
+    [ $# -ge 3 ] || { echo "check.sh live <api-url> <account-url> <lobby-url>"; exit 2; }
+    [[ $1 == http://* && $2 == http://* ]] \
+        || { echo "check.sh live: the API and the account service at http:// (D-112): https:// is checked offline, on Unity's Mono"; exit 2; }
+    if [ "${NO_TLS:-0}" = 1 ] && { [ $# -gt 3 ] || [[ $3 != ws://* ]]; }; then
+        echo "client-simple-no-tls/check.sh live <http://api> <http://account> <ws://lobby>: no TLS, no root (D-114)"; exit 2
     fi
-    if [ $# -gt 2 ] || [[ $2 != ws://* ]]; then
-        echo "check.sh live <http://api> <ws://lobby>: in clear alone, on Unity's Mono, whose TLS stops at 1.0 (D-116)"; exit 2
+    if [ $# -gt 3 ] || [[ $3 != ws://* ]]; then
+        echo "check.sh live <http://api> <http://account> <ws://lobby>: in clear alone, on Unity's Mono, whose TLS stops at 1.0 (D-116)"; exit 2
     fi
     on="Unity 2019.4.28f1's Mono"
     run live "$@" || { echo "$NAME CHECK FAILED: live, on $on"; exit 1; }
-    echo "$NAME LIVE CHECK PASSED (on $on, against $1 and $2)"
+    echo "$NAME LIVE CHECK PASSED (on $on, against $1, $2 and $3)"
     exit 0
 fi
 

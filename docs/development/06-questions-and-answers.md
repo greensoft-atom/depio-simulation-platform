@@ -402,8 +402,7 @@ firewall must open 80, 443 and 9001 ([03 §5.0](03-build-and-run.md#50-clients-o
 (umask 077; head -c 24 /dev/urandom | base64 > work/admin-token)    # the admin API's secret
 export BACKEND_PAYMENT_PROVIDER=simulated BACKEND_ADMIN_ADDR=127.0.0.1:9120 \
        BACKEND_ADMIN_TOKEN_FILE=$PWD/work/admin-token
-./dev-account.sh build && ./dev-account.sh start    # the account service, on 8083 (D-117)
-./run-local.sh start
+./run-local.sh start               # the account service among them, on 8083 (D-117)
 ```
 
 **HTTP, with `curl`.** This is the output on fresh data. Your token will differ. The arena's line, from 2026-11-01
@@ -440,8 +439,8 @@ on fresh data**: it ends the season, closes a room and bans a test player. A sec
 few checks on what the first run left. To start fresh:
 
 ```bash
-./run-local.sh stop && ./dev-account.sh stop && ./dev-mysql.sh stop && rm -rf work/mysql
-./dev-mysql.sh start && ./dev-account.sh start && ./run-local.sh start    # the account service's database is made again too
+./run-local.sh stop && ./dev-mysql.sh stop && rm -rf work/mysql
+./run-local.sh start               # both databases made again, the account service's too
 ```
 
 **The lobby WebSocket, in Postman:**
@@ -464,16 +463,17 @@ $ node docs/api/lobby-example.mjs http://127.0.0.1:8080 ws://127.0.0.1:8081/lobb
 ```
 
 **The arena's socket.** It is binary over TCP ([02-networking](../detailed-design/02-networking.md)). The bots
-speak it as a client does: they log in, get a seat from the lobby, connect to the arena, play, and leave.
+speak it as a client does: they sign in at the account service (D-117), get a seat from the lobby, connect to the
+arena, play, and leave.
 
 ```console
 $ ./dev-backend.sh bots 20 15
-lobby: 20 of 20 bots registered, logged in and got a ticket in 4.4 s (220 ms of wall time per bot)
+lobby: 20 of 20 bots signed in and got a ticket in 4.3 s (216 ms of wall time per bot)
 20 bots connected to <address>:9001
 
 welcomes 20   disconnects 0   kicks 0 (last reason 0)   lobby failures 0
-over 15.0 s with every bot in: snapshots 4499   bytes 364981
-mean frame 81.1 B   per bot 15.00 snapshots/s, 1.19 KB/s (payload only)
+over 15.0 s with every bot in: snapshots 4498   bytes 358932
+mean frame 79.8 B   per bot 14.99 snapshots/s, 1.17 KB/s (payload only)
 stays 20, each joined and left on purpose
 ```
 

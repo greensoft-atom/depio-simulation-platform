@@ -110,7 +110,8 @@ SKIP_TESTS=1 ./build-offline.sh   # without the tests: about fifteen minutes
   was already running, or when `JDBC_URL` names another server.
 - It ends with `--- done:` and the release's directory.
 - On a machine that already holds the development VM's `~/.m2`, it still reads nothing from it.
-- It is `./dev-jredis.sh build` followed by `./dev-backend.sh build` (§5).
+- It is `./dev-jredis.sh build`, `./dev-account.sh build` (the account service, D-117) and `./dev-backend.sh build`,
+  in that order (§5).
 
 **By hand**, in a shell that sourced `dev-env.sh`: build the store first, since the backend builds against its
 client.
@@ -252,16 +253,17 @@ A **run by hand** is the whole backend on this machine, from the release, each s
 It runs:
 1. the development MySQL;
 2. j-redis, the store;
-3. the backend: the platform, a worker, the gateway and an arena, on the release's own runtime, against
-   `backend_dev`;
-4. the release's nginx in front of them, on the site's ports (§5.0).
+3. the account service (D-117), from its own build until the release carries it, on 8083, against `account_dev`;
+4. the backend: the platform, a worker, the gateway and an arena, on the release's own runtime, against
+   `backend_dev`, the platform taking the account service's tokens;
+5. the release's nginx in front of them, on the site's ports (§5.0).
 
-`run-local.sh` runs the four scripts in that order.
+`run-local.sh` runs the five scripts in that order.
 
 ```bash
-./run-local.sh start             # dev-mysql.sh, dev-jredis.sh, dev-backend.sh, dev-nginx.sh, each started
+./run-local.sh start             # dev-mysql.sh, dev-jredis.sh, dev-account.sh, dev-backend.sh, dev-nginx.sh, each started
 ./run-local.sh status
-./run-local.sh stop              # nginx, the backend, j-redis; the MySQL keeps running: ./dev-mysql.sh stop
+./run-local.sh stop              # nginx, the backend, the account service, j-redis; the MySQL keeps running: ./dev-mysql.sh stop
 ```
 
 `./run-local.sh restart` is `stop` and then `start`. Each service alone:
@@ -270,6 +272,7 @@ It runs:
 |---|---|---|
 | `dev-mysql.sh` | `start` `stop` `restart` `status` `test` | the development MySQL (§3) |
 | `dev-jredis.sh` | `build` `start` `stop` `restart` `status` `test` | j-redis from its own build, on `vendor/`'s JDK |
+| `dev-account.sh` | `build` `start` `stop` `restart` `status` `test` | the account service from its own build, on `vendor/`'s JDK, its signing key made once in `work/account/` |
 | `dev-backend.sh` | `build` `start` `stop` `restart` `status` `test` `bots` | the platform, the worker, the gateway and the arena; one or some of them by name |
 | `dev-nginx.sh` | `start` `stop` `restart` `status` `test` | the release's nginx in front of them (§5.0) |
 
@@ -293,7 +296,7 @@ each check (`--` for a check it cannot make), and exits with 1 on a failure:
 |---|---|
 | `dev-mysql.sh` | the `backend` user logs in over TCP to both databases; `backend_dev`'s schema version |
 | `dev-jredis.sh` | `PING`, then a key of its own set, read and deleted |
-| `dev-backend.sh` | the four processes running; nginx running, the same way as the command (TLS or plain); and two bots through nginx: registered, logged in, the lobby, a ticket, five seconds played, and left |
+| `dev-backend.sh` | the four processes running; nginx running, the same way as the command (TLS or plain); the account service answering; and two bots through nginx: signed in at the account service, a session, the lobby, a ticket, five seconds played, and left |
 | `dev-nginx.sh` | `nginx -t`; the root certificate is RSA; 80 in clear with the platform behind it; 443's certificate for the address, with the platform behind it; 9001's certificate for the arena's name; and 80's `/match/<the arena's name>`, which the arena answers with 101 (D-115). Plain: `nginx -t` and 80 alone |
 
 **Each script refuses to start without what it needs, and names the script that gives it**: the backend's `start`
@@ -455,8 +458,7 @@ rooms.
 (umask 077; head -c 24 /dev/urandom | base64 > work/admin-token)   # the admin API's secret, kept in work/
 export BACKEND_PAYMENT_PROVIDER=simulated BACKEND_ADMIN_ADDR=127.0.0.1:9120 \
        BACKEND_ADMIN_TOKEN_FILE=$PWD/work/admin-token
-./dev-account.sh build && ./dev-account.sh start   # the account service, on 8083: players sign up and log in there (D-117)
-./run-local.sh start
+./run-local.sh start             # the account service among them, on 8083: players sign up and log in there (D-117)
 ```
 
 **HTTP, with `curl`:**
@@ -490,9 +492,8 @@ season, closes a room and bans its third player. Run again on the same data, a f
 left (`409 season_ended`, a room no longer there). To run it again from scratch:
 
 ```bash
-./run-local.sh stop && ./dev-account.sh stop && ./dev-mysql.sh stop
+./run-local.sh stop && ./dev-mysql.sh stop
 rm -rf work/mysql            # the development MySQL's data, made again at the next start, the account service's too
-./dev-mysql.sh start && ./dev-account.sh start
 ./run-local.sh start         # with the three variables above still exported
 ```
 
@@ -518,17 +519,18 @@ $ node docs/api/lobby-example.mjs http://127.0.0.1:8080 ws://127.0.0.1:8081/lobb
 It needs Node 22 or later, which the repository does not carry.
 
 **A match, the arena's socket.** It is binary, over TCP
-([02-networking](../detailed-design/02-networking.md)). The bots speak it as a client does: they log in, ask the
-lobby for a seat, dial the arena that the grant names, join, send input ten times a second, and leave.
+([02-networking](../detailed-design/02-networking.md)). The bots speak it as a client does: they sign in at the account
+service (D-117), ask the lobby for a seat, dial the arena that the grant names, join, send input ten times a second,
+and leave. Run on 2026-11-26:
 
 ```console
 $ ./dev-backend.sh bots 20 15
-lobby: 20 of 20 bots registered, logged in and got a ticket in 4.4 s (220 ms of wall time per bot)
+lobby: 20 of 20 bots signed in and got a ticket in 4.3 s (216 ms of wall time per bot)
 20 bots connected to <address>:9001
 
 welcomes 20   disconnects 0   kicks 0 (last reason 0)   lobby failures 0
-over 15.0 s with every bot in: snapshots 4499   bytes 364981
-mean frame 81.1 B   per bot 15.00 snapshots/s, 1.19 KB/s (payload only)
+over 15.0 s with every bot in: snapshots 4498   bytes 358932
+mean frame 79.8 B   per bot 14.99 snapshots/s, 1.17 KB/s (payload only)
 stays 20, each joined and left on purpose
 ```
 

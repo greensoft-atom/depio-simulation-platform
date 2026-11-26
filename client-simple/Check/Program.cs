@@ -35,10 +35,11 @@ namespace Backend.Client.Simple.Check
             try
             {
                 if (args.Length == 2 && args[0] == "offline") Offline(args[1]);
-                else if (args.Length >= 3 && args[0] == "live") Live(args[1], args[2], args.Length > 3 ? args[3] : null, args.Length > 4 ? args[4] : null);
+                else if (args.Length >= 4 && args[0] == "live")
+                    Live(args[1], args[2], args[3], args.Length > 4 ? args[4] : null, args.Length > 5 ? args[5] : null);
                 else
                 {
-                    Console.WriteLine("check.exe offline <pki-dir> | live <api-url> <lobby-url> [<ca.pem> [<another root's ca.pem>]]");
+                    Console.WriteLine("check.exe offline <pki-dir> | live <api-url> <account-url> <lobby-url> [<ca.pem> [<another root's ca.pem>]]");
                     return 2;
                 }
             }
@@ -431,7 +432,7 @@ namespace Backend.Client.Simple.Check
 
         // ---------------------------------------------------------------------------------------------------- live
 
-        private static void Live(string api, string lobbyUrl, string caFile, string wrongFile)
+        private static void Live(string api, string accountUrl, string lobbyUrl, string caFile, string wrongFile)
         {
             string ca = caFile == null ? null : File.ReadAllText(caFile);
             string wrong = wrongFile == null ? null : File.ReadAllText(wrongFile);
@@ -442,16 +443,22 @@ namespace Backend.Client.Simple.Check
             HttpAnswer a = Wait(http.GetAsync("/v1/health"));
             Check(a.Status == 200 && Json.GetString(a.Body, "status") == "ok", "GET /v1/health: 200 ok (" + a.Status + " " + a.Error + ")");
             string username = "simple_" + run;
-            a = Wait(http.PostAsync("/v1/accounts",
-                "{\"username\":" + Json.Quote(username) + ",\"password\":\"example-password-1\",\"displayName\":\"Simple\"}"));
-            long playerId = Json.GetLong(a.Body, "playerId");
-            Check(a.Status == 201 && playerId > 0, "register: 201 and a player id (" + a.Status + " " + a.Error + ")");
-            a = Wait(http.PostAsync("/v1/accounts",
-                "{\"username\":" + Json.Quote(username) + ",\"password\":\"example-password-1\"}"));
-            Check(a.Status == 409 && a.Error == "username_taken" && !a.Ok, "the same name again: 409, its code read (" + a.Error + ")");
-            a = Wait(http.PostAsync("/v1/sessions", "{\"username\":" + Json.Quote(username) + ",\"password\":\"example-password-1\"}"));
+            string credentials = "{\"username\":" + Json.Quote(username) + ",\"password\":\"example-password-1\"}";
+            BackendHttp accounts = NewHttp(accountUrl, ca);
+            a = Wait(accounts.PostAsync("/v1/accounts", credentials));
+            string access = Json.GetString(a.Body, "access_token"), refresh = Json.GetString(a.Body, "refresh_token");
+            Check(a.Status == 201 && access != null && refresh != null && refresh.Length == 43,
+                "sign up at the account service, " + accountUrl + ": 201, its tokens (" + a.Status + " " + a.Error + ")");
+            a = Wait(accounts.PostAsync("/v1/accounts", credentials));
+            Check(a.Status == 409 && a.Error == "username_taken" && !a.Ok, "the same name again: 409, its error read (" + a.Error + ")");
+            a = Wait(http.PostAsync("/v1/sessions", "{\"accessToken\":" + Json.Quote(access) + "}"));
             string token = Json.GetString(a.Body, "token");
-            Check(a.Status == 200 && token != null && token.Length == 43 && Json.GetLong(a.Body, "playerId") == playerId, "log in: a token");
+            long playerId = Json.GetLong(a.Body, "playerId");
+            Check(a.Status == 200 && token != null && token.Length == 43 && playerId > 0 && Json.GetBool(a.Body, "newPlayer"),
+                "the access token taken for a session: a token, the player made (" + a.Status + " " + a.Error + ")");
+            a = Wait(accounts.PostAsync("/v1/sessions/refresh", "{\"refresh_token\":" + Json.Quote(refresh) + "}"));
+            string refreshed = Json.GetString(a.Body, "refresh_token");
+            Check(a.Status == 200 && refreshed != null && refreshed != refresh, "refreshed: a new refresh token (" + a.Status + " " + a.Error + ")");
             http.Token = token;
             a = Wait(http.GetAsync("/v1/inventory"));
             Check(a.Status == 200 && a.Ok, "GET /v1/inventory with the token: 200 (" + a.Status + " " + a.Error + ")");
@@ -607,6 +614,10 @@ namespace Backend.Client.Simple.Check
             Check(a.Status == 204 && a.Ok && a.Body == "", "DELETE /v1/sessions: 204, no body (" + a.Status + " " + a.Error + ")");
             a = Wait(http.GetAsync("/v1/inventory"));
             Check(a.Status == 401 && a.Error == "invalid_session", "the token afterwards: 401 invalid_session");
+            a = Wait(accounts.DeleteAsync("/v1/sessions", "{\"refresh_token\":" + Json.Quote(refreshed) + "}"));
+            Check(a.Status == 204 && a.Ok, "the account service's DELETE /v1/sessions: 204 (" + a.Status + " " + a.Error + ")");
+            a = Wait(accounts.PostAsync("/v1/sessions/refresh", "{\"refresh_token\":" + Json.Quote(refreshed) + "}"));
+            Check(a.Status == 400 && a.Error == "invalid_grant", "its refresh token afterwards: 400 invalid_grant (" + a.Error + ")");
         }
 
         // Where the two clients differ: client-simple takes the backend's root, client-simple-no-tls has none (D-114).

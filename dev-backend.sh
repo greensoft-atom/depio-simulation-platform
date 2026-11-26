@@ -1,7 +1,8 @@
 #!/bin/bash
 # The backend for a run by hand (decision D-92, docs/development/03-build-and-run.md §5): the platform, a worker,
 # the gateway and an arena, from the release (backend/target/release) on the release's own runtime, against the
-# development MySQL's backend_dev (dev-mysql.sh) and j-redis (dev-jredis.sh), which their own scripts start. Each
+# development MySQL's backend_dev (dev-mysql.sh) and j-redis (dev-jredis.sh), which their own scripts start; the
+# platform takes the tokens of the account service on ACCOUNT_PORT (dev-account.sh, D-117), its issuer and key set. Each
 # listens on 127.0.0.1; the arena tells clients to dial nginx (dev-nginx.sh), PUBLIC_ADDRESS on NGINX_MATCH_PORT,
 # TLS as ARENA_TLS_NAME, as the site's arenas do. Their logs, pids and files are in work/run.
 #
@@ -9,8 +10,10 @@
 #   ./dev-backend.sh start [platform worker gateway arena]   all four unless some are named
 #   ./dev-backend.sh stop [process ...] | restart [process ...]
 #   ./dev-backend.sh status
-#   ./dev-backend.sh test                  two bots through nginx, as a phone's app: the API, the lobby, a match
-#   ./dev-backend.sh bots [count] [seconds]   bots play (20 for 15 s): the API and the lobby straight, matches through nginx
+#   ./dev-backend.sh test                  two bots through nginx, as a phone's app: signed in at the account service,
+#                                          the API, the lobby, a match
+#   ./dev-backend.sh bots [count] [seconds]   bots play (20 for 15 s): the account service, the API and the lobby
+#                                          straight, matches through nginx
 #
 # Ports, each tried before the start (in use, or refused by a policy of the machine, it is named, D-88), and the
 # address, in dev-env.sh: PLATFORM_PORT 8080, GATEWAY_PORT 8081, ARENA_PORT 9021. The bots dial nginx on 127.0.0.1
@@ -23,6 +26,10 @@ set -euo pipefail
 L=$WORK/run
 export BACKEND_DB_URL=${BACKEND_DB_URL:-"jdbc:mysql://127.0.0.1:$MYSQL_PORT/backend_dev?useSSL=false&allowPublicKeyRetrieval=true"}
 export BACKEND_DB_USER=${BACKEND_DB_USER:-backend} BACKEND_DB_PASSWORD=${BACKEND_DB_PASSWORD:-backend-dev-password}
+# The account service run by hand, dev-account.sh's issuer: its tokens and its key set, wherever ACCOUNT_PORT puts it.
+export BACKEND_ACCOUNT_ISSUER=${BACKEND_ACCOUNT_ISSUER:-http://127.0.0.1:$ACCOUNT_PORT}
+export BACKEND_ACCOUNT_JWKS_URL=${BACKEND_ACCOUNT_JWKS_URL:-http://127.0.0.1:$ACCOUNT_PORT/.well-known/jwks.json}
+ACCOUNT_URL=http://127.0.0.1:$ACCOUNT_PORT
 ALL="platform worker gateway arena"
 declare -A DEBUG_PORT=([platform]=5005 [worker]=5006 [gateway]=5007 [arena]=5008)
 declare -A PORT=([platform]=$PLATFORM_PORT [gateway]=$GATEWAY_PORT [arena]=$ARENA_PORT)
@@ -203,17 +210,20 @@ test)
     nginx_up || { echo "FAILED  nginx is not running: ./dev-nginx.sh start"; exit 1; }
     said=$(nginx_way) || { echo "FAILED  $said"; exit 1; }
     echo "ok      nginx running"
+    [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$ACCOUNT_URL/v1/health")" = 200 ] \
+        || { echo "FAILED  the account service does not answer on $ACCOUNT_URL: ./dev-account.sh start"; exit 1; }
+    echo "ok      the account service answering"
     match=$PUBLIC_ADDRESS:$NGINX_MATCH_PORT
     if [ "$PLAIN" = 1 ]; then
         api=http://127.0.0.1$([ "$NGINX_HTTP_PORT" = 80 ] || echo ":$NGINX_HTTP_PORT")
         lobby=ws://${api#http://}/lobby
-        how="plain through nginx, $api/: registered, logged in, the lobby, a ticket for $match, plain"
+        how="plain through nginx, $api/: signed in at $ACCOUNT_URL, a session, the lobby, a ticket for $match, plain"
     else
         api=https://127.0.0.1$([ "$NGINX_HTTPS_PORT" = 443 ] || echo ":$NGINX_HTTPS_PORT")
         lobby=wss://${api#https://}/lobby
-        how="through nginx, $api/: registered, logged in, the lobby, a ticket for $match, TLS as $ARENA_TLS_NAME"
+        how="through nginx, $api/: signed in at $ACCOUNT_URL, a session, the lobby, a ticket for $match, TLS as $ARENA_TLS_NAME"
     fi
-    out=$(bots 2 5 "$api" "$lobby" 2>&1) || true
+    out=$(bots 2 5 "$api" "$lobby" "$ACCOUNT_URL" 2>&1) || true
     if grep -q -E '^lobby: 2 of 2 bots' <<< "$out" && grep -q -F "2 bots connected to $match" <<< "$out" \
         && grep -q -E '^welcomes 2 +disconnects 0 +kicks 0 .*lobby failures 0$' <<< "$out" && grep -q -E '^stays 2,' <<< "$out"; then
         echo "ok      2 bots $how, 5 s played and left"
@@ -223,7 +233,7 @@ test)
 bots)
     nginx_up || { echo "nginx is not running, and matches go through it: ./dev-nginx.sh start first" >&2; exit 1; }
     said=$(nginx_way) || { echo "$said" >&2; exit 1; }
-    bots "${2:-20}" "${3:-15}" "http://127.0.0.1:$PLATFORM_PORT" "ws://127.0.0.1:$GATEWAY_PORT/lobby" ;;
+    bots "${2:-20}" "${3:-15}" "http://127.0.0.1:$PLATFORM_PORT" "ws://127.0.0.1:$GATEWAY_PORT/lobby" "$ACCOUNT_URL" ;;
 *)
     echo "usage: $0 build | start [process ...] | stop [process ...] | restart [process ...] | status | test | bots [count] [seconds]" >&2
     exit 2 ;;

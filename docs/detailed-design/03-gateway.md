@@ -200,8 +200,12 @@ session to end. Now such a token is `invalid_session`, as any unknown token is.
 
 **One lobby connection per player.** When the player logs in a second time, the gateway publishes
 `evt.session.replaced` to the first connection and closes it. A ban from the admin API (04 §10) does the same with
-`evt.session.revoked`: the push is written, then the connection is closed. **A client that receives either push does
-not reconnect.** It was replaced on purpose, and reconnecting would replace the other device in turn
+`evt.session.revoked`: the push is written, then the connection is closed. **A revocation closes only a connection
+whose own session has ended** (T-71, designed 2026-11-26): every sender ends the sessions in the store before it
+pushes, so the gateway looks the connection's session up first. A ban or a deletion ended every session, and the
+connection closes; a password changed at the account service ended those made before it (10 §4.3), and a connection
+on a later one, the device that changed it come back, stays, the push dropped. A lookup that fails closes it, as the
+push asks. **A client that receives either push does not reconnect.** It was replaced on purpose, and reconnecting would replace the other device in turn
 ([P-19](../defects.md#2-protocol--the-client-contract)).
 
 **The rule holds across gateways too** (designed 2026-10-19, [T-60](../defects.md#4-concurrency)). Behind the

@@ -216,7 +216,7 @@ final class LobbyHandler extends SimpleChannelInboundHandler<WebSocketFrame> {
             // auth.ok once the store has the registration, so a push sent the moment it arrives
             // finds the player (T-39); without it nothing could reach them: closed, and they come back.
             long registered = playerId;
-            registry.register(registered, ctx.channel()).whenComplete((done, failed) -> ctx.executor().execute(() -> {
+            registry.register(registered, ctx.channel(), candidate).whenComplete((done, failed) -> ctx.executor().execute(() -> {
                 if (failed != null) {
                     log.warn("registering player {} failed: {}", registered, failed.toString());
                     fail(ctx, requestId, "internal", "try again shortly");

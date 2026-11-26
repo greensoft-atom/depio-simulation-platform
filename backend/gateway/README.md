@@ -253,7 +253,7 @@ text. These are the types sent today:
 | `evt.rewards` | worker | What a match paid ([05 §6](../../docs/detailed-design/05-worker-and-events.md#what-a-match-paid-pushed-designed-2026-10-01-plan-item-43)) |
 | `evt.tournament.match` | worker: tournaments | The tournament match's grant |
 | `evt.notice` | platform: admin API, on `push:all` | `{text}`, to every connection on every gateway |
-| `evt.session.revoked` | platform: admin API (ban, suspension), and the deletion of the player's own account (D-84) | `{reason}`: `banned`, `suspended` or `deleted`. The gateway writes it, then closes the connection. If it cannot be written, the gateway closes the connection at once. The client does not reconnect |
+| `evt.session.revoked` | platform: admin API (ban, suspension), a player's account deleted (D-84, D-117), and a password changed at the account service | `{reason}`: `banned`, `suspended`, `deleted` or `signed_out`. Sent once the sessions have ended in the store. The gateway looks the connection's own session up: ended (or the lookup failing), it writes the push, then closes the connection, or closes it at once when it cannot be written; alive, a newer session than those a password change ended, it drops the push and the connection stays (T-71). The client does not reconnect |
 | `evt.session.replaced` | a gateway | `{}`, to the older connection when the player authenticates again, on this gateway or on another one (T-60). Then that connection is closed, and the client does not reconnect |
 | `evt.resync` | this gateway | `{}`. Pushes were lost (an overflow, or the subscription made again): fetch what a reconnect fetches |
 
@@ -280,7 +280,7 @@ A push is a prompt, not the truth. Anything the client must not miss can also be
 | `platform` answers 401 | `error` with its code | Close 1000, ended |
 | The registration could not be written | `error` `internal` | Close 1000, ended. Connect again |
 | The player authenticates again, on this gateway or another | `evt.session.replaced`, on the older connection | Close 1000, ended. Do not reconnect |
-| A ban, a suspension, or the account deleted | `evt.session.revoked` | Close 1000, ended. Do not reconnect |
+| A ban, a suspension, the account deleted, or its password changed | `evt.session.revoked` | Close 1000, ended. Do not reconnect |
 | The 21st frame in a second | `error` `rate_limited`, then Close 1008 `too many messages` | The gateway reads and drops all input until the client's Close, or for 2 s, then closes |
 | 30 s unable to take more | — | Ended |
 | A message over 16 KiB, or a protocol error | — | Ended |
@@ -333,9 +333,9 @@ stands in for `platform`. Both listen on loopback ports that the system chooses.
 
 | Class | Tests | What it covers |
 |---|---|---|
-| `GatewayServerTest` | 28 | A real server, a store and a stand-in `platform`, driven by the JDK's WebSocket client. Auth, bad tokens, auth first, and the 5 s deadline. Every request type forwarded, refusals passed through, and `platform` down answered `internal`. `auth.ok` sent only once registered, and a refused registration closed. Pushes, the notice to everyone, revocation, and one connection per player. A slow connection's pushes held, and an overflow resynced. The subscription lost and made again, and a gateway started while the store was down. The flood, ping-flood and large-flood refusals. Fragments, paths and the latency histogram |
+| `GatewayServerTest` | 29 | A real server, a store and a stand-in `platform`, driven by the JDK's WebSocket client. Auth, bad tokens, auth first, and the 5 s deadline. Every request type forwarded, refusals passed through, and `platform` down answered `internal`. `auth.ok` sent only once registered, and a refused registration closed. Pushes, the notice to everyone, revocation, a revocation that leaves a connection whose session lives (T-71), and one connection per player. A slow connection's pushes held, and an overflow resynced. The subscription lost and made again, and a gateway started while the store was down. The flood, ping-flood and large-flood refusals. Fragments, paths and the latency histogram |
 | `PushesTest` | 9 | The ring, the overflow to `evt.resync`, the 30 s close and its restart, revocation, and the unwritable spells timed. All on an embedded channel with a frozen clock |
-| `ConnectionRegistryTest` | 9 | Moving between gateways (T-6): a late cleanup, a refresh and a shutdown leave the new registration alone. A connection's own cleanup works; a lost entry is restored; a replaced connection is told why; a failed refresh is counted. A replacement through another gateway closes the old connection there, and a late one spares a newer connection (T-60) |
+| `ConnectionRegistryTest` | 10 | Moving between gateways (T-6): a late cleanup, a refresh and a shutdown leave the new registration alone. A connection's own cleanup works; a lost entry is restored; a replaced connection is told why; a failed refresh is counted. A replacement through another gateway closes the old connection there, and a late one spares a newer connection (T-60). A revocation whose session cannot be looked up closes the connection (T-71) |
 | `FrameLimitTest` | 6 | One refusal per flood, the 2 s linger, the sliding window, a client at the limit's pace never refused, and the client a log names. Behind the front, the forwarded address believed from the named proxies alone (D-82) |
 | `LobbyHandlerRaceTest` | 3 | Two auth frames cannot make one connection two players; a connection closed during its lookup is never registered (T-2); a connection silent for its idle limit is closed with Close `idle` |
 | `EdgeCertificateTest` | 3 | The earliest expiry in a chain, a renewal seen at the next scrape, and an unreadable file read as 0 |
