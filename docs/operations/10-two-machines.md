@@ -19,38 +19,43 @@ load past about 4 000 players in battle: three arenas of B's own, behind A's ngi
 1. It installs A by the install guide's own check, in Red Hat's UBI 9.5 with systemd and no network. Then it starts a
    second such machine, B, joined to A by a private link alone.
 2. It runs every `bash` block between this page's markers, in order, each on the machine its first line names.
-   Meanwhile a probe uses the site through A's nginx twice a second, and times every refusal. Then it checks that B
-   is the standby (§7).
+   Meanwhile a probe uses the site through A's nginx twice a second, and times every refusal; every tenth second it
+   signs up at the account service and takes the token for a session (D-117). Then it checks that B is the standby
+   (§7).
 3. It runs §10's blocks, B's own arenas. It reaches each of them by its name on A's 9001, verified and passed to B;
    it checks that A's watch reads them; and the C# headless client plays matches on them through A's nginx, with A's
    arenas stopped for it.
 4. It freezes B for a minute. A match is played on A's arenas meanwhile, A's watch sees B's arenas go, and then B
    comes back.
-5. It loses A's MySQL while A runs, and promotes B's (the [runbook's §2](02-runbook.md#2-stateful-primary-failure)).
+5. It loses A's MySQL while A runs, and promotes B's (the [runbook's §2](02-runbook.md#2-stateful-primary-failure)):
+   both epochs raised, the backend's and the account service's, and a sign-up through A's nginx written on B.
 6. It loses A, cut off and frozen, and runs the [runbook's steps for that case](02-runbook.md#on-two-machines-d-96)
-   on B. The session made on A is served by B, every account made on A logs in there, and a match is played on B's
-   arenas.
+   on B. The session made on A is served by B, every account made on A logs in there, B's watch reads every process
+   there, the account service's among them, and a match is played on B's arenas.
 
 `STANDBY_ONLY=1` leaves §10 out, so that B fails over with A's arenas. The check does not run the blocks marked
 `console`: the copies to B, which it makes the same way through docker, and the firewall, which `check-ports-el9.sh`
 runs.
 
 **What it measured.** It ran on a development VM under other load, so each figure moves by a few seconds between
-runs. There were two runs of the page as written; nine runs, each with a rule broken on purpose, gave the same
-figures within that margin.
+runs. The figures are from two runs of the page as written on 2026-11-26, with the account service and §10 (plan item
+142); in brackets, the earlier ones, from the runs of D-96 and D-97 before the account service.
 
 | What happened | How long the site refused requests |
 |---|---|
-| MySQL's restart (§3) | 15 s |
-| each store's restart (§3) | 5 to 10 s |
-| the platform's restart (§6) | 14 to 16 s |
-| A's MySQL lost | 11 to 16 s, from its stop to the next write, on B |
-| A lost, the runbook's steps run at once | until B served, 62 to 67 s after the cut (74 s with B's arenas) |
-| §10: A's platform's restart | 10 to 18 s |
+| MySQL's restart (§3) | 23 to 26 s (15 s) |
+| each store's restart (§3) | none seen by the probe (5 to 10 s) |
+| the platform's restart (§6) | 9 to 10 s (14 to 16 s) |
+| A's MySQL lost | 11 s, from its stop to the next write, on B (11 to 16 s) |
+| A lost, the runbook's steps run at once | until B served, 68 to 69 s after the cut, with B's arenas (74 s; 62 to 67 s without them) |
+| §10: A's platform's restart | 9 to 10 s (10 to 18 s) |
 | §10: B frozen | no gap |
 
-Of about 200 requests in a run without §10, 50 were refused, all of them within those gaps. Every registration that
-was answered 201 was then on B.
+Of about 500 requests in each run, 64 and 59 were refused, all of them within those gaps. In the second run the probe
+signed up 25 times: 24 were answered 201, every one of them then in B's `account` database, three of them refused
+their session in a gap (the platform's refusal, the account having been made). The probe's sign-up waits up to 10 s
+for each of its two answers, and the probe sends nothing else meanwhile, so one that falls in a gap lengthens it: the
+longer gap at MySQL's restart may be partly the probe's own.
 
 ## 1. What it makes
 
@@ -58,7 +63,7 @@ was answered 201 was then on B.
 |---|---|---|
 | MySQL | the primary, now also on its private address, with TLS and GTIDs | a replica of A's, cloned from it, read-only |
 | Stores | `session` and `events`, the primaries, also on the private address | a replica of each |
-| nginx, platform, gateway, workers, arenas `a1` to `a3` | as installed, given both machines' addresses | installed from A's files, the same names and settings, **stopped and not enabled** |
+| nginx, the account service, platform, gateway, workers, arenas `a1` to `a3` | as installed, given both machines' addresses | installed from A's files, the same names and settings, **stopped and not enabled** |
 | Backups and their proof | as installed | none until B is the primary ([runbook](02-runbook.md#on-two-machines-d-96)) |
 | Arenas of B's own, `b1` to `b3` (§10, when the load needs them) | its nginx passes them their matches, its watch reads them | running, on its private address; A's arenas' settings taken off it |
 
@@ -195,6 +200,8 @@ systemctl restart backend-mysql
 /opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf <<SQL
     CREATE USER 'backend'@'$PRIVATE_NET' IDENTIFIED BY '$(cat /etc/backend/credentials/db-password)' REQUIRE SSL;
     GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON backend.* TO 'backend'@'$PRIVATE_NET';
+    CREATE USER 'account'@'$PRIVATE_NET' IDENTIFIED BY '$(cat /etc/backend/credentials/account-db-password)' REQUIRE SSL;
+    GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON account.* TO 'account'@'$PRIVATE_NET';
     CREATE USER 'repl'@'$PRIVATE_NET' IDENTIFIED BY '$(cat /etc/backend/credentials/repl-password)' REQUIRE SSL;
     GRANT REPLICATION SLAVE ON *.* TO 'repl'@'$PRIVATE_NET';
     CREATE USER 'clone'@'$PRIVATE_NET' IDENTIFIED BY '$(cat /etc/backend/credentials/clone-password)' REQUIRE SSL;
@@ -204,6 +211,7 @@ systemctl restart backend-mysql
     GRANT SYSTEM_VARIABLES_ADMIN, CONNECTION_ADMIN, REPLICATION_SLAVE_ADMIN, RELOAD ON *.* TO 'failover'@'localhost', 'failover'@'$PRIVATE_NET';
     GRANT SELECT ON performance_schema.* TO 'failover'@'localhost', 'failover'@'$PRIVATE_NET';
     GRANT SELECT, UPDATE ON backend.ha_epoch TO 'failover'@'localhost', 'failover'@'$PRIVATE_NET';
+    GRANT SELECT, UPDATE ON account.ha_epoch TO 'failover'@'localhost', 'failover'@'$PRIVATE_NET';
     GRANT SELECT ON backend.ha_heartbeat TO 'failover'@'localhost', 'failover'@'$PRIVATE_NET';
 SQL
 ```
@@ -221,7 +229,9 @@ done
 ```
 
 **Every process's settings**, last, name both machines: each store's two addresses, and MySQL's URL with both hosts,
-its certificate checked against its name (01 §3, §9). Each process takes the new settings when it restarts, in §6,
+its certificate checked against its name (01 §3, §9); the account service's URL to its own database the same way
+(D-117). Its settings are otherwise this machine's: its key set, its issuer and its events stay on loopback, so on B
+they are B's own, and B's account service signs with A's key, copied with the rest (§4). Each process takes the new settings when it restarts, in §6,
 after B is ready. The files are changed now so that §4 copies them to B as they are.
 
 ```bash
@@ -232,6 +242,8 @@ for f in /etc/backend/platform.env /etc/backend/gateway.env /etc/backend/worker.
         -e "/^#\?BACKEND_STORE_ADDRESSES=/c BACKEND_STORE_ADDRESSES=$A_PRIVATE:6379,$B_PRIVATE:6379" \
         -e "/^BACKEND_EVENTS_STORE=/c BACKEND_EVENTS_STORE=$A_PRIVATE:6380,$B_PRIVATE:6380" "$f"
 done
+acc="jdbc:mysql://$A_PRIVATE:$MYSQL_PORT,$B_PRIVATE:$MYSQL_PORT/account?sslMode=VERIFY_IDENTITY&trustCertificateKeyStoreUrl=file:/etc/backend/tls/mysql-ca.p12&trustCertificateKeyStoreType=PKCS12"
+sed -i "/^ACCOUNT_DB_URL=/c ACCOUNT_DB_URL=$acc" /etc/backend/account.env
 ```
 
 ## 4. To B: the release and A's files
@@ -340,7 +352,7 @@ themselves in A's stores.
 
 Back on A, each Java process restarts once, and takes §3's settings. The order is a deployment's (01 §5):
 1. the two workers;
-2. the platform: requests are refused until it answers again, which the block waits for;
+2. the account service, then the platform: requests are refused until each answers again, which the block waits for;
 3. the gateway: lobby connections reconnect;
 4. each arena in turn, drained first: it takes no new match, and stops once its matches have ended, while the other
    two take the new ones. That takes up to twelve minutes an arena. The block waits for each arena's metrics to
@@ -350,6 +362,8 @@ Back on A, each Java process restarts once, and takes §3's settings. The order 
 # On A: every Java process restarted once, on both machines' addresses, in a deployment's order
 systemctl restart backend-worker@c1
 systemctl restart backend-worker@c2
+systemctl restart backend-account
+for i in $(seq 300); do curl -s -o /dev/null http://127.0.0.1:8070/v1/health && break; sleep 1; done
 systemctl restart backend-platform
 for i in $(seq 300); do curl -s -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
 systemctl restart backend-gateway
@@ -495,8 +509,8 @@ The next block, on B:
 3. removes A's arenas' settings from B. B never runs A's arenas, and the runbook starts the arenas a machine has
    settings for;
 4. gives B's watch its targets. B's platform runs only after A is lost, but its watch is given now what it will read
-   then: B's own processes on loopback, and B's arenas on B's address. This is the one line of B's `platform.env`
-   that differs from A's;
+   then: B's own processes on loopback, the account service's among them, and B's arenas on B's address. This is the
+   one line of B's `platform.env` that differs from A's;
 5. starts and enables `b1` to `b3`, and waits until each one's metrics answer.
 
 ```bash
@@ -514,7 +528,8 @@ done
 chmod 0600 /etc/backend/arena-b*.env               # the store's password is in them (D-102)
 rm /etc/backend/arena-a1.env /etc/backend/arena-a2.env /etc/backend/arena-a3.env
 targets="platform=127.0.0.1:9101,gateway=127.0.0.1:9103,arena=$B_PRIVATE:9110,arena=$B_PRIVATE:9111,arena=$B_PRIVATE:9113"
-sed -i "/^BACKEND_WATCH_TARGETS=/c BACKEND_WATCH_TARGETS=$targets,worker=127.0.0.1:9102,worker=127.0.0.1:9112" /etc/backend/platform.env
+sed -i "/^BACKEND_WATCH_TARGETS=/c BACKEND_WATCH_TARGETS=$targets,worker=127.0.0.1:9102,worker=127.0.0.1:9112,account=127.0.0.1:9104" \
+    /etc/backend/platform.env
 systemctl enable --now backend-arena@b1 backend-arena@b2 backend-arena@b3
 for m in 9110 9111 9113; do
     for i in $(seq 120); do curl -s -o /dev/null "http://$B_PRIVATE:$m/metrics" && break; sleep 1; done

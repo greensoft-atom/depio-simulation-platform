@@ -817,8 +817,9 @@ over TLS, so there are two accounts of one name and password. Each grant was che
 | `REPLICATION_SLAVE_ADMIN` | `STOP REPLICA` |
 | `RELOAD` | `RESET REPLICA ALL` |
 
-The epoch's and the heartbeat's tables must exist for their grants, so those two lines come after the first start
-has migrated:
+The epoch's and the heartbeat's tables must exist for their grants, so those three lines come after the first starts,
+the platform's and the account service's, have migrated. The account service's own epoch is raised by a promotion
+too (O-103), and a promotion refuses, before it touches anything, when it cannot read it:
 
 ```sql
 CREATE USER 'failover'@'localhost' IDENTIFIED BY '…';
@@ -827,6 +828,7 @@ GRANT SYSTEM_VARIABLES_ADMIN, CONNECTION_ADMIN, REPLICATION_SLAVE_ADMIN, RELOAD 
       TO 'failover'@'localhost', 'failover'@'10.0.0.%';
 GRANT SELECT ON performance_schema.* TO 'failover'@'localhost', 'failover'@'10.0.0.%';
 GRANT SELECT, UPDATE ON backend.ha_epoch TO 'failover'@'localhost', 'failover'@'10.0.0.%';
+GRANT SELECT, UPDATE ON account.ha_epoch TO 'failover'@'localhost', 'failover'@'10.0.0.%';
 -- The heartbeat a promotion reads to say what it would lose (plan item 59): the baseline
 -- creates ha_heartbeat and its one row, as it does ha_epoch's.
 GRANT SELECT ON backend.ha_heartbeat TO 'failover'@'localhost', 'failover'@'10.0.0.%';

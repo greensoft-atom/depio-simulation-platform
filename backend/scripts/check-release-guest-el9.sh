@@ -44,6 +44,9 @@ echo "--- copying the release in"
 scp -q -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$W/key" -P "$PORT" \
     "$REL.tar.gz" "$HERE/check-release-el9.sh" rocky@127.0.0.1:/tmp/ || { echo "cannot copy into the guest" >&2; exit 1; }
 
+# The account service's signing key, by the release's own script on this machine, as check-release-el9.sh's host makes
+# it (D-117).
+KEY=$("$REL/scripts/account-key.sh" | sed -n 's/^ACCOUNT_SIGNING_KEY=//p')
 root "$(cat <<EOF
 set -u
 R=/opt/backend
@@ -90,7 +93,7 @@ denied=\$(ausearch -m avc,user_avc -ts boot 2> /dev/null | grep -c 'denied')
 systemctl stop backend-mysql
 echo "--- \$FAILS failed"
 echo "=== check-release-el9.sh, as root in this guest"
-REL_NAME=$NAME PACE=\${PACE:-5} bash /tmp/check-release-el9.sh --inside; inside=\$?
+REL_NAME=$NAME PACE=\${PACE:-5} ACCOUNT_SIGNING_KEY=$KEY bash /tmp/check-release-el9.sh --inside; inside=\$?
 [ \$FAILS = 0 ] && [ \$inside = 0 ]
 EOF
 )"

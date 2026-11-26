@@ -37,7 +37,12 @@ if [ -z "$host" ]; then
         *RECEIVED_TRANSACTION_SET*) echo "aaaa:1-10" ;;
         *WAIT_FOR_EXECUTED_GTID_SET*) echo 0 ;;
         *"CONCAT('epoch '"*) echo "epoch 2" ;;
-        *information_schema.tables*ha_epoch*) echo "${ACCOUNT_HERE:-1}" ;;
+        "SELECT epoch FROM account.ha_epoch"*)
+            case ${ACCOUNT_HERE:-1} in
+                1) echo 3 ;;
+                0) echo "ERROR 1049 (42000): Unknown database 'account'" >&2; exit 1 ;;
+                denied) echo "ERROR 1142 (42000): SELECT command denied to user 'failover'@'localhost' for table 'ha_epoch'" >&2; exit 1 ;;
+            esac ;;
         *gtid_executed*) echo "aaaa:1-12" ;;
     esac
     exit 0
@@ -85,6 +90,15 @@ raised=$(grep -E "^here: UPDATE [a-z_]+\.ha_epoch" "$T/log" | cut -d' ' -f3 | tr
 promoted && [ "$raised" = "backend.ha_epoch " ] && grep -q "no account database here" <<< "$out" \
     && pass "a server without the account service's database: the backend's epoch raised, the other said absent" \
     || fail "without the account database: '$raised', $out"
+out=$(ACCOUNT_HERE=denied pm up 10.0.0.1:3306 --demote-old)
+! promoted && ! grep -q "^old: SET" "$T/log" && grep -q "REFUSED: the account service's epoch" <<< "$out" \
+    && pass "the account service's epoch refused to the failover account: refused, before the old primary is touched" \
+    || fail "the account epoch denied: $out"
+out=$(ACCOUNT_DB_NAME= pm down 10.0.0.1:3306 --old-is-down)
+raised=$(grep -E "^here: UPDATE [a-z_]+\.ha_epoch" "$T/log" | cut -d' ' -f3 | tr '\n' ' ')
+promoted && [ "$raised" = "backend.ha_epoch " ] && ! grep -q "account.ha_epoch" "$T/log" \
+    && pass "ACCOUNT_DB_NAME empty, a server without the account service: not asked, the backend's alone raised" \
+    || fail "ACCOUNT_DB_NAME empty: '$raised', $out"
 out=$(pm up 10.0.0.1:3306 --demote-old)
 order=$(grep -n -e "^old: SET PERSIST super_read_only" -e "^here: SELECT WAIT_FOR_EXECUTED_GTID_SET('aaaa:1-12'" \
     -e "^old: SET GLOBAL offline_mode" -e "^here: STOP REPLICA" "$T/log" | cut -d: -f3 | tr -d ' ' | cut -c1-12 | tr '\n' ' ')

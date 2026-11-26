@@ -23,8 +23,9 @@ GAP_LIMIT=${GAP_LIMIT:-120}       # the longest the site may refuse a request du
 
 if [ "${1:-}" = --probe ]; then
     # Inside a machine: the site through its nginx, as a device would use it, until told to stop. Every half second
-    # the inventory with a session made before (the session store and MySQL); every tenth second a registration
-    # (a write on MySQL's primary). Each request is given 5 s and logged with its time and its answer.
+    # the inventory with a session made before (the session store and MySQL); every tenth second a sign-up at the
+    # account service and its session (a write on each database, D-117), logged 201 when both were made, else both
+    # statuses. Each request is given its seconds and logged with its time and its answer.
     tok=$(cat /var/tmp/check-session)
     n=0
     while [ ! -e /var/tmp/probe.stop ]; do
@@ -33,9 +34,7 @@ if [ "${1:-}" = --probe ]; then
             -H "Authorization: Bearer $tok" https://127.0.0.1/v1/inventory)
         echo "$(date +%s.%N | cut -c1-14) inventory $c" >> /var/tmp/probe.log
         if [ $((n % 20)) = 0 ]; then
-            c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --cacert /etc/backend/tls/ca.pem -X POST \
-                -H 'Content-Type: application/json' -d "{\"username\":\"probe$n\",\"password\":\"install-check-1\"}" \
-                https://127.0.0.1/v1/accounts)
+            c=$(bash /check-guide.sh --login "probe$n" accounts); [ "$c" = "201 200" ] && c=201 || c=${c/ //}
             echo "$(date +%s.%N | cut -c1-14) register probe$n $c" >> /var/tmp/probe.log
         fi
         sleep 0.5
@@ -88,7 +87,8 @@ watch_reads_all() {   # watch_reads_all <machine>: across 20 s, more than a roun
 play() {   # play <machine> <label> <scenario>...: the C# client through that machine's nginx's 80, in clear (D-116)
     local rc
     on "$1" env HOME=/tmp MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=/check-mono/lib/mono/unityjit /check-mono/bin/mono \
-        /check/headless/Backend.Client.Headless.exe http://127.0.0.1 --lobby ws://127.0.0.1/lobby "${@:3}" > "$WORK/play-$2.log" 2>&1
+        /check/headless/Backend.Client.Headless.exe http://127.0.0.1 --account http://127.0.0.1/account --lobby ws://127.0.0.1/lobby \
+        "${@:3}" > "$WORK/play-$2.log" 2>&1
     rc=$?
     [ "$rc" = 0 ] && grep -q 'ALL PASSED' "$WORK/play-$2.log" && ok "the C# client, $2: ${*:3}, all passed" \
         || { fail "the C# client, $2: exit $rc"; grep -E '^--- |FAIL' "$WORK/play-$2.log" | head -12 | sed 's/^/      /'; }
@@ -228,14 +228,12 @@ while read -r what arg rest; do
             mark "step $n on $what: $(sed -n 1p "$arg" | sed 's/^# //')"
             held=
             if [ "$what" = A ] && grep -q 'gtid_mode = ON_PERMISSIVE' "$arg"; then
-                # The binlog stream behind while GTIDs go on, by construction: stopped, a registration written in the
+                # The binlog stream behind while GTIDs go on, by construction: stopped, a sign-up written in the
                 # file it resumes from, and started again 5 s into the step, which must wait for it. A stream resuming
                 # in that file once GTIDs are on is refused for good, which A's dump and proof below show.
                 on "$A" systemctl stop backend-binlog-stream
-                c=$(on "$A" curl -s -o /dev/null -w '%{http_code}' --max-time 5 --cacert /etc/backend/tls/ca.pem -X POST \
-                    -H 'Content-Type: application/json' -d '{"username":"streamheld","password":"install-check-1"}' \
-                    https://127.0.0.1/v1/accounts)
-                [ "$c" = 201 ] || { fail "a registration with the binlog stream stopped: $c"; break; }
+                c=$(on "$A" bash /check-guide.sh --login streamheld accounts)
+                [ "$c" = "201 200" ] || { fail "a sign-up and its session with the binlog stream stopped: $c"; break; }
                 { sleep 5; on "$A" systemctl start backend-binlog-stream; } & held=$!
             fi
             on "$m" bash "$(script "$arg")" > "$WORK/step-$n.log" 2>&1 || { fail "step $n on $what: exit $?"; tail -25 "$WORK/step-$n.log"; break; }
@@ -279,8 +277,8 @@ for port in 9102 9112; do
 done
 # B's front, ready and stopped: its units installed, none running, none started at boot. Whether they start is the
 # failover's, below: nginx tests its configuration as its unit starts it.
-for u in backend-platform backend-gateway backend-worker@c1 backend-worker@c2 backend-arena@a1 backend-arena@a2 backend-arena@a3 \
-         backend-nginx backend-binlog-stream backend-scratch-mysql; do
+for u in backend-account backend-platform backend-gateway backend-worker@c1 backend-worker@c2 backend-arena@a1 backend-arena@a2 \
+         backend-arena@a3 backend-nginx backend-binlog-stream backend-scratch-mysql; do
     a=$(on "$B" systemctl is-active "$u"); e=$(on "$B" systemctl is-enabled "$u" 2> /dev/null)
     [ "$a" != active ] && [ "$e" != enabled ] || fail "B's $u is $a and $e: the standby runs only its replicas"
 done
@@ -374,14 +372,16 @@ on "$A" systemctl disable --now backend-mysql > /dev/null 2>&1
 out=$(on "$B" /opt/backend/scripts/promote-mysql.sh 10.0.0.1:3306 --old-is-down 2>&1)
 echo "$out" | sed 's/^/      /'
 grep -q '^now: a primary' <<< "$out" && ok "B's MySQL promoted" || fail "B's MySQL not promoted"
+# Both epochs raised by the promotion, as the failover account reads them (O-103): the account service follows its own.
+got=$(sql "$B" "SELECT CONCAT((SELECT epoch FROM backend.ha_epoch WHERE id = 1), ' ', (SELECT epoch FROM account.ha_epoch WHERE id = 1))")
+[ "$got" = "1 1" ] && ok "the backend's epoch and the account service's, both raised: $got" || fail "the epochs after the promotion: $got"
 for i in $(seq 60); do
-    c=$(on "$A" curl -s -o /dev/null -w '%{http_code}' --max-time 5 --cacert /etc/backend/tls/ca.pem -X POST -H 'Content-Type: application/json' \
-        -d '{"username":"onbsql","password":"install-check-1"}' https://127.0.0.1/v1/accounts)
-    [ "$c" = 201 ] && break; sleep 1
+    c=$(on "$A" bash /check-guide.sh --login onbsql accounts)
+    [ "$c" = "201 200" ] && break; sleep 1
 done
-[ "$c" = 201 ] && ok "a registration through A's nginx, written on B's MySQL, ${i} s after the promotion" \
-    || fail "no registration through A after the promotion: $c"
-[ "$(sql "$B" "SELECT COUNT(*) FROM backend.account WHERE username = 'onbsql'")" = 1 ] && ok "the account is on B" || fail "the account is not on B"
+[ "$c" = "201 200" ] && ok "a sign-up and its session through A's nginx, each written on B's MySQL, ${i} s after the promotion" \
+    || fail "no sign-up and session through A after the promotion: $c"
+[ "$(sql "$B" "SELECT COUNT(*) FROM account.account WHERE username = 'onbsql'")" = 1 ] && ok "the account is on B" || fail "the account is not on B"
 
 mark "A lost"
 tok=$(on "$A" cat /var/tmp/check-session)
@@ -412,11 +412,11 @@ https_b() { on "$B" curl -s -o /dev/null -w '%{http_code}' --max-time 10 --cacer
 c=$(https_b -H "Authorization: Bearer $tok" https://127.0.0.1/v1/inventory)
 [ "$c" = 200 ] && ok "the session made on A, before, served by B" || fail "the session made on A is not served by B: $c"
 for u in installcheck onbsql $(awk '$2 == "register" && $4 == 201 { print $3 }' "$WORK/probe-a.log" | tail -3); do
-    c=$(https_b -X POST -H 'Content-Type: application/json' -d "{\"username\":\"$u\",\"password\":\"install-check-1\"}" https://127.0.0.1/v1/sessions)
-    [ "$c" = 200 ] && ok "$u, made on A, logs in on B" || fail "$u, made on A, does not log in on B: $c"
+    c=$(on "$B" bash /check-guide.sh --login "$u")
+    [ "$c" = "200 200" ] && ok "$u, made on A, logs in on B and takes a session there" || fail "$u, made on A, does not log in on B: $c"
 done
-c=$(https_b -X POST -H 'Content-Type: application/json' -d '{"username":"onb","password":"install-check-1"}' https://127.0.0.1/v1/accounts)
-[ "$c" = 201 ] && ok "a registration on B" || fail "no registration on B: $c"
+c=$(on "$B" bash /check-guide.sh --login onb accounts)
+[ "$c" = "201 200" ] && ok "a sign-up and its session on B" || fail "no sign-up on B: $c"
 on "$B" bash /check-guide.sh --launch-checks || fail "B's launch checks after A was lost"
 watch_reads_all "$B" B
 play "$B" "on B, A lost" lobby
@@ -430,15 +430,22 @@ awk -v limit="$GAP_LIMIT" '
         if ($3 == 200) { if (bad) { d = $1 - start; printf "      %5.1f s, %d refused (%s), in: %s\n", d, bad, codes, at
                                     if (d > max) max = d; bad = 0; codes = "" } }
         else { if (!bad) { start = $1; at = label }; bad++; if (index(codes, $3) == 0) codes = codes (codes == "" ? "" : " ") $3; refused++ } }
-    $2 == "register" { regs++; if ($4 == 201) made++ }
-    END { printf "      %d requests, %d refused; %d registrations, %d made\n", total, refused, regs, made
+    $2 == "register" { regs++; if ($4 ~ /^201/) made++; if ($4 ~ /^201./) nosession++ }
+    END { printf "      %d requests, %d refused; %d sign-ups, %d made, %d of them refused their session\n", total, refused, regs, made, nosession
           if (bad) { printf "      still refused at the end, since: %s\n", at; exit 2 }
           if (max > limit) { printf "      the longest gap, %.1f s, is past %d s\n", max, limit; exit 1 } }
 ' "$WORK/probe-a.log" && ok "the site served throughout, each gap under $GAP_LIMIT s" || fail "the site through A: see above"
-made=$(awk '$2 == "register" && $4 == 201 { print $3 }' "$WORK/probe-a.log" | sort)
-onb=$(sql "$B" "SELECT username FROM backend.account WHERE username LIKE 'probe%' ORDER BY username" | sort)
-[ -n "$made" ] && [ "$made" = "$onb" ] && ok "every probe registration on B: $(grep -c . <<< "$made")" \
-    || fail "the probe's registrations on B differ: made $(grep -c . <<< "$made"), on B $(grep -c . <<< "$onb")"
+# Nothing committed lost: every sign-up answered 201 is on B, whatever its session was answered (a sign-up is the
+# account service's, a session the platform's: either may be refused alone). And nothing else there: every probe
+# account on B is one the probe sent; one sent whose answer was refused may be there or not, as its commit went.
+made=$(awk '$2 == "register" && $4 ~ /^201/ { print $3 }' "$WORK/probe-a.log" | sort)
+sent=$(awk '$2 == "register" { print $3 }' "$WORK/probe-a.log" | sort)
+onb=$(sql "$B" "SELECT username FROM account.account WHERE username LIKE 'probe%' ORDER BY username" | sort)
+lost=$(comm -23 <(echo "$made") <(echo "$onb") | grep . | tr '\n' ' ' | sed 's/ $//')
+stray=$(comm -13 <(echo "$sent") <(echo "$onb") | grep . | tr '\n' ' ' | sed 's/ $//')
+if [ -z "$made" ]; then fail "no probe sign-up was answered 201"
+elif [ -n "$lost$stray" ]; then fail "the probe's sign-ups on B: answered 201 and not on B: ${lost:-none}; on B and never sent: ${stray:-none}"
+else ok "every probe sign-up answered 201 on B: $(grep -c . <<< "$made") of $(grep -c . <<< "$onb") there"; fi
 
 docker unpause "$A" > /dev/null 2>&1
 echo "--- $FAILS failed"

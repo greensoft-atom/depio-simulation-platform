@@ -3,8 +3,10 @@
 Every defect found since the audit of **2026-09-23**, each with an ID, and kept
 after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
-re-ordered around it rather than the other way round. **Open as of 2026-11-25:**
-P-65 (Unity's float mode in the editor and a player, for the team to see); O-37 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
+re-ordered around it rather than the other way round. **Open as of 2026-11-27:**
+P-65 (Unity's float mode in the editor and a player, for the team to see); T-72 (a check's failure in the emulated
+guest, seen once, its cause not known); O-92 (`dev-nginx.sh` started as a user after root, its way out written); O-37
+is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
 Every other entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
 
@@ -383,6 +385,7 @@ collision *reach* fix is mutation-proven; determinism holds and is not vacuous.
 | **T-69** | L | **FOUND 2026-11-25 (plan item 138, the driver's README read against it), FIXED the same day (plan item 139).** The headless driver's `NeedsLobby` held `removed`, which opens no lobby connection (it uses the API and the admin API alone), so the driver run by hand without `--lobby` dropped it, and said nothing: a run of `removed lobby` without `--lobby` ran neither and printed `ALL PASSED`. The drill always passes `--lobby`, so no drill skipped it. **Fixed:** `removed` is off the list, and the driver says what it skips (`--- skipped, no --lobby: lobby`). Seen by running the driver without a backend: before, nothing ran and `ALL PASSED`; after, `removed` runs (and fails there, with no admin API) and the skip is said; `removed` put back on the list, it is skipped again, named. Not run against a stack without `--lobby`. | run |
 | **T-70** | L | **FOUND AND FIXED 2026-11-26 (plan item 142 (d), its clean build). A push of one `MatchmakerTest` test could land in the next.** The class's one subscriber feeds a queue that each test empties first, but a push is sent asynchronously (the connection read, then the publish), and the last test's could arrive after the next test had emptied it: `aPartyWithACalledMemberIsDropped` read an `evt.match.found` that its lone party could never make. Seen once, in the whole build under load; five runs of the class alone did not show it, and the window was read in the code instead (working-here §4). **Fixed:** each test begins by publishing a marker on the client the matcher pushes through and waiting for it; that client completes its replies in order on its own thread, so the last test's publish goes out before the marker, and nothing of it is left once the marker has come. The class run three times after, 43 of 43 each. | read |
 | **T-71** | M | **FOUND AND FIXED 2026-11-26 (plan item 142 (e), designing the clients' password change). A password change's push could close the new session's lobby.** The gateway closed a lobby on any `evt.session.revoked`. A password changed at the account service ends the sessions made before it and tells the player's one lobby connection `signed_out` (10 §4.3); the device that changed it exchanges its new access token and connects again. The account service delivers the event at once, so the push usually comes first; when its delivery is retried (the platform restarting, a 5xx), it comes after, closes the device's new connection, whose session lives, and the app, as told, drops a good session and asks for a login. **Fixed as designed** (03 §4): the gateway closes a lobby on a revocation only once its own session is not in the store, and drops the push otherwise; every sender ends the sessions before it pushes. Test first: `GatewayServerTest.aRevocationOfOtherSessionsLeavesThisOne`, failing on the push written to a connection whose session lived, and `ConnectionRegistryTest.aRevocationUncheckedCloses`, a lookup that fails closing it; the existing revocation tests now end the sessions first, as every sender does. Six mutants, all caught. Live: the drill's `account` scenario, a lobby on the session made after a password change left open. | tested |
+| **T-72** | L | **FOUND 2026-11-27 (plan item 142 (f), `check-release-guest-el9.sh` in the Rocky 9.8 guest under QEMU without KVM), OPEN. `check-release-el9.sh`'s "nginx HTTPS" failed once, not seen again.** A request through nginx's TLS on 8443 to the platform's `/health` was not answered 200, a request in clear through the same nginx to the same platform a moment before having been; the check printed nothing more. The same release passed it in UBI 9's container straight after, and in the guest again on the next run, TLS 1.3, every other check passing both times; the guest had passed it at plan item 131, before the account service's JVM ran beside the others there. Not known: whether nginx, the platform or curl failed, and why; the guest is emulated and so slow that a timing is the likeliest, but that is a guess. **Done:** the check now says what a refusal was, the status, curl's own error and nginx's error log, so the next one can be read. | open |
 
 **Sound, and checked rather than assumed:** the `active` list is genuinely room-thread
 confined; the join/leave handshake is correct under the Java memory model in both
@@ -1383,6 +1386,14 @@ runs. **Fixed:** the statements on standard input. By the install guide's check,
 anything, and its failure is said as the release's nginx not running on this machine, glibc 2.28 named. Test first,
 with a stub failing as the loader does: the old line, then the new; the check skipped, the old line again.
 
+**O-104 (M), found 2026-11-26, FIXED the same day** (plan item 142 (f), the two machines' check run with the account
+service). Operations/10 §10 gave B's watch its targets for after A's loss, B's arenas on B's address, by writing the
+whole line anew, which left out the account service's `account=127.0.0.1:9104` that the install guide gives every
+platform since (f)'s second commit. On B after A's loss the account service ran unwatched: `TargetDown` would never
+have been raised for it. The check's launch checks on B, which compare the watch's targets with every metrics port
+listening, failed on it: the targets had seven, the ports eight, 9104 the one missing. **Fixed:** the line names the
+account service with B's other processes on loopback.
+
 **O-103 (M), found 2026-11-26, FIXED the same day** (plan item 142 (f), designing the backups of two databases). A
 MySQL promotion raised the backend's failover epoch alone. The account service follows the primary as the backend
 does, by the writable host with the highest epoch, never below the highest it has seen (`PrimaryDataSource`, D-35),
@@ -1392,6 +1403,13 @@ could take the account service's writes again, the split the epoch is there to s
 run the account service against a promoted MySQL. **Fixed:** the promotion raises the account database's epoch after
 the backend's, where that database is on the server, and says so where it is not. Test first, `check-promote.sh`'s
 two new checks failing on the old script; a mutant raising it without asking whether the database is there, caught.
+**And again, the next commit** (writing the two machines' grants): the first fix asked `information_schema` whether
+the table was there, and MySQL shows a user only the tables it holds a grant on, so the failover account, granted
+`backend.ha_epoch` alone, would have been told "none" and left it behind all the same. A promotion now reads the
+account's epoch before it touches anything: readable, it is raised after the backend's; 1049 or 1146, the database
+is not on the server, said; any other refusal, the promotion is refused, the old primary untouched, naming the grant
+to add (01 §9, 10 §3), or `ACCOUNT_DB_NAME=` for a server without the account service (the drill's). Tests first,
+two of `check-promote.sh` failing on the first fix; two mutants caught.
 
 **O-102 (L), found 2026-11-26, FIXED the same day** (plan item 142 (e), pointing the bots at the account service).
 `dev-account.sh` said its issuer, `http://127.0.0.1:$ACCOUNT_PORT`, was the one `dev-backend.sh` gives the platform;

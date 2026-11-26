@@ -24,7 +24,7 @@
 #   EOF
 #   IMAGE=backend-el9-os-packages GUIDE_VALUES="MYSQL_PORT=3307" scripts/check-install-guide-el9.sh
 set -u
-if [ "${1:-}" != --inside ] && [ "${1:-}" != --after-boot ] && [ "${1:-}" != --disk-lost ] && [ "${1:-}" != --launch-checks ]; then
+case "${1:-}" in --inside | --after-boot | --disk-lost | --launch-checks | --login) ;; *)
     HERE=$(cd "$(dirname "$0")" && pwd)
     REPO=$(cd "$HERE/../.." && pwd)
     WORK=$(mktemp -d "${TMPDIR:-/tmp}/check-install-guide.XXXXXX")
@@ -46,8 +46,8 @@ if [ "${1:-}" != --inside ] && [ "${1:-}" != --after-boot ] && [ "${1:-}" != --d
     echo "--- the database's disk lost, and the runbook's restore"
     docker exec "$NAME" bash /check.sh --disk-lost || rc=1
     docker stop "$NAME" > /dev/null
-    exit "$rc"
-fi
+    exit "$rc" ;;
+esac
 
 # The launch's one machine (D-93): its units, each arena by its name, every process watched, the stores apart. The
 # arenas are the machine's settings' (D-97): a1 to a3 here, B's own on a standby that runs arenas, after A's loss.
@@ -73,9 +73,9 @@ setting() { sed -n "s/^$2=//p" "$1" 2> /dev/null | tail -1; }   # setting <env f
 # token taken by the platform there (D-117): both statuses
 login() {
     local made
-    made=$(curl -s --cacert /etc/backend/tls/ca.pem -w ' %{http_code}' -X POST -H 'Content-Type: application/json' \
+    made=$(curl -s --max-time 10 --cacert /etc/backend/tls/ca.pem -w ' %{http_code}' -X POST -H 'Content-Type: application/json' \
         -d "{\"username\":\"$1\",\"password\":\"install-check-1\"}" "https://127.0.0.1/account/v1/${2:-sessions}")
-    echo "${made##* } $(curl -s --cacert /etc/backend/tls/ca.pem -o /tmp/session.json -w '%{http_code}' -X POST \
+    echo "${made##* } $(curl -s --max-time 10 --cacert /etc/backend/tls/ca.pem -o /tmp/session.json -w '%{http_code}' -X POST \
         -H 'Content-Type: application/json' -d "{\"accessToken\":\"$(sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p' <<< "$made")\"}" \
         https://127.0.0.1/v1/sessions)"
 }
@@ -169,6 +169,13 @@ launch_checks() {
         -e "$(sed -n 's/^ACCOUNT_SIGNING_KEY=//p' /etc/backend/account.env | cut -c1-40)" && echo "$u"; done)
     [ -z "$f" ] || fail "systemctl show prints a password: $f"
 }
+
+# A login (or a sign-up, with accounts) through this machine's nginx and its session, the two statuses: the two
+# machines' check's probe and steps (D-117).
+if [ "${1:-}" = --login ]; then
+    login "$2" "${3:-sessions}"
+    exit
+fi
 
 # The launch's checks alone, on a machine the guide installed: check-two-machines-el9.sh's, on each of its two.
 if [ "${1:-}" = --launch-checks ]; then

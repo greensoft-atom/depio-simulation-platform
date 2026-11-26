@@ -4819,6 +4819,42 @@ guide run as written in UBI 9.5 by its check, no check failing at the install, a
 database's disk was lost and the runbook's restore made both databases again, the account signed up after the dump
 logging in; `check-units-el9.sh` with the watch reading the account service, up; `MYSQL_FAILOVER=1`, `play account`,
 the promotion saying the drill's servers have no account database; `check-promote.sh`. Next: the two machines.
+**(f), third of three commits, done 2026-11-27: the two machines and the guest** (10 §6.4). Operations/10 with the
+account service: among B's processes, installed and stopped (§1); its database's user on the private network over
+TLS, with its grants, and the failover account's grant on `account.ha_epoch`, its settings naming both MySQL hosts
+(§3); its restart before the platforms' (§6); 01 §9's grant beside it. **O-103 again**: the first fix asked
+`information_schema` whether the account database was there, which MySQL filters by privilege, so the failover
+account, granted nothing on it, would have seen none and raised the backend's epoch alone, saying there was no
+account database. `promote-mysql.sh` now reads `account.ha_epoch` before it changes anything: read, it is raised
+after the backend's; no such database or table (errors 1049, 1146), that is said and the promotion goes on; anything
+else, the grant missing among it, is refused before the old primary is touched, naming the grant; and with
+`ACCOUNT_DB_NAME=` empty the account database is not asked. Test first in `check-promote.sh`, four checks, the
+refusal and the unasked one failing against the first fix; two mutants caught. `check-install-guide-el9.sh --login`
+(a login, or a sign-up, through nginx and its session: the two statuses) for the two machines' probe and steps;
+`check-two-machines-el9.sh` with the account service: the probe signs up and takes a session, B's promotion leaves
+both epochs at 1, every account the probe signed up is in B's database after A's loss, and logins are served on B;
+`check-release-guest-el9.sh` passes the guest a signing key made on the host by the release's `account-key.sh`.
+Run as written, three times. The first stopped at the page's second step: the `--login` mode ran the check's host
+side inside A (git and docker not found), a guard of mine missing it; mended, a stand-in git and docker showing it no
+longer runs them. The second, every step passing, failed twice. **O-104**: §10 wrote B's watch targets anew without
+the account service, which B's launch checks after A's loss caught (seven targets, eight metrics ports); the line now
+names it. And a rule of the check's own: the probe counted a sign-up made only when its session was taken too, and
+B held three more of its accounts than it counted (19, 22), which fits sign-ups answered 201 whose sessions the
+platform refused in a gap (that run's log was not kept, so this is read from the rule, not seen); it now proves that
+every sign-up answered 201 is on B and that no account there is one it did not send, tried first on made-up probe
+logs: six cases, the old rule failing the two a correct site gives, and two mutants of
+the new one caught (one only once a case with a lost account whose session was refused was added). The third, from
+A as the second had kept it: 0 failed; B's promotion raised both epochs to 1, a sign-up through A's nginx written on
+B a second after it, B's watch reading 8 targets after A's loss, B serving 68 s after A was cut off, 24 of 25
+sign-ups answered 201 and all 24 on B, three of them refused their session, the case the old rule failed. The gaps the probe saw are in 10's table, MySQL's restart longer than before
+(23 to 26 s against 15) and the platform's shorter (9 to 10 s against 14 to 16); the probe's own sign-up, which
+waits up to 10 s twice, can lengthen a gap it falls in, so that is not read as the site's.
+`check-release-guest-el9.sh`, on the release rebuilt from these sources, in the Rocky 9.8 guest with SELinux enforcing
+(QEMU without KVM, half an hour a run): the account service on the release's runtime, migrated, a sign-up and its
+token taken by the platform, both runs. The first failed one check, nginx's HTTPS, which passed in UBI 9's container
+straight after and in the guest on the next run, every other check passing both times: **T-72**, open, its cause not
+known; the check now says what a refusal was. The second passed everything ("ALL PASSED"). `check-promote.sh` and
+`check-release-el9.sh` in UBI 9 pass. Next: the documents and the rule files, (g).
 
 ---
 

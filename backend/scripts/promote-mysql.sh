@@ -29,8 +29,8 @@
 # [client] with its user and password, and [client_remote], read only for the old primary, with
 # the TLS settings. This machine's server is reached as [client] says: its socket, which the file must name
 # (socket = /run/backend-mysql/mysqld.sock), since the release's client defaults to /tmp/mysql.sock (O-50).
-# BACKEND_DB_NAME: the backend's database (backend). ACCOUNT_DB_NAME: the account service's (account). MYSQL: the
-# client (mysql).
+# BACKEND_DB_NAME: the backend's database (backend). ACCOUNT_DB_NAME: the account service's (account; empty on a
+# server without the account service, which is then not asked). MYSQL: the client (mysql).
 set -euo pipefail
 # The release's MySQL tools first, from mysql/ beside scripts/ in /opt/backend (docs/detailed-design/09
 # §6); run from the source tree, the machine's own.
@@ -42,7 +42,7 @@ STALE_OK=${3:-}
 [ -z "$STALE_OK" ] || [ "$STALE_OK" = --stale-ok ] || { echo "the third argument, if any, is --stale-ok"; exit 2; }
 CNF=${MYSQL_FAILOVER_CNF:-/etc/backend/credentials/mysql-failover.cnf}
 DB=${BACKEND_DB_NAME:-backend}
-ACC=${ACCOUNT_DB_NAME:-account}
+ACC=${ACCOUNT_DB_NAME-account}
 read -r -a MYSQL <<< "${MYSQL:-mysql}"
 [ -r "$CNF" ] || { echo "cannot read $CNF"; exit 2; }
 
@@ -77,6 +77,23 @@ else
     echo "grant): what a promotion would lose is not known"
     if [ -z "$STALE_OK" ]; then
         echo "REFUSED: not knowing is not promoting; run again with --stale-ok to promote all the same."
+        exit 1
+    fi
+fi
+
+# The account service's epoch, before anything is touched (O-103): readable, to be raised with the backend's; not on
+# this server (1049, 1146: an account that may see it is told so), said and passed over. Any other refusal is not
+# knowing: MySQL tells a user without a grant there neither whether it exists nor its epoch, and a promotion that
+# took that for "none" would leave the account service's epoch behind.
+ACC_EPOCH=no
+if [ -n "$ACC" ]; then
+    if REPLY=$(here "SELECT epoch FROM $ACC.ha_epoch WHERE id = 1" 2>&1); then
+        ACC_EPOCH=yes
+    elif grep -qE '^ERROR (1049|1146) ' <<< "$REPLY"; then
+        echo "no account database here ($ACC): its epoch not raised"
+    else
+        echo "REFUSED: the account service's epoch, $ACC.ha_epoch, could not be read: $(head -1 <<< "$REPLY")."
+        echo "Grant the failover account SELECT, UPDATE on it (01 §9), or set ACCOUNT_DB_NAME= on a server without it."
         exit 1
     fi
 fi
@@ -146,10 +163,6 @@ fi
 here "STOP REPLICA; RESET REPLICA ALL; SET PERSIST super_read_only = OFF; SET PERSIST read_only = OFF"
 here "UPDATE $DB.ha_epoch SET epoch = epoch + 1 WHERE id = 1"
 # The account service's own epoch, which its processes follow as the backend's follow this one (O-103): raised with
-# it, where its database is; a server without one says so.
-if [ "$(here "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$ACC' AND table_name = 'ha_epoch'")" = 1 ]; then
-    here "UPDATE $ACC.ha_epoch SET epoch = epoch + 1 WHERE id = 1"
-else
-    echo "no account database here ($ACC): its epoch not raised"
-fi
+# it, where its database is (asked above).
+[ "$ACC_EPOCH" = no ] || here "UPDATE $ACC.ha_epoch SET epoch = epoch + 1 WHERE id = 1"
 echo "now: a primary, $(here "SELECT CONCAT('epoch ', epoch) FROM $DB.ha_epoch WHERE id = 1"), executed $(here "SELECT REPLACE(@@global.gtid_executed, '\\n', '')")"

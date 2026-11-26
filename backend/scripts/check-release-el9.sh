@@ -162,8 +162,11 @@ http {
 EOF
 "$R/nginx/sbin/nginx" -p /tmp/n/ -c /tmp/n/nginx.conf && sleep 1
 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8081/health | grep -q 200 && ok "proxies HTTP to the platform" || bad "nginx HTTP"
-curl -sk -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/health | grep -q 200 \
-    && ok "proxies HTTPS: $(curl -skv https://127.0.0.1:8443/health 2>&1 | grep -oE 'SSL connection using [^ ]+ / [^ ]+' | head -1)" || bad "nginx HTTPS"
+# A refusal says what it was: the answer's status, curl's own error, and nginx's.
+code=$(curl -sSk -o /dev/null -w "%{http_code}" https://127.0.0.1:8443/health 2> /tmp/n/https.err)
+[ "$code" = 200 ] \
+    && ok "proxies HTTPS: $(curl -skv https://127.0.0.1:8443/health 2>&1 | grep -oE 'SSL connection using [^ ]+ / [^ ]+' | head -1)" \
+    || { bad "nginx HTTPS: $code $(head -c 300 /tmp/n/https.err)"; tail -5 /tmp/n/error.log | sed 's/^/      /'; }
 # The shipped configuration, as installed, with a stand-in certificate (MySQL's own) and nobody for
 # nginx, which this image has no user for.
 mkdir -p /etc/backend/nginx /etc/backend/tls /etc/backend/credentials /var/log/backend-nginx /run/backend-nginx /var/cache/backend-nginx /var/www/acme

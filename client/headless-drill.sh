@@ -418,7 +418,8 @@ store_listening() {
 }
 mfail() { echo "MYSQL FAILOVER FAILED: $*"; STATUS=1; }
 promote() {
-  MYSQL_FAILOVER_CNF="$D/mysql-failover.cnf" BACKEND_DB_NAME=backend_dev \
+  # No account database on these servers: the drill's account service stays on the development MySQL (10 §5.4).
+  MYSQL_FAILOVER_CNF="$D/mysql-failover.cnf" BACKEND_DB_NAME=backend_dev ACCOUNT_DB_NAME= \
     "$B/backend/scripts/promote-mysql.sh" 127.0.0.1:3307 "$1"
 }
 mysql_prepare() {

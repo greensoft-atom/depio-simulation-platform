@@ -182,7 +182,7 @@ on a layer of its disk that is thrown away afterwards. In the guest it:
    `mysqldump`, the server's process in SELinux's `unconfined_service_t` domain, and no SELinux denial since the
    boot;
 3. runs `check-release-el9.sh`'s own checks as root in the guest: every native file, program and plugin, and every
-   process.
+   process, the account service's among them with a signing key made on the host by the release's `account-key.sh`.
 
 ```
 backend/scripts/check-release-guest-el9.sh [release-dir]    from the checkout; the release's .tar.gz beside it
@@ -275,7 +275,9 @@ veth pair, one end moved into each (A `10.0.0.1`, B `10.0.0.2`), so nothing of t
 changes. In order:
 
 1. A, the launch's machine, is installed by the install guide's own check;
-2. B is made A's standby by the page's steps, while a probe uses the site through A's nginx and times every request;
+2. B is made A's standby by the page's steps, the account service's database and user among them, while a probe
+   signs up through A's nginx at the account service and takes the token for a session, timing every request; the
+   promotions raise both epochs;
 3. B's own arenas (D-97, the page's [§10](../../docs/operations/10-two-machines.md#10-arenas-on-b)): matches played
    on them through A's nginx's 80, in clear, by the C# headless client on Unity 2019's Mono (D-116), with A's arenas
    stopped for it; where nginx passed each match is read from `access.log`'s `/match/` lines, answered 101; then B
@@ -283,7 +285,8 @@ changes. In order:
 4. A's MySQL lost while A runs: B's MySQL promoted
    ([runbook §2](../../docs/operations/02-runbook.md#2-stateful-primary-failure)) and A's processes moved onto it;
 5. A lost: the runbook's steps for it on B ([§4](../../docs/operations/02-runbook.md#4-whole-machine-loss)), the
-   site served from B with nothing committed lost.
+   site served from B with nothing committed lost: every sign-up the probe was answered 201, whatever its session was
+   answered, in B's `account` database, and no account there it did not send.
 
 The blocks the page marks `console` are not run: the copy to B (this check copies the same files through docker)
 and the firewall (`check-ports-el9.sh` runs it).
@@ -708,7 +711,10 @@ Promotes MySQL's replica to primary, on the replica's machine. It works in this 
 1. **What a promotion would lose** (D-58, O-10). It prints the primary's last heartbeat that this replica applied,
    and its age. When that is older than `PROMOTE_STALE_SECONDS` (five minutes), or cannot be read, it refuses before
    touching anything, unless given `--stale-ok`. Compare the time with when the primary was lost: a promotion well
-   after an outage is what `--stale-ok` is for.
+   after an outage is what `--stale-ok` is for. It then reads the account service's epoch, `account.ha_epoch`
+   (`ACCOUNT_DB_NAME`): a server without that database, or without the table, is said and promoted with the
+   backend's epoch alone; any other error, the `failover` account's grant missing among them, is refused here, before
+   anything changes, naming the grant (O-103, D-117).
 2. **The old primary must not serve.** With `--old-is-down`, it refuses if the old primary answers at all, even with
    an error that refuses the account or TLS (no connection, or no reply in 20 s, is no answer). With
    `--demote-old`, it refuses an old primary that does not answer, and fences one that does (D-95, O-64):
@@ -719,9 +725,8 @@ Promotes MySQL's replica to primary, on the replica's machine. It works in this 
 3. **The replica catches up.** It waits up to 60 s for the replica to apply everything it received.
 4. **The promotion.** It stops replicating and forgets its source (`STOP REPLICA`, `RESET REPLICA ALL`), becomes
    writable with `SET PERSIST` (which outranks the configuration file, so a restart keeps it), raises the failover
-   epoch in `ha_epoch`, which the backend's processes follow, and the account service's own (`ACCOUNT_DB_NAME`,
-   `account`), which it follows (O-103, D-117), where that database is; and prints the epoch and the executed GTID
-   set.
+   epoch in `ha_epoch`, which the backend's processes follow, then the account service's, which it follows, when
+   step 1 read it; and prints the epoch and the executed GTID set.
 
 Run on a primary already, it prints the epoch and changes nothing.
 
@@ -732,7 +737,7 @@ promote-mysql.sh <old primary host:port> --demote-old [--stale-ok]
 
 | | |
 |---|---|
-| Settings | `MYSQL_FAILOVER_CNF`, the `failover` account's option file (default `/etc/backend/credentials/mysql-failover.cnf`): `[client]` with the user, the password and `socket = /run/backend-mysql/mysqld.sock` (the file must name the socket, since the release's client defaults to `/tmp/mysql.sock`, O-50), and `[client_remote]` with the TLS settings, read only for the old primary. `BACKEND_DB_NAME` (`backend`). `MYSQL`, the client (`mysql`). `PROMOTE_STALE_SECONDS` (300; lower it for a rehearsal) |
+| Settings | `MYSQL_FAILOVER_CNF`, the `failover` account's option file (default `/etc/backend/credentials/mysql-failover.cnf`): `[client]` with the user, the password and `socket = /run/backend-mysql/mysqld.sock` (the file must name the socket, since the release's client defaults to `/tmp/mysql.sock`, O-50), and `[client_remote]` with the TLS settings, read only for the old primary. `BACKEND_DB_NAME` (`backend`). `ACCOUNT_DB_NAME` (`account`; empty: the account service's epoch is not asked). `MYSQL`, the client (`mysql`). `PROMOTE_STALE_SECONDS` (300; lower it for a rehearsal) |
 | Needs | root, to read the option file; `mysql`, `timeout`. The account `failover`, with the grants of [01 §9](../../docs/operations/01-deploy.md#9-mysql) |
 | Runs | on the MySQL replica's machine (C; on two machines B, D-96). It reaches this machine's server by its socket, and the old primary over TLS |
 | Returns | 0: promoted, or already a primary; 1: `REFUSED: …`; 2: wrong arguments or an option file it cannot read |
@@ -749,8 +754,9 @@ Checks the two promotion scripts with stand-in clients and no server, in seconds
 - MySQL's handover in its order: read-only, the replica's wait for everything the old primary executed,
   `offline_mode`, the promotion;
 - the store's handover: the old primary demoted, then this one promoted;
-- a MySQL promotion raising the account service's epoch after the backend's, and on a server without the account
-  database, the backend's alone, the other said absent (O-103).
+- a MySQL promotion raising the account service's epoch after the backend's; on a server without the account
+  database, the backend's alone, the other said absent; with the epoch unreadable for want of the grant, refused
+  before the old primary is touched; with `ACCOUNT_DB_NAME` empty, the account database not asked (O-103).
 
 The real promotions are checked by the failover drills of `client/headless-drill.sh` (`MYSQL_FAILOVER=demote` and
 `FAILOVER=1`).
