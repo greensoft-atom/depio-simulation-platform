@@ -9,21 +9,18 @@ package com.backend.platform.net;
  */
 final class ApiMessages {
 
-    record RegisterRequest(String username, String displayName, String password) { }
-
     record RenameRequest(String displayName) { }
 
-    record PasswordRequest(String password) { }
+    /** An access token of the account service's (D-117), or a guest's key alone (D-46). */
+    record LoginRequest(String accessToken, String guestKey) { }
 
-    record RegisterResponse(long playerId) { }
-
-    /** A username and password, or a guest's key alone (D-46). */
-    record LoginRequest(String username, String password, String guestKey) { }
+    /** An access token of the account service's: a guest's link to its account (D-117). */
+    record AccessTokenRequest(String accessToken) { }
 
     /** A guest made (Q-22): the key for the device to keep, and its name. */
     record GuestResponse(long playerId, String guestKey, String displayName) { }
 
-    record LoginResponse(String token, long playerId, int expiresInSeconds) { }
+    record LoginResponse(String token, long playerId, int expiresInSeconds, boolean newPlayer) { }
 
     /** {@code tlsName}, behind the front (D-82): the name to send and check; left out for the host. */
     record MatchResponse(String arenaHost, int arenaPort, String ticketId, boolean tls,

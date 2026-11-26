@@ -34,10 +34,9 @@ import org.slf4j.LoggerFactory;
  * The database comes from the environment, never the command line: see
  * {@link DatabaseSettings}.
  *
- * Binds to loopback by default. The login endpoint costs ~88 ms of CPU per call by design,
- * which makes it a denial-of-service lever for anyone who can reach it, so it listens where
- * only this machine's nginx and gateway reach it; attempts are counted by LoginThrottle before
- * Argon2 runs.
+ * Binds to loopback by default, where only this machine's nginx and gateway reach it. A player
+ * logs in with an access token of the account service's, which hashes the passwords (D-117); the
+ * guests' attempts are counted per address by LoginThrottle.
  */
 public final class PlatformMain {
 
@@ -78,6 +77,10 @@ public final class PlatformMain {
         DatabaseSettings database = DatabaseSettings.fromEnvironment();
         // Before anything connects: a setting that is not IP addresses refuses the start (exit 2).
         com.backend.common.TrustedProxies proxies = com.backend.common.TrustedProxies.fromEnvironment(System.getenv());
+        // The account service's tokens: whose, and where its key set is (D-117); refused likewise when malformed.
+        AccountTokenSettings accountTokens = AccountTokenSettings.fromEnvironment(System.getenv());
+        log.info("access tokens taken from {} for {}, its keys at {}", accountTokens.issuer(), accountTokens.audience(),
+                accountTokens.jwks());
         if (database.usesDevelopmentPassword()) {
             log.warn("no BACKEND_DB_PASSWORD_FILE or BACKEND_DB_PASSWORD; using the development"
                     + " database password");
@@ -88,7 +91,7 @@ public final class PlatformMain {
         db.migrate();
 
         AccountRepository accounts = new AccountRepository(db.dataSource());
-        AuthService auth = new AuthService(accounts, new PasswordHasher(), new SessionStore(store));
+        AuthService auth = new AuthService(accounts, new SessionStore(store), new AccountTokens(accountTokens));
         Items items = Items.fromClasspath();          // read before binding, as the catalogue: a bad one stops the start
         EquipmentService equipment = new EquipmentService(auth,
                 new com.backend.persistence.EquipmentRepository(db.dataSource()), items);

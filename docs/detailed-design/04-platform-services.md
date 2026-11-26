@@ -66,7 +66,16 @@ A number below says when a table or column came, not a file that exists now.
 This section covers accounts, guests, logging in, sessions, the limits on password attempts, display names,
 renaming, and deleting an account.
 
-- **Register**: a username and a password. The password is hashed with **Argon2id** (Bouncy Castle).
+**Since D-117 (plan item 142) a username and its password are the account service's**
+([10](10-accounts.md), [D-117](../architecture/03-decision-log.md#d-117--accounts-in-an-account-service-of-their-own-which-issues-signed-tokens-the-backend-takes-once-for-a-session)):
+the app signs up and logs in there, and sends its access token here once for a session. What this section says of
+Argon2id, the hasher's line, the decoy hash, rehashing and the per-account limit is that service's policy now, moved
+with its figures, whose reasons stay here (10 §3.3). Registration, the password login and the guest's upgrade are gone
+from the backend; it keeps guests, sessions, bans, display names, renaming and a guest's deletion.
+
+- **Register**: a username and a password. The password is hashed with **Argon2id** (Bouncy Castle). **Since
+  D-117** at the account service; here, `POST /v1/sessions` `{"accessToken"}` takes its access token, checked by the
+  account service's published keys (10 §4.2), and the first login makes the subject's player (10 §4.3).
 - **Guests** (designed 2026-09-30, plan item 22,
   [Q-22](../requirements/01-scope-and-nfrs.md#7-open-questions),
   [D-46](../architecture/03-decision-log.md#d-46--a-guests-credential-is-a-random-key-kept-as-its-sha-256-under-a-username-nobody-can-choose)).
@@ -74,11 +83,11 @@ renaming, and deleting an account.
 
   | Route | What it does | Answers |
   |---|---|---|
-  | `POST /v1/guests` | makes a guest, named "Guest" and four digits | 201 `{playerId, guestKey, displayName}`; 429 when throttled per address, as registering is |
-  | `POST /v1/sessions` `{"guestKey"}` | logs the guest in, answered as a login | 401 `invalid_credentials`, 403 `banned` |
-  | `POST /v1/accounts/upgrade` `{"username", "password", "displayName"}`, with the guest's session | makes it a full account: the same player | 200; 400 `invalid_username`, `invalid_password`, `invalid_display_name`; 409 `username_taken`, `not_a_guest` |
+  | `POST /v1/guests` | makes a guest, named "Guest" and four digits | 201 `{playerId, guestKey, displayName}`; 429 when throttled per address |
+  | `POST /v1/sessions` `{"guestKey"}` | logs the guest in, answered as a login | 401 `invalid_credentials`, 403 `banned`, 429 |
+  | `POST /v1/accounts/link` `{"accessToken"}`, with the guest's session (D-117, in the upgrade's place) | makes it the account's player: the same player and name | 200 `{playerId}`; 401 `invalid_token`; 409 `not_a_guest`, `account_in_use` |
 
-  The key stops working at the upgrade. **(a) built 2026-09-30:**
+  The key stops working when the guest is linked (until D-117, at the upgrade). **(a) built 2026-09-30:**
   - V15.
   - `AccountRepository.createGuest`, `findGuest` and `upgrade`. The upgrade sets the username and the hash and clears
     the key in one statement, guarded by the key being there, so a second upgrade is `not_a_guest`.
@@ -88,7 +97,8 @@ renaming, and deleting an account.
   - The routes above.
   - A guest's own username cannot be logged into. Login refuses a name the rules forbid before any lookup, and a
     guest's password hash is empty.
-- **Login**: the password is verified against `account`. Then a session is made in j-redis, in one transaction:
+- **Login**: the password is verified against `account` (since D-117, the access token is checked and its subject's
+  player found or made). Then a session is made in j-redis, in one transaction:
   `MULTI · HSET sess:{token} playerId … createdAt … · EXPIRE · SADD sess:of:{playerId} {token} · EXPIRE · EXEC`. The
   token is 32 random bytes, base64url (43 characters). The TTL is a day, jittered by ±10 %: 77 760 to 95 040 s
   (below). `sess:of:{playerId}` is the player's index of sessions, which a ban uses (§10).
@@ -103,8 +113,8 @@ every request, because that would turn a short store outage into a mass logout
 backstop. **Built** (§10, 2026-09-29): an operator's ban ends every session and the lobby connection, and a kick
 takes the player out of every arena.
 
-**What is built:** `platform/AuthService`, `PasswordHasher`, `DisplayName`, `LoginThrottle`;
-`handoff/SessionStore`; `persistence/AccountRepository`. The details below are not obvious from the list above. The
+**What is built:** `platform/AuthService`, `PasswordHasher` (the account service's since D-117; here
+`AccountTokens`), `DisplayName`, `LoginThrottle`; `handoff/SessionStore`; `persistence/AccountRepository`. The details below are not obvious from the list above. The
 code and its tests pin each one down.
 
 **Argon2id costs 62 to 88 ms, and that is the system's tightest CPU limit.**
@@ -160,7 +170,8 @@ profile), with the combining-mark checks of UTS #39 §5.4:
 - The HTTP answer is 400 `invalid_display_name`, with a message that names the rule broken, so a client can tell the
   player what to change.
 - With no display name, the username is used, cut to 16 and checked the same way. So the username `admin` registers
-  only with a display name of its own.
+  only with a display name of its own. **Since D-117** a first login's player is named from the token's
+  `preferred_username` by these rules, or `Player` and four digits when they refuse it; the player renames as any.
 
 **Registration and login are throttled before Argon2 runs.** Two fixed-window counters in j-redis hold the limits, so
 they hold across all three `platform` processes:
@@ -170,6 +181,9 @@ they hold across all three `platform` processes:
 | 30 a minute per source address (IPv6: per /64) | every registration and login | one machine spending the Argon2 budget, or guessing fast |
 | 10 a quarter hour per account | every login that names it, whether it exists or not | guessing one account from many addresses |
 
+- **Since D-117** both limits, on sign-ups and logins, are the account service's, counted in its MySQL (10 §3.3).
+  The platform keeps the first alone, for guests made and logged in; an access token costs a signature, not a hash,
+  and is not counted.
 - **Beyond either limit**: 429 `too_many_attempts`, with `Retry-After`.
 - **The source address** is the TCP peer's. When the peer is nginx, it is the **last** entry of `X-Forwarded-For`,
   the only one nginx wrote. nginx is believed when it is a peer on the same machine, or, since
@@ -237,8 +251,8 @@ and one more cost:
   any path that names nothing.
 - **The routes nginx limits are matched exactly.** The JDK's server matches a context by its prefix, so
   `POST /v1/sessions/` logged in past nginx's exact `location = /v1/sessions`. Now `/v1/sessions`, `/v1/accounts`,
-  `/v1/guests` and `/v1/accounts/upgrade` answer only their own path, and 404 for anything after it. nginx limits all
-  four the same way (`deploy/nginx/backend.conf`: `limit_req`, 2 requests a second per address, a burst of 30, on 443
+  `/v1/guests` and `/v1/accounts/upgrade` (since D-117 `/v1/accounts/link`) answer only their own path, and 404 for
+  anything after it. nginx limits all four the same way (`deploy/nginx/backend.conf`: `limit_req`, 2 requests a second per address, a burst of 30, on 443
   and on 80 alike). **Since 2026-11-05 every route is matched so**
   ([D-107](../architecture/03-decision-log.md#d-107--developments-80-serves-the-api-and-the-lobby-itself-the-apis-health-under-v1-every-route-checked-through-nginx)):
   a route answers its own path alone, and a path that no route has is the API's JSON 404 `no_such_route`, not the
@@ -305,6 +319,12 @@ is chosen when the team is made. Before this slice, neither could change.
 ([D-84](../architecture/03-decision-log.md#d-84--a-player-deletes-their-own-account-erased-in-place-what-others-history-needs-kept-under-a-bare-id)).
 A guest sends no password.
 
+**Since D-117 this route erases a guest alone**, with no body, and answers an account's player 409
+`delete_at_account_service`: its account is deleted at the account service, with its password, and the `deleted`
+event erases the player by the steps below, but out of its team whatever its role, as retention does, since nobody is
+left to ask to take it over; the subject is recorded in `erased_subject` (10 §4.3). The password's rows below went
+with it.
+
 | Answer | When |
 |---|---|
 | 204 | erased, or already erased |
@@ -321,14 +341,15 @@ A guest sends no password.
 2. Take the player out of the queue and the party, and out of the team, each as its own call does. A store that fails
    here refuses the call before anything is erased.
 3. Erase, in one MySQL transaction (`AccountRepository.erase`): the account's username, hash, guest key and last
-   login; the player's display name and rated counts; the rows of `friend`, `friend_request` and `block`, in either
+   login (since D-117 its subject, recorded as erased, and guest key); the player's display name and rated counts; the rows of `friend`, `friend_request` and `block`, in either
    direction; and `inbox`, `team_invite` and `team_application`.
 4. The store's part: take the player off the score boards (`lb:score:*` for every period still kept, and `lb:name`),
    and end every session (`revokeAll`). A store that fails here answers 503 while the session still works, and the
    same call finishes the job: steps 2 and 3 are done, and an erased account asks no password.
 5. Tell every device's lobby `evt.session.revoked` `{"reason": "deleted"}`, which closes it.
 
-**To everything else, a deleted account is no account.** A login finds no such name and no such guest key. The admin
+**To everything else, a deleted account is no account.** A login finds no such name and no such guest key (since
+D-117, an access token of its subject is 401 `invalid_token`). The admin
 API answers 404. The boards' rebuild leaves it out. The app forgets its session, and a guest's key.
 
 ### An idle guest erased (designed 2026-10-26, plan item 105)
@@ -342,7 +363,7 @@ Q-61). A guest is idle when all three hold:
 - it has no day in `player_day` since. `player_day` is kept 90 days. This second test guards the first against a
   session that outlives a day by one day.
 
-Only a guest is erased this way: a registered account is its player's to delete.
+Only a guest is erased this way: an account's player is its owner's to delete, at the account service since D-117.
 
 **How** (`worker/IdleGuests`): the same erasure as above, done by the worker, one guest at a time, in this order:
 
@@ -2735,9 +2756,8 @@ What `platform` should measure, why, and what is built. The watch (§12) reads t
 | Metric | What it counts |
 |---|---|
 | `backend_platform_responses_total{status}` | answers, by HTTP status |
-| `backend_platform_logins_total{outcome}` | logins: `ok`, `invalid_credentials`, `banned`, `throttled`, `busy` |
+| `backend_platform_logins_total{outcome}` | logins: `ok`, `invalid_token` (an access token not taken, D-117), `invalid_credentials` (a guest's key), `banned`, `throttled` |
 | `backend_platform_purchases_total{outcome}` | purchases: `bought`, `already_bought`, and each refusal (the purchase row above) |
-| `backend_platform_hasher_line` | the hasher's line: 168 is full (S-7) |
 | `backend_platform_queue_wait_seconds{mode}` | 2026-09-29: a histogram of each player's wait, from queueing to a match found; the server works out p50 and p95. Buckets from 1 s to 10 min |
 | `backend_platform_queue_players{mode}` | 2026-09-29: the players left waiting after the last round. Only the platform that holds the matcher's lease reports it; the others report 0 |
 | `backend_platform_confirms_total{outcome}` | 2026-09-29: how each confirm step ended: `made`, `declined`, `withdrawn`, `lapsed`, `no_room` |
@@ -2805,7 +2825,7 @@ thresholds are those of [runbook §5](../operations/02-runbook.md#5-what-to-watc
 | `TournamentsStalling` | `backend_worker_tournament_failures_total` rose by more than 5 in 30 min | 5 min |
 | `MysqlReplicaLagging`, `MysqlReplicaDown` | `backend_mysql_replica_lag_seconds` > 30; `backend_mysql_replica_up` 0 | 2 min |
 | `LedgerMismatch`, `LedgerCheckStale` | `backend_worker_ledger_mismatches` > 0; the check older than 2 days | at once |
-| `HasherLineFull` | `backend_platform_hasher_line` ≥ 168 | 1 min |
+| `HasherLineFull` | `account_hasher_line` ≥ 168: the account service's line since D-117 (S-7) | 1 min |
 | `TickSlow` | `backend_arena_tick_p99_seconds` > 0.015 | 5 min |
 | `ArenaCrashLoop` | `backend_process_uptime_seconds` of an arena fell twice in the hour | at once |
 | `DiskFilling`, `DiskFillsWithinAWeek` | free under 20 % of size; a straight line through the hour's free bytes reaches 0 within 7 days | 5 min; 1 h |

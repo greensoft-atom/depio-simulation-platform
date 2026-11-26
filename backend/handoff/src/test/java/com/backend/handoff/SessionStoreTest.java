@@ -105,6 +105,28 @@ class SessionStoreTest {
     }
 
     @Test
+    @DisplayName("the sessions made before a moment ended, those after it kept; again, nothing more (D-117)")
+    void revokeBefore() throws Exception {
+        String old1 = sessions.create(7L).get();
+        String old2 = sessions.create(7L).get();
+        String other = sessions.create(8L).get();
+        Thread.sleep(5);
+        java.time.Instant changed = java.time.Instant.now();
+        Thread.sleep(5);
+        String fresh = sessions.create(7L).get();
+        SessionStore.Revoked r = sessions.revokeBefore(7L, changed).get();
+        assertThat(r.ended()).isEqualTo(2);
+        assertThat(r.remaining()).isEqualTo(1);
+        assertThat(sessions.playerIdOf(old1).get()).isEqualTo(-1L);
+        assertThat(sessions.playerIdOf(old2).get()).isEqualTo(-1L);
+        assertThat(sessions.playerIdOf(fresh).get()).isEqualTo(7L);
+        assertThat(sessions.playerIdOf(other).get()).as("another player's").isEqualTo(8L);
+        assertThat(sessions.revokeBefore(7L, changed).get()).isEqualTo(new SessionStore.Revoked(0, 1));
+        assertThat(sessions.revokeAll(7L).get()).as("the index kept for a ban").isEqualTo(1);
+        assertThat(sessions.revokeBefore(9L, changed).get()).as("a player with none").isEqualTo(new SessionStore.Revoked(0, 0));
+    }
+
+    @Test
     @DisplayName("a token not as minted names no key: of:{id} neither ends a player's index nor reads it (S-20)")
     void aTokenNotAsMintedNamesNoKey() throws Exception {
         String live = sessions.create(42).get(5, TimeUnit.SECONDS);

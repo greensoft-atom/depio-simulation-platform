@@ -34,7 +34,6 @@ import com.backend.platform.Items;
 import com.backend.platform.JoinService;
 import com.backend.platform.LoginThrottle;
 import com.backend.platform.MatchQueue;
-import com.backend.platform.PasswordHasher;
 import com.backend.platform.QueueService;
 import com.backend.platform.ShopService;
 import com.backend.platform.TeamService;
@@ -142,7 +141,7 @@ class PlatformHttpServerTest {
         jredis = store.newClient();
 
         AccountRepository accounts = new AccountRepository(db.dataSource());
-        auth = new AuthService(accounts, new PasswordHasher(), new SessionStore(jredis));
+        auth = new AuthService(accounts, new SessionStore(jredis), com.backend.platform.TestTokens.tokens());
         directory = new ArenaDirectory(jredis);
         equipment = new EquipmentService(auth, new EquipmentRepository(db.dataSource()), Items.read(
                 new java.io.ByteArrayInputStream(ITEMS.getBytes(StandardCharsets.UTF_8))));
@@ -221,7 +220,7 @@ class PlatformHttpServerTest {
         JRedisClient down = JRedisClient.builder().address("127.0.0.1", deadPort)
                 .clientName("down").build().start();
         AccountRepository accounts = new AccountRepository(db.dataSource());
-        AuthService auth = new AuthService(accounts, new PasswordHasher(), new SessionStore(down));
+        AuthService auth = new AuthService(accounts, new SessionStore(down), com.backend.platform.TestTokens.tokens());
         JoinService joins = new JoinService(auth, accounts, new ArenaDirectory(down),
                 new TicketStore(down), equipment);
         PlatformHttpServer downServer = new PlatformHttpServer(auth, joins,
@@ -254,7 +253,7 @@ class PlatformHttpServerTest {
             // from a bug.
             HttpResponse<String> login = call.apply(HttpRequest.newBuilder(
                     URI.create(downBase + "/v1/sessions")).POST(HttpRequest.BodyPublishers.ofString(
-                    "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}")));
+                    accessTokenBody("ada", "ada"))));
             // A token as minted, 43 characters: any other is refused before the store is asked (S-20).
             String asMinted = "x".repeat(43);
             HttpResponse<String> join = call.apply(HttpRequest.newBuilder(
@@ -323,7 +322,7 @@ class PlatformHttpServerTest {
                         new com.backend.handoff.LobbyPush(jredis)), "127.0.0.1", 0);
         String partlyBase = "http://127.0.0.1:" + partly.start();
         try {
-            String ada = register("lease-ada");
+            String ada = guest();                  // a guest's deletion is the backend's own (D-117)
             long bobId = auth.playerIdOf(register("lease-bob"));
             HttpResponse<String> invited = send(HttpRequest.newBuilder(URI.create(partlyBase + "/v1/party/invite"))
                     .header("Authorization", "Bearer " + ada).header("Content-Type", "application/json")
@@ -333,8 +332,7 @@ class PlatformHttpServerTest {
 
             // A deletion whose party could not be left: refused whole, nothing erased (D-84).
             HttpResponse<String> deleted = send(HttpRequest.newBuilder(URI.create(partlyBase + "/v1/accounts"))
-                    .header("Authorization", "Bearer " + ada).header("Content-Type", "application/json")
-                    .method("DELETE", HttpRequest.BodyPublishers.ofString("{\"password\":\"hunter2-hunter2\"}")).build());
+                    .header("Authorization", "Bearer " + ada).method("DELETE", HttpRequest.BodyPublishers.noBody()).build());
             assertThat(deleted.statusCode()).as(deleted.body()).isEqualTo(503);
             assertThat(body(deleted).get("code").asText()).isEqualTo("storage_unavailable");
             assertThat(auth.playerIdOf(ada)).as("the session lives on").isPositive();
@@ -346,29 +344,7 @@ class PlatformHttpServerTest {
     }
 
     @Test
-    @DisplayName("an account gets ten logins a quarter hour, whether it exists or not")
-    void loginIsThrottledPerAccount() throws Exception {
-        // Not register(), which also logs in: that would be the account's first attempt.
-        post("/v1/accounts", "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null);
-        for (String who : List.of("ada", "nobody")) {
-            for (int i = 0; i < 10; i++) {
-                HttpResponse<String> r = postFrom("198.51.100." + i, "/v1/sessions",
-                        "{\"username\":\"" + who + "\",\"password\":\"wrong-password\"}");
-                assertThat(r.statusCode()).as("%s, attempt %d", who, i + 1).isEqualTo(401);
-            }
-            // From an address not seen before, and in capitals: the account is what is
-            // counted. The same for a name nobody has, or the limit would say who exists.
-            HttpResponse<String> refused = postFrom("198.51.100.99", "/v1/sessions",
-                    "{\"username\":\"" + who.toUpperCase() + "\",\"password\":\"wrong-password\"}");
-            assertThat(refused.statusCode()).as(who).isEqualTo(429);
-            assertThat(body(refused).get("code").asText()).isEqualTo("too_many_attempts");
-            assertThat(Integer.parseInt(refused.headers().firstValue("Retry-After").orElseThrow()))
-                    .isBetween(1, 900);
-        }
-    }
-
-    @Test
-    @DisplayName("an address makes thirty guests a minute, as it registers (Q-22)")
+    @DisplayName("an address makes thirty guests a minute (Q-22)")
     void guestsAreThrottledPerAddress() throws Exception {
         for (int i = 0; i < 30; i++) {
             assertThat(postFrom("203.0.113.21", "/v1/guests", "").statusCode()).as("guest %d", i + 1).isEqualTo(201);
@@ -380,18 +356,21 @@ class PlatformHttpServerTest {
     }
 
     @Test
-    @DisplayName("an address gets thirty registrations and logins a minute, and only its own")
-    void registrationIsThrottledPerAddress() throws Exception {
-        // Refused for a short password, which costs nothing to check. The throttle counts an
-        // attempt before looking at it, so these count all the same.
-        String cheap = "{\"username\":\"someone\",\"password\":\"short\"}";
+    @DisplayName("an address gets thirty guest logins a minute, and only its own; an access token's exchange is not counted (D-117)")
+    void guestLoginsAreThrottledPerAddress() throws Exception {
+        // A key no guest has, which costs nothing to look up. The throttle counts an attempt
+        // before looking at it, so these count all the same.
+        String cheap = "{\"guestKey\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}";
         for (int i = 0; i < 30; i++) {
-            assertThat(postFrom("203.0.113.9", "/v1/accounts", cheap).statusCode())
-                    .as("attempt %d", i + 1).isEqualTo(400);
+            assertThat(postFrom("203.0.113.9", "/v1/sessions", cheap).statusCode())
+                    .as("attempt %d", i + 1).isEqualTo(401);
         }
-        assertThat(postFrom("203.0.113.9", "/v1/accounts", cheap).statusCode()).isEqualTo(429);
-        assertThat(postFrom("203.0.113.10", "/v1/accounts", cheap).statusCode())
-                .as("the next address along").isEqualTo(400);
+        assertThat(postFrom("203.0.113.9", "/v1/sessions", cheap).statusCode()).isEqualTo(429);
+        assertThat(postFrom("203.0.113.10", "/v1/sessions", cheap).statusCode())
+                .as("the next address along").isEqualTo(401);
+        // The account service counted its password; an exchange hashes nothing here, and nginx limits the route.
+        assertThat(postFrom("203.0.113.9", "/v1/sessions", accessTokenBody("throttled-ada", "ada")).statusCode())
+                .isEqualTo(200);
     }
 
     @Test
@@ -436,42 +415,6 @@ class PlatformHttpServerTest {
                 .as("unset, the front is a peer like any").isEqualTo(front);
         assertThat(PlatformHttpServer.clientAddress(InetAddress.getLoopbackAddress(), List.of("198.51.100.8"), named))
                 .as("nginx on this machine, still").isEqualTo(InetAddress.getByName("198.51.100.8"));
-    }
-
-    @Test
-    @DisplayName("a full line for the hasher is a 503 to come back later, and costs the account nothing")
-    void fullHasherLineIsBusyAndNotCounted() throws Exception {
-        com.backend.common.Metrics metrics = new com.backend.common.Metrics();
-        server.registerMetrics(metrics);
-        post("/v1/accounts", "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null);
-        // Take every place in line, as a login storm would.
-        List<com.backend.platform.PasswordHasher.Admission> storm = new java.util.ArrayList<>();
-        for (com.backend.platform.PasswordHasher.Admission p = auth.admit(); p != null; p = auth.admit()) {
-            storm.add(p);
-        }
-        try {
-            for (int i = 0; i < 12; i++) {
-                HttpResponse<String> busy = postFrom("198.51.100.1", "/v1/sessions",
-                        "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}");
-                assertThat(busy.statusCode()).isEqualTo(503);
-                assertThat(body(busy).get("code").asText()).isEqualTo("busy");
-                assertThat(Integer.parseInt(busy.headers().firstValue("Retry-After").orElseThrow()))
-                        .isBetween(1, 5);
-            }
-            assertThat(metrics.render()).as("the line, full, as a scrape sees it")
-                    .contains("backend_platform_hasher_line 168");
-        } finally {
-            storm.forEach(com.backend.platform.PasswordHasher.Admission::close);
-        }
-        // Counted where an operator will look for them: the scrape says why logins failed,
-        // and that the line has emptied again.
-        assertThat(metrics.render()).contains("backend_platform_logins_total{outcome=\"busy\"} 12")
-                .contains("backend_platform_hasher_line 0");
-        // Twelve refusals, more than the account's ten attempts, and none of them counted:
-        // retrying through an overload must not lock a player out once it is over.
-        HttpResponse<String> after = postFrom("198.51.100.1", "/v1/sessions",
-                "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}");
-        assertThat(after.statusCode()).isEqualTo(200);
     }
 
     // ---- helpers ---------------------------------------------------------------------
@@ -560,14 +503,25 @@ class PlatformHttpServerTest {
         }
     }
 
+    /**
+     * A session for the account service's account {@code username}, its subject the same (D-117): its player made at
+     * the first, named by the username as a first login names it, and the same player after.
+     */
     private static String register(String username) throws Exception {
-        post("/v1/accounts", """
-                {"username":"%s","displayName":"%s","password":"hunter2-hunter2"}
-                """.formatted(username, username), null);
-        HttpResponse<String> login = post("/v1/sessions", """
-                {"username":"%s","password":"hunter2-hunter2"}
-                """.formatted(username), null);
+        HttpResponse<String> login = post("/v1/sessions", accessTokenBody(username, username), null);
+        assertThat(login.statusCode()).as(login.body()).isEqualTo(200);
         return body(login).get("token").asText();
+    }
+
+    /** {@code {"accessToken"}}: the account service's token for {@code subject}, named {@code username}. */
+    private static String accessTokenBody(String subject, String username) throws Exception {
+        return Json.MAPPER.createObjectNode().put("accessToken", com.backend.platform.TestTokens.access(subject, username)).toString();
+    }
+
+    /** A guest's session: made, and logged in by its key (D-46). */
+    private static String guest() throws Exception {
+        String key = body(post("/v1/guests", null, null)).get("guestKey").asText();
+        return body(post("/v1/sessions", "{\"guestKey\":\"" + key + "\"}", null)).get("token").asText();
     }
 
     // ---- parties (04 §4) --------------------------------------------------------------
@@ -588,6 +542,13 @@ class PlatformHttpServerTest {
                 new com.backend.handoff.LobbyPush(store), queues(auth, store, accounts),
                 new com.backend.persistence.FriendRepository(db.dataSource(), 100, 100),
                 new com.backend.platform.AskThrottle(store));
+    }
+
+    /** Waits for the first tenth of a second, so what follows within a few milliseconds shares one whole second. */
+    private static void earlyInASecond() throws InterruptedException {
+        while (System.currentTimeMillis() % 1000 > 100) {
+            Thread.sleep(1000 - System.currentTimeMillis() % 1000);
+        }
     }
 
     private static JsonNode nextPush(java.util.concurrent.LinkedBlockingQueue<String> pushed) throws Exception {
@@ -1197,55 +1158,49 @@ class PlatformHttpServerTest {
 
     @Test
     @Timeout(60)
-    @DisplayName("registering returns 201 and the new player id")
-    void register() throws Exception {
-        HttpResponse<String> response = post("/v1/accounts",
-                "{\"username\":\"ada\",\"displayName\":\"Ada\",\"password\":\"hunter2-hunter2\"}", null);
+    @DisplayName("an access token taken for a session: a token and how long it lasts, the player made at the account's first login (D-117)")
+    void anAccessTokenIsTakenForASession() throws Exception {
+        HttpResponse<String> first = post("/v1/sessions", accessTokenBody("sub-ada", "Ada"), null);
+        assertThat(first.statusCode()).as(first.body()).isEqualTo(200);
+        assertThat(first.headers().firstValue("Content-Type")).hasValue("application/json");
+        JsonNode json = body(first);
+        assertThat(json.get("token").asText()).hasSize(43);
+        assertThat(json.get("playerId").asLong()).isPositive();
+        assertThat(json.get("newPlayer").asBoolean()).isTrue();
+        // The session's real lifetime: the store's TTL is spread by ±10 % (04 §1).
+        long stored = jredis.sync().ttl("sess:" + json.get("token").asText());
+        assertThat(json.get("expiresInSeconds").asLong()).isBetween(stored, stored + 2);
 
-        assertThat(response.statusCode()).isEqualTo(201);
-        assertThat(body(response).get("playerId").asLong()).isPositive();
-        assertThat(response.headers().firstValue("Content-Type"))
-                .hasValue("application/json");
+        JsonNode again = body(post("/v1/sessions", accessTokenBody("sub-ada", "Ada"), null));
+        assertThat(again.get("playerId").asLong()).isEqualTo(json.get("playerId").asLong());
+        assertThat(again.get("newPlayer").asBoolean()).isFalse();
     }
 
     @Test
     @Timeout(60)
-    @DisplayName("a taken name is 409, and bad input is 400 with a code to branch on")
-    void registrationFailures() throws Exception {
-        post("/v1/accounts",
-                "{\"username\":\"ada\",\"displayName\":\"Ada\",\"password\":\"hunter2-hunter2\"}", null);
-
-        HttpResponse<String> taken = post("/v1/accounts",
-                "{\"username\":\"ada\",\"displayName\":\"Other\",\"password\":\"hunter2-hunter2\"}", null);
-        assertThat(taken.statusCode()).isEqualTo(409);
-        assertThat(body(taken).get("code").asText()).isEqualTo("username_taken");
-
-        HttpResponse<String> shortPassword = post("/v1/accounts",
-                "{\"username\":\"bob\",\"displayName\":\"Bob\",\"password\":\"short\"}", null);
-        assertThat(shortPassword.statusCode()).isEqualTo(400);
-        assertThat(body(shortPassword).get("code").asText()).isEqualTo("invalid_password");
-
-        HttpResponse<String> badName = post("/v1/accounts",
-                "{\"username\":\"has space\",\"password\":\"hunter2-hunter2\"}", null);
-        assertThat(badName.statusCode()).isEqualTo(400);
-        assertThat(body(badName).get("code").asText()).isEqualTo("invalid_username");
+    @DisplayName("what the account service took over: registering is 405, the upgrade 404, a password login 400 (D-117)")
+    void theRoutesThatWent() throws Exception {
+        HttpResponse<String> register = post("/v1/accounts", "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null);
+        assertThat(register.statusCode()).isEqualTo(405);
+        assertThat(register.headers().firstValue("Allow")).hasValue("DELETE");
+        HttpResponse<String> upgrade = post("/v1/accounts/upgrade", "{}", register("ada"));
+        assertThat(upgrade.statusCode()).isEqualTo(404);
+        assertThat(body(upgrade).get("code").asText()).isEqualTo("no_such_route");
+        HttpResponse<String> password = post("/v1/sessions", "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null);
+        assertThat(password.statusCode()).isEqualTo(400);
+        assertThat(body(password).get("code").asText()).isEqualTo("invalid_body");
     }
 
     // ---- display names: the one piece of text every other player sees ---------------
 
-    private static HttpResponse<String> registerNamed(String username, String displayName)
-            throws Exception {
-        java.util.Map<String, String> body = new java.util.HashMap<>();
-        body.put("username", username);
-        body.put("password", "hunter2-hunter2");
-        if (displayName != null) {
-            body.put("displayName", displayName);
-        }
-        return post("/v1/accounts", Json.MAPPER.writeValueAsString(body), null);
+    private static HttpResponse<String> renamed(String token, String displayName) throws Exception {
+        return send(HttpRequest.newBuilder(URI.create(base + "/v1/accounts/name"))
+                .header("Authorization", "Bearer " + token).header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(Json.MAPPER.createObjectNode().put("displayName", displayName)
+                        .toString())).build());
     }
 
-    private static String storedName(HttpResponse<String> created) throws Exception {
-        long id = body(created).get("playerId").asLong();
+    private static String storedName(long id) throws Exception {
         try (java.sql.Connection c = db.dataSource().getConnection();
              java.sql.PreparedStatement ps = c.prepareStatement(
                      "SELECT display_name FROM player WHERE id = ?")) {
@@ -1255,6 +1210,14 @@ class PlatformHttpServerTest {
                 return rs.getString(1);
             }
         }
+    }
+
+    /** A player's first name as chosen: its first rename, at once (04 §1). */
+    private static String chosen(String subject, String displayName) throws Exception {
+        String token = register(subject);
+        HttpResponse<String> r = renamed(token, displayName);
+        assertThat(r.statusCode()).as(r.body()).isEqualTo(200);
+        return storedName(auth.playerIdOf(token));
     }
 
     @Test
@@ -1276,7 +1239,7 @@ class PlatformHttpServerTest {
         hostile.put("too long", "a".repeat(17));
         int n = 0;
         for (var entry : hostile.entrySet()) {
-            HttpResponse<String> response = registerNamed("hostile" + (n++), entry.getValue());
+            HttpResponse<String> response = renamed(register("hostile" + (n++)), entry.getValue());
             assertThat(response.statusCode()).as(entry.getKey()).isEqualTo(400);
             assertThat(body(response).get("code").asText()).as(entry.getKey())
                     .isEqualTo("invalid_display_name");
@@ -1287,44 +1250,40 @@ class PlatformHttpServerTest {
     @Timeout(60)
     @DisplayName("names in any script are accepted, stored in one canonical form")
     void internationalNamesAreAccepted() throws Exception {
-        assertThat(storedName(registerNamed("kim", "  김철수  ")))
+        assertThat(chosen("kim", "  김철수  "))
                 .as("trimmed, and Hangul is a name like any other").isEqualTo("김철수");
-        assertThat(storedName(registerNamed("yamada", "山田 太郎")))
-                .isEqualTo("山田 太郎");
-        assertThat(storedName(registerNamed("renee", "Rene\u0301e")))
+        assertThat(chosen("yamada", "山田 太郎")).isEqualTo("山田 太郎");
+        assertThat(chosen("renee", "Rene\u0301e"))
                 .as("a decomposed accent is stored composed, so two spellings are one name")
                 .isEqualTo("Ren\u00e9e");
-        assertThat(storedName(registerNamed("spaced", "Ada   the   Great")))
-                .isEqualTo("Ada the Great");
+        assertThat(chosen("spaced", "Ada   the   Great")).isEqualTo("Ada the Great");
         // Sixteen characters of a four-byte script is 64 UTF-8 bytes, which is exactly what
         // the kill feed will carry — so any accepted name is always shown, never dropped.
         String sixteenHan = "\u6f22".repeat(16);
-        assertThat(storedName(registerNamed("sixteen", sixteenHan))).isEqualTo(sixteenHan);
+        assertThat(chosen("sixteen", sixteenHan)).isEqualTo(sixteenHan);
     }
 
     @Test
     @Timeout(60)
-    @DisplayName("with no display name, the username stands in — cut to fit, never broken")
-    void blankNameFallsBackToTheUsername() throws Exception {
+    @DisplayName("a first login's name is the account's username, cut to fit and never broken; one the rules refuse is Player and four digits (D-117)")
+    void aFirstLoginsName() throws Exception {
         String longUsername = "a_very_long_username_of_32_chars";
         assertThat(longUsername).hasSize(32);
-
-        HttpResponse<String> created = registerNamed(longUsername, "   ");
-
-        assertThat(created.statusCode()).isEqualTo(201);
-        // Usernames are ASCII, so cutting one cannot split a character. Display names are
-        // not, which is why the old code's substring(0, 32) could produce broken text.
-        assertThat(storedName(created)).isEqualTo(longUsername.substring(0, 16));
+        long id = body(post("/v1/sessions", accessTokenBody("sub-long", longUsername), null)).get("playerId").asLong();
+        // Usernames are ASCII, so cutting one cannot split a character.
+        assertThat(storedName(id)).isEqualTo(longUsername.substring(0, 16));
+        long admin = body(post("/v1/sessions", accessTokenBody("sub-admin", "admin"), null)).get("playerId").asLong();
+        assertThat(storedName(admin)).as("staff impersonation is no first name either").matches("Player[0-9]{4}");
     }
 
     @Test
     @Timeout(60)
     @DisplayName("a body that is not JSON is a 400, not a 500")
     void malformedBody() throws Exception {
-        HttpResponse<String> broken = post("/v1/accounts", "{ this is not json", null);
+        HttpResponse<String> broken = post("/v1/sessions", "{ this is not json", null);
         assertThat(broken.statusCode()).isEqualTo(400);
 
-        HttpResponse<String> empty = post("/v1/accounts", null, null);
+        HttpResponse<String> empty = post("/v1/sessions", null, null);
         assertThat(empty.statusCode()).isEqualTo(400);
     }
 
@@ -1332,70 +1291,34 @@ class PlatformHttpServerTest {
     @Timeout(60)
     @DisplayName("a body over the limit is a 413, not a prefix of it parsed")
     void oversizedBody() throws Exception {
-        // A valid object and then padding. Cut at the limit, the object was read and the
-        // account created: Jackson stops at the end of the first value.
-        String json = "{\"username\":\"padded\",\"password\":\"hunter2-hunter2\"}" + " ".repeat(5_000);
-        HttpResponse<String> response = post("/v1/accounts", json, null);
+        // A valid object and then padding. Cut at the limit, the object was read and a
+        // session opened: Jackson stops at the end of the first value.
+        String json = accessTokenBody("sub-padded", "padded") + " ".repeat(5_000);
+        HttpResponse<String> response = post("/v1/sessions", json, null);
         assertThat(response.statusCode()).isEqualTo(413);
         assertThat(body(response).get("code").asText()).isEqualTo("body_too_large");
     }
-
-    @Test
-    @Timeout(60)
-    @DisplayName("a password holding half a surrogate pair is refused like any bad password")
-    void loneSurrogatePassword() throws Exception {
-        // Valid JSON for a string that is not valid UTF-16. Hashing it threw, and it was a 500
-        // with a stack trace in the log.
-        HttpResponse<String> response = post("/v1/accounts",
-                "{\"username\":\"lone\",\"password\":\"hunter2-hunter2\\ud800\"}", null);
-        assertThat(response.statusCode()).isEqualTo(400);
-        assertThat(body(response).get("code").asText()).isEqualTo("invalid_password");
-    }
-
 
     // ---- sessions --------------------------------------------------------------------
 
     @Test
     @Timeout(60)
-    @DisplayName("logging in returns a token and how long it lasts")
-    void login() throws Exception {
-        post("/v1/accounts",
-                "{\"username\":\"ada\",\"displayName\":\"Ada\",\"password\":\"hunter2-hunter2\"}", null);
-
-        HttpResponse<String> response = post("/v1/sessions",
-                "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null);
-
-        assertThat(response.statusCode()).isEqualTo(200);
-        JsonNode json = body(response);
-        assertThat(json.get("token").asText()).isNotBlank();
-        assertThat(json.get("playerId").asLong()).isPositive();
-        // The client needs this to know when to log in again rather than discovering it
-        // from a 401 in the middle of something. So it is the session's real lifetime: the
-        // store's TTL is spread by ±10 % (04 §1), and this used to be the unspread 86 400,
-        // wrong by up to 2.4 hours either way.
-        long stored = jredis.sync().ttl("sess:" + json.get("token").asText());
-        assertThat(json.get("expiresInSeconds").asLong()).isBetween(stored, stored + 2);
-    }
-
-    @Test
-    @Timeout(60)
-    @DisplayName("a wrong password and an unknown user are the same 401")
-    void badCredentialsAreIndistinguishable() throws Exception {
-        post("/v1/accounts",
-                "{\"username\":\"ada\",\"displayName\":\"Ada\",\"password\":\"hunter2-hunter2\"}", null);
-
-        HttpResponse<String> wrong = post("/v1/sessions",
-                "{\"username\":\"ada\",\"password\":\"not-the-password\"}", null);
-        HttpResponse<String> unknown = post("/v1/sessions",
-                "{\"username\":\"nobody\",\"password\":\"not-the-password\"}", null);
-
-        assertThat(wrong.statusCode()).isEqualTo(401);
-        assertThat(unknown.statusCode()).isEqualTo(401);
-        // Identical down to the code, or the API becomes the username oracle the service
-        // was careful not to be.
-        assertThat(body(wrong).get("code").asText())
-                .isEqualTo(body(unknown).get("code").asText())
-                .isEqualTo("invalid_credentials");
+    @DisplayName("an access token not taken is one 401, whatever is wrong with it; a guest key no guest has, its own (D-117)")
+    void aTokenNotTakenIs401() throws Exception {
+        String forged = com.backend.platform.TestTokens.access("sub-ada", "ada");
+        forged = forged.substring(0, forged.length() - 4) + (forged.endsWith("AAAA") ? "BBBB" : "AAAA");
+        List<HttpResponse<String>> refused = List.of(
+                post("/v1/sessions", "{\"accessToken\":\"not.a.token\"}", null),
+                post("/v1/sessions", "{\"accessToken\":\"" + forged + "\"}", null));
+        for (HttpResponse<String> r : refused) {
+            assertThat(r.statusCode()).isEqualTo(401);
+            assertThat(body(r).get("code").asText()).isEqualTo("invalid_token");
+        }
+        assertThat(body(refused.get(0)).get("message").asText()).as("why is logged, never told")
+                .isEqualTo(body(refused.get(1)).get("message").asText());
+        HttpResponse<String> guestKey = post("/v1/sessions", "{\"guestKey\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}", null);
+        assertThat(guestKey.statusCode()).isEqualTo(401);
+        assertThat(body(guestKey).get("code").asText()).isEqualTo("invalid_credentials");
     }
 
     @Test
@@ -1570,9 +1493,7 @@ class PlatformHttpServerTest {
     @DisplayName("around me needs a session and gives a 1-based rank with its neighbours")
     void aroundMe() throws Exception {
         String token = register("ada");
-        long me = body(post("/v1/sessions",
-                "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null))
-                .get("playerId").asLong();
+        long me = auth.playerIdOf(token);
         rank(me, "Ada", 550);
         for (int i = 1; i <= 8; i++) {
             rank(900_000 + i, "p" + i, i * 100);        // 800, 700 and 600 above; 500 below
@@ -1633,7 +1554,7 @@ class PlatformHttpServerTest {
         assertThat(response.statusCode()).isEqualTo(405);
         assertThat(body(response).get("code").asText()).isEqualTo("method_not_allowed");
         // RFC 9110 requires it, and neither this nor the count below was there.
-        assertThat(response.headers().firstValue("Allow")).hasValue("POST, DELETE");     // registering, and deleting (D-84)
+        assertThat(response.headers().firstValue("Allow")).hasValue("DELETE");   // a guest's deletion (D-84); signing up is the account service's (D-117)
 
         HttpResponse<String> sessions = send(HttpRequest.newBuilder(URI.create(base + "/v1/sessions"))
                 .PUT(HttpRequest.BodyPublishers.noBody()).build());
@@ -1803,6 +1724,7 @@ class PlatformHttpServerTest {
                 {"GET", "/v1/content/classes/x"}, {"GET", "/v1/content/phrases/x"}, {"GET", "/v1/content/skins/x"},
                 {"GET", "/v1/leaderboardsX/alltime"}, {"GET", "/v1/boosts/x"}, {"POST", "/v1/match-requests/x"},
                 {"POST", "/v1/sandbox/x"}, {"POST", "/v1/purchases/x"}, {"GET", "/v1/nothing"}, {"GET", "/nothing"},
+                {"POST", "/v1/accounts/link/x"}, {"POST", "/v1/account-events/x"}, {"POST", "/v1/accounts/upgrade"},
         };
         for (String[] r : wrong) {
             HttpResponse<String> response = send(HttpRequest.newBuilder(URI.create(base + r[1]))
@@ -1818,16 +1740,9 @@ class PlatformHttpServerTest {
 
     @Test
     @Timeout(120)
-    @DisplayName("concurrent logins all succeed and each gets its own token")
+    @DisplayName("concurrent first logins all succeed and each gets its own session (D-117)")
     void concurrentLogins() throws Exception {
-        int callers = 12;                       // more than the hasher's permits
-        // Twelve accounts, each from its own address. What is under test is the hasher's
-        // queue; one account logging in twelve times at once is what the login throttle
-        // exists to refuse.
-        for (int i = 0; i < callers; i++) {
-            post("/v1/accounts",
-                    "{\"username\":\"ada" + i + "\",\"password\":\"hunter2-hunter2\"}", null);
-        }
+        int callers = 12;
         java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
         java.util.Set<String> tokens = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
         java.util.concurrent.atomic.AtomicInteger failures =
@@ -1838,9 +1753,9 @@ class PlatformHttpServerTest {
             final int n = i;
             threads[i] = new Thread(() -> {
                 try {
+                    String login = accessTokenBody("sub-many" + n, "many" + n);
                     go.await();
-                    HttpResponse<String> r = postFrom("198.51.100." + n, "/v1/sessions",
-                            "{\"username\":\"ada" + n + "\",\"password\":\"hunter2-hunter2\"}");
+                    HttpResponse<String> r = postFrom("198.51.100." + n, "/v1/sessions", login);
                     if (r.statusCode() == 200) {
                         tokens.add(body(r).get("token").asText());
                     } else {
@@ -1857,8 +1772,6 @@ class PlatformHttpServerTest {
             t.join(90_000);
         }
 
-        // Argon2 admits eight at a time; the rest queue. Queuing is the designed behaviour,
-        // so every caller must still get served rather than time out or be refused.
         assertThat(failures.get()).isZero();
         assertThat(tokens).as("every login is its own session").hasSize(callers);
     }
@@ -2852,7 +2765,7 @@ class PlatformHttpServerTest {
         com.backend.persistence.FriendRepository rows = new com.backend.persistence.FriendRepository(db.dataSource(), 100, 100);
         AccountRepository accounts = new AccountRepository(db.dataSource());
         for (int i = 0; i < com.backend.persistence.FriendRepository.MAX_ASKED; i++) {
-            long other = accounts.register("lim57-" + i, "lim57-" + i, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+            long other = accounts.createForSubject("lim57-" + i, "lim57-" + i);
             rows.ask(adaId, other, java.time.Instant.ofEpochMilli(clock.millis()));
         }
         expectError(post("/v1/friends", askBob, ada), 409, "too_many_asked");
@@ -2971,14 +2884,19 @@ class PlatformHttpServerTest {
         }
     }
 
+    /** An event of the account service's, posted as RFC 8935 pushes one. */
+    private static HttpResponse<String> accountEvent(String type, String token) throws Exception {
+        return send(HttpRequest.newBuilder(URI.create(base + "/v1/account-events")).header("Content-Type", type)
+                .POST(HttpRequest.BodyPublishers.ofString(token)).build());
+    }
+
     @Test
     @Timeout(60)
-    @DisplayName("deleting one's account: the password asked; every session ended and the lobby told; off the boards, friends and team; the name free again (D-84)")
-    void deletingAnAccount() throws Exception {
+    @DisplayName("an account deleted at the account service: its player erased whatever its team role, every session ended and the lobby told, off the boards and friends; its subject's late token makes no player; again, nothing more (D-84, D-117)")
+    void anAccountDeletedAtTheAccountService() throws Exception {
         String ada = register("ada");
-        String adaPhone = body(post("/v1/sessions", "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null))
-                .get("token").asText();
         String bob = register("bob");
+        String bobPhone = register("bob");
         long adaId = auth.playerIdOf(ada);
         long bobId = auth.playerIdOf(bob);
         post("/v1/friends", "{\"playerId\":" + bobId + "}", ada);
@@ -2986,55 +2904,154 @@ class PlatformHttpServerTest {
         long teamId = body(post("/v1/teams", "{\"name\":\"DelTanks\"}", bob)).get("id").asLong();
         post("/v1/teams/mine/invites", "{\"playerId\":" + adaId + "}", bob);
         post("/v1/team-invites/" + teamId, "{\"accept\":true}", ada);
-        leaderboards.record(adaId, "ada", 700, clock.millis()).get(5, java.util.concurrent.TimeUnit.SECONDS);
-        String password = "{\"password\":\"hunter2-hunter2\"}";
+        leaderboards.record(bobId, "bob", 700, clock.millis()).get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        expectError(deleteWith("/v1/accounts", null, null), 401, "no_token");
+        expectError(deleteWith("/v1/accounts", null, bob), 409, "delete_at_account_service");
+        assertThat(auth.playerIdOf(bob)).as("nothing done").isEqualTo(bobId);
 
         java.util.concurrent.LinkedBlockingQueue<String> pushed = new java.util.concurrent.LinkedBlockingQueue<>();
         JRedisClient gateway = store.newClient();
         try {
             gateway.pubSub().subscribe("push:gw-del",
                     (ch, msg) -> pushed.add(new String(msg, StandardCharsets.UTF_8))).get(5, java.util.concurrent.TimeUnit.SECONDS);
-            jredis.sync().set("conn:" + adaId, "gw-del#x-a");
+            jredis.sync().set("conn:" + bobId, "gw-del#x-b");
 
-            expectError(deleteWith("/v1/accounts", password, null), 401, "no_token");
-            expectError(deleteWith("/v1/accounts", "{}", ada), 400, "invalid_body");
-            expectError(deleteWith("/v1/accounts", "{\"password\":\"not-her-password\"}", ada), 403, "wrong_password");
-            expectError(deleteWith("/v1/accounts", password, bob), 409, "leader_with_members");
-            assertThat(auth.playerIdOf(ada)).as("nothing done").isEqualTo(adaId);
-            assertThat(auth.playerIdOf(bob)).isEqualTo(bobId);
-
-            HttpResponse<String> deleted = deleteWith("/v1/accounts", password, ada);
-            assertThat(deleted.statusCode()).as(deleted.body()).isEqualTo(204);
-            assertThat(auth.playerIdOf(ada)).as("this session").isEqualTo(-1);
-            assertThat(auth.playerIdOf(adaPhone)).as("and the other device's").isEqualTo(-1);
+            HttpResponse<String> taken = accountEvent("application/secevent+jwt",
+                    com.backend.platform.TestTokens.event(com.backend.platform.AccountTokens.Kind.DELETED, "bob", java.time.Instant.now()));
+            assertThat(taken.statusCode()).as(taken.body()).isEqualTo(202);
+            assertThat(auth.playerIdOf(bob)).as("this session").isEqualTo(-1);
+            assertThat(auth.playerIdOf(bobPhone)).as("and the other device's").isEqualTo(-1);
             JsonNode told = nextPush(pushed);
             while (!told.at("/msg/t").asText().equals("evt.session.revoked")) {
-                told = nextPush(pushed);                 // the team's update comes first, from leaving it
+                told = nextPush(pushed);                 // the team's update may come first
             }
-            assertThat(told.get("to").asLong()).isEqualTo(adaId);
+            assertThat(told.get("to").asLong()).isEqualTo(bobId);
             assertThat(told.at("/msg/d/reason").asText()).isEqualTo("deleted");
         } finally {
             gateway.close();
         }
-        expectError(post("/v1/sessions", password.replace("{", "{\"username\":\"ada\","), null), 401, "invalid_credentials");
-        assertThat(body(get("/v1/friends", bob)).get("friends")).as("bob's friends").isEmpty();
-        assertThat(body(get("/v1/teams/mine", bob)).get("members")).as("bob's team").hasSize(1);
-        assertThat(jredis.sync().zscore("lb:score:alltime", Long.toString(adaId))).as("off the boards").isNull();
-        assertThat(jredis.sync().hget("lb:name", Long.toString(adaId))).isNull();
-        assertThat(post("/v1/accounts", "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null).statusCode())
-                .as("the name is free again").isEqualTo(201);
+        assertThat(body(get("/v1/friends", ada)).get("friends")).as("ada's friends").isEmpty();
+        JsonNode team = body(get("/v1/teams/mine", ada));
+        assertThat(team.get("members")).as("the team handed on, not refused").hasSize(1);
+        assertThat(jredis.sync().zscore("lb:score:alltime", Long.toString(bobId))).as("off the boards").isNull();
+        assertThat(jredis.sync().hget("lb:name", Long.toString(bobId))).isNull();
+        expectError(post("/v1/sessions", accessTokenBody("bob", "bob"), null), 401, "invalid_token");
+        assertThat(accountEvent("application/secevent+jwt", com.backend.platform.TestTokens.event(
+                com.backend.platform.AccountTokens.Kind.DELETED, "bob", java.time.Instant.now())).statusCode())
+                .as("taken again: nothing more to do").isEqualTo(202);
+        assertThat(accountEvent("application/secevent+jwt", com.backend.platform.TestTokens.event(
+                com.backend.platform.AccountTokens.Kind.DELETED, "never-played", java.time.Instant.now())).statusCode())
+                .as("an account that never played").isEqualTo(202);
+        expectError(post("/v1/sessions", accessTokenBody("never-played", "never"), null), 401, "invalid_token");
     }
 
     @Test
     @Timeout(60)
-    @DisplayName("a deletion's wrong passwords count against the account's logins: no more guesses through it than through a login (D-84)")
-    void aDeletionsGuessesCountAsLogins() throws Exception {
-        String ada = register("ada");                 // its login, the account's first attempt
-        for (int i = 0; i < 9; i++) {
-            expectError(deleteWith("/v1/accounts", "{\"password\":\"guess-" + i + "-guess\"}", ada), 403, "wrong_password");
+    @DisplayName("an account deleted at the account service takes its player out of the queue and out of the party, as its own calls would (D-117)")
+    void anAccountDeletedLeavesTheQueueAndTheParty() throws Exception {
+        String queued = register("qd-ada");
+        String leader = register("pd-bob");
+        String member = register("pd-cy");
+        long queuedId = auth.playerIdOf(queued);
+        long memberId = auth.playerIdOf(member);
+        assertThat(queue("POST", "{\"mode\":\"duel\"}", queued).statusCode()).isEqualTo(200);
+        assertThat(jredis.sync().hget("mmp:" + queuedId, "rating")).as("queued").isNotNull();
+        String partyId = body(post("/v1/party/invite", "{\"playerId\":" + memberId + "}", leader)).get("partyId").asText();
+        assertThat(post("/v1/party/accept", "{\"partyId\":\"" + partyId + "\"}", member).statusCode()).isEqualTo(200);
+
+        for (String subject : List.of("qd-ada", "pd-cy")) {
+            assertThat(accountEvent("application/secevent+jwt", com.backend.platform.TestTokens.event(
+                    com.backend.platform.AccountTokens.Kind.DELETED, subject, java.time.Instant.now())).statusCode()).isEqualTo(202);
         }
-        expectError(post("/v1/sessions", "{\"username\":\"ada\",\"password\":\"hunter2-hunter2\"}", null),
-                429, "too_many_attempts");
+        assertThat(jredis.sync().hget("mmp:" + queuedId, "rating")).as("out of the queue").isNull();
+        assertThat(body(get("/v1/party", leader)).get("partyId").isNull()).as("the party of one ended").isTrue();
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("a password changed at the account service: the sessions made before ended, one made after kept; the lobby told when one ended; again, nothing (D-117)")
+    void aPasswordChangedAtTheAccountService() throws Exception {
+        register("pw-warm-1");                         // the JVM's first exchanges are slow
+        earlyInASecond();                              // the sessions and the change in one second, as iat cannot tell apart
+        java.time.Instant first = java.time.Instant.now();
+        String phone = register("pw-ada");
+        String tablet = register("pw-ada");
+        long id = auth.playerIdOf(phone);
+        java.util.concurrent.LinkedBlockingQueue<String> pushed = new java.util.concurrent.LinkedBlockingQueue<>();
+        JRedisClient gateway = store.newClient();
+        try {
+            gateway.pubSub().subscribe("push:gw-pw",
+                    (ch, msg) -> pushed.add(new String(msg, StandardCharsets.UTF_8))).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            jredis.sync().set("conn:" + id, "gw-pw#x-a");
+            Thread.sleep(5);
+            java.time.Instant changed = java.time.Instant.now();
+            assertThat(changed.getEpochSecond()).as("the sessions and the change in one whole second").isEqualTo(first.getEpochSecond());
+            String event = com.backend.platform.TestTokens.event(com.backend.platform.AccountTokens.Kind.SESSIONS_REVOKED, "pw-ada", changed);
+            assertThat(accountEvent("application/secevent+jwt", event).statusCode()).isEqualTo(202);
+            assertThat(auth.playerIdOf(phone)).isEqualTo(-1);
+            assertThat(auth.playerIdOf(tablet)).isEqualTo(-1);
+            JsonNode told = nextPush(pushed);
+            assertThat(told.at("/msg/t").asText()).isEqualTo("evt.session.revoked");
+            assertThat(told.at("/msg/d/reason").asText()).isEqualTo("signed_out");
+
+            Thread.sleep(5);
+            String after = register("pw-ada");          // the new password's token, exchanged
+            assertThat(accountEvent("application/secevent+jwt", event).statusCode()).as("the same event again").isEqualTo(202);
+            assertThat(auth.playerIdOf(after)).as("a session made after it is kept").isEqualTo(id);
+            assertThat(pushed.poll(300, java.util.concurrent.TimeUnit.MILLISECONDS)).as("and its lobby left open").isNull();
+        } finally {
+            gateway.close();
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("a password changed, its new session made before the event came: the older ends, the newer stays, and the lobby is told all the same, since a player's one lobby may be the older session's (D-117)")
+    void aPasswordChangedWithTheNewSessionHeld() throws Exception {
+        register("pw-warm-2");                         // the JVM's first exchanges are slow
+        earlyInASecond();                              // the sessions and the change in one second, as iat cannot tell apart
+        java.time.Instant first = java.time.Instant.now();
+        String older = register("pw-cy");              // a device the password is changed against
+        long id = auth.playerIdOf(older);
+        java.util.concurrent.LinkedBlockingQueue<String> pushed = new java.util.concurrent.LinkedBlockingQueue<>();
+        JRedisClient gateway = store.newClient();
+        try {
+            gateway.pubSub().subscribe("push:gw-pw2",
+                    (ch, msg) -> pushed.add(new String(msg, StandardCharsets.UTF_8))).get(5, java.util.concurrent.TimeUnit.SECONDS);
+            jredis.sync().set("conn:" + id, "gw-pw2#x-a");   // the one lobby: the older session's
+            Thread.sleep(5);
+            java.time.Instant changed = java.time.Instant.now();
+            assertThat(changed.getEpochSecond()).as("the older session and the change in one whole second").isEqualTo(first.getEpochSecond());
+            Thread.sleep(5);
+            String newer = register("pw-cy");          // the new password's token, exchanged before its event arrives
+            String event = com.backend.platform.TestTokens.event(com.backend.platform.AccountTokens.Kind.SESSIONS_REVOKED, "pw-cy", changed);
+            assertThat(accountEvent("application/secevent+jwt", event).statusCode()).isEqualTo(202);
+            assertThat(auth.playerIdOf(older)).isEqualTo(-1);
+            assertThat(auth.playerIdOf(newer)).isEqualTo(id);
+            JsonNode told = nextPush(pushed);
+            assertThat(told.at("/msg/t").asText()).isEqualTo("evt.session.revoked");
+            assertThat(told.at("/msg/d/reason").asText()).isEqualTo("signed_out");
+        } finally {
+            gateway.close();
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("an event not as RFC 8935 pushes it, or not the account service's, is refused 400 with RFC 8935's codes")
+    void accountEventsRefused() throws Exception {
+        String event = com.backend.platform.TestTokens.event(com.backend.platform.AccountTokens.Kind.DELETED, "ev-ada",
+                java.time.Instant.now());
+        HttpResponse<String> plain = accountEvent("application/json", event);
+        assertThat(plain.statusCode()).isEqualTo(400);
+        assertThat(body(plain).get("err").asText()).isEqualTo("invalid_request");
+        HttpResponse<String> access = accountEvent("application/secevent+jwt", com.backend.platform.TestTokens.access("ev-ada", "ada"));
+        assertThat(access.statusCode()).as("an access token is not an event").isEqualTo(400);
+        assertThat(body(access).get("err").asText()).isEqualTo("authentication_failed");
+        assertThat(accountEvent("application/secevent+jwt", "not.a.token").statusCode()).isEqualTo(400);
+        assertThat(send(HttpRequest.newBuilder(URI.create(base + "/v1/account-events")).GET().build()).statusCode())
+                .isEqualTo(405);
     }
 
     @Test
@@ -3050,21 +3067,21 @@ class PlatformHttpServerTest {
 
     @Test
     @Timeout(60)
-    @DisplayName("a deletion cut short after MySQL's part is finished by the same session, with no password: an erased account has none (D-84)")
+    @DisplayName("a guest's deletion cut short after MySQL's part is finished by the same session (D-84)")
     void aDeletionCutShortIsFinishedByAskingAgain() throws Exception {
-        String ada = register("ada");
-        long adaId = auth.playerIdOf(ada);
-        leaderboards.record(adaId, "ada", 700, clock.millis()).get(5, java.util.concurrent.TimeUnit.SECONDS);
-        new AccountRepository(db.dataSource()).erase(adaId);      // as if the store had failed just after
-        HttpResponse<String> finished = deleteWith("/v1/accounts", null, ada);
+        String gina = guest();
+        long id = auth.playerIdOf(gina);
+        leaderboards.record(id, "gina", 700, clock.millis()).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        new AccountRepository(db.dataSource()).erase(id);      // as if the store had failed just after
+        HttpResponse<String> finished = deleteWith("/v1/accounts", null, gina);
         assertThat(finished.statusCode()).as(finished.body()).isEqualTo(204);
-        assertThat(auth.playerIdOf(ada)).isEqualTo(-1);
-        assertThat(jredis.sync().hget("lb:name", Long.toString(adaId))).isNull();
+        assertThat(auth.playerIdOf(gina)).isEqualTo(-1);
+        assertThat(jredis.sync().hget("lb:name", Long.toString(id))).isNull();
     }
 
     @Test
     @Timeout(60)
-    @DisplayName("a guest: made with nothing asked, back in by its key, upgraded to a full account, the same player (Q-22, D-46)")
+    @DisplayName("a guest: made with nothing asked, back in by its key, linked to an account once, the same player (Q-22, D-46, D-117)")
     void guests() throws Exception {
         HttpResponse<String> made = post("/v1/guests", null, null);
         assertThat(made.statusCode()).as(made.body()).isEqualTo(201);
@@ -3073,43 +3090,32 @@ class PlatformHttpServerTest {
         String key = guest.get("guestKey").asText();
         assertThat(key).as("32 bytes, base64url").hasSize(43);
         assertThat(guest.get("displayName").asText()).matches("Guest\\d{4}");
-        String username;
-        try (java.sql.Connection c = db.dataSource().getConnection();
-             java.sql.PreparedStatement ps = c.prepareStatement("SELECT username FROM account WHERE id = ?")) {
-            ps.setLong(1, id);
-            try (java.sql.ResultSet rs = ps.executeQuery()) {
-                rs.next();
-                username = rs.getString(1);
-            }
-        }
-        assertThat(username).as("a name the rules forbid, so nobody can take or log in by it").startsWith("~");
-        expectError(post("/v1/sessions", "{\"username\":\"" + username + "\",\"password\":\"\"}", null),
-                401, "invalid_credentials");
 
         JsonNode in = body(post("/v1/sessions", "{\"guestKey\":\"" + key + "\"}", null));
         assertThat(in.get("playerId").asLong()).isEqualTo(id);
+        assertThat(in.get("newPlayer").asBoolean()).isFalse();
         String token = in.get("token").asText();
         assertThat(get("/v1/inventory", token).statusCode()).as("a session like any").isEqualTo(200);
         expectError(post("/v1/sessions", "{\"guestKey\":\"not-a-key\"}", null), 401, "invalid_credentials");
+        JsonNode both = body(post("/v1/sessions", "{\"guestKey\":\"" + key + "\",\"accessToken\":\"not.a.token\"}", null));
+        assertThat(both.get("playerId").asLong()).as("a key and a token: the key, as the API says").isEqualTo(id);
 
-        expectError(post("/v1/accounts/upgrade", "{\"username\":\"~no\",\"password\":\"hunter2-hunter2\"}", token),
-                400, "invalid_username");
-        expectError(post("/v1/accounts/upgrade", "{\"username\":\"gu-ada\",\"password\":\"short\"}", token),
-                400, "invalid_password");
-        expectError(post("/v1/accounts/upgrade", "{\"username\":\"gu-ada\",\"password\":\"hunter2-hunter2\","
-                + "\"displayName\":\"" + "x".repeat(40) + "\"}", token), 400, "invalid_display_name");
+        expectError(post("/v1/accounts/link", accessTokenBody("gu-ada", "ada"), null), 401, "no_token");
+        expectError(post("/v1/accounts/link", "{}", token), 400, "invalid_body");
+        expectError(post("/v1/accounts/link", "{\"accessToken\":\"not.a.token\"}", token), 401, "invalid_token");
         register("gu-taken");
-        expectError(post("/v1/accounts/upgrade", "{\"username\":\"gu-taken\",\"password\":\"hunter2-hunter2\"}", token),
-                409, "username_taken");
-        assertThat(post("/v1/accounts/upgrade", "{\"username\":\"gu-ada\",\"password\":\"hunter2-hunter2\","
-                + "\"displayName\":\"Adaline\"}", token).statusCode()).isEqualTo(200);
-        expectError(post("/v1/accounts/upgrade", "{\"username\":\"gu-ada2\",\"password\":\"hunter2-hunter2\"}", token),
-                409, "not_a_guest");
-        JsonNode byName = body(post("/v1/sessions", "{\"username\":\"gu-ada\",\"password\":\"hunter2-hunter2\"}", null));
-        assertThat(byName.get("playerId").asLong()).as("the same player").isEqualTo(id);
-        assertThat(new AccountRepository(db.dataSource()).findProfile(id).displayName()).isEqualTo("Adaline");
+        expectError(post("/v1/accounts/link", accessTokenBody("gu-taken", "taken"), token), 409, "account_in_use");
+        HttpResponse<String> linked = post("/v1/accounts/link", accessTokenBody("gu-ada", "ada"), token);
+        assertThat(linked.statusCode()).as(linked.body()).isEqualTo(200);
+        assertThat(body(linked).get("playerId").asLong()).isEqualTo(id);
+        expectError(post("/v1/accounts/link", accessTokenBody("gu-ada2", "ada2"), token), 409, "not_a_guest");
+        JsonNode byAccount = body(post("/v1/sessions", accessTokenBody("gu-ada", "ada"), null));
+        assertThat(byAccount.get("playerId").asLong()).as("the same player").isEqualTo(id);
+        assertThat(byAccount.get("newPlayer").asBoolean()).isFalse();
+        assertThat(new AccountRepository(db.dataSource()).findProfile(id).displayName()).as("its name kept")
+                .isEqualTo(guest.get("displayName").asText());
         expectError(post("/v1/sessions", "{\"guestKey\":\"" + key + "\"}", null), 401, "invalid_credentials");
-        expectError(post("/v1/accounts/upgrade", "{}", null), 401, "no_token");
+        expectError(post("/v1/accounts/link", accessTokenBody("gu-x", "x"), register("gu-account")), 409, "not_a_guest");
 
         String other = body(post("/v1/guests", null, null)).get("guestKey").asText();
         long otherId = body(post("/v1/sessions", "{\"guestKey\":\"" + other + "\"}", null)).get("playerId").asLong();
@@ -3161,8 +3167,8 @@ class PlatformHttpServerTest {
         assertThat(post("/v1/teams/mine/members/" + huge + "/role", "{\"role\":\"member\"}", ada).statusCode())
                 .isEqualTo(404);
         for (String path : List.of("/v1/sessions/", "/v1/sessions/x", "/v1/accounts/", "/v1/guests/",
-                "/v1/accounts/upgrade/")) {
-            assertThat(post(path, "{\"username\":\"ex-ada\",\"password\":\"hunter2-hunter2\"}", null).statusCode())
+                "/v1/accounts/upgrade/", "/v1/accounts/link/")) {
+            assertThat(post(path, accessTokenBody("ex-ada", "ex-ada"), null).statusCode())
                     .as("%s is not the route nginx limits", path).isEqualTo(404);
         }
     }

@@ -224,6 +224,12 @@ public final class QueueService {
         if (playerId < 0) {
             return false;
         }
+        leavePlayer(playerId);
+        return true;
+    }
+
+    /** The same for a player with no session to hand: an account deleted at the account service (D-117). */
+    public void leavePlayer(long playerId) {
         MatchQueue.Status was = queue.status(playerId);
         List<Long> out = queue.leave(playerId);
         if (MatchQueue.MATCHED.equals(was.state()) && was.mode() == MatchMode.SANDBOX
@@ -231,7 +237,6 @@ public final class QueueService {
             giveBack(List.of(playerId));
         }
         tellOut(out, playerId);
-        return true;
     }
 
     private boolean called(List<Long> players) {

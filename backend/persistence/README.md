@@ -43,7 +43,7 @@ All classes are in the package `com.backend.persistence`.
 | | `DatabaseSettings` | Reads where the database is and how to log in, from the environment only, never from the command line ([Configuration](#configuration)). Its `toString()` never prints the password or the URL's query string |
 | | `PrimaryDataSource` | Used when the URL names two hosts, the primary and its replica. For each new connection it asks every host whether it is writable and at which `ha_epoch`. It connects to the writable host with the highest epoch, and refuses one whose epoch is below the highest it has seen. It also works out each replica's lag from `ha_heartbeat` |
 | | `Tx` | Runs one transaction. On a deadlock (MySQL error 1213), a lock wait timeout (1205) or any `SQLTransactionRollbackException`, it rolls the whole transaction back and runs it again: three attempts in all, waiting 10 ms and then 20 ms between them, each wait plus up to 10 ms at random (jitter) |
-| Accounts | `AccountRepository` | Registration: the account, its player and the player's `player_stat` row in one transaction. Guests: made, found by the hash of their key, upgraded to a named account. The login lookup; a rename, once in 30 days; a password rehash; the last login. `erase`: a player's account erased in place (D-84). `idleGuests`: the guests that retention erases (D-87) |
+| Accounts | `AccountRepository` | A player for the account service's subject: the account, its player and the player's `player_stat` row in one transaction, one a subject (D-117). Guests: made, found by the hash of their key, linked to a subject once. The login lookup by subject; a rename, once in 30 days; the last login. `erase`: a player's account erased in place, its subject recorded in `erased_subject` (D-84, D-117). `idleGuests`: the guests that retention erases (D-87) |
 | | `AdminRepository` | The admin API's writes: an account's status, a payment's refund, a refund debt cleared. Each is written with its `admin_audit` row in one transaction. `audit` writes the row for a call that changed nothing: a listing or a refusal |
 | Results and history | `MatchResultRepository` | The result's transaction ([06 §4](../../docs/detailed-design/06-persistence-mysql.md#4-the-three-transactions-that-matter)); `validate`, which refuses a result that no column can hold; the 30-day window in which a result is still accepted; the purge of `matches` older than 90 days |
 | | `LeaderboardSource` | What the store's score boards are made of, read back from MySQL for a rebuild: the all-time bests from `player_stat`, and a day's or a week's bests from `matches` |
@@ -68,15 +68,16 @@ All classes are in the package `com.backend.persistence`.
 
 ## The database
 
-**Where the schema is.** The schema is one baseline under `src/main/resources/db/migration`, and Flyway runs
-it:
+**Where the schema is.** The schema is one baseline and the migrations after it, under
+`src/main/resources/db/migration`, and Flyway runs them in order:
 
 | File | What it makes |
 |---|---|
 | `V1__schema.sql` | Every table, grouped by domain and commented: 36 of them, each `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci` |
 | `V2__seed.sql` | The rows a first launch needs: `ha_epoch` (1, 0), `ha_heartbeat` (1, now) and season 1, from now to 00:00 UTC on the first of the next odd month |
+| `V3__accounts_by_subject.sql` | The account service's subject on `account`, and `username`, its key and `password_hash` dropped; `erased_subject` (D-117). It drops in one step, not by expand and contract: nothing has launched, so no process runs that reads the old columns |
 
-These two files replaced V1 to V34, the steps by which the schema grew. Those steps are in git up to commit
+The first two files replaced V1 to V34, the steps by which the schema grew. Those steps are in git up to commit
 ce30aa7. The baseline was compared with them table by table and found the same, with two differences on
 purpose:
 
@@ -120,12 +121,13 @@ content (items, shop, skins, packs, levels) is the release's files, not rows.
 
 ## Tables
 
-The schema has thirty-six tables, listed here by domain. "Kept" says how long a row lives. The deletes are
+The schema has thirty-seven tables, listed here by domain. "Kept" says how long a row lives. The deletes are
 `worker`'s daily retention ([06 §9](../../docs/detailed-design/06-persistence-mysql.md#9-growth-and-retention)).
 
 | Table | Holds | Written by | Kept |
 |---|---|---|---|
-| `account` | A login: name, password hash or a guest's key hash, status | `AccountRepository`, `AdminRepository` | for good; an erased account keeps its row, under the name `~deleted~<id>` (D-84) |
+| `account` | Whose a player is: the account service's subject, or a guest's key hash; the status | `AccountRepository`, `AdminRepository` | for good; an erased account keeps its row, with neither (D-84) |
+| `erased_subject` | The subjects whose accounts were deleted at the account service: a late token of one makes no player (D-117) | `AccountRepository` | for good |
 | `player` | The account's player: profile, level and xp, coins and gems, three ratings and rated counts, team, the first day played | `AccountRepository`, `MatchResultRepository`, `EconomyRepository.move`, `TeamRepository`, `SeasonRepository` | for good |
 | `player_stat` | Lifetime totals: matches, wins, kills, deaths, assists, best score, time played | `AccountRepository` (made), `MatchResultRepository` | for good |
 | `player_day` | A player active on a UTC day | `MatchResultRepository` | 90 days; each player's first day stays on `player.first_played_on` |
@@ -308,7 +310,7 @@ the processes and of the drills.
 | Class | What it holds |
 |---|---|
 | `PersistenceTest` | The result's transaction end to end: the ratings of each mode, team matches and their teams, results cut short, names, assists, levels and milestones, achievements, daily goals, the pass's points; redelivery and concurrency; retention and the purges it refuses; purchases, item levels, gems; the ledger and its reconciliation; the `CHECK` |
-| `AccountRepositoryTest` | Registration, a name taken in any case, registrations at the same moment, guests, renaming, login; an account erased, a guest's too, and no status set on an erased one (D-84); the idle guests listed (D-87) |
+| `AccountRepositoryTest` | A player made for a subject in one transaction, one a subject, subjects compared exactly, two first logins at once (D-117); guests, and a guest linked once; renaming; the login's lookup by subject; an account erased, its subject gone, a guest's too, and no status set on an erased one (D-84); the idle guests listed (D-87) |
 | `BackupRunRepositoryTest`, `TableSizesTest` | The backups' latest outcomes and their purge; the tables' row estimates |
 | `BoostRepositoryTest`, `EquipmentRepositoryTest`, `PaymentRepositoryTest`, `SeasonPassRepositoryTest` | Each economy repository: once per key, and under concurrency where it matters; a refund written with its `admin_audit` row |
 | `SeasonRepositoryTest`, `RatingBoardsTest`, `TeamBoardsTest` | Season ends, places, gems, resets; the boards' order and a place read by key |

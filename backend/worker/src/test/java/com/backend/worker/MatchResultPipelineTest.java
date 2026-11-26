@@ -92,8 +92,7 @@ class MatchResultPipelineTest {
     }
 
     private static long register(String username) throws SQLException {
-        return accounts.register(username, username,
-                "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+        return accounts.createForSubject(username, username);
     }
 
     private static MatchOutcome outcomeFor(String uid, long winner, long loser) {

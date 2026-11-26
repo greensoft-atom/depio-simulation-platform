@@ -48,11 +48,13 @@ Why each rule is as it is: [04 — platform services](../detailed-design/04-plat
 
 ## The Postman collection
 
-[`backend.postman_collection.json`](backend.postman_collection.json) is in Postman's format 2.1. It holds 137 requests
+[`backend.postman_collection.json`](backend.postman_collection.json) is in Postman's format 2.1. It holds 145 requests
 in 14 folders, numbered 00 to 13. Together they are one scenario, from the health check to the end of a season, and
 they call every route of the player API (D-107).
 
-The collection makes three players (A, B and C) and a guest, with names unique to each run. Each request tests the
+The collection makes three players (A, B and C) and a guest, with names unique to each run: each signs up at the
+account service, and its access token is taken once for a session (D-117); the guest is linked to an account of its
+own. Folder 13 deletes B's account at the account service, and checks that its event ended B's session here. Each request tests the
 status of its answer. It also keeps, in the collection's variables, what later requests need: tokens, ids, an order,
 a team, a tournament.
 
@@ -61,6 +63,7 @@ a team, a tournament.
 | Variable | Default | Set it to |
 |---|---|---|
 | `baseUrl` | `http://127.0.0.1:8080` | the platform. Use the default on the machine itself. From another machine, use one of these: `https://<address>` through `dev-nginx.sh`'s nginx, trusting `work/nginx/ca/ca.pem` ([development/03 §5.0](../development/03-build-and-run.md#50-clients-on-other-machines-the-front)); `http://<address>`, the same nginx on port 80 without TLS (D-107); or `https://<the site's address>` through the front's nginx, trusting the backend's root certificate, `ca.pem` ([operations/06](../operations/06-certificates.md)). To trust a certificate in Postman: Settings, Certificates, CA certificates. With newman: `--ssl-extra-ca-certs ca.pem` |
+| `accountUrl` | `http://127.0.0.1:8083` | the account service ([10](../detailed-design/10-accounts.md)): the default is `dev-account.sh`'s, on the machine itself. Through nginx, `https://<address>/account` (D-117) |
 | `adminUrl` | `http://127.0.0.1:9120` | the admin API, through an SSH tunnel ([03 §1](03-admin-api.md#1-reaching-it)) |
 | `adminToken` | | the admin secret: on an installed machine, the value of `BACKEND_ADMIN_TOKEN` in `/etc/backend/platform.env`, which the install made in `/etc/backend/credentials/admin-token` (D-102); on a run by hand, the contents of `work/admin-token` ([development/03 §5.1](../development/03-build-and-run.md#51-trying-each-interface)) |
 | `password` | `example-password-1` | any password of 8 to 128 characters |
@@ -80,9 +83,12 @@ What the collection needs, and what it does:
   payment requests answer 503 `payments_off`, and the purchases that come after them fail.
 - **The admin API switched on** (`BACKEND_ADMIN_ADDR` and its secret) for folders 09 and 12, and **a live arena** for
   folder 08.
-- **At most two runs a minute.** One run makes 15 requests that count against the login limit: registrations,
-  logins, a guest made, an upgrade and account deletions that check a password. One address may make 30 of them a
-  minute ([01 §0, Limits](01-http-api.md#limits)).
+- **The account service running** (`dev-account.sh start`), with its events sent to this platform, as
+  `dev-account.sh` sends them; the platform reads its keys from it (`BACKEND_ACCOUNT_JWKS_URL`, the development one by
+  default).
+- **At most two runs a minute.** One run makes 10 requests that count against the account service's limit of 30 a
+  minute an address (sign-ups, logins and a deletion's password), and 3 against the platform's (a guest made, its
+  logins) ([01 §0, Limits](01-http-api.md#limits)).
 - **No whole duel.** The matcher only matches players who are connected to the lobby, and a collection cannot hold a
   WebSocket connection. So folder 08 joins a queue and leaves it. The whole duel is in `lobby-example.mjs`
   ([02 §9](02-lobby-websocket.md#9-trying-it)).
@@ -91,8 +97,8 @@ From the command line, with [newman](https://github.com/postmanlabs/newman) (Nod
 
 ```bash
 npx newman run docs/api/backend.postman_collection.json \
-    --env-var baseUrl=http://127.0.0.1:8080 --env-var adminUrl=http://127.0.0.1:9120 \
-    --env-var adminToken="$(cat work/admin-token)"
+    --env-var baseUrl=http://127.0.0.1:8080 --env-var accountUrl=http://127.0.0.1:8083 \
+    --env-var adminUrl=http://127.0.0.1:9120 --env-var adminToken="$(cat work/admin-token)"
 # from another machine, through dev-nginx.sh's nginx (D-92):
 #   --env-var baseUrl=https://<address> --ssl-extra-ca-certs work/nginx/ca/ca.pem
 ```
@@ -129,6 +135,15 @@ Each process listened on a port of its own.
   API's requests did not, because the admin API is on loopback and does not go through nginx. After that, the C#
   client's scenarios ran through the same nginx:
   [operations/11 §10](../operations/11-phone-to-backend-routes.md#10-every-route-one-by-one).
+- **With the account service, on 2026-11-26** (D-117, plan item 142 (d)). The collection ran on a run by hand from
+  that day's release (`run-local.sh`, payments simulated, the admin API on), with the account service beside it
+  (`dev-account.sh`) and both development databases made empty first: 145 requests, 159 checks, none failed, by
+  newman 6.2.3, straight after `lobby-example.mjs`, whose every answer was as expected. A first run had one failure,
+  the collection's own: folder 09's suspended login still sent a username and a password. The platform read the
+  account service's key set itself, a guest was linked, and B's account deleted at the account service ended B's
+  session here through its event, B's access token then refused. A password changed by `curl` ended the two sessions
+  made in its second, and the new password's session worked (S-28). The new routes' examples in 01 §2 are this run's.
+  Not through nginx yet: that, and the C# client, wait for plan item 142 (e).
 - **Not checked here**: nginx's limits (its own 413 and 429 answers are described from its configuration), and the
   match protocol, which has its own drills.
 

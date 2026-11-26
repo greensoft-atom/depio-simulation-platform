@@ -205,7 +205,7 @@ and replaced pushes (§3, §5). The other pushes are given as the code writes th
 | `evt.rewards` | `{"matchUid","mode","placement","coins","xp","ratingDelta","gems","achievements":[],"goals":[],"goalCoins","pass":{"points","tier","coins","gems","items":[]}}` | the worker paid a match's result | `GET /v1/inventory` |
 | `evt.tournament.match` | `{"tournamentId","round","arenaHost","arenaPort","ticketId","tls","mode"}`, and `"tlsName"` behind the front | a tournament's match is ready | `GET /v1/tournaments/{id}/match` |
 | `evt.notice` | `{"text"}` | an operator's notice, to everyone | |
-| `evt.session.revoked` | `{"reason":"banned"}`, `"suspended"` or `"deleted"` | an operator banned or suspended the account, or its player deleted it (D-84). The connection closes: do not reconnect | |
+| `evt.session.revoked` | `{"reason":"banned"}`, `"suspended"`, `"deleted"` or `"signed_out"` | an operator banned or suspended the account; its player deleted it, here as a guest or at the account service (D-84, D-117); or its password was changed at the account service (`signed_out`: on the device that changed it, connect again with the new session; elsewhere, log in again). The connection closes: do not reconnect with that session | |
 | `evt.session.replaced` | `{}` | the player connected again, through this gateway or another. This connection closes: do not reconnect | |
 | `evt.resync` | `{}` | pushes were lost (the connection was slow, or the gateway's link to the store came back). Fetch the queue, the party and a tournament match again | |
 
@@ -245,7 +245,9 @@ The gateway's own closes (an invalid session, a connection replaced or revoked, 
 **1000**, with the reason `Bye`. They come after the `error` or the push that says why (seen in §3).
 
 **After a close the client did not ask for**, reconnect with a backoff, authenticate again, and fetch what may have
-been missed (§6). There are two exceptions: after `evt.session.replaced` or `evt.session.revoked`, do not reconnect.
+been missed (§6). There are two exceptions: after `evt.session.replaced` or `evt.session.revoked`, do not reconnect
+with that session. After `signed_out` on the device that changed its password, connect with the session its new access
+token gave (D-117).
 
 ## 9. Trying it
 

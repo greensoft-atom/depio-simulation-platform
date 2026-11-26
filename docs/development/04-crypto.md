@@ -9,7 +9,8 @@ tests found (§4), how to run the examples (§5), and where the backend uses cry
 with RSA, ECDSA and X.509, and what would it need for the rest? The answer:
 
 - **Java 21 does almost all of it with nothing added**, on the release's own runtime too.
-- **BouncyCastle's `bcprov`** (the provider library), already in the platform, covers the algorithms Java lacks.
+- **BouncyCastle's `bcprov`** (the provider library), in the account service since D-117 (the platform's until then),
+  covers the algorithms Java lacks.
 - **BouncyCastle's `bcpkix`** covers making certificates and certificate requests, and PEM in every form.
 
 **The examples.** [`backend/crypto-examples`](../../backend/crypto-examples/README.md) shows each scenario in a
@@ -28,7 +29,7 @@ The module is built and tested with the rest of the backend. It is never in the 
 The table says which library gives each need. "Java 25 on" and "Java 24 on" mean the JDK gives it only from that
 version; the backend runs on Java 21.
 
-| Need | Java 21 (and the release's runtime) | BouncyCastle `bcprov` 1.86 (in the release, with `platform`) | `bcpkix` 1.86 (only in `crypto-examples` so far) |
+| Need | Java 21 (and the release's runtime) | BouncyCastle `bcprov` 1.86 (with the account service; the platform's until D-117) | `bcpkix` 1.86 (only in `crypto-examples` so far) |
 |---|---|---|---|
 | Digests: SHA-256, SHA-512, SHA3-256 | yes | | |
 | HMAC-SHA256 | yes | | |
@@ -37,7 +38,7 @@ version; the backend runs on Java 21.
 | RSA encryption (OAEP) | yes | | |
 | Key agreement: ECDH, X25519; KEM (DHKEM) | yes | | |
 | HKDF | Java 25 on | yes | |
-| Passwords: Argon2id | | yes (the backend's `PasswordHasher`) | |
+| Passwords: Argon2id | | yes (the account service's `PasswordHasher`) | |
 | PBKDF2 | yes | yes | |
 | scrypt, bcrypt, BLAKE2 and BLAKE3, secp256k1 (left Java in JDK 16) | | yes | |
 | Post-quantum: ML-KEM, ML-DSA | Java 24 on | yes | |
@@ -155,7 +156,7 @@ SSLContext client = Tls.client(KeyStores.trustStore(List.of(ca.certificate())));
   - Use one `SecureRandom`, shared.
   - Do not use `getInstanceStrong()`: it may block a server on `/dev/random`.
   - Never use `java.util.Random` for anything secret.
-- **Passwords:** Argon2id (`PasswordHasher`), never a plain digest. A high-entropy value (a device key, a token)
+- **Passwords:** Argon2id (the account service's `PasswordHasher`), never a plain digest. A high-entropy value (a device key, a token)
   may be stored as its SHA-256: nobody can guess it to try.
 - **Ed25519 holds the whole message in memory**, because it reads the message twice. To sign a large file, sign
   its SHA-256.
@@ -207,7 +208,9 @@ SSLContext client = Tls.client(KeyStores.trustStore(List.of(ca.certificate())));
 
 | What | How | Where |
 |---|---|---|
-| Passwords | Argon2id, 19 MiB of memory, t=2 (two passes) | `platform`'s `PasswordHasher` (`bcprov`) |
+| Passwords | Argon2id, 19 MiB of memory, t=2 (two passes) | the account service's `PasswordHasher` (`bcprov`); the platform's until D-117 |
+| Access tokens and account events | JWTs signed ES256 (ECDSA P-256, SHA-256) by Nimbus JOSE + JWT over the JDK's provider, the keys published as a JWK set by RFC 7638 thumbprint ([10 §3.4](../detailed-design/10-accounts.md#34-the-tokens)) | the account service's `TokenIssuer` and `SigningKeys`; `platform`'s `AccountTokens` checks them |
+| Refresh tokens | 32 bytes of `SecureRandom`, kept as their SHA-256 | the account service's `RefreshTokens` |
 | Session tokens, tickets, IDs | `SecureRandom` | `handoff`'s `SessionStore`, `Ticket`, `Ulid` |
 | A guest's key (random, the device's to keep) | kept as its SHA-256 | `platform`'s `AuthService` |
 | The players' TLS for logins, purchases and the lobby | nginx, with OpenSSL 3.5 compiled in, ends TLS on 443 | [09 §5](../detailed-design/09-release-and-packaging.md) |

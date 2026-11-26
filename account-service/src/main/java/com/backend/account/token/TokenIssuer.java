@@ -79,9 +79,17 @@ public final class TokenIssuer {
                 .issueTime(Date.from(now))
                 .jwtID(jti)
                 .subject(subject)
-                .claim("events", Map.of(eventUri, Map.of()))
+                .claim("events", Map.of(eventUri, payload(eventUri, now)))
                 .build();
         return new Event(jti, sign(EVENT_TYPE, claims));
+    }
+
+    /**
+     * What an event tells besides its name: a revocation's moment to the millisecond, {@code before_ms}, the sessions made
+     * before it ended. {@code iat} cannot carry it, being whole seconds, and a session made earlier in that second must end.
+     */
+    private static Map<String, Object> payload(String eventUri, Instant now) {
+        return SESSIONS_REVOKED.equals(eventUri) ? Map.of("before_ms", now.toEpochMilli()) : Map.of();
     }
 
     /** 16 random bytes, base64url: 22 characters. An account's subject, a token's id, an event's. */

@@ -70,8 +70,8 @@ public final class Rules {
                 "The nightly ledger check found balances that do not match their ledger rows", PROCEDURES));
         r.add(olderThan("LedgerCheckStale", "backend_worker_ledger_checked_timestamp_seconds", 2 * DAY, 0,
                 "The ledger check has not run for two days", PROCEDURES));
-        r.add(latest("HasherLineFull", "backend_platform_hasher_line", v -> v >= 168, MINUTE,
-                "The password hasher's line is full (168); logins are being turned away as busy", WATCH));
+        r.add(latest("HasherLineFull", "account_hasher_line", v -> v >= 168, MINUTE,
+                "The account service's password hasher's line is full (168); logins are being turned away as busy (D-117)", WATCH));
         r.add(latest("TickSlow", "backend_arena_tick_p99_seconds", v -> v > 0.015, 5 * MINUTE,
                 "A room's tick p99 has been above 15 ms for five minutes (NFR-1b); at 40 ms ticks overrun", WATCH));
         r.add(series("ArenaCrashLoop", "backend_process_uptime_seconds", 0, labels -> "arena".equals(labels.get("job")),

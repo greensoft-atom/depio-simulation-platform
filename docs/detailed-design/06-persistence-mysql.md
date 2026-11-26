@@ -91,11 +91,11 @@ They are history: a database made today runs V1 and V2 only.
 The [persistence README](../../backend/persistence/README.md) lists which class writes and reads each table, and
 [diagrams/05](../diagrams/05-data-and-worker.md) draws them.
 
-Thirty-six tables, by domain:
+Thirty-seven tables, by domain:
 
 | Domain | Tables |
 |---|---|
-| Identity and profile | `account`, `player`, `player_stat`, `player_day` |
+| Identity and profile | `account`, `erased_subject`, `player`, `player_stat`, `player_day` |
 | Economy | `ledger`, `inventory_item`, `equipment`, `boost`, `boost_activation`, `payment_order` |
 | Matches | `matches`, `match_player` |
 | Teams and tournaments | `team`, `team_member`, `team_invite`, `team_application`, `match_team`, `tournament`, `tournament_entry`, `tournament_match`, `tournament_team_entry`, `tournament_roster` |
@@ -115,22 +115,30 @@ that no `KEY` line names.
 ### Identity and profile
 
 ```sql
--- A login: a name and a password's argon2id hash, or a guest's device key. One account, one player.
+-- Whose a player is: the account service's subject, or a guest's device key (V1, then V3, D-117). One account, one player.
 CREATE TABLE account (
   id             BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
-  username       VARCHAR(32)    NOT NULL,
-  username_key   VARCHAR(32) AS (LOWER(username)) STORED,     -- unique whatever the case
-  password_hash  VARBINARY(255) NOT NULL,
+  subject        VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,  -- the tokens' sub; NULL for a guest (V3)
   status         TINYINT UNSIGNED NOT NULL DEFAULT 0,         -- 0 active, 1 suspended, 2 banned
   banned_until   DATETIME(3) NULL,                            -- a suspension's end
   created_at     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   last_login_at  DATETIME(3) NULL,
-  guest_key_hash BINARY(32) NULL,                             -- SHA-256 of a guest's device key; NULL once upgraded (D-46)
-  UNIQUE KEY uq_account_username (username_key),
+  guest_key_hash BINARY(32) NULL,                             -- SHA-256 of a guest's device key; NULL once linked (D-46)
+  UNIQUE KEY uq_account_subject (subject),
   UNIQUE KEY uq_account_guest (guest_key_hash),
   KEY ix_account_created (created_at)                         -- the funnel's cohorts (05 §11)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- The subjects whose accounts were deleted at the account service (V3, D-117): a late token of one makes no player.
+CREATE TABLE erased_subject (
+  subject   VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+  erased_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
+
+**The subject** is compared exactly, case and all (`ascii_bin`): it is the account service's id, opaque, never
+reused. The username and the password hash are the account service's since V3
+([10 §4.4](10-accounts.md#44-the-schema-v3)); the backend keeps neither.
 
 **`account.status`**, as `AccountRepository.Status` reads it:
 
@@ -139,14 +147,13 @@ CREATE TABLE account (
 | 0 | active |
 | 1 | suspended until `banned_until`, or until lifted when `banned_until` is null |
 | 2 | banned for good |
-| 3 | erased by its player (D-84, 04 §1): `username` is `~deleted~` and the id, the hash is empty, the guest key is gone, and no status change applies to it again |
+| 3 | erased (D-84, 04 §1): the subject and the guest key are gone, the subject recorded in `erased_subject`, and no status change applies to it again |
 | any other | read as banned, since operators write the column |
 
 V1's comment on the column was written before value 3 existed, and an applied migration is not edited.
 
-**Guests.** A guest's `username` is `~` followed by a ULID, and its `password_hash` is empty until it is upgraded
-(V15). The username rules refuse `~`, so no login by name reaches a guest. `ix_account_created` (V34) serves the
-funnel's window of days (05 §11).
+**Guests.** A guest has a key and no subject; linked to an account, a subject and no key (D-117); erased, neither.
+`ix_account_created` (V34) serves the funnel's window of days (05 §11).
 
 ```sql
 -- The player an account plays as: profile, progress, balances and ratings. Its id is the account's.
@@ -1257,8 +1264,8 @@ waiting. Now:
 
 ## 8. Migrations
 
-**Flyway runs versioned SQL files** from `persistence/src/main/resources/db/migration`. Today there are two:
-`V1__schema.sql` and `V2__seed.sql`.
+**Flyway runs versioned SQL files** from `persistence/src/main/resources/db/migration`. Today there are three:
+`V1__schema.sql`, `V2__seed.sql` and `V3__accounts_by_subject.sql`.
 
 - **The baseline** (squashed 2026-10-04,
   [D-75](../architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)).
@@ -1273,7 +1280,9 @@ waiting. Now:
   Flyway's checksum refuses an edit anyway, which is the point.
 - **Expand and contract** for anything that breaks compatibility: add the new column, backfill it, switch the code,
   and drop the old column in a later release. That is three deployments with no downtime, and every state in
-  between is one the running code understands.
+  between is one the running code understands. **V3 is the one exception** (D-117): it drops `account`'s username
+  and password hash in the release that stops reading them, because nothing has launched, so no database that
+  matters holds them and no older process runs beside the new one. From the launch on, the rule has no exception.
 - **A backfill is never one statement over a populated table** (designed 2026-10-02, plan item 60 (c),
   defect [D-39](../defects.md#3-data-and-the-result-pipeline)). V16 filled `player_day` with one `INSERT … SELECT`
   over every match a player played, and one `UPDATE … JOIN` over all of them. Under REPEATABLE READ, an

@@ -203,10 +203,13 @@ nginx passes each request and each lobby connection to the platforms and gateway
 over one that fails ([01 §4](01-deploy.md#4-nginx), D-82). More machines means more of all three. The platform holds
 no state of its own. The gateway holds its lobby connections, which reconnect to another gateway when it goes.
 
-- **Logins** are the platform's heaviest work: an Argon2id hash takes 62 to 88 ms, 8 run at a time, and 160 more may
-  wait; past that, the platform answers 503 `busy`. Onboarding bots measured **57 logins a second** a process
+- **Logins** were the platform's heaviest work: an Argon2id hash takes 62 to 88 ms, 8 run at a time, and 160 more may
+  wait; past that, the answer is 503 `busy`. Onboarding bots measured **57 logins a second** a process
   (2026-09-30). A storm of 3 000 logins at once was all served in 47 seconds, and none gave up (2026-09-25, S-7).
-  Sessions last a day ± 10 %, so a herd of logins spreads out over hours.
+  Sessions last a day ± 10 %, so a herd of logins spreads out over hours. **Since D-117** the account service hashes
+  the passwords, by the same policy and line ([10 §3.3](../detailed-design/10-accounts.md#33-passwords-and-limits));
+  these figures were measured on the platform before the move, and the account service's own are not measured yet.
+  The platform's part of a login is a signature check and a lookup.
 - **The matcher** runs on one platform at a time (it holds a 5-second lease in the store), one round a second.
   5 000 queued entries of one to three players took **100 to 180 ms** a round (2026-09-29). More platforms add API
   capacity, not matching capacity.
@@ -340,9 +343,9 @@ second. With packet overhead and the input sent up, that is about 10 to 12 MB an
 
 | What | Number | When |
 |---|---|---|
-| Argon2id a password | 62–88 ms | before 2026-09-23 |
-| Logins a process, onboarding | ~57 a second | 2026-09-30 |
-| 3 000 logins at once | all in 47 s, 0 given up | 2026-09-25 |
+| Argon2id a password (the platform's, before D-117) | 62–88 ms | before 2026-09-23 |
+| Logins a process, onboarding (the platform's, before D-117) | ~57 a second | 2026-09-30 |
+| 3 000 logins at once (the platform's, before D-117) | all in 47 s, 0 given up | 2026-09-25 |
 | Matcher, 5 000 entries | 100–180 ms a round | 2026-09-29 |
 | A rating board's place | 14–18 ms, top to bottom, 200 000 accounts | 2026-10-02 |
 | A worker | 9.6–16.3 results a second | 2026-09-30 |
@@ -393,7 +396,7 @@ Past about 4 000 players in battle, or when the site needs a failover, it is tim
 |---|---|---|---|
 | Rooms falling behind | `backend_arena_tick_p99_seconds{room}` | above 0.015 for five minutes: add arenas (or machines) | `TickSlow` |
 | Arenas full | `GET /admin/arenas`: players against `maxPlayers`; `no_arena` and `no_room` refusals | free places fall below a burst's worth (a place is held a minute for each ticket given, §2.7): add an arena | none: read by hand |
-| Logins turned away | `backend_platform_hasher_line` | at 168: one more platform (a machine more) | `HasherLineFull` |
+| Logins turned away | `account_hasher_line`, the account service's (D-117) | at 168: one more account service (a machine more) | `HasherLineFull` |
 | Results behind | `backend_worker_queue_depth` | growing for minutes: add a worker | `ResultsBacklogGrowing`: over 100 and growing for ten minutes |
 | Retention behind | `backend_worker_retention_seconds` | above 1 800 | `RetentionSlow` |
 | Store memory | j-redis `INFO`: `used_memory` against `maxmemory` | above 80 %: a bigger heap (§3.4) | none: read by hand |

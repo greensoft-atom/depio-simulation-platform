@@ -38,7 +38,7 @@ class TableSizesTest {
     void rows() throws SQLException {
         AccountRepository accounts = new AccountRepository(db.dataSource());
         for (int i = 0; i < 40; i++) {
-            accounts.register("ts" + i, "ts" + i, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+            accounts.createForSubject("ts" + i, "ts" + i);
         }
         TableSizes sizes = new TableSizes(db.dataSource());
         assertThat(sizes.rows()).containsOnlyKeys(TableSizes.WATCHED).allSatisfy((table, rows) ->

@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.groups.Tuple.tuple;
 
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -35,7 +34,6 @@ class IdleGuestsTest {
     private static final String USER = System.getenv().getOrDefault("DB_USER", "backend");
     private static final String PASSWORD = System.getenv().getOrDefault("DB_PASSWORD", "backend-dev-password");
     private static final Instant NOW = Instant.parse("2026-10-26T12:00:00Z");
-    private static final byte[] HASH = "$argon2id$fake".getBytes(StandardCharsets.UTF_8);
 
     private static Database db;
     private static JRedisEmbedded server;
@@ -81,7 +79,7 @@ class IdleGuestsTest {
         jdbc("UPDATE account SET last_login_at = '2026-10-20 00:00:00' WHERE id = ?", recent);
         long midway = idleGuest(4);                                                  // 120 days idle: the measure's 90, not the rule's 180
         jdbc("UPDATE account SET last_login_at = '2026-06-28 00:00:00' WHERE id = ?", midway);
-        long ada = accounts.register("ada", "Ada", HASH);
+        long ada = accounts.createForSubject("ada", "Ada");
         jdbc("UPDATE account SET created_at = '2025-10-01 00:00:00' WHERE id = ?", ada);
         boards.record(ghost, "Guest1", 500, NOW.minus(200, ChronoUnit.DAYS).toEpochMilli()).join();
         long team = teams.create(ghost, "Ghosts", NOW).teamId();
@@ -96,7 +94,7 @@ class IdleGuestsTest {
             AccountRepository.Owner owner = accounts.owner(id);
             assertThat(owner.status()).as("" + id).isEqualTo(AccountRepository.Status.DELETED);
             assertThat(owner.guest()).isFalse();
-            assertThat(owner.usernameKey()).isEqualTo("~deleted~" + id);
+            assertThat(owner.subject()).as("neither a subject nor a key (D-117)").isNull();
         }
         assertThat(accounts.findGuest(key(1))).as("the key logs in no more").isNull();
         assertThat(accounts.findGuest(key(3))).as("the recent guest's still does").isNotNull();
@@ -143,7 +141,7 @@ class IdleGuestsTest {
 
     /** A guest made a year ago that never logged in. */
     private static long idleGuest(int n) throws SQLException {
-        long id = accounts.createGuest("~01JCIDLE0000000000000000" + n, "Guest" + n, key(n));
+        long id = accounts.createGuest("Guest" + n, key(n));
         jdbc("UPDATE account SET created_at = '2025-10-01 00:00:00' WHERE id = ?", id);
         return id;
     }

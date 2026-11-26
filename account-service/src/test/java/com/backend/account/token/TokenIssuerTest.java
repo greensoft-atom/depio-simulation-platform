@@ -64,6 +64,17 @@ class TokenIssuerTest {
     }
 
     @Test
+    @DisplayName("a sessions-revoked event carries its moment to the millisecond, before_ms, as iat's whole seconds cannot: the backend ends the sessions made before it")
+    void aRevocationCarriesItsMillisecond() throws Exception {
+        Instant now = Instant.parse("2026-11-26T10:00:00.123Z");
+        JWTClaimsSet c = SignedJWT.parse(issuer.event(TokenIssuer.SESSIONS_REVOKED, "sub-of-ada-0123456789ab", now).token())
+                .getJWTClaimsSet();
+        assertThat(c.getIssueTime().toInstant()).as("whole seconds").isEqualTo(Instant.parse("2026-11-26T10:00:00Z"));
+        assertThat(c.getJSONObjectClaim("events"))
+                .isEqualTo(Map.of(TokenIssuer.SESSIONS_REVOKED, Map.of("before_ms", now.toEpochMilli())));
+    }
+
+    @Test
     @DisplayName("an id is 16 random bytes in base64url: 22 characters, never the same twice")
     void ids() {
         assertThat(TokenIssuer.randomId()).hasSize(22).matches("[A-Za-z0-9_-]{22}").isNotEqualTo(TokenIssuer.randomId());

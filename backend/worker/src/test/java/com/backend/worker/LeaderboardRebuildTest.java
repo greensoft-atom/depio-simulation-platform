@@ -222,7 +222,7 @@ class LeaderboardRebuildTest {
     // ---- helpers -----------------------------------------------------------------------------
 
     private long register(String name) throws SQLException {
-        long id = accounts.register(name, name, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+        long id = accounts.createForSubject(name, name);
         names.put(id, name);
         return id;
     }

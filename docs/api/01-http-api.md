@@ -18,13 +18,12 @@ comes from somewhere else says so. In the examples, `1eOf0B5d...` stands for a w
 | Method and path | Auth | What it does | Section |
 |---|---|---|---|
 | `GET /v1/health` | public | says whether the API answers | §1 |
-| `POST /v1/accounts` | public | registers an account | §2 |
-| `POST /v1/sessions` | public | logs in, with a password or a guest key | §2 |
+| `POST /v1/sessions` | public | logs in, with the account service's access token or a guest key | §2 |
 | `DELETE /v1/sessions` | Bearer | logs out | §2 |
 | `POST /v1/guests` | public | makes a guest account | §2 |
-| `POST /v1/accounts/upgrade` | Bearer | gives a guest a username and password | §2 |
+| `POST /v1/accounts/link` | Bearer | makes a guest an account's player | §2 |
 | `PUT /v1/accounts/name` | Bearer | changes the display name | §2 |
-| `DELETE /v1/accounts` | Bearer | deletes the player's own account | §2 |
+| `DELETE /v1/accounts` | Bearer | deletes a guest | §2 |
 | `GET /v1/content/classes` | public | the tank classes | §3 |
 | `GET /v1/content/phrases` | public | the quick-chat phrases | §3 |
 | `GET /v1/content/skins` | public | which item draws which skin | §3 |
@@ -108,11 +107,14 @@ comes from somewhere else says so. In the examples, `1eOf0B5d...` stands for a w
 **What nginx passes.** nginx passes `/v1/...` to `platform` and `/lobby` to `gateway`. It also passes
 `/match/<name>` to an arena, for a match without TLS (§6). Any other path gets nginx's own 404, which is not JSON. So
 the API's health check is `/v1/health`, and the platform's own `/health` cannot be reached from outside (D-107).
+`/v1/account-events` is not passed either: it is the account service's, which posts its events to the platform on
+the private network (D-117). The account service's own API is under `/account/v1/`
+([10 §3.2](../detailed-design/10-accounts.md#32-the-routes)).
 
 **What nginx limits.**
 
-- **The four login and registration paths**: `/v1/sessions`, `/v1/accounts`, `/v1/guests` and
-  `/v1/accounts/upgrade`. The limit covers every method on these paths, so a logout (`DELETE /v1/sessions`) and an
+- **The four paths that open a session or an account**: `/v1/sessions`, `/v1/accounts`, `/v1/guests` and
+  `/v1/accounts/link`. The limit covers every method on these paths, so a logout (`DELETE /v1/sessions`) and an
   account deletion (`DELETE /v1/accounts`) count too. One address may send 2 requests a second to them, with a burst
   of 30. Over that, nginx answers its own 429, which is not JSON.
 - **Body size**: 4 KB at most. A larger body gets nginx's own 413, which is not JSON.
@@ -174,16 +176,15 @@ may get the 405 first. From the code, the answer to `/v1/nothing`:
 
 | What is counted | Limit | The answer over the limit |
 |---|---|---|
-| Registrations, logins (with a password or with a guest key), guests made, upgrades, and account deletions that check a password | 30 a minute from one address, all of them together | 429 `too_many_attempts`, message `try again in <N> s`, header `Retry-After: <N>` |
-| Password logins that name one username; an account deletion with a password counts as one | 10 in 15 minutes | the same |
-| Password hashing is full: 168 requests hold or wait for a hash (8 hashing at once, 160 waiting) | | 503 `busy`, header `Retry-After` of 1 to 5 seconds, chosen at random |
+| Guests made, and guests' logins | 30 a minute from one address, both together | 429 `too_many_attempts`, message `try again in <N> s`, header `Retry-After: <N>` |
 | Friend requests; team invitations; team applications | 20 an hour of each, per player | 429 `too_soon`, without `Retry-After` |
 | Party invitations | 60 an hour per player | 429 `too_soon` |
 | Party phrases | one every 2 seconds | 429 `too_soon` |
 | A display name; a team's name | one change in 30 days (a new account's first change is allowed at once) | 429 `too_soon` |
 
-The server checks `busy` before it counts an attempt. So an attempt turned away as `busy` is never counted, and a
-client that retries through an overload does not use up the account's 10 attempts.
+A login by an access token is not counted here: the account service limits the sign-ups, logins and password
+changes that make one, per address and per username, and answers `busy` when its password hasher is full
+([10 §3.3](../detailed-design/10-accounts.md#33-passwords-and-limits)).
 
 ## 1. Health
 
@@ -206,50 +207,38 @@ GET /v1/health
 
 ## 2. Accounts and sessions
 
-Rules for registration and for the upgrade:
+**An account is the account service's** since
+[D-117](../architecture/03-decision-log.md#d-117--accounts-in-an-account-service-of-their-own-which-issues-signed-tokens-the-backend-takes-once-for-a-session).
+The app signs up and logs in there, under `/account/v1/`, with a username and a password, and is given an access
+token, good for 15 minutes, and a refresh token, which the app keeps
+([10 §3.2](../detailed-design/10-accounts.md#32-the-routes)). It sends the access token here once, to
+`POST /v1/sessions`, and uses the session it gets from then on, as before. When the session ends, it refreshes at the
+account service and sends the new access token. A guest plays without an account, and may link one later.
+
+The examples of this section's new routes are the collection's run of 2026-11-26, against a run by hand with the
+account service beside it (`dev-account.sh`, [README, "How this was checked"](README.md#how-this-was-checked)); an
+access token is shortened to `eyJraWQiOiJ...`.
+
+The rule for a display name, which a rename and a first login's name follow:
 
 | Field | Rule |
 |---|---|
-| `username` | 3 to 32 characters of `a-z A-Z 0-9 _ -`. Unique, whatever its case |
-| `password` | 8 to 128 characters |
-| `displayName` | Optional; when it is absent, the username's first 16 characters are used. At most 16 characters: letters (in any script, but Latin, Cyrillic and Greek letters are not mixed), digits, spaces and `_ - .`, with at least one letter or digit. Not a reserved word (`admin`, `mod`, `support`, `staff`, `system`...) |
+| `displayName` | At most 16 characters: letters (in any script, but Latin, Cyrillic and Greek letters are not mixed), digits, spaces and `_ - .`, with at least one letter or digit. Not a reserved word (`admin`, `mod`, `support`, `staff`, `system`...) |
 
 A refused display name gets 400 `invalid_display_name`, with the reason as its message. For example:
 `letters, digits, spaces, _ - and . only`, or `that name is reserved`.
 
-### `POST /v1/accounts`: register
-
-**Auth**: public. **Body**: `{"username", "password", "displayName"?}`; `displayName` is optional. **Answer**: 201
-with the new player's id.
-
-Registering does not log in: call `POST /v1/sessions` next. A new account has level 1, 0 coins and 0 gems.
-
-```http
-POST /v1/accounts
-{"username": "ada_muvtoo4q", "password": "example-password-1", "displayName": "Ada"}
-```
-```json
-201 {"playerId":1}
-```
-
-| Status | code | When |
-|---|---|---|
-| 400 | `invalid_body` | the username or the password is missing |
-| 400 | `invalid_username`, `invalid_password`, `invalid_display_name` | a rule above is broken |
-| 409 | `username_taken` | `{"code":"username_taken","message":"that name is in use"}` |
-| 429, 503 | `too_many_attempts`, `busy` | see §0, Limits |
-
 ### `POST /v1/sessions`: log in
 
-**Auth**: public. **Body**: either `{"username", "password"}`, or `{"guestKey"}` for a guest. When the body has a
-`guestKey`, the server logs in by the key and ignores any username and password. **Answer**: 200 with a session.
+**Auth**: public. **Body**: either `{"accessToken"}`, the account service's, or `{"guestKey"}` for a guest. When the
+body has a `guestKey`, the server logs in by the key and ignores any access token. **Answer**: 200 with a session.
 
 ```http
 POST /v1/sessions
-{"username": "ada_muvtoo4q", "password": "example-password-1"}
+{"accessToken": "eyJraWQiOiJ..."}
 ```
 ```json
-200 {"token":"1eOf0B5d4yuUqtrMjtXfpdmXlBEsmwTcxQviWTazrZM","playerId":1,"expiresInSeconds":90310}
+200 {"token":"tjILLelyR1twv9sJjcmCzQ3y2WKflc83FC-LDhrhEy0","playerId":3,"expiresInSeconds":93703,"newPlayer":true}
 ```
 
 | Field | Meaning |
@@ -257,17 +246,19 @@ POST /v1/sessions
 | `token` | 43 characters. Send it as `Authorization: Bearer <token>`, and in the lobby's `auth` message |
 | `playerId` | the player's id |
 | `expiresInSeconds` | how long the session lasts: about a day, 86 400 seconds ± 10 %. It is fixed: using the session does not extend it. Log in again before it ends |
+| `newPlayer` | `true` when this login made the player: the account's first login here. The player is named from the account's username by the display name's rule, or `Player` and four digits when the rule refuses it (`admin`); it can change the name at once (`PUT /v1/accounts/name`). Always `false` for a guest |
 
-Every login makes a new session. Older sessions stay valid.
+Every login makes a new session. Older sessions stay valid. An access token is good for 15 minutes: send one fresh
+from the account service, not one kept.
 
 | Status | code | When |
 |---|---|---|
-| 400 | `invalid_body` | `username and password are required` |
-| 401 | `invalid_credentials` | `username or password is wrong`: the same answer for every cause. For a guest key: `no guest has that key` |
+| 400 | `invalid_body` | `send {"accessToken"}, the account service's, or {"guestKey"}` |
+| 401 | `invalid_token` | `the access token is not one this backend takes: refresh it at the account service, or log in there again`: the same answer for every cause: expired, forged, meant for another backend, or of an account since deleted |
+| 401 | `invalid_credentials` | a guest key: `no guest has that key` |
 | 403 | `banned` | `this account cannot play`: banned, or suspended until a time not yet passed |
-| 429, 503 | `too_many_attempts`, `busy` | see §0, Limits |
-
-A guest's login hashes no password. So it is counted against the address's limit alone, and it never answers `busy`.
+| 429 | `too_many_attempts` | a guest's login: see §0, Limits |
+| 503 | `keys_unavailable` | the account service's keys cannot be had, so no token can be checked: `try again shortly` |
 
 ### `DELETE /v1/sessions`: log out
 
@@ -301,34 +292,35 @@ POST /v1/guests
 Then `POST /v1/sessions {"guestKey": "ufLTWOrW..."}` gives a token, as above. Keep the key on the device: the key is
 the account, and a lost key is a lost account. A guest nobody plays for 180 days is erased, with its progress
 ([D-87](../architecture/03-decision-log.md#d-87--a-guest-nobody-plays-for-180-days-is-erased-by-retention-a-deletion-is-at-once)).
-Upgrading the guest to a full account keeps it.
+Linking the guest to an account keeps it.
 
 The only error of its own is 429 `too_many_attempts` (§0, Limits).
 
-### `POST /v1/accounts/upgrade`: a guest becomes an account
+### `POST /v1/accounts/link`: a guest becomes an account's player
 
-**Auth**: Bearer, the guest's session. **Body**: `{"username", "password", "displayName"?}`. **Answer**: 200 `{}`.
+**Auth**: Bearer, the guest's session. **Body**: `{"accessToken"}`, of the account the player signed up for or logged
+in to at the account service. **Answer**: 200 `{"playerId"}`.
 
-It is the same player, with its progress kept, and now it has a username and a password. The guest key stops working:
-from now on, the player logs in by name.
+It is the same player, with its progress and its display name kept, and from now on it is the account's. The guest key
+stops working: the player logs in by the account.
 
 ```http
-POST /v1/accounts/upgrade
-Authorization: Bearer aEdwwBm-3sSnB16EK6x2LZWm0N7xQUEVXf9GPVETiRw
-{"username": "gus_muvtoo4q", "password": "example-password-1", "displayName": "Gus"}
+POST /v1/accounts/link
+Authorization: Bearer ow_z04JdPf6_qF6YrtyrYoVV2MEwp5jq9Ext6WUa3fE
+{"accessToken": "eyJraWQiOiJ..."}
 ```
 ```json
-200 {}
+200 {"playerId":6}
 ```
 
 | Status | code | When |
 |---|---|---|
-| 400 | `invalid_body` | the username or the password is missing |
-| 400 | `invalid_username`, `invalid_password`, `invalid_display_name` | a rule above is broken |
+| 400 | `invalid_body` | `send {"accessToken"}, the account service's` |
 | 401 | `no_token`, `invalid_session` | no live session |
-| 409 | `username_taken` | `that name is in use` |
-| 409 | `not_a_guest` | `this account has a username already` |
-| 429, 503 | `too_many_attempts`, `busy` | see §0, Limits |
+| 401 | `invalid_token` | the access token is not one this backend takes, as at a login |
+| 409 | `not_a_guest` | `this player is an account's already` |
+| 409 | `account_in_use` | `another player is this account's`: the account logged in here before, and has a player of its own |
+| 503 | `keys_unavailable` | as at a login |
 
 ### `PUT /v1/accounts/name`: change the display name
 
@@ -355,26 +347,27 @@ same, and the boards take it at the player's next result (D-60).
 | 401 | `no_token`, `invalid_session` | no live session |
 | 429 | `too_soon` | `{"code":"too_soon","message":"a display name changes once in 30 days"}` |
 
-### `DELETE /v1/accounts`: delete the account
+### `DELETE /v1/accounts`: delete a guest
 
-**Auth**: Bearer. **Body**: `{"password"}` for a registered account; a guest sends none. **Answer**: **204** with no
-body. There is no undo.
+**Auth**: Bearer, a guest's session. **Body**: none. **Answer**: **204** with no body. There is no undo.
 
-The server erases the player's own account:
+An account's player is deleted at the account service instead, with the account's password: this route answers it 409
+`delete_at_account_service`. The account service tells the backend, and the player is erased here as below, within
+seconds, out of its team whatever its role.
 
-- its name, password, guest key and display name (others who still see the player see `Deleted player`);
+The server erases the guest:
+
+- its guest key and display name (others who still see the player see `Deleted player`);
 - its friends, blocks, inbox, team invitations and team applications;
 - its places on the boards;
 - every session. Each device's lobby connection is told `evt.session.revoked` `{"reason":"deleted"}`.
 
 Matches, tournament brackets, the ledger and payment orders stay, under the bare player id
 ([D-84](../architecture/03-decision-log.md#d-84--a-player-deletes-their-own-account-erased-in-place-what-others-history-needs-kept-under-a-bare-id)).
-The username is free to register again.
 
 ```http
 DELETE /v1/accounts
-Authorization: Bearer <B's token>
-{"password": "example-password-1"}
+Authorization: Bearer <the guest's token>
 ```
 ```json
 204
@@ -382,12 +375,15 @@ Authorization: Bearer <B's token>
 
 | Status | `code` | When |
 |---|---|---|
-| 400 | `invalid_body` | a registered account sent no password |
 | 401 | `no_token`, `invalid_session` | no live session |
-| 403 | `wrong_password` | not the account's password. Every attempt, right or wrong, counts as a login attempt (§0, Limits) |
 | 409 | `leader_with_members` | the player leads a team that has other members: hand the team to another member first |
-| 429, 503 | `too_many_attempts`, `busy` | as for a login |
+| 409 | `delete_at_account_service` | `this player's account is the account service's: deleting it there erases the player here` |
 | 503 | `storage_unavailable` | try again: the same call, with the same session, finishes the deletion |
+
+**A password changed at the account service** ends the player's sessions made before the change; those made after it,
+with a new access token, stay. The player's lobby connection is told `evt.session.revoked` `{"reason":"signed_out"}`
+and closes, whichever session it was on. On the device that changed the password, open the lobby again with the session
+the new access token gave; on any other, log in again.
 
 ## 3. Content
 

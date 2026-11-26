@@ -1,16 +1,22 @@
 package com.backend.platform;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.net.URI;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import com.backend.handoff.SessionStore;
 import com.backend.persistence.AccountRepository;
 import com.backend.persistence.Database;
 import com.backend.persistence.DatabaseSettings;
-
 import com.jredis.client.JRedisClient;
 import com.jredis.embedded.JRedisEmbedded;
 
@@ -21,10 +27,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Register and login against a real MySQL and a real j-redis.
- *
- * Both stores are the mechanism here, not a detail behind it: the unique index decides
- * contested usernames and the session TTL decides how long a token lives.
+ * Logging in by the account service's access token, and guests, against a real MySQL and a real j-redis (D-117):
+ * the subject's unique index decides who makes a player at a first login, and the session's TTL how long a token lives.
  */
 class AuthServiceTest {
 
@@ -48,7 +52,7 @@ class AuthServiceTest {
         client = store.newClient();
         accounts = new AccountRepository(db.dataSource());
         sessions = new SessionStore(client);
-        auth = new AuthService(accounts, new PasswordHasher(), sessions);
+        auth = new AuthService(accounts, sessions, TestTokens.tokens());
     }
 
     @AfterAll
@@ -68,75 +72,82 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("register then log in, and the session names the player")
-    void registerThenLogin() throws Exception {
-        AuthService.RegisterResult registered =
-                auth.register("ada", "Ada", "hunter2-hunter2".toCharArray());
-        assertThat(registered.outcome()).isEqualTo(AuthService.Register.OK);
+    @DisplayName("an access token makes its subject's player at the first login, named by its username, and a session names it")
+    void aFirstLoginMakesThePlayer() throws Exception {
+        AuthService.LoginResult first = auth.exchange(TestTokens.access("sub-ada", "Ada"));
+        assertThat(first.outcome()).isEqualTo(AuthService.Login.OK);
+        assertThat(first.newPlayer()).isTrue();
+        assertThat(auth.playerIdOf(first.token())).isEqualTo(first.playerId());
+        assertThat(first.ttlSeconds()).isPositive();
+        assertThat(accounts.findProfile(first.playerId()).displayName()).isEqualTo("Ada");
 
-        AuthService.LoginResult login = auth.login("ada", "hunter2-hunter2".toCharArray());
-
-        assertThat(login.outcome()).isEqualTo(AuthService.Login.OK);
-        assertThat(login.playerId()).isEqualTo(registered.playerId());
-        assertThat(login.token()).isNotBlank();
-        assertThat(auth.playerIdOf(login.token())).isEqualTo(registered.playerId());
+        AuthService.LoginResult again = auth.exchange(TestTokens.access("sub-ada", "renamed-there"));
+        assertThat(again.playerId()).as("the same player").isEqualTo(first.playerId());
+        assertThat(again.newPlayer()).isFalse();
+        assertThat(again.token()).isNotEqualTo(first.token());
+        assertThat(accounts.findProfile(first.playerId()).displayName()).as("named once, renamed here alone").isEqualTo("Ada");
     }
 
     @Test
-    @DisplayName("a wrong password and an unknown user are the same answer")
-    void wrongCredentialsAreIndistinguishable() throws Exception {
-        auth.register("ada", "Ada", "hunter2-hunter2".toCharArray());
-
-        AuthService.LoginResult wrongPassword = auth.login("ada", "not-the-password".toCharArray());
-        AuthService.LoginResult noSuchUser = auth.login("nobody", "not-the-password".toCharArray());
-
-        // Telling these apart hands out a list of which usernames exist.
-        assertThat(wrongPassword.outcome()).isEqualTo(AuthService.Login.INVALID_CREDENTIALS);
-        assertThat(noSuchUser.outcome()).isEqualTo(AuthService.Login.INVALID_CREDENTIALS);
-        assertThat(wrongPassword.token()).isNull();
-        assertThat(noSuchUser.token()).isNull();
+    @DisplayName("a username the display name's rules refuse, or none, names the player Player and four digits")
+    void aRefusedName() throws Exception {
+        long admin = auth.exchange(TestTokens.access("sub-admin", "admin")).playerId();
+        assertThat(accounts.findProfile(admin).displayName()).matches("Player[0-9]{4}");
+        long none = auth.exchange(TestTokens.access("sub-none", null)).playerId();
+        assertThat(accounts.findProfile(none).displayName()).matches("Player[0-9]{4}");
     }
 
     @Test
-    @DisplayName("an unknown username still costs a hash, so timing does not reveal it")
-    void unknownUserIsNotFasterThanAWrongPassword() throws Exception {
-        auth.register("ada", "Ada", "hunter2-hunter2".toCharArray());
-        auth.login("ada", "warm-up-the-jit".toCharArray());
-
-        long wrongPassword = time(() -> auth.login("ada", "not-the-password".toCharArray()));
-        long unknownUser = time(() -> auth.login("nobody-at-all", "not-the-password".toCharArray()));
-
-        // Without the decoy hash the unknown-user path returns in microseconds while the
-        // real one takes tens of milliseconds, which is a username oracle for anyone with a
-        // clock. The bound is loose because this machine is shared; the failure it catches
-        // is the decoy being removed entirely, which is a 1000x difference, not a 2x one.
-        System.out.printf("login: wrong password %d ms, unknown user %d ms%n",
-                wrongPassword, unknownUser);
-        assertThat(unknownUser).as("unknown user must not short-circuit")
-                .isGreaterThan(wrongPassword / 4);
+    @DisplayName("a token not taken makes no player and opens no session")
+    void aTokenNotTaken() throws Exception {
+        assertThat(auth.exchange("not-a-token").outcome()).isEqualTo(AuthService.Login.INVALID_TOKEN);
+        assertThat(auth.exchange(null).outcome()).isEqualTo(AuthService.Login.INVALID_TOKEN);
+        assertThat(players()).isZero();
     }
 
     @Test
-    @DisplayName("registration refuses a taken name and obviously bad input")
-    void registrationValidation() throws Exception {
-        assertThat(auth.register("ada", "Ada", "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Register.OK);
+    @DisplayName("an erased subject's token, exchanged in the minutes it is still good, makes no new player")
+    void anErasedSubject() throws Exception {
+        long ada = auth.exchange(TestTokens.access("sub-ada", "ada")).playerId();
+        accounts.erase(ada);
+        assertThat(auth.exchange(TestTokens.access("sub-ada", "ada")).outcome()).isEqualTo(AuthService.Login.INVALID_TOKEN);
+        accounts.recordErasedSubject("sub-never");
+        assertThat(auth.exchange(TestTokens.access("sub-never", "never")).outcome()).isEqualTo(AuthService.Login.INVALID_TOKEN);
+        assertThat(players()).as("the erased one alone").isEqualTo(1);
+    }
 
-        assertThat(auth.register("ada", "Other", "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Register.USERNAME_TAKEN);
-        assertThat(auth.register("ab", "Short", "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Register.INVALID_USERNAME);
-        assertThat(auth.register("has space", "Spaced", "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Register.INVALID_USERNAME);
-        assertThat(auth.register("bob", "Bob", "short".toCharArray()).outcome())
-                .isEqualTo(AuthService.Register.INVALID_PASSWORD);
+    @Test
+    @DisplayName("two first logins of one account at once: one player, both logged in")
+    void twoFirstLoginsAtOnce() throws Exception {
+        int threads = 8;
+        CountDownLatch go = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(threads);
+        List<AuthService.LoginResult> results = new CopyOnWriteArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            String token = TestTokens.access("sub-contested", "contested");
+            new Thread(() -> {
+                try {
+                    go.await();
+                    results.add(auth.exchange(token));
+                } catch (Exception e) {
+                    results.add(null);
+                } finally {
+                    done.countDown();
+                }
+            }).start();
+        }
+        go.countDown();
+        assertThat(done.await(30, TimeUnit.SECONDS)).isTrue();
+        assertThat(results).hasSize(threads).allSatisfy(r -> assertThat(r.outcome()).isEqualTo(AuthService.Login.OK));
+        assertThat(results.stream().map(AuthService.LoginResult::playerId).distinct()).hasSize(1);
+        assertThat(results.stream().filter(AuthService.LoginResult::newPlayer)).as("made once").hasSize(1);
+        assertThat(players()).isEqualTo(1);
     }
 
     @Test
     @DisplayName("logging out revokes the session immediately")
     void logoutRevokes() throws Exception {
-        auth.register("ada", "Ada", "hunter2-hunter2".toCharArray());
-        String token = auth.login("ada", "hunter2-hunter2".toCharArray()).token();
+        String token = auth.exchange(TestTokens.access("sub-ada", "ada")).token();
         assertThat(auth.playerIdOf(token)).isPositive();
 
         assertThat(auth.logout(token)).isTrue();
@@ -148,8 +159,7 @@ class AuthServiceTest {
     @Test
     @DisplayName("a session expires on its own")
     void sessionHasExpiry() throws Exception {
-        auth.register("ada", "Ada", "hunter2-hunter2".toCharArray());
-        String token = auth.login("ada", "hunter2-hunter2".toCharArray()).token();
+        String token = auth.exchange(TestTokens.access("sub-ada", "ada")).token();
 
         long ttl = client.sync().ttl("sess:" + token);
         assertThat(ttl).isBetween((long) (SessionStore.TTL_SECONDS * 0.89),
@@ -160,78 +170,95 @@ class AuthServiceTest {
     @Test
     @DisplayName("session lifetimes are spread out, not identical")
     void sessionTtlIsJittered() throws Exception {
-        auth.register("ada", "Ada", "hunter2-hunter2".toCharArray());
-
         java.util.Set<Long> ttls = new java.util.HashSet<>();
         for (int i = 0; i < 12; i++) {
-            ttls.add(client.sync().ttl(
-                    "sess:" + auth.login("ada", "hunter2-hunter2".toCharArray()).token()));
+            ttls.add(client.sync().ttl("sess:" + auth.exchange(TestTokens.access("sub-ada", "ada")).token()));
         }
-
-        // Identical TTLs mean every session issued in one window expires in one window, and
-        // the path they all return to is the most expensive one in the system.
-        assertThat(ttls).as("twelve sessions should not share one expiry second")
-                .hasSizeGreaterThan(1);
+        // Identical TTLs mean every session issued in one window expires in one window, and every
+        // player comes back for a new one together.
+        assertThat(ttls).as("twelve sessions should not share one expiry second").hasSizeGreaterThan(1);
         assertThat(ttls).allSatisfy(ttl -> assertThat(ttl)
-                .isBetween((long) (SessionStore.TTL_SECONDS * 0.89),
-                        (long) (SessionStore.TTL_SECONDS * 1.11)));
+                .isBetween((long) (SessionStore.TTL_SECONDS * 0.89), (long) (SessionStore.TTL_SECONDS * 1.11)));
     }
 
     @Test
-    @DisplayName("a banned account cannot log in, but only after the password is checked")
+    @DisplayName("a banned player's account signs in at the account service, and here is refused a session")
     void bannedAccountIsRefused() throws Exception {
-        long id = auth.register("ada", "Ada", "hunter2-hunter2".toCharArray()).playerId();
+        long id = auth.exchange(TestTokens.access("sub-ada", "ada")).playerId();
         setStatus(id, 1, null);
-
-        assertThat(auth.login("ada", "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Login.BANNED);
-        // The ban is not an oracle either: a wrong password on a banned account still reads
-        // as invalid credentials, so it cannot be used to probe who is banned.
-        assertThat(auth.login("ada", "wrong-password-x".toCharArray()).outcome())
-                .isEqualTo(AuthService.Login.INVALID_CREDENTIALS);
+        AuthService.LoginResult r = auth.exchange(TestTokens.access("sub-ada", "ada"));
+        assertThat(r.outcome()).isEqualTo(AuthService.Login.BANNED);
+        assertThat(r.token()).isNull();
     }
 
     @Test
     @DisplayName("a ban that has expired no longer blocks a login")
     void expiredBanIsNotABan() throws Exception {
-        long id = auth.register("ada", "Ada", "hunter2-hunter2".toCharArray()).playerId();
+        long id = auth.exchange(TestTokens.access("sub-ada", "ada")).playerId();
         setStatus(id, 1, System.currentTimeMillis() - 60_000);
-
-        assertThat(auth.login("ada", "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Login.OK);
-    }
-
-    @Test
-    @DisplayName("a username spelled with an accent is not the account spelled without one")
-    void accentedUsernameIsNotTheAccount() throws Exception {
-        auth.register("ada", "Ada", "hunter2-hunter2".toCharArray());
-        // The lookup compares accent-insensitively, so this logged in as ada.
-        assertThat(auth.login("\u00e1da", "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Login.INVALID_CREDENTIALS);
-        assertThat(auth.login("ADA", "hunter2-hunter2".toCharArray()).outcome())
-                .as("case never mattered and still does not").isEqualTo(AuthService.Login.OK);
+        assertThat(auth.exchange(TestTokens.access("sub-ada", "ada")).outcome()).isEqualTo(AuthService.Login.OK);
     }
 
     @Test
     @DisplayName("a permanent ban, or a status this code does not know, blocks whatever the date says")
     void permanentBanAndUnknownStatusIgnoreTheDate() throws Exception {
-        long id = auth.register("ada", "Ada", "hunter2-hunter2".toCharArray()).playerId();
+        long id = auth.exchange(TestTokens.access("sub-ada", "ada")).playerId();
         long past = System.currentTimeMillis() - 60_000;
-
-        // 2 is a ban, and a ban does not lapse: a date left over from an earlier suspension
-        // let this account straight back in.
+        // 2 is a ban, and a ban does not lapse: a date left over from an earlier suspension let this account back in.
         setStatus(id, 2, past);
-        assertThat(auth.login("ada", "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Login.BANNED);
-
+        assertThat(auth.exchange(TestTokens.access("sub-ada", "ada")).outcome()).isEqualTo(AuthService.Login.BANNED);
         // A value added later without teaching the login path about it reads as a ban.
         setStatus(id, 7, past);
-        assertThat(auth.login("ada", "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Login.BANNED);
-
+        assertThat(auth.exchange(TestTokens.access("sub-ada", "ada")).outcome()).isEqualTo(AuthService.Login.BANNED);
         setStatus(id, 0, past);
-        assertThat(auth.login("ada", "hunter2-hunter2".toCharArray()).outcome())
+        assertThat(auth.exchange(TestTokens.access("sub-ada", "ada")).outcome())
                 .as("active, whatever banned_until holds").isEqualTo(AuthService.Login.OK);
+    }
+
+    @Test
+    @DisplayName("a guest links an account once: the same player, its name kept, its key stopped; none other may")
+    void aGuestLinks() throws Exception {
+        AuthService.GuestResult guest = auth.createGuest();
+        String session = auth.loginGuest(guest.guestKey()).token();
+        assertThat(auth.link(session, TestTokens.access("sub-gina", "gina"))).isEqualTo(AuthService.Link.OK);
+        assertThat(auth.loginGuest(guest.guestKey()).outcome()).as("its key stopped").isEqualTo(AuthService.Login.INVALID_CREDENTIALS);
+        AuthService.LoginResult in = auth.exchange(TestTokens.access("sub-gina", "gina"));
+        assertThat(in.playerId()).as("the account's player is the guest").isEqualTo(guest.playerId());
+        assertThat(in.newPlayer()).isFalse();
+        assertThat(accounts.findProfile(guest.playerId()).displayName()).isEqualTo(guest.displayName());
+        assertThat(auth.link(session, TestTokens.access("sub-other", "other"))).isEqualTo(AuthService.Link.NOT_A_GUEST);
+
+        String second = auth.loginGuest(auth.createGuest().guestKey()).token();
+        assertThat(auth.link(second, TestTokens.access("sub-gina", "gina"))).isEqualTo(AuthService.Link.ACCOUNT_IN_USE);
+        assertThat(auth.link(second, "not-a-token")).isEqualTo(AuthService.Link.INVALID_TOKEN);
+        accounts.recordErasedSubject("sub-gone");
+        assertThat(auth.link(second, TestTokens.access("sub-gone", "gone"))).as("a deleted account's late token")
+                .isEqualTo(AuthService.Link.INVALID_TOKEN);
+        assertThat(auth.link("no-such-session-xxxxxxxxxxxxxxxxxxxxxxxxxxx", TestTokens.access("sub-x", "x")))
+                .isEqualTo(AuthService.Link.NO_SESSION);
+    }
+
+    @Test
+    @DisplayName("the account service's keys not to be had: said so, for a 503, not taken for a token refused")
+    void keysUnavailable() throws Exception {
+        int dead;
+        try (java.net.ServerSocket s = new java.net.ServerSocket(0)) {
+            dead = s.getLocalPort();
+        }
+        AuthService blind = new AuthService(accounts, sessions, new AccountTokens(new AccountTokenSettings(TestTokens.ISSUER,
+                "backend", URI.create("http://127.0.0.1:" + dead + "/.well-known/jwks.json"))));
+        assertThatThrownBy(() -> blind.exchange(TestTokens.access("sub-ada", "ada")))
+                .isInstanceOf(AccountTokens.KeysUnavailable.class);
+        assertThat(players()).isZero();
+    }
+
+    private static long players() throws SQLException {
+        try (Connection c = db.dataSource().getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM player");
+             ResultSet r = ps.executeQuery()) {
+            r.next();
+            return r.getLong(1);
+        }
     }
 
     private static void setStatus(long id, int status, Long untilMillis) throws SQLException {
@@ -247,98 +274,5 @@ class AuthServiceTest {
             ps.setLong(3, id);
             ps.executeUpdate();
         }
-    }
-
-    private interface Action {
-        void run() throws Exception;
-    }
-
-    private static long time(Action action) throws Exception {
-        long start = System.nanoTime();
-        action.run();
-        return (System.nanoTime() - start) / 1_000_000;
-    }
-
-    // ---- rehashing ---------------------------------------------------------------------
-
-    /** What an account hashed under an older, cheaper policy has stored. */
-    private static byte[] registerAtOldCost(String name) throws Exception {
-        AuthService before = new AuthService(accounts, new PasswordHasher(8 * 1024, 1, 1), sessions);
-        assertThat(before.register(name, name, "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Register.OK);
-        byte[] stored = accounts.findForLogin(name).passwordHash();
-        assertThat(new String(stored, java.nio.charset.StandardCharsets.UTF_8)).contains("m=8192,t=1,p=1");
-        return stored;
-    }
-
-    @Test
-    @DisplayName("a password hashed at an older cost is rehashed at the current one when its owner logs in")
-    void olderCostIsRehashedOnLogin() throws Exception {
-        registerAtOldCost("ada");
-
-        assertThat(auth.login("ada", "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Login.OK);
-
-        // Until this, raising the cost protected new passwords only: an old hash verified
-        // under its own parameters for ever.
-        byte[] now = accounts.findForLogin("ada").passwordHash();
-        assertThat(new String(now, java.nio.charset.StandardCharsets.UTF_8)).contains(
-                "m=" + PasswordHasher.MEMORY_KIB + ",t=" + PasswordHasher.ITERATIONS
-                        + ",p=" + PasswordHasher.PARALLELISM);
-        assertThat(auth.login("ada", "hunter2-hunter2".toCharArray()).outcome())
-                .as("and the new hash is the same password").isEqualTo(AuthService.Login.OK);
-        assertThat(accounts.findForLogin("ada").passwordHash())
-                .as("rewritten once, not at every login").isEqualTo(now);
-    }
-
-    @Test
-    @DisplayName("a wrong password never rewrites a hash, however old")
-    void wrongPasswordNeverRehashes() throws Exception {
-        byte[] old = registerAtOldCost("ada");
-
-        assertThat(auth.login("ada", "not-the-password".toCharArray()).outcome())
-                .isEqualTo(AuthService.Login.INVALID_CREDENTIALS);
-
-        assertThat(accounts.findForLogin("ada").passwordHash()).isEqualTo(old);
-    }
-
-    @Test
-    @DisplayName("a hash is replaced only if it is still the one that was verified")
-    void rehashDoesNotOverwriteAChange() throws Exception {
-        byte[] old = registerAtOldCost("ada");
-        long id = accounts.findForLogin("ada").playerId();
-        byte[] changedMeanwhile = new PasswordHasher().hash("a-new-password".toCharArray());
-        assertThat(accounts.replacePasswordHash(id, old, changedMeanwhile)).isTrue();
-
-        // The login that verified the old one arrives late: it must not put an old password back.
-        byte[] late = new PasswordHasher().hash("hunter2-hunter2".toCharArray());
-        assertThat(accounts.replacePasswordHash(id, old, late)).isFalse();
-        assertThat(accounts.findForLogin("ada").passwordHash()).isEqualTo(changedMeanwhile);
-    }
-
-    @Test
-    @org.junit.jupiter.api.Timeout(60)
-    @DisplayName("an upgrade refuses an account that is no guest, or a name taken, before it hashes the password (S-18)")
-    void anUpgradeChecksBeforeHashing() throws Exception {
-        PasswordHasher slow = new PasswordHasher(PasswordHasher.MEMORY_KIB, 60, 1);
-        long started = System.nanoTime();
-        slow.hash("hunter2-hunter2".toCharArray());
-        long hashNanos = System.nanoTime() - started;
-        AuthService slowly = new AuthService(accounts, slow, sessions);
-
-        auth.register("up-taken", "Taken", "hunter2-hunter2".toCharArray());
-        String registered = auth.login("up-taken", "hunter2-hunter2".toCharArray()).token();
-        AuthService.GuestResult guest = auth.createGuest();
-        String guestToken = auth.loginGuest(guest.guestKey()).token();
-
-        started = System.nanoTime();
-        assertThat(slowly.upgrade(registered, "up-new", null, "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Upgrade.NOT_A_GUEST);
-        assertThat(slowly.upgrade(guestToken, "up-taken", null, "hunter2-hunter2".toCharArray()).outcome())
-                .isEqualTo(AuthService.Upgrade.USERNAME_TAKEN);
-        assertThat(System.nanoTime() - started).as("two refusals, no hash: a hash takes %d ms", hashNanos / 1_000_000)
-                .isLessThan(hashNanos / 2);
-        assertThat(auth.upgrade(guestToken, "up-guest", null, "hunter2-hunter2".toCharArray()).outcome())
-                .as("a guest, a free name: upgraded").isEqualTo(AuthService.Upgrade.OK);
     }
 }

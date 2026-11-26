@@ -51,7 +51,7 @@ public final class ApplyBenchmark {
             int rounds = threads.length + 1;             // the first warms every connection
             long[] players = new long[results * rounds];
             for (int i = 0; i < players.length; i++) {
-                players[i] = accounts.register("ab" + i, "ab" + i, "$argon2id$bench".getBytes(StandardCharsets.UTF_8));
+                players[i] = accounts.createForSubject("ab" + i, "ab" + i);
             }
             MatchResultRepository repository = new MatchResultRepository(db.dataSource(), xp -> 1);
             for (int r = 0; r < rounds; r++) {

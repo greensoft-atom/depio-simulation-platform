@@ -61,7 +61,7 @@ class LedgerCheckTest {
     }
 
     private static long register(String name) throws SQLException {
-        return accounts.register(name, name, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+        return accounts.createForSubject(name, name);
     }
 
     @Test

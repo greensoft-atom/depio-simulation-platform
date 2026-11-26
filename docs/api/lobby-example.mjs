@@ -5,14 +5,18 @@
 // so it cannot be shown over HTTP alone). Optionally an operator's notice, with the admin API.
 // Node 22 or later (its WebSocket and fetch are built in); nothing to install.
 //
-//   node lobby-example.mjs [platformUrl] [lobbyUrl] [adminUrl adminToken]
+//   [ACCOUNT_URL=<the account service>] node lobby-example.mjs [platformUrl] [lobbyUrl] [adminUrl adminToken]
 //   node lobby-example.mjs http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby
-//   NODE_EXTRA_CA_CERTS=ca.pem node lobby-example.mjs https://203.0.113.10 wss://203.0.113.10/lobby
+//   NODE_EXTRA_CA_CERTS=ca.pem ACCOUNT_URL=https://203.0.113.10/account \
+//       node lobby-example.mjs https://203.0.113.10 wss://203.0.113.10/lobby
 //                                       the site, trusting the backend's root (docs/operations/06)
 //
-// It registers two new players (bob_<time>, cy_<time>). Exits 1 if anything answered otherwise.
+// It signs up two new accounts (bob_<time>, cy_<time>) at the account service, ACCOUNT_URL (by default the
+// development one, http://127.0.0.1:8083; D-117), and takes each one's access token to the platform for a session.
+// Exits 1 if anything answered otherwise.
 
 const [platform = 'http://127.0.0.1:8080', lobbyUrl = 'ws://127.0.0.1:8081/lobby', adminUrl, adminToken] = process.argv.slice(2);
+const accounts = process.env.ACCOUNT_URL || 'http://127.0.0.1:8083';
 let failed = 0;
 
 function log(who, arrow, what) {
@@ -108,10 +112,10 @@ const pushed = (t) => (m) => m.t === t;
 async function player(name, run) {
   const username = `${name}_${run}`;
   const display = name[0].toUpperCase() + name.slice(1);
-  const registered = await http('POST', '/v1/accounts', { username, password: 'example-password-1', displayName: display });
-  check(registered.status === 201, `register ${username}: ${registered.status}`);
-  const session = await http('POST', '/v1/sessions', { username, password: 'example-password-1' });
-  check(session.status === 200, `log in ${username}: ${session.status}`);
+  const signedUp = await http('POST', accounts + '/v1/accounts', { username, password: 'example-password-1' });
+  check(signedUp.status === 201, `sign up ${username} at the account service: ${signedUp.status}`);
+  const session = await http('POST', '/v1/sessions', { accessToken: signedUp.body?.access_token });
+  check(session.status === 200 && session.body.newPlayer === true, `${username}'s first login: ${session.status}`);
   return { name: display, playerId: session.body.playerId, token: session.body.token };
 }
 

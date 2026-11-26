@@ -156,7 +156,7 @@ change goes without its event. A loop delivers them:
 
 | | |
 |---|---|
-| the event | a Security Event Token (RFC 8417): `typ` `secevent+jwt`, `iss`, `aud` `ACCOUNT_AUDIENCE`, `iat`, `jti`, `sub`, and `events` holding one of `urn:backend:account:deleted`, `urn:backend:account:sessions-revoked` |
+| the event | a Security Event Token (RFC 8417): `typ` `secevent+jwt`, `iss`, `aud` `ACCOUNT_AUDIENCE`, `iat`, `jti`, `sub`, and `events` holding one of `urn:backend:account:deleted`, with an empty payload, or `urn:backend:account:sessions-revoked`, with `{"before_ms"}`: the change's moment in milliseconds since the epoch, since `iat` is whole seconds and a session made earlier in that second must end too (defect S-28) |
 | delivered | `POST` to `ACCOUNT_EVENTS_URL`, `Content-Type: application/secevent+jwt` (RFC 8935); 202 taken |
 | not taken | the next address in the list, then again after 1, 2, 4 … seconds, at most 5 minutes apart, until taken; a 400 is logged as an error each time, since it is a setting to fix, not a reason to drop a deletion |
 | kept | a week after it was taken, then purged |
@@ -190,7 +190,7 @@ company's account (Q-52). No OAuth authorization code flow or browser login (D-1
 |---|---|---|
 | `BACKEND_ACCOUNT_ISSUER` | the `iss` taken, exactly | the development account service's |
 | `BACKEND_ACCOUNT_AUDIENCE` | this backend's name, which `aud` must hold | `backend` |
-| `BACKEND_ACCOUNT_JWKS_URL` | the account service's key set: `http://` only to a loopback or private address, else `https://` | the development account service's |
+| `BACKEND_ACCOUNT_JWKS_URL` | the account service's key set: `http://` only to a loopback or private address written as an IP, never a name (`localhost` too), so DNS decides nothing; else `https://` | the development account service's |
 
 ### 4.2 Checking a token
 
@@ -206,7 +206,8 @@ its reason logged, never told:
    a login is 503 `keys_unavailable`;
 4. `iss` is the setting exactly, and `aud` holds this backend's name;
 5. `exp` is to come and `iat` past, with 60 seconds' leeway for the clocks;
-6. `sub` is 1 to 64 ASCII characters, and `jti` and `client_id` are there.
+6. `sub` is 1 to 64 ASCII characters, and `jti` and `client_id` are there; an event names one event it knows, a
+   `sessions-revoked` with its `before_ms`.
 
 ### 4.3 The routes that change
 
@@ -231,8 +232,11 @@ its reason logged, never told:
 - `deleted`: the player erased as D-84 erases it, but out of its team whatever its role, as the worker's retention
   does (D-87), since the account is gone and there is nobody to ask; the subject recorded in `erased_subject`; done
   once, and again changes nothing;
-- `sessions-revoked`: every session of the player made before the event's `iat` ended, and its lobbies told; a
-  session made after it stays, so a replayed event ends nothing new.
+- `sessions-revoked`: every session of the player made before the event's `before_ms` ended; a session made after
+  it stays, so a replayed event ends nothing new. When a session ended, the player's lobby is told
+  (`evt.session.revoked`, reason `signed_out`) and closes: a player has one lobby connection, and it may be an older
+  session's, whose device must not go on receiving the player's pushes, a match's ticket among them. The device that
+  changed the password opens its lobby again with its new session.
 
 ### 4.4 The schema, `V3`
 

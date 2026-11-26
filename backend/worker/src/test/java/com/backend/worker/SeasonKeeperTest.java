@@ -93,7 +93,7 @@ class SeasonKeeperTest {
     }
 
     private static long player(String name, int duel, int duels) throws SQLException {
-        long id = accounts.register(name, name, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+        long id = accounts.createForSubject(name, name);
         sql("UPDATE player SET rating_duel = ?, rated_duels = ? WHERE id = ?", duel, duels, id);
         return id;
     }

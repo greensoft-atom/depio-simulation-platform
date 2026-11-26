@@ -112,6 +112,66 @@ public final class SessionStore {
         });
     }
 
+    /** What {@link #revokeBefore} came to: the sessions it ended, and those of the player it left. */
+    public record Revoked(int ended, int remaining) { }
+
+    /**
+     * Ends the player's sessions made before {@code before}, and leaves those made after (D-117): an account's password
+     * changed at the account service, told by an event made at that moment, so a session the device opened with its new
+     * token stays, and the same event taken again ends nothing new.
+     */
+    public CompletableFuture<Revoked> revokeBefore(long playerId, java.time.Instant before) {
+        String index = INDEX_PREFIX + playerId;
+        long cut = before.toEpochMilli();
+        return client.smembers(index).thenCompose(members -> {
+            java.util.List<String> tokens = java.util.List.copyOf(members);
+            if (tokens.isEmpty()) {
+                return CompletableFuture.completedFuture(new Revoked(0, 0));
+            }
+            var read = client.multi();
+            for (String token : tokens) {
+                read.send("HGET", KEY_PREFIX + token, F_CREATED_AT);
+            }
+            return read.exec().thenCompose(made -> {
+                java.util.List<String> older = new java.util.ArrayList<>();
+                int remaining = 0;
+                for (int i = 0; i < tokens.size(); i++) {
+                    com.jredis.common.Reply r = made.get(i);
+                    if (r.isNull()) {
+                        continue;                        // ended already, by a logout or its expiry
+                    }
+                    long createdAt;
+                    try {
+                        createdAt = Long.parseLong(r.asString());
+                    } catch (NumberFormatException corrupt) {
+                        createdAt = Long.MIN_VALUE;      // a record it cannot date: ended, as older
+                    }
+                    if (createdAt < cut) {
+                        older.add(tokens.get(i));
+                    } else {
+                        remaining++;
+                    }
+                }
+                if (older.isEmpty()) {
+                    return CompletableFuture.completedFuture(new Revoked(0, remaining));
+                }
+                var tx = client.multi();
+                for (String token : older) {
+                    tx.send("DEL", KEY_PREFIX + token);
+                    tx.send("SREM", index, token);
+                }
+                int left = remaining;
+                return tx.exec().thenApply(replies -> {
+                    int ended = 0;
+                    for (int i = 0; i < older.size(); i++) {
+                        ended += (int) replies.get(2 * i).asLong();
+                    }
+                    return new Revoked(ended, left);
+                });
+            });
+        });
+    }
+
     /**
      * Whether a token has the form {@link #open} mints: 32 bytes, 43 base64url characters. Anything else
      * names no session, and must name no key: {@code of:42} would make {@code sess:of:42}, a player's

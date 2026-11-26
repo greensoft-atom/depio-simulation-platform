@@ -46,7 +46,7 @@ class TeamBoardsTest {
     }
 
     private static long player(String name) throws SQLException {
-        return accounts.register(name, name, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+        return accounts.createForSubject(name, name);
     }
 
     /** A team with this rating after so many rated team matches, and these members, the first its leader. */

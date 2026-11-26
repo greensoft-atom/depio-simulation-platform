@@ -30,10 +30,8 @@ moves only through `ledger` (`EconomyRepository.move`).
 erDiagram
     account {
         bigint id PK
-        varchar username
-        varchar username_key UK "LOWER of username, stored"
-        varbinary password_hash
-        tinyint status "0 active, 1 suspended, 2 banned"
+        varchar subject UK "the account service's sub, NULL for a guest (V3, D-117)"
+        tinyint status "0 active, 1 suspended, 2 banned, 3 erased"
         datetime banned_until
         datetime created_at "indexed, the funnel"
         datetime last_login_at
@@ -127,6 +125,10 @@ erDiagram
         int progress
     }
     account ||--|| player : "plays as"
+    erased_subject {
+        varchar subject PK "an account deleted at the account service (V3, D-117)"
+        datetime erased_at
+    }
     player ||--|| player_stat : "totals"
     player ||..o{ player_day : "active on, no FK"
     player ||--o{ ledger : "balance moved by"

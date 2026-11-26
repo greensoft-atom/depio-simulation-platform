@@ -402,6 +402,7 @@ firewall must open 80, 443 and 9001 ([03 §5.0](03-build-and-run.md#50-clients-o
 (umask 077; head -c 24 /dev/urandom | base64 > work/admin-token)    # the admin API's secret
 export BACKEND_PAYMENT_PROVIDER=simulated BACKEND_ADMIN_ADDR=127.0.0.1:9120 \
        BACKEND_ADMIN_TOKEN_FILE=$PWD/work/admin-token
+./dev-account.sh build && ./dev-account.sh start    # the account service, on 8083 (D-117)
 ./run-local.sh start
 ```
 
@@ -411,12 +412,12 @@ behind nginx (D-92), names this machine's address as `<address>`:
 ```console
 $ curl -s http://127.0.0.1:8080/health
 {"status":"ok"}
-$ curl -s -X POST http://127.0.0.1:8080/v1/accounts -H 'Content-Type: application/json' \
-       -d '{"username":"try_1","password":"example-password-1"}'
-{"playerId":1}
+$ curl -s -X POST http://127.0.0.1:8083/v1/accounts -H 'Content-Type: application/json' \
+       -d '{"username":"try_1","password":"example-password-1"}'          # the account service (D-117)
+{"access_token":"eyJraWQiOiJwS29UcGxVR1pHb2VDV1hU...","token_type":"Bearer","expires_in":900,"refresh_token":"INh7kmxA9JugZ-m_OIcfndQfV0ChDL7w2C62o-KpSPk","account_id":"GZaZ3-aiO6cQ1xvmiqd8EA"}
 $ curl -s -X POST http://127.0.0.1:8080/v1/sessions -H 'Content-Type: application/json' \
-       -d '{"username":"try_1","password":"example-password-1"}'
-{"token":"vEw_g8LL08jNXDiHOeFlswTCagwkg-lykE9z9u2mNYw","playerId":1,"expiresInSeconds":94879}
+       -d '{"accessToken":"<its access_token>"}'
+{"token":"GVgfvvt5RrKB72HV7BpyELyV8Zu-HctuEzlnGzpFssU","playerId":1,"expiresInSeconds":79767,"newPlayer":true}
 $ curl -s http://127.0.0.1:8080/v1/inventory -H "Authorization: Bearer <the token>"
 {"coins":0,"gems":0,"items":[]}
 $ curl -s http://127.0.0.1:9120/admin/arenas -H "Authorization: Bearer $(cat work/admin-token)"
@@ -427,17 +428,20 @@ $ curl -s http://127.0.0.1:9120/admin/arenas -H "Authorization: Bearer $(cat wor
 `/lobby` and `/match/<name>` alone, and answers any other path with a 404 (D-107, D-115). Every route, with its
 body and errors, is in [docs/api/01](../api/01-http-api.md) and [docs/api/03](../api/03-admin-api.md).
 
-**HTTP, with Postman.** Import `docs/api/backend.postman_collection.json` and set three of its variables:
+**HTTP, with Postman.** Import `docs/api/backend.postman_collection.json` and set four of its variables:
 - `baseUrl` = `http://127.0.0.1:8080`
+- `accountUrl` = `http://127.0.0.1:8083`
 - `adminUrl` = `http://127.0.0.1:9120`
 - `adminToken` = the contents of `work/admin-token`
 
-Then run the whole collection, in order. It passed 131 of 131 checks on fresh data. **It is a scenario for one run
+Then run the whole collection, in order. It passed 131 of 131 checks on fresh data; with the account service
+(D-117), 159 of 159 on 2026-11-26. **It is a scenario for one run
 on fresh data**: it ends the season, closes a room and bans a test player. A second run on the same data fails a
 few checks on what the first run left. To start fresh:
 
 ```bash
-./run-local.sh stop && ./dev-mysql.sh stop && rm -rf work/mysql && ./run-local.sh start
+./run-local.sh stop && ./dev-account.sh stop && ./dev-mysql.sh stop && rm -rf work/mysql
+./dev-mysql.sh start && ./dev-account.sh start && ./run-local.sh start    # the account service's database is made again too
 ```
 
 **The lobby WebSocket, in Postman:**

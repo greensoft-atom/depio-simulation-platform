@@ -76,7 +76,7 @@ class SeasonRepositoryTest {
 
     /** A player with these duel and ranked free-for-all ratings and rated counts. */
     private static long player(String name, int duel, int duels, int rffa, int rffas) throws SQLException {
-        long id = accounts.register(name, name, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+        long id = accounts.createForSubject(name, name);
         sql("UPDATE player SET rating_duel = ?, rated_duels = ?, rating_rffa = ?, rated_rffas = ? WHERE id = ?",
                 duel, duels, rffa, rffas, id);
         return id;

@@ -111,8 +111,10 @@ to what it uses.
 - `arena` never reaches MySQL: nothing it depends on brings a database driver. That is why
   `handoff` exists.
 - `platform` sees `arena` in its tests only.
-- `platform` uses Bouncy Castle's `bcprov` for its Argon2id password hashes (`PasswordHasher`).
-  `crypto-examples` uses Bouncy Castle too, and is never in the release.
+- `platform` uses Nimbus JOSE + JWT to check the account service's ES256 tokens (`AccountTokens`, D-117). The
+  account service, a project of its own beside `backend/` (`account-service/`), hashes the passwords with Bouncy
+  Castle's `bcprov`, as the platform did until D-117. `crypto-examples` uses Bouncy Castle too, and is never in the
+  release.
 
 ```mermaid
 flowchart BT
@@ -131,6 +133,7 @@ flowchart BT
     netty["Netty 4.2"]
     mysqllibs["mysql-connector-j<br/>HikariCP, Flyway"]
     bc["Bouncy Castle<br/>bcprov, bcpkix"]
+    nimbus["Nimbus JOSE + JWT 10.10"]
     sim --> common
     handoff --> common
     handoff --> jredis
@@ -145,7 +148,7 @@ flowchart BT
     platform --> handoff
     platform --> persistence
     platform --> sim
-    platform -->|"bcprov, Argon2id"| bc
+    platform -->|"the account service's tokens"| nimbus
     platform -.->|"tests only"| arena
     worker --> handoff
     worker --> persistence

@@ -633,7 +633,7 @@ class TournamentSchedulerTest {
     }
 
     private static long player(String name, int rating) throws SQLException {
-        long id = accounts.register(name, name, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+        long id = accounts.createForSubject(name, name);
         try (Connection c = db.dataSource().getConnection();
              PreparedStatement ps = c.prepareStatement("UPDATE player SET rating_duel = ?, rated_duels = ? WHERE id = ?")) {
             ps.setInt(1, rating);

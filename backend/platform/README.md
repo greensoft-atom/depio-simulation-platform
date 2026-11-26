@@ -9,7 +9,9 @@ the admin API, the pushes it sends, its limits, its metrics and its tests.
 
 What the platform holds:
 
-- accounts, sessions and guests, and a player's own account deletion;
+- players, sessions and guests: an access token of the account service's taken once for a session (D-117,
+  [10](../../docs/detailed-design/10-accounts.md)), a guest linked to an account, the account service's events, and a
+  guest's own deletion;
 - the public arena's ticket;
 - the queue for timed matches, its confirm step and the matcher; parties and the sandbox;
 - teams, tournament registration, friends, blocks and the inbox;
@@ -18,7 +20,7 @@ What the platform holds:
   season pass;
 - the operator's admin API, and the watch: this machine's monitoring and alerts (D-86).
 
-Every handler blocks: on MySQL, on j-redis (the store) or on Argon2 (the password hash). So each
+Every handler blocks, on MySQL or on j-redis (the store). So each
 request runs on its own virtual thread of the JDK's HTTP server. Every `platform` also runs a matcher,
 but only the one that holds the `mm:leader` lease makes matches. What happens after a match (results,
 ratings, rewards, the tournament clock, the close of a season) is the job of `worker`, not of this
@@ -32,27 +34,27 @@ client authors are [api/01 — HTTP API](../../docs/api/01-http-api.md) and
 
 ## Why it is built so
 
-- **The JDK's HTTP server, on virtual threads, not Netty.** Every handler blocks on MySQL, on j-redis or
-  on Argon2, and blocking work is what virtual threads are for. The measured bottleneck is Argon2: one
-  password check costs about 88 ms of CPU, and eight run at a time. That limits a process to about 90
-  password logins a second, far below any limit of the HTTP layer. If this stops being true, only
-  `PlatformHttpServer` has to change.
-- **Not open to the internet.** An unauthenticated route that costs 88 ms of CPU is a lever for a
-  denial-of-service attack. So the API listens only where nginx and the gateway reach it. The code's
+- **The JDK's HTTP server, on virtual threads, not Netty.** Every handler blocks on MySQL or on j-redis,
+  and blocking work is what virtual threads are for. No password is hashed here since D-117: the account
+  service hashes them, and a login here checks a signature, far cheaper than a hash. If the HTTP layer
+  ever becomes the limit, only `PlatformHttpServer` has to change.
+- **Not open to the internet.** Routes that need no credential, and `/v1/account-events`, which is the
+  account service's alone, are levers for an attacker. So the API listens only where nginx, the gateway
+  and the account service reach it. The code's
   default address is loopback (`127.0.0.1`), which the one-machine launch keeps (D-93). On three
   machines it is the machine's private address, which the firewall opens to the other machines alone,
   because the front's nginx reaches every machine's platform (D-82,
   [operations/05 §5](../../docs/operations/05-ports-and-firewall.md#5-the-firewall-on-rhel-9)).
-- **Throttled here, not at nginx.** nginx sees neither the account that a login names nor the other
-  machines. So the platform counts the per-address and per-account limits in the store, which every
-  `platform` shares. nginx adds a coarse outer limit, 2 requests a second with a burst of 30, on the
-  four routes that make or open an account ([deploy/nginx/backend.conf](../deploy/nginx/backend.conf)).
-- **503, not 500, when nothing is wrong with the request.** Examples: the hasher is full, no arena has
-  room, or a store or the database does not answer. A 503 tells the client to come back later rather
+- **Throttled here, not at nginx.** nginx does not see the other machines. So the platform counts the
+  per-address limit on guests in the store, which every `platform` shares; the limits on passwords are the
+  account service's (D-117). nginx adds a coarse outer limit, 2 requests a second with a burst of 30, on
+  the four routes that make or open a player's session ([deploy/nginx/backend.conf](../deploy/nginx/backend.conf)).
+- **503, not 500, when nothing is wrong with the request.** Examples: the account service's keys cannot
+  be had, no arena has room, or a store or the database does not answer. A 503 tells the client to come back later rather
   than report a fault.
-- **One answer for an unknown user and for a wrong password.** Both get the same 401 and code. An
-  unknown user is checked against a decoy hash, so both answers take the same time. Otherwise the API
-  would tell anyone which usernames exist.
+- **One answer for every token not taken.** A forged, expired or misaddressed access token, or one of an
+  account since deleted, gets the same 401 `invalid_token`; why is logged, never told, so the API teaches
+  nobody what a forgery lacks (10 §4.2).
 
 ## Classes, by domain
 
@@ -73,10 +75,11 @@ All classes are in `com.backend.platform`.
 | Watch | `watch/AlertStore` | The alerts in the session store, where every machine's platform reads them (`alert:`, `silence:`, `alertsent:`, `watch:`); the claim that sends a notification once for the site |
 | Watch | `watch/Notifier` | Sends what fired or resolved to the webhook as one JSON `POST`; 10 s to answer 2xx, tried twice |
 | Watch | `watch/MachineProbe` | This machine as samples: each watched path's file system, the memory from `/proc/meminfo`'s `MemAvailable`, the load over the last minute and the number of cores |
-| accounts | `AuthService` | Register, log in, guests (made, logged in, upgraded), rename, the session behind a token |
-| accounts | `AccountDeletion` | A player's own account erased (D-84): out of the queue, the party and the team; the MySQL erasure in one transaction; off the score boards; every session ended; every device's lobby told |
-| accounts | `PasswordHasher` | Argon2id, m=19 MiB, t=2, p=1; eight hash at once, and a line of 160 waits behind them |
-| accounts | `LoginThrottle` | The per-address and per-account limits on password checks, as fixed windows in the store |
+| accounts | `AuthService` | An access token taken for a session, the player made at its subject's first login (D-117); guests made, logged in and linked to an account; rename; the session behind a token |
+| accounts | `AccountTokens` | The account service's access tokens and events checked, by Nimbus JOSE + JWT: ES256 by its published key set, the type, issuer, audience, times and claims (10 §4.2) |
+| accounts | `AccountTokenSettings` | `BACKEND_ACCOUNT_ISSUER`, `_AUDIENCE` and `_JWKS_URL`, and their refusals |
+| accounts | `AccountDeletion` | A guest's own account erased (D-84): out of the queue, the party and the team; the MySQL erasure in one transaction; off the score boards; every session ended; every device's lobby told. An account deleted at the account service erased the same way, out of its team whatever its role, its subject recorded; a password changed there ending the sessions made before it (D-117) |
+| accounts | `LoginThrottle` | The per-address limit on guests made and logged in, as fixed windows in the store |
 | accounts | `DisplayName` | The rules that a display name or team name must pass (RFC 8266, UTS #39) |
 | asking | `AskThrottle` | Hourly limits on asking other players, counted in the store |
 | arena | `JoinService` | A seat in the public arena: it picks an arena and writes a ticket |
@@ -114,7 +117,8 @@ The platform starts in this order:
 2. It reads the database settings (`DatabaseSettings`). A pool size out of range, or a password file
    that is named but cannot be read or is empty, refuses the start.
 3. It reads `BACKEND_TRUSTED_PROXIES` (`common/TrustedProxies`). Anything but IP addresses refuses the
-   start. If no database password is set, it uses the development password and logs a warning.
+   start. It reads the account service's settings (`AccountTokenSettings`) and logs them; a malformed one
+   refuses the start. If no database password is set, it uses the development password and logs a warning.
 4. It opens the store (`StoreClients.open`). A store that answers `NOAUTH` (it wants a password this
    process was not given) refuses the start. A store that cannot be reached yet does not: the client
    keeps trying in the background (D-94).
@@ -139,6 +143,7 @@ cannot fix a setting. The platform exits 2 on:
 - more than four arguments, an empty argument, or a port that is not a number;
 - a database or store setting refused as above, or a store that asks for a password it was not given;
 - `BACKEND_TRUSTED_PROXIES` that is not IP addresses;
+- an account service's setting refused (see [Environment](#environment));
 - a content file that breaks a rule, or an offer or a pass reward that names an item `items.json`
   lacks;
 - a payment provider other than `simulated`;
@@ -167,6 +172,9 @@ store. Then it flushes the log.
 | `BACKEND_STORE_ADDRESSES` | the command line's store host and port | `host:port`, or `host:port,host:port` for a store and its replica; another shape is exit 2 | `handoff/StoreClients` |
 | `BACKEND_STORE_PASSWORD_FILE`, `BACKEND_STORE_PASSWORD` | none, with a warning | The store's password, by the same rules as the database's | `StoreClients` |
 | `BACKEND_TRUSTED_PROXIES` | unset: loopback alone | IP addresses, separated by commas, whose `X-Forwarded-For` is believed besides this machine's: the front's nginx, which can be any machine (D-82). Anything but IP literals is exit 2; no name is looked up in DNS | `common/TrustedProxies` |
+| `BACKEND_ACCOUNT_ISSUER` | `http://127.0.0.1:8083`, the development account service | The `iss` an access token or an event must carry, exactly: the account service's `ACCOUNT_ISSUER`. Not an absolute `https://` or `http://` URL, or one with a query or a trailing slash, is exit 2 | `AccountTokenSettings` |
+| `BACKEND_ACCOUNT_AUDIENCE` | `backend` | This backend's name, which a token's `aud` must hold; 1 to 64 of letters, digits and `. _ : -`, else exit 2 | `AccountTokenSettings` |
+| `BACKEND_ACCOUNT_JWKS_URL` | the development account service's `/.well-known/jwks.json` | The account service's key set, kept 5 minutes. By `https://`, or by `http://` from an IP address on loopback or the private network alone; a name by `http://`, or anything else, is exit 2 | `AccountTokenSettings`, `AccountTokens` |
 | `BACKEND_METRICS_ADDR` | unset: no listener | `host:port` for `GET /metrics` | `common/MetricsServer` |
 | `BACKEND_ADMIN_ADDR` | unset: no admin API | `host:port`, a loopback address | `net/AdminServer` |
 | `BACKEND_ADMIN_TOKEN_FILE`, `BACKEND_ADMIN_TOKEN` | required when `BACKEND_ADMIN_ADDR` is set | The admin API's shared secret; the file wins | `AdminServer` |
@@ -193,7 +201,7 @@ arguments ([deploy/env/platform.env.example](../deploy/env/platform.env.example)
 
 | Listener | Where | Who may call it |
 |---|---|---|
-| public API | The arguments' `bindHost:port`. On the one-machine launch `127.0.0.1:8080`; on three machines the machine's private address (the env example's `10.0.0.1:8080`). nginx passes it every `/v1/` path, on 443 and, since D-115, on 80 in clear | Each route's own rule: no credential, or a session token |
+| public API | The arguments' `bindHost:port`. On the one-machine launch `127.0.0.1:8080`; on three machines the machine's private address (the env example's `10.0.0.1:8080`). nginx passes it every `/v1/` path but `/v1/account-events`, on 443 and, since D-115, on 80 in clear; the account service posts that one here itself (D-117) | Each route's own rule: no credential, a session token, an access token, or a signed event |
 | metrics | `BACKEND_METRICS_ADDR` (127.0.0.1:9101 in the env example) | Anyone who can reach it; `GET /metrics` only, in the Prometheus text format |
 | admin | `BACKEND_ADMIN_ADDR` (127.0.0.1:9120 in the env example; 9196 in the drills) | A caller with `Authorization: Bearer <secret>`, compared in constant time, over SSH |
 
@@ -236,11 +244,11 @@ Every route is listed below. The full reference, with examples, is
 - **Exact paths** (D-107). Every route answers its own path alone. The JDK's server matches a route by
   its prefix, so the platform checks the whole path itself: `/v1/shop/x` or `/v1/sessions/` is a 404,
   not the shop or a login. This also keeps the routes that nginx limits (`/v1/accounts`,
-  `/v1/accounts/upgrade`, `/v1/guests`, `/v1/sessions`) from being reached past nginx's limit by a
+  `/v1/accounts/link`, `/v1/guests`, `/v1/sessions`) from being reached past nginx's limit by a
   longer path. A path that no route has gets the API's JSON 404 `no_such_route`, not the server's
   HTML page. The list routes `/v1/teams`, `/v1/friends`, `/v1/blocks`, `/v1/inbox` and
   `/v1/tournaments` also accept a trailing `/`.
-- **The caller's address**, for the login limits, is the TCP peer's address. When the peer is trusted
+- **The caller's address**, for the guests' limit, is the TCP peer's address. When the peer is trusted
   (on this machine, or named in `BACKEND_TRUSTED_PROXIES`: the front's nginx, D-82), it is the last
   entry of `X-Forwarded-For` instead. Only the last entry counts, because nginx appends the address it
   saw and every earlier entry is whatever the client sent. The entry is parsed as an IP literal and
@@ -251,27 +259,31 @@ Every route is listed below. The full reference, with examples, is
 
 | Method | Path | Auth | Request | Answer | Refusals |
 |---|---|---|---|---|---|
-| POST | `/v1/accounts` | none | `{username, password, displayName?}` | 201 `{playerId}` | 400 `invalid_body`, `invalid_username` (3 to 32 of letters, digits, `_`, `-`), `invalid_password` (8 to 128 characters), `invalid_display_name` (the message names the rule); 409 `username_taken`; 429 `too_many_attempts`; 503 `busy` |
-| DELETE | `/v1/accounts` | session | `{password}`; a guest sends none | 204: the account is erased (D-84) | 400 `invalid_body` (no password, for a registered account); 401 `no_token`, `invalid_session`; 403 `wrong_password`; 409 `leader_with_members` (hand the team to another member first); 429 `too_many_attempts`; 503 `busy` |
-| POST | `/v1/guests` | none | none | 201 `{playerId, guestKey, displayName}`; the name is `Guest` and four digits | 429 `too_many_attempts` |
-| POST | `/v1/sessions` | none | `{username, password}`, or `{guestKey}` | 200 `{token, playerId, expiresInSeconds}` | 400 `invalid_body`; 401 `invalid_credentials` (one answer for an unknown name and a wrong password); 403 `banned`; 429 `too_many_attempts`; 503 `busy` (a password login only) |
+| POST | `/v1/sessions` | none | `{accessToken}`, the account service's (D-117), or `{guestKey}` | 200 `{token, playerId, expiresInSeconds, newPlayer}`: `newPlayer` is true when this login made the player | 400 `invalid_body`; 401 `invalid_token` (an access token not taken, whatever the reason), `invalid_credentials` (no guest has that key); 403 `banned`; 429 `too_many_attempts` (a guest's login); 503 `keys_unavailable` (the account service's keys cannot be had) |
 | DELETE | `/v1/sessions` | session, not checked | none | 204, whether or not the session existed | 401 `no_token` |
-| POST | `/v1/accounts/upgrade` | session | `{username, password, displayName?}` | 200 `{}`: the guest becomes a full account, the same player, and its guest key stops working | 400 `invalid_body`, `invalid_username`, `invalid_password`, `invalid_display_name`; 401; 409 `username_taken`, `not_a_guest`; 429; 503 `busy` |
+| POST | `/v1/guests` | none | none | 201 `{playerId, guestKey, displayName}`; the name is `Guest` and four digits | 429 `too_many_attempts` |
+| POST | `/v1/accounts/link` | session (a guest's) | `{accessToken}` | 200 `{playerId}`: the guest becomes the account's player, the same player and name, and its guest key stops working | 400 `invalid_body`; 401 `no_token`, `invalid_session`, `invalid_token`; 409 `not_a_guest`, `account_in_use` (the account has a player already); 503 `keys_unavailable` |
+| DELETE | `/v1/accounts` | session | none | 204: the guest is erased (D-84) | 401 `no_token`, `invalid_session`; 409 `leader_with_members` (hand the team to another member first), `delete_at_account_service` (an account's player: deleted there, its event erases it here) |
 | PUT | `/v1/accounts/name` | session | `{displayName}` | 200 `{playerId, displayName}`, the name as stored | 400 `invalid_display_name`; 401; 429 `too_soon` (once in 30 days) |
+| POST | `/v1/account-events` | the event's signature | a Security Event Token, `Content-Type: application/secevent+jwt` (RFC 8935) | 202: taken, once or again alike | 400 `{err, description}`, RFC 8935's form: `invalid_request` (another type), `authentication_failed` (not an event this backend takes); 503 as any route. Not routed by nginx: the account service's alone |
 
-- 429 `too_many_attempts` and 503 `busy` carry a `Retry-After` header. For `busy` it is one to five
-  seconds, spread at random, so the clients turned away do not all return in the same second. A
-  client allows a login 10 s.
-- The address's limit counts a registration, a password login, an upgrade, a guest made, a guest's
-  login, and a deletion that checks a password. A password login and a deletion that checks a password
-  also count against the account's limit. A refusal for load (503 `busy`) is answered before anything
-  is counted, so a player who retries through an overload does not use up the account's attempts.
-- **Deleting one's own account** (D-84). A registered account must send its password again, so a
-  session taken from a phone cannot end the account. A guest's session is all it has, so a guest sends
-  no password. The platform takes the player out of the queue, the party and the team, then erases the
-  account in MySQL in one transaction, removes the player from the score boards, ends every session,
-  and tells every device's lobby (`evt.session.revoked`, reason `deleted`). If the store fails after
-  the erasure, the same call with the same session finishes the rest, and asks for no password.
+- 429 `too_many_attempts` carries a `Retry-After` header. A client allows a login 10 s.
+- The address's limit, 30 a minute, counts a guest made and a guest's login. An access token is not
+  counted: checking one is a signature, and the account service limits the logins that make them.
+- **A first login** makes the subject's player, named from the token's `preferred_username` by the
+  display name's rules, or `Player` and four digits when they refuse it. A subject whose account was
+  deleted makes no player again: its token is 401 `invalid_token`.
+- **Deleting one's own account** (D-84). A guest deletes itself here: its session is all it has. The
+  platform takes the player out of the queue, the party and the team, then erases the account in MySQL
+  in one transaction, removes the player from the score boards, ends every session, and tells every
+  device's lobby (`evt.session.revoked`, reason `deleted`). If the store fails after the erasure, the
+  same call with the same session finishes the rest. An account's player is deleted at the account
+  service, with its password; its `deleted` event erases the player the same way, but out of its team
+  whatever its role, since nobody is left to ask, and records the subject as erased.
+- **A password changed at the account service** sends `sessions-revoked`: the player's sessions made
+  before it end, and those made after it stay. When one ended, the player's lobby is told (`signed_out`)
+  and closes, since a player's one lobby may be an older session's; the device that changed the password
+  opens it again with its new session.
 - A session lasts a day, ±10 %; `expiresInSeconds` is the session's own length. A token is 32 random
   bytes, in base64url.
 
@@ -603,9 +615,9 @@ The platform tells the arenas on the store channel `arena-admin:{name}`: `{"cmd"
 
 | What | Value | Where |
 |---|---|---|
-| password checks, per address (IPv6 per /64) | 30 a minute | `LoginThrottle` |
-| password checks, per account | 10 a quarter hour | `LoginThrottle` |
-| the hasher | 8 hashing, 160 waiting; then 503 `busy`, `Retry-After` 1 to 5 s | `PasswordHasher` |
+| guests made and guests' logins, per address (IPv6 per /64) | 30 a minute | `LoginThrottle` |
+| the account service's key set | kept 5 min, fetched again ahead of its end; a key it lacks fetched at once, at most twice in 30 s; the last set serves an hour while it cannot be fetched (D-117) | `AccountTokens` |
+| an access token's times, an event's | 60 s of leeway for the clocks | `AccountTokens` |
 | friend requests, team invitations, team applications | 20 an hour each, per player | `AskThrottle` |
 | party invitations | 60 an hour, per player | `AskThrottle`, asked by `PartyService.invite` |
 | a phrase to the party | one every 2 s | `Parties` |
@@ -639,9 +651,8 @@ The metrics listener serves these at `GET /metrics` on `BACKEND_METRICS_ADDR`:
 |---|---|---|
 | `backend_platform_responses_total` | `status` | Every API response but those of `/health` |
 | `backend_platform_request_seconds` | `route` (the route's own prefix, such as `/v1/party`, never the path the client sent) | A histogram of the time to answer, 5 ms to 2.5 s |
-| `backend_platform_logins_total` | `outcome`: ok, invalid_credentials, banned, throttled, busy | Logins, by what became of them |
+| `backend_platform_logins_total` | `outcome`: ok, invalid_token (an access token not taken), invalid_credentials (a guest's key), banned, throttled | Logins, by what became of them |
 | `backend_platform_purchases_total` | `outcome`: bought, already_bought and each refusal (insufficient_funds, not_available, level_required, unknown_sku, invalid_key, no_session) | Purchases, by what became of them |
-| `backend_platform_hasher_line` | | Requests holding or waiting for a password hash; 168 is full |
 | `backend_platform_open_tickets_issued_total` | | Tickets issued for the public arena |
 | `backend_platform_matches_made_total` | `mode` | Matches the matcher made |
 | `backend_platform_match_tickets_issued_total` | `mode` | Tickets issued for made matches |
@@ -674,20 +685,20 @@ this module through the real stack.
 
 | Test class | Tests | What it covers |
 |---|---|---|
-| `net/PlatformHttpServerTest` | 89 | Every route over HTTP, against a real MySQL and j-redis: answers, codes, the body limit; exact paths (a route answers its own path alone, and a path no route has gets a JSON 404, D-107); the API's health under `/v1/`; addresses behind nginx, and the forwarded addresses believed from the front's nginx (D-82); a grant's TLS name; the store failing; an account deleted, a guest's too, one finished after a store failure, and its password guesses counted as logins (D-84) |
+| `net/PlatformHttpServerTest` | 88 | Every route over HTTP, against a real MySQL and j-redis: answers, codes, the body limit; exact paths (a route answers its own path alone, and a path no route has gets a JSON 404, D-107), the routes that went with D-117 among them; the API's health under `/v1/`; addresses behind nginx, and the forwarded addresses believed from the front's nginx (D-82); a grant's TLS name; the store failing; an access token taken for a session, a first login's name, a guest linked; the account service's events: an account deleted there, out of the queue and the party too, a password changed there, its new session made before the event or after, to the millisecond, an event refused (D-117, S-28); a guest deleted, one finished after a store failure, an account's player sent to the account service (D-84) |
 | `MatchmakerTest` | 43 | Lining up every mode's sides, every path of the confirm step, races between matchers (T-16, T-32 to T-34), tournament calls, the lease, the metrics; a made match's grant and push carrying the arena's TLS name (D-82) |
 | `net/AdminServerTest` | 24 | Every admin call, its audit and its refusals; the listener starts only when named, with a secret, on loopback; alerts listed from the store with their silences; a silence made, listed and lifted, each audited, and its refusals (04 §12); what each machine's watch last saw, listed (item 102); an address whose port is not one is refused (O-101) |
 | `watch/RulesTest` | 15 | The runbook's §5 as rules: each fires at its threshold and after its wait, fed rounds 15 s apart, and not before; resolution; every rule named and documented |
 | `watch/WatchTest` | 7 | The watch against scripted targets and a real j-redis: a round read, a rule fired with its labels, the alert stored, sent and resolved; a target down and a peer unreachable, raised by two machines and sent once; silences and the repeat; a dead webhook tried again; no webhook, and the machine's own samples; each machine's view written for a minute and listed newest first; four slow targets read in parallel (item 102) |
 | `watch/WatchSettingsTest` | 4 | Every setting read, the defaults, the webhook from a file, and each refusal |
-| `AuthServiceTest` | 15 | Register, login, sessions, bans and suspensions, the decoy hash, rehashing, the upgrade's checks |
+| `AuthServiceTest` | 13 | An access token exchanged: the player made at the first login and named, a token not taken, an erased subject's, two first logins at once; sessions; bans and suspensions; a guest linked once; the key set not to be had (D-117) |
 | `PartiesTest` | 11 | Invitations, accepting, leaving, kicking, versions (D-74), races |
 | `DisplayNameTest` | 10 | The name rules |
-| `PasswordHasherTest` | 9 | Argon2id, its stored form, the bounds of the hasher's line, a hash made under other parameters needing redoing |
-| `PlatformToArenaTest` | 7 | Register, log in, get a ticket and play against a real arena; a seat promised with its ticket and dropped once counted (D-79); a burst spread over the arenas (T-59); a ticket used once; no session; no arena; an arena that stops announcing |
+| `AccountTokensTest` | 10 | Every rule of 10 §4.2 broken on purpose: no signature, an HMAC with the public key as its secret, RS256, another `typ`, issuer, audience, times, claims; an event's type and kind; a revocation's moment to the millisecond, and one without it refused (S-28); the key set fetched, kept, fetched again for a rotated key, and not to be had; the settings and their refusals (D-117) |
+| `PlatformToArenaTest` | 7 | Log in by an access token, get a ticket and play against a real arena; a seat promised with its ticket and dropped once counted (D-79); a burst spread over the arenas (T-59); a ticket used once; no session; no arena; an arena that stops announcing |
 | `ItemsTest` | 7 | `items.json`'s rules and the release's items |
 | `CatalogueTest` | 6 | `shop.json`'s rules and the release's offers |
-| `LoginThrottleTest` | 5 | Both limits, IPv6 per /64, keys that expire, the store failing (the attempt is refused) |
+| `LoginThrottleTest` | 4 | The address's limit, IPv6 per /64, keys that expire, the store failing (the attempt is refused) |
 | `PacksTest` | 4 | `packs.json`'s rules and the release's packs |
 | `AskThrottleTest`, `PassServiceTest`, `PaymentServiceTest` | 2, 1, 1 | The hourly limits (twenty asks an hour for each kind, sixty party invitations); every item the pass names exists; the provider's setting |
 | `PlatformMainTest` | 1 | A port argument out of range, its own or the store's, refuses the start (O-101) |

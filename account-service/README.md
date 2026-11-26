@@ -82,7 +82,7 @@ backend's `ReadmeTestListsTest` (DOC-29).
 | `AccountKeyScriptTest` | 1 | `scripts/account-key.sh`'s key taken by `SigningKeys`, its public half the one printed |
 | `http/AccountHttpServerTest` | 5 | each route's answers and RFC 6749's names, `no-store`; the bearer routes and `WWW-Authenticate`; the key set, the health, exact routes, 405 with `Allow`, 413; nginx's last `X-Forwarded-For` counted, 429 with `Retry-After` |
 | `token/BearerCheckTest` | 5 | its own token taken, a retired key's too; an event refused as a bearer; another issuer, an audience without it, an expired token, a missing `jti` or `client_id`; no signature, HMAC with the public key as its secret, another key |
-| `token/TokenIssuerTest` | 3 | an access token's header and every claim; an event's; the ids |
+| `token/TokenIssuerTest` | 4 | an access token's header and every claim; an event's; a revocation's moment to the millisecond, `before_ms` (S-28); the ids |
 | `token/SigningKeysTest` | 3 | the key read and its public half made, named by its thumbprint; the published set, public keys alone; every bad key refused |
 | `db/AccountsTest` | 3 | an account made under its name, the name taken whatever its case; a login recorded, a guarded rehash, a change; a deletion freeing the name and keeping the subject |
 | `db/RefreshTokensTest` | 5 | kept by its hash alone; rotation and auth_time; reuse within and after the overlap; both lifetimes; revocation by family and by account |

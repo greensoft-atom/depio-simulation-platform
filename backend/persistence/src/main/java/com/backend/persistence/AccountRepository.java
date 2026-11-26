@@ -14,9 +14,12 @@ import javax.sql.DataSource;
  * (docs detailed-design/04-platform-services.md §1).
  *
  * An account without its player row is a broken account: every later read assumes the
- * pair exists. So registration is one transaction, and the unique index on the username —
- * not a prior SELECT — is what decides who gets a contested name. Checking first and
- * inserting after is a race that two simultaneous registrations both win.
+ * pair exists. So making one is one transaction, and the unique index on the subject — not a
+ * prior SELECT — is what decides which of two first logins of an account makes its player.
+ * Checking first and inserting after is a race that both win.
+ *
+ * <p>Since D-117 an account is the account service's, found by its subject, the tokens' {@code sub}; or a guest's,
+ * found by its key's hash (D-46). The backend keeps no username and no password.
  */
 public final class AccountRepository {
 
@@ -45,17 +48,16 @@ public final class AccountRepository {
         }
     }
 
-    /** What deleting an account needs of it (D-84): the name its attempts count under, and whether a password proves it. */
-    public record Owner(long playerId, String usernameKey, byte[] passwordHash, Status status, boolean guest) { }
+    /** What deleting an account needs of it (D-84, D-117): whose it is, and whether it is a guest's. */
+    public record Owner(long playerId, String subject, Status status, boolean guest) { }
 
     public enum Erased { ERASED, ALREADY, NO_SUCH_PLAYER }
 
     /** The display name an erased player keeps, wherever others still see them: a match, a bracket, a past season (D-84). */
     public static final String ERASED_NAME = "Deleted player";
 
-    /** What login needs, and nothing more. The hash is bytes: it is never rendered. */
-    public record Credentials(long playerId, byte[] passwordHash, Status status,
-                              Long bannedUntilMillis) { }
+    /** What a login needs, and nothing more: whose, and whether a ban stands. */
+    public record Credentials(long playerId, Status status, Long bannedUntilMillis) { }
 
     /** What issuing a join ticket needs. */
     public record Profile(long playerId, String displayName, String publicCode) { }
@@ -100,15 +102,14 @@ public final class AccountRepository {
     }
 
     /**
-     * Creates an account and its player row.
+     * The account service's account, a player made for it at its first login (D-117): the account and its player row.
      *
-     * @return the new player id, or -1 if the username is taken
+     * @return the new player id, or -1 if the subject has one already
      */
-    public long register(String username, String displayName, byte[] passwordHash)
-            throws SQLException {
+    public long createForSubject(String subject, String displayName) throws SQLException {
         try {
             return tx.execute(c -> {
-                long id = insertAccount(c, username, passwordHash);
+                long id = insertAccount(c, subject);
                 insertPlayer(c, id, displayName);
                 return id;
             });
@@ -120,24 +121,21 @@ public final class AccountRepository {
         }
     }
 
-    /** What upgrading a guest came to (D-46). */
-    public enum Upgraded { OK, USERNAME_TAKEN, NOT_A_GUEST }
+    /** What linking a guest to an account came to (D-117). */
+    public enum Linked { OK, NOT_A_GUEST, ACCOUNT_IN_USE }
 
     /**
-     * A guest (D-46): an account under a username nobody can register, with no password, found
-     * by its key's SHA-256 alone.
+     * A guest (D-46): an account with no subject, found by its key's SHA-256 alone.
      *
      * @return the new player's id
      */
-    public long createGuest(String username, String displayName, byte[] keyHash) throws SQLException {
+    public long createGuest(String displayName, byte[] keyHash) throws SQLException {
         return tx.execute(c -> {
             long id;
             try (PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO account (username, password_hash, guest_key_hash) VALUES (?, ?, ?)",
+                    "INSERT INTO account (guest_key_hash) VALUES (?)",
                     Statement.RETURN_GENERATED_KEYS)) {
-                ps.setString(1, username);
-                ps.setBytes(2, new byte[0]);
-                ps.setBytes(3, keyHash);
+                ps.setBytes(1, keyHash);
                 ps.executeUpdate();
                 try (ResultSet keys = ps.getGeneratedKeys()) {
                     keys.next();
@@ -153,91 +151,74 @@ public final class AccountRepository {
     public Credentials findGuest(byte[] keyHash) throws SQLException {
         try (Connection c = dataSource.getConnection();
              PreparedStatement ps = c.prepareStatement(
-                     "SELECT id, password_hash, status, banned_until FROM account WHERE guest_key_hash = ?")) {
+                     "SELECT id, status, banned_until FROM account WHERE guest_key_hash = ?")) {
             ps.setBytes(1, keyHash);
+            return credentials(ps);
+        }
+    }
+
+    /** @return the account service's account's credentials, by its subject, or null if no player has it yet */
+    public Credentials findBySubject(String subject) throws SQLException {
+        try (Connection c = dataSource.getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT id, status, banned_until FROM account WHERE subject = ?")) {
+            ps.setString(1, subject);
+            return credentials(ps);
+        }
+    }
+
+    private static Credentials credentials(PreparedStatement ps) throws SQLException {
+        try (ResultSet rs = ps.executeQuery()) {
+            if (!rs.next()) {
+                return null;
+            }
+            Timestamp bannedUntil = rs.getTimestamp("banned_until");
+            return new Credentials(rs.getLong("id"), Status.of(rs.getInt("status")),
+                    bannedUntil == null ? null : bannedUntil.getTime());
+        }
+    }
+
+    /** Whether the account service told of this subject's account deleted (D-117): its late tokens make no player. */
+    public boolean erasedSubject(String subject) throws SQLException {
+        try (Connection c = dataSource.getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT 1 FROM erased_subject WHERE subject = ?")) {
+            ps.setString(1, subject);
             try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) {
-                    return null;
-                }
-                Timestamp bannedUntil = rs.getTimestamp("banned_until");
-                return new Credentials(rs.getLong("id"), rs.getBytes("password_hash"),
-                        Status.of(rs.getInt("status")), bannedUntil == null ? null : bannedUntil.getTime());
+                return rs.next();
             }
         }
     }
 
+    /** A subject recorded as erased, whether or not a player ever had it; again, nothing more. */
+    public void recordErasedSubject(String subject) throws SQLException {
+        try (Connection c = dataSource.getConnection()) {
+            recordErased(c, subject);
+        }
+    }
+
+    private static void recordErased(Connection c, String subject) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("INSERT IGNORE INTO erased_subject (subject) VALUES (?)")) {
+            ps.setString(1, subject);
+            ps.executeUpdate();
+        }
+    }
+
     /**
-     * Makes a guest a full account, the same player (D-46): the username and password hash set
-     * and the key cleared in one statement, and the display name changed if one is given.
+     * A guest made the account service's account, the same player (D-117): the subject set and the key cleared in one
+     * statement, guarded by the key being there, so a second link is {@code NOT_A_GUEST}; a subject another player has
+     * is {@code ACCOUNT_IN_USE}, by its unique index.
      */
-    public Upgraded upgrade(long playerId, String username, byte[] passwordHash, String displayName)
-            throws SQLException {
-        try {
-            return tx.execute(c -> {
-                try (PreparedStatement ps = c.prepareStatement("UPDATE account SET username = ?, password_hash = ?,"
-                        + " guest_key_hash = NULL WHERE id = ? AND guest_key_hash IS NOT NULL")) {
-                    ps.setString(1, username);
-                    ps.setBytes(2, passwordHash);
-                    ps.setLong(3, playerId);
-                    if (ps.executeUpdate() != 1) {
-                        return Upgraded.NOT_A_GUEST;
-                    }
-                }
-                if (displayName != null) {
-                    try (PreparedStatement ps = c.prepareStatement("UPDATE player SET display_name = ? WHERE id = ?")) {
-                        ps.setString(1, displayName);
-                        ps.setLong(2, playerId);
-                        ps.executeUpdate();
-                    }
-                }
-                return Upgraded.OK;
-            });
+    public Linked link(long playerId, String subject) throws SQLException {
+        try (Connection c = dataSource.getConnection();
+             PreparedStatement ps = c.prepareStatement("UPDATE account SET subject = ?, guest_key_hash = NULL"
+                     + " WHERE id = ? AND guest_key_hash IS NOT NULL AND subject IS NULL")) {
+            ps.setString(1, subject);
+            ps.setLong(2, playerId);
+            return ps.executeUpdate() == 1 ? Linked.OK : Linked.NOT_A_GUEST;
         } catch (SQLException e) {
             if (e.getErrorCode() == DUPLICATE_ENTRY) {
-                return Upgraded.USERNAME_TAKEN;
+                return Linked.ACCOUNT_IN_USE;
             }
             throw e;
-        }
-    }
-
-    /**
-     * Whether {@link #upgrade} would find a guest and the name free, read before the caller spends a
-     * hash on it (S-18). The upgrade checks both again as it writes.
-     */
-    public Upgraded upgradable(long playerId, String username) throws SQLException {
-        try (Connection c = dataSource.getConnection();
-             PreparedStatement ps = c.prepareStatement("SELECT guest_key_hash IS NOT NULL,"
-                     + " EXISTS (SELECT 1 FROM account WHERE username_key = LOWER(?)) FROM account WHERE id = ?")) {
-            ps.setString(1, username);
-            ps.setLong(2, playerId);
-            try (ResultSet rs = ps.executeQuery()) {
-                return !rs.next() || !rs.getBoolean(1) ? Upgraded.NOT_A_GUEST
-                        : rs.getBoolean(2) ? Upgraded.USERNAME_TAKEN : Upgraded.OK;
-            }
-        }
-    }
-
-    /** @return the credentials, or null if no such username exists. */
-    public Credentials findForLogin(String username) throws SQLException {
-        String sql = """
-                SELECT id, password_hash, status, banned_until
-                  FROM account
-                 WHERE username_key = LOWER(?)
-                """;
-        try (Connection c = dataSource.getConnection();
-             PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, username);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) {
-                    return null;
-                }
-                Timestamp bannedUntil = rs.getTimestamp("banned_until");
-                return new Credentials(
-                        rs.getLong("id"),
-                        rs.getBytes("password_hash"),
-                        Status.of(rs.getInt("status")),
-                        bannedUntil == null ? null : bannedUntil.getTime());
-            }
         }
     }
 
@@ -288,34 +269,14 @@ public final class AccountRepository {
         }
     }
 
-    /**
-     * Replaces a password hash, but only if it is still {@code expected}: the one the caller
-     * verified. A password changed between that check and this write stays changed, rather
-     * than being overwritten by a rehash of the old one.
-     *
-     * @return whether it was replaced
-     */
-    public boolean replacePasswordHash(long accountId, byte[] expected, byte[] replacement)
-            throws SQLException {
-        try (Connection c = dataSource.getConnection();
-             PreparedStatement ps = c.prepareStatement(
-                     "UPDATE account SET password_hash = ? WHERE id = ? AND password_hash = ?")) {
-            ps.setBytes(1, replacement);
-            ps.setLong(2, accountId);
-            ps.setBytes(3, expected);
-            return ps.executeUpdate() == 1;
-        }
-    }
-
     /** @return the account's owner, or null if there is no such account */
     public Owner owner(long playerId) throws SQLException {
         try (Connection c = dataSource.getConnection();
              PreparedStatement ps = c.prepareStatement(
-                     "SELECT username_key, password_hash, status, guest_key_hash IS NOT NULL FROM account WHERE id = ?")) {
+                     "SELECT subject, status, guest_key_hash IS NOT NULL FROM account WHERE id = ?")) {
             ps.setLong(1, playerId);
             try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? new Owner(playerId, rs.getString(1), rs.getBytes(2), Status.of(rs.getInt(3)),
-                        rs.getBoolean(4)) : null;
+                return rs.next() ? new Owner(playerId, rs.getString(1), Status.of(rs.getInt(2)), rs.getBoolean(3)) : null;
             }
         }
     }
@@ -348,15 +309,15 @@ public final class AccountRepository {
     }
 
     /**
-     * Erases what identifies a player, in one transaction (D-84): the account's name, password, guest key and last
-     * login; the player's display name, and their listing on the rating boards; whom they knew, either way, their inbox,
-     * and their team invitations and applications. The rows that others' history and the ledger need stay, under the
-     * bare id. The name becomes {@code ~deleted~<id>}, which no one can register (a username has no {@code ~}), so the
-     * old one is free again.
+     * Erases what identifies a player, in one transaction (D-84): the account's subject, guest key and last login; the
+     * player's display name, and their listing on the rating boards; whom they knew, either way, their inbox, and their
+     * team invitations and applications. The rows that others' history and the ledger need stay, under the bare id. A
+     * subject is recorded as erased (D-117), so a token of its account exchanged late makes no new player.
      */
     public Erased erase(long playerId) throws SQLException {
         return tx.execute(c -> {
-            try (PreparedStatement ps = c.prepareStatement("SELECT status FROM account WHERE id = ? FOR UPDATE")) {
+            String subject;
+            try (PreparedStatement ps = c.prepareStatement("SELECT status, subject FROM account WHERE id = ? FOR UPDATE")) {
                 ps.setLong(1, playerId);
                 try (ResultSet rs = ps.executeQuery()) {
                     if (!rs.next()) {
@@ -365,10 +326,14 @@ public final class AccountRepository {
                     if (Status.of(rs.getInt(1)) == Status.DELETED) {
                         return Erased.ALREADY;
                     }
+                    subject = rs.getString(2);
                 }
             }
-            update(c, "UPDATE account SET username = CONCAT('~deleted~', id), password_hash = '', guest_key_hash = NULL,"
-                    + " last_login_at = NULL, banned_until = NULL, status = " + Status.DELETED.ordinal() + " WHERE id = ?", playerId);
+            update(c, "UPDATE account SET subject = NULL, guest_key_hash = NULL, last_login_at = NULL, banned_until = NULL,"
+                    + " status = " + Status.DELETED.ordinal() + " WHERE id = ?", playerId);
+            if (subject != null) {
+                recordErased(c, subject);
+            }
             try (PreparedStatement ps = c.prepareStatement(
                     "UPDATE player SET display_name = ?, rated_duels = 0, rated_tvts = 0, rated_rffas = 0 WHERE id = ?")) {
                 ps.setString(1, ERASED_NAME);
@@ -428,13 +393,11 @@ public final class AccountRepository {
         }
     }
 
-    private static long insertAccount(Connection c, String username, byte[] passwordHash)
-            throws SQLException {
+    private static long insertAccount(Connection c, String subject) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement(
-                "INSERT INTO account (username, password_hash) VALUES (?, ?)",
+                "INSERT INTO account (subject) VALUES (?)",
                 Statement.RETURN_GENERATED_KEYS)) {
-            ps.setString(1, username);
-            ps.setBytes(2, passwordHash);
+            ps.setString(1, subject);
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 keys.next();

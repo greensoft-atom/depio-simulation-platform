@@ -28,7 +28,6 @@ import com.backend.persistence.AdminRepository;
 import com.backend.persistence.Database;
 import com.backend.persistence.DatabaseSettings;
 import com.backend.platform.AuthService;
-import com.backend.platform.PasswordHasher;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jredis.client.JRedisClient;
@@ -70,7 +69,7 @@ class AdminServerTest {
         store = JRedisEmbedded.start();
         jredis = store.newClient();
         sessions = new SessionStore(jredis);
-        auth = new AuthService(new AccountRepository(db.dataSource()), new PasswordHasher(), sessions);
+        auth = new AuthService(new AccountRepository(db.dataSource()), sessions, com.backend.platform.TestTokens.tokens());
         Path secret = Files.writeString(dir.resolve("admin-token"), SECRET + "\n");
         admin = AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", "127.0.0.1:0",
                         "BACKEND_ADMIN_TOKEN_FILE", secret.toString()),
@@ -100,8 +99,9 @@ class AdminServerTest {
         return HTTP.send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    /** A player of the account service's, its subject {@code name}, with no session yet. */
     private static long register(String name) throws Exception {
-        return auth.register(name, name, "hunter2-hunter2".toCharArray()).playerId();
+        return new AccountRepository(db.dataSource()).createForSubject(name, name);
     }
 
     /** The audit's rows for a target, oldest first: action and outcome. */
@@ -231,7 +231,7 @@ class AdminServerTest {
     @DisplayName("a ban whose sessions are ended but whose player cannot be taken out of the arenas says what was done, 503 not_taken_out (O-36)")
     void aBanNotTakenOutSaysWhatWasDone() throws Exception {
         long id = register("adm-not-out");
-        String token = auth.login("adm-not-out", "hunter2-hunter2".toCharArray()).token();
+        String token = auth.exchange(com.backend.platform.TestTokens.access("adm-not-out", "adm-not-out")).token();
         JRedisEmbedded gone = JRedisEmbedded.start();
         JRedisClient dead = gone.newClient();
         gone.close();
@@ -397,8 +397,7 @@ class AdminServerTest {
     @Test
     @DisplayName("whether players come back, by day, today so far first, the days asked for checked (05 §11, Q-24)")
     void stats() throws Exception {
-        long ada = new AccountRepository(db.dataSource()).register("st-ada", "st-ada",
-                "$argon2id$fake".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        long ada = new AccountRepository(db.dataSource()).createForSubject("st-ada", "st-ada");
         String today = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString();
         try (java.sql.Connection c = db.dataSource().getConnection()) {
             try (java.sql.PreparedStatement ps = c.prepareStatement("UPDATE player SET first_played_on = ? WHERE id = ?")) {
@@ -473,8 +472,7 @@ class AdminServerTest {
     @Test
     @DisplayName("each day's new players by what they did that first day (05 §11, Q-26)")
     void statsByFeature() throws Exception {
-        long bob = new AccountRepository(db.dataSource()).register("sf-bob", "sf-bob",
-                "$argon2id$fake".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        long bob = new AccountRepository(db.dataSource()).createForSubject("sf-bob", "sf-bob");
         java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneOffset.UTC);
         try (java.sql.Connection c = db.dataSource().getConnection()) {
             // bob: new two days ago, when he bought something, and back yesterday
@@ -545,7 +543,7 @@ class AdminServerTest {
             JsonNode push = JSON.readTree(pushed.poll(5, TimeUnit.SECONDS));
             assertThat(push.at("/msg/t").asText()).isEqualTo("evt.session.revoked");
         }
-        assertThat(auth.login("ban-ada", "hunter2-hunter2".toCharArray()).outcome()).isEqualTo(AuthService.Login.BANNED);
+        assertThat(auth.exchange(com.backend.platform.TestTokens.access("ban-ada", "ban-ada")).outcome()).isEqualTo(AuthService.Login.BANNED);
         assertThat(audited(Long.toString(id))).containsExactly("ban refused_no_reason", "ban banned");
     }
 
@@ -558,13 +556,13 @@ class AdminServerTest {
         assertThat(r.statusCode()).isEqualTo(200);
         assertThat(JSON.readTree(r.body()).get("status").asText()).isEqualTo("suspended");
         assertThat(status(id)).isEqualTo(1);
-        assertThat(auth.login("sus-bob", "hunter2-hunter2".toCharArray()).outcome()).isEqualTo(AuthService.Login.BANNED);
+        assertThat(auth.exchange(com.backend.platform.TestTokens.access("sus-bob", "sus-bob")).outcome()).isEqualTo(AuthService.Login.BANNED);
         assertThat(call("POST", "/admin/players/" + id + "/ban", "{\"reason\":\"x\",\"until\":\"soon\"}", SECRET)
                 .statusCode()).as("a date that is not one").isEqualTo(400);
 
         assertThat(call("POST", "/admin/players/" + id + "/unban", "{\"reason\":\"appeal\"}", SECRET).statusCode()).isEqualTo(200);
         assertThat(status(id)).isZero();
-        assertThat(auth.login("sus-bob", "hunter2-hunter2".toCharArray()).outcome()).isEqualTo(AuthService.Login.OK);
+        assertThat(auth.exchange(com.backend.platform.TestTokens.access("sus-bob", "sus-bob")).outcome()).isEqualTo(AuthService.Login.OK);
         assertThat(call("POST", "/admin/players/999999/ban", "{\"reason\":\"x\"}", SECRET).statusCode()).isEqualTo(404);
         assertThat(audited("999999")).containsExactly("ban no_such_player");
         assertThat(audited(Long.toString(id))).containsExactly("ban suspended", "ban refused_bad_until", "unban active");
@@ -579,7 +577,7 @@ class AdminServerTest {
             ps.setLong(1, lapsed);
             ps.executeUpdate();
         }
-        assertThat(auth.login("sus-cyd", "hunter2-hunter2".toCharArray()).outcome()).as("its date has passed")
+        assertThat(auth.exchange(com.backend.platform.TestTokens.access("sus-cyd", "sus-cyd")).outcome()).as("its date has passed")
                 .isEqualTo(AuthService.Login.OK);
         assertThat(call("POST", "/admin/players/" + id + "/delete", "{\"reason\":\"x\"}", SECRET).statusCode()).isEqualTo(404);
     }

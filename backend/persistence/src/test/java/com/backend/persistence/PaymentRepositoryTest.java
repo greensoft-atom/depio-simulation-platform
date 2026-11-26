@@ -52,7 +52,7 @@ class PaymentRepositoryTest {
     }
 
     private static long player(String name) throws SQLException {
-        return accounts.register(name, name, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+        return accounts.createForSubject(name, name);
     }
 
     private static long count(String query, Object... args) throws SQLException {

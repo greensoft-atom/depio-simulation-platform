@@ -4718,7 +4718,35 @@ test failing first. `dev-account.sh` (8083, its debugger 5010, its key made once
 three checks, down); `dev-mysql.sh`'s `account_dev` and `account_test` and their user; `dev-env.sh`'s `ACCOUNT_PORT`
 and `ACCOUNT_JDBC_URL`; `ReadmeTestListsTest` holds the service's README to its tests too. The design corrected where
 building showed it wrong: `invalid_grant` is 400 (RFC 6749 §5.2); Nimbus refetches a key set at most twice in its
-interval. Nothing calls the service yet: that is (d) on.
+interval. Nothing calls the service yet: that is (d) on. **(d) done 2026-11-26:** the backend's side as designed:
+`V3` (the subject on `account`, the username and the password hash dropped in one step, the one exception to expand and
+contract, recorded in 06 §8 and D-117; `erased_subject`); `AccountTokens` and `AccountTokenSettings` (Nimbus, every
+rule of 10 §4.2); `POST /v1/sessions` taking an access token once, the first login making its player and naming it,
+`newPlayer`; `POST /v1/accounts/link`; `POST /v1/account-events`, the account service's two events, a deletion
+erasing the player out of its team whatever its role and recording its subject, a password change ending the
+sessions made before it; `DELETE /v1/accounts` a guest's alone, 409 `delete_at_account_service` for an account's
+player; registration, the password login, the upgrade, `PasswordHasher`, its line and the per-account limit gone
+from the platform, and `HasherLineFull` reading the account service's `account_hasher_line`; nginx's
+`= /v1/account-events` answered 404 and `= /v1/accounts/link` in the upgrade's place; `platform.env.example`'s three
+settings. Tests first, each seen failing for its reason. The backend built clean with every test: the platform's 258,
+persistence's 176, handoff's 78, the worker's 80, and the rest; the account service's 75. 42 mutants of the new rules:
+36 caught at once; of the 6 that survived, one was a check made idle by another (`client_id` required twice: the
+duplicate gone), and five were tests missing (two events, one of them a revocation without its moment, caught only
+when `Map.of` happened to list it first; a host name by `http://`, `localhost` resolving to loopback; a deleted
+account's token linking a guest; a guest's key sent with an access token), each written, and all caught; the
+account service's one, its millisecond cut to the second, caught.
+Found on the way: **S-28**, a revocation cut at its `iat`'s whole second, so a session made earlier in that second
+outlived a password change: the event now carries `before_ms`, both sides tested first; the lobby told only when no
+session was left, a rule of mine before it was committed, which let an older session's lobby, a thief's, go on
+hearing the player's pushes once the owner's new session came first: told whenever one ends, as designed, a test of
+the race first; `/v1/account-events` reachable through nginx's `/v1/`; a deleted account's player taken out of the
+queue and the party untested, now tested; **T-70**, a push of one `MatchmakerTest` test landing in the next, seen
+once in the clean build, its window closed by a marker each test waits for. Live: a run by hand from that day's release with the account service
+beside it, both development databases empty: `lobby-example.mjs`, every answer as expected, then the collection, 145
+requests and 159 checks, none failed (newman 6.2.3), its first run failing once on a request of its own not yet
+changed; a password changed by `curl` ended the two sessions of its second, the new one kept. Not yet: the C#
+client, the bots, the drills and every check that signs a player up still register the old way, and cannot log in
+until (e); the account service is not in the release, the site or `run-local.sh` until (f).
 
 ---
 

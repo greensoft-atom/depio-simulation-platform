@@ -1,7 +1,6 @@
 package com.backend.platform;
 
 import java.sql.SQLException;
-import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 
 import com.backend.handoff.SessionStore;
@@ -13,49 +12,38 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Register and login (docs detailed-design/04-platform-services.md §1).
+ * Logging in, and guests (docs detailed-design/04-platform-services.md §1, 10-accounts.md §4; D-117).
+ *
+ * <p>A player logs in with an access token of the account service's, taken once for a session of the backend's own
+ * ({@link #exchange}): its subject names the player, made at the account's first login. A guest logs in with its key
+ * (D-46), and links an account later ({@link #link}). The backend keeps no username and no password.
  *
  * <h2>Blocking on purpose</h2>
  *
- * Both calls block: on MySQL, and on Argon2 for tens of milliseconds. They are meant to run
- * on virtual threads, which is what virtual threads are for. They must never be called from
- * a Netty event loop or a room thread.
+ * Every call blocks, on MySQL and on the store. They are meant to run on virtual threads. They must never be called
+ * from a Netty event loop or a room thread.
  */
 public final class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
-    private static final int USERNAME_MIN = 3;
-    private static final int USERNAME_MAX = 32;
-    private static final int PASSWORD_MIN = 8;
-    /** Argon2 does not care, but an unbounded password is an unbounded request body. */
-    private static final int PASSWORD_MAX = 128;
-
-    public enum Register { OK, USERNAME_TAKEN, INVALID_USERNAME, INVALID_PASSWORD, INVALID_DISPLAY_NAME }
-
     /**
-     * {@code INVALID_CREDENTIALS} covers both "no such user" and "wrong password" on
-     * purpose. Telling them apart tells an attacker which usernames exist, which is the
-     * first half of the work.
+     * {@code INVALID_CREDENTIALS}: a guest key no guest has; {@code INVALID_TOKEN}: an access token this backend does
+     * not take, or one of an account deleted.
      */
-    public enum Login { OK, INVALID_CREDENTIALS, BANNED }
+    public enum Login { OK, INVALID_CREDENTIALS, INVALID_TOKEN, BANNED }
 
-    /** {@code problem} says why a display name was refused, in words a player can act on. */
-    public record RegisterResult(Register outcome, long playerId, String problem) {
-        RegisterResult(Register outcome, long playerId) {
-            this(outcome, playerId, null);
+    /** {@code ttlSeconds}: how long the session lasts, when there is one; {@code newPlayer}: made by this login. */
+    public record LoginResult(Login outcome, long playerId, String token, int ttlSeconds, boolean newPlayer) {
+        static LoginResult refused(Login outcome, long playerId) {
+            return new LoginResult(outcome, playerId, null, 0, false);
         }
     }
-
-    /** {@code ttlSeconds}: how long the session lasts, when there is one; 0 otherwise. */
-    public record LoginResult(Login outcome, long playerId, String token, int ttlSeconds) { }
 
     /** A guest made (Q-22): the key the device keeps, and the name it was given. */
     public record GuestResult(long playerId, String guestKey, String displayName) { }
 
-    public enum Upgrade { OK, NO_SESSION, INVALID_USERNAME, INVALID_PASSWORD, INVALID_DISPLAY_NAME, USERNAME_TAKEN, NOT_A_GUEST }
-
-    public record UpgradeResult(Upgrade outcome, String problem) { }
+    public enum Link { OK, NO_SESSION, INVALID_TOKEN, NOT_A_GUEST, ACCOUNT_IN_USE }
 
     public enum Rename { OK, NO_SESSION, INVALID_DISPLAY_NAME, TOO_SOON }
 
@@ -66,94 +54,86 @@ public final class AuthService {
     private static final int GUEST_KEY_BYTES = 32;
 
     private final AccountRepository accounts;
-    private final PasswordHasher hasher;
     private final SessionStore sessions;
+    private final AccountTokens tokens;
 
-    /**
-     * A real hash of a password nobody has, verified against when the username is unknown.
-     *
-     * Without it, an unknown username returns in microseconds and a known one takes tens of
-     * milliseconds, so anyone with a clock can enumerate the user base.
-     */
-    private final byte[] decoyHash;
-
-    public AuthService(AccountRepository accounts, PasswordHasher hasher, SessionStore sessions) {
+    public AuthService(AccountRepository accounts, SessionStore sessions, AccountTokens tokens) {
         this.accounts = accounts;
-        this.hasher = hasher;
         this.sessions = sessions;
-        this.decoyHash = hasher.hash("decoy-for-constant-time-login".toCharArray());
-    }
-
-    public RegisterResult register(String username, String displayName, char[] password)
-            throws SQLException {
-        if (!isValidUsername(username)) {
-            return new RegisterResult(Register.INVALID_USERNAME, -1);
-        }
-        if (password == null || password.length < PASSWORD_MIN || password.length > PASSWORD_MAX
-                || !wellFormed(password)) {
-            return new RegisterResult(Register.INVALID_PASSWORD, -1);
-        }
-        // Before the password is hashed: every check that can refuse a request runs first, so
-        // a request that was going to be refused never costs 88 ms of Argon2.
-        DisplayName.Result name = (displayName == null || displayName.isBlank())
-                ? DisplayName.fromUsername(username)
-                : DisplayName.check(displayName);
-        if (!name.ok()) {
-            return new RegisterResult(Register.INVALID_DISPLAY_NAME, -1, name.problem());
-        }
-
-        byte[] hash = hasher.hash(password);
-        long playerId = accounts.register(username, name.name(), hash);
-        if (playerId < 0) {
-            return new RegisterResult(Register.USERNAME_TAKEN, -1);
-        }
-        log.info("registered player {}", playerId);
-        return new RegisterResult(Register.OK, playerId);
+        this.tokens = tokens;
     }
 
     /**
-     * No half of a surrogate pair on its own. JSON can carry one ({@code "\ud800"}); hashing
-     * converts the password to UTF-8, which cannot encode it, and the exception came out as a
-     * 500 with a stack trace in the log. Refused like any other password that breaks the rules.
+     * An access token of the account service's, taken for a session (D-117, 10 §4.3): its subject's player, or at the
+     * account's first login a new one, named from the token's username by the display name's rules, or {@code Player}
+     * and four digits when they refuse it. A subject recorded as erased is refused, so a token exchanged in the minutes
+     * it is still good after its account's deletion makes no new player.
+     *
+     * @throws AccountTokens.KeysUnavailable when the account service's key set cannot be had: the caller's 503
      */
-    static boolean wellFormed(char[] password) {
-        for (int i = 0; i < password.length; i++) {
-            if (Character.isHighSurrogate(password[i]) && i + 1 < password.length
-                    && Character.isLowSurrogate(password[i + 1])) {
-                i++;
-            } else if (Character.isSurrogate(password[i])) {
-                return false;
+    public LoginResult exchange(String accessToken) throws SQLException {
+        AccountTokens.Access access = tokens.access(accessToken);
+        if (access == null || accounts.erasedSubject(access.subject())) {
+            return LoginResult.refused(Login.INVALID_TOKEN, -1);
+        }
+        boolean made = false;
+        Credentials credentials = accounts.findBySubject(access.subject());
+        if (credentials == null) {
+            long id = accounts.createForSubject(access.subject(), firstName(access.username()));
+            made = id > 0;
+            // Two first logins at once: the subject's unique index made one player, and the other finds it.
+            credentials = accounts.findBySubject(access.subject());
+            if (made) {
+                log.info("player {} made for an account's first login", id);
             }
         }
-        return true;
+        if (isBanned(credentials)) {
+            return LoginResult.refused(Login.BANNED, credentials.playerId());
+        }
+        LoginResult opened = opened(credentials.playerId());
+        return new LoginResult(opened.outcome(), opened.playerId(), opened.token(), opened.ttlSeconds(), made);
     }
 
-    public LoginResult login(String username, char[] password) throws SQLException {
-        // Only a name registration would accept can be an account, so nothing else is looked
-        // up. The lookup compares accent-insensitively (utf8mb4_0900_ai_ci), so "ada" with an
-        // acute on the first letter found and logged into "ada": one account, spelled as many
-        // ways as it has letters to accent, and a per-account login limit counted per
-        // spelling. Refusing early reveals nothing: the username rules are public.
-        if (!isValidUsername(username)) {
-            return new LoginResult(Login.INVALID_CREDENTIALS, -1, null, 0);
+    /** The name a player made at its account's first login is given: its username, if a display name may be it. */
+    static String firstName(String username) {
+        if (username != null) {
+            DisplayName.Result name = DisplayName.fromUsername(username);
+            if (name.ok()) {
+                return name.name();
+            }
         }
-        Credentials credentials = accounts.findForLogin(username);
+        return String.format("Player%04d", RANDOM.nextInt(10_000));
+    }
 
-        if (credentials == null) {
-            hasher.verify(password == null ? new char[0] : password, decoyHash);
-            return new LoginResult(Login.INVALID_CREDENTIALS, -1, null, 0);
+    /**
+     * The session's guest made the account service's account, the same player (D-117): its name, progress and wallet
+     * kept, its key stopped. An account another player has already is {@code ACCOUNT_IN_USE}.
+     *
+     * @throws AccountTokens.KeysUnavailable as {@link #exchange}
+     */
+    public Link link(String sessionToken, String accessToken) throws SQLException {
+        long playerId = playerIdOf(sessionToken);
+        if (playerId < 0) {
+            return Link.NO_SESSION;
         }
-        if (!hasher.verify(password == null ? new char[0] : password, credentials.passwordHash())) {
-            return new LoginResult(Login.INVALID_CREDENTIALS, -1, null, 0);
+        AccountTokens.Access access = tokens.access(accessToken);
+        if (access == null || accounts.erasedSubject(access.subject())) {
+            return Link.INVALID_TOKEN;
         }
-        if (isBanned(credentials)) {
-            return new LoginResult(Login.BANNED, credentials.playerId(), null, 0);
+        AccountRepository.Linked linked = accounts.link(playerId, access.subject());
+        if (linked == AccountRepository.Linked.OK) {
+            log.info("guest {} linked to an account", playerId);
         }
-        if (hasher.needsRehash(credentials.passwordHash())) {
-            rehash(credentials, password);
-        }
+        return Link.valueOf(linked.name());
+    }
 
-        return opened(credentials.playerId());
+    /**
+     * An event of the account service's, checked (10 §4.2): null when it is not one this backend takes.
+     *
+     * @throws AccountTokens.KeysUnavailable as {@link #exchange}
+     */
+    public AccountTokens.Event event(String token) {
+        return tokens.event(token);
     }
 
     /** A session for a player who has proved who they are, and the login time recorded. */
@@ -165,19 +145,18 @@ public final class AuthService {
             // An audit column is not worth failing a login over.
             log.warn("could not record the login time for {}: {}", playerId, e.toString());
         }
-        return new LoginResult(Login.OK, playerId, session.token(), session.ttlSeconds());
+        return new LoginResult(Login.OK, playerId, session.token(), session.ttlSeconds(), false);
     }
 
     /**
-     * A guest (Q-22, D-46): an account with a random key in place of a password, under a
-     * username nobody can register, named "Guest" and four digits. The key is the device's to
-     * keep; the account keeps only its SHA-256.
+     * A guest (Q-22, D-46): an account with a random key and no subject, named "Guest" and four digits. The key is the
+     * device's to keep; the account keeps only its SHA-256.
      */
     public GuestResult createGuest() throws SQLException {
         byte[] key = new byte[GUEST_KEY_BYTES];
         RANDOM.nextBytes(key);
         String name = String.format("Guest%04d", RANDOM.nextInt(10_000));
-        long id = accounts.createGuest("~" + com.backend.handoff.Ulid.generate(), name, sha256(key));
+        long id = accounts.createGuest(name, sha256(key));
         log.info("made guest {}", id);
         return new GuestResult(id, java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(key), name);
     }
@@ -188,48 +167,16 @@ public final class AuthService {
         try {
             key = java.util.Base64.getUrlDecoder().decode(guestKey == null ? "" : guestKey);
         } catch (IllegalArgumentException malformed) {
-            return new LoginResult(Login.INVALID_CREDENTIALS, -1, null, 0);
+            return LoginResult.refused(Login.INVALID_CREDENTIALS, -1);
         }
         Credentials credentials = accounts.findGuest(sha256(key));
         if (credentials == null) {
-            return new LoginResult(Login.INVALID_CREDENTIALS, -1, null, 0);
+            return LoginResult.refused(Login.INVALID_CREDENTIALS, -1);
         }
         if (isBanned(credentials)) {
-            return new LoginResult(Login.BANNED, credentials.playerId(), null, 0);
+            return LoginResult.refused(Login.BANNED, credentials.playerId());
         }
         return opened(credentials.playerId());
-    }
-
-    /**
-     * A guest made a full account, the same player (Q-22): the rules of registering checked
-     * before the password is hashed, then the username, the hash and a display name if one is
-     * given, set at once, and the key cleared.
-     */
-    public UpgradeResult upgrade(String token, String username, String displayName, char[] password)
-            throws SQLException {
-        long playerId = playerIdOf(token);
-        if (playerId < 0) {
-            return new UpgradeResult(Upgrade.NO_SESSION, null);
-        }
-        if (!isValidUsername(username)) {
-            return new UpgradeResult(Upgrade.INVALID_USERNAME, null);
-        }
-        if (password == null || password.length < PASSWORD_MIN || password.length > PASSWORD_MAX
-                || !wellFormed(password)) {
-            return new UpgradeResult(Upgrade.INVALID_PASSWORD, null);
-        }
-        DisplayName.Result name = displayName == null || displayName.isBlank() ? null : DisplayName.check(displayName);
-        if (name != null && !name.ok()) {
-            return new UpgradeResult(Upgrade.INVALID_DISPLAY_NAME, name.problem());
-        }
-        // A guest, and the name free, before the password is hashed: a refusal costs no hash (S-18).
-        AccountRepository.Upgraded possible = accounts.upgradable(playerId, username);
-        if (possible != AccountRepository.Upgraded.OK) {
-            return new UpgradeResult(Upgrade.valueOf(possible.name()), null);
-        }
-        AccountRepository.Upgraded upgraded = accounts.upgrade(playerId, username, hasher.hash(password),
-                name == null ? null : name.name());
-        return new UpgradeResult(Upgrade.valueOf(upgraded.name()), null);
     }
 
     /**
@@ -260,55 +207,9 @@ public final class AuthService {
         }
     }
 
-    /**
-     * Makes the stored hash again under the current policy, now that the password is known,
-     * which a login is the only moment of. Without it, raising the cost protected new
-     * passwords only. It costs this one login a second hash. A failure costs nothing but the
-     * upgrade, which the next login tries again.
-     */
-    private void rehash(Credentials credentials, char[] password) {
-        try {
-            if (!accounts.replacePasswordHash(credentials.playerId(), credentials.passwordHash(),
-                    hasher.hash(password))) {
-                log.info("the password of {} changed while it was being checked; not rehashed",
-                        credentials.playerId());
-            }
-        } catch (SQLException e) {
-            log.warn("could not rehash the password of {}: {}", credentials.playerId(), e.toString());
-        }
-    }
-
-    /**
-     * The one spelling of a username that names an account, for counting attempts against
-     * it; null if the name could not belong to any account. Usernames are ASCII, so lower
-     * case here is exactly the database's {@code username_key}.
-     */
-    public static String usernameKey(String username) {
-        return isValidUsername(username) ? username.toLowerCase(Locale.ROOT) : null;
-    }
-
-    /**
-     * A place in line for the password hasher, or null when it is full; see
-     * {@link PasswordHasher#admit}. Callers take it before counting an attempt against the
-     * throttle, so an attempt turned away for load does not count against the account.
-     */
-    public PasswordHasher.Admission admit() {
-        return hasher.admit();
-    }
-
-    /** How many requests hold or wait for a place in the hasher's line. */
-    public int hasherLine() {
-        return hasher.inLine();
-    }
-
     /** @return the player id behind a session token, or -1. */
     public long playerIdOf(String sessionToken) {
         return await(sessions.playerIdOf(sessionToken));
-    }
-
-    /** Whether {@code password} is the account's, for what asks it again of a player logged in (D-84). */
-    public boolean verifies(AccountRepository.Owner owner, char[] password) {
-        return hasher.verify(password == null ? new char[0] : password, owner.passwordHash());
     }
 
     public boolean logout(String sessionToken) {
@@ -324,21 +225,6 @@ public final class AuthService {
                     || c.bannedUntilMillis() > System.currentTimeMillis();
             case BANNED, DELETED -> true;
         };
-    }
-
-    private static boolean isValidUsername(String username) {
-        if (username == null || username.length() < USERNAME_MIN || username.length() > USERNAME_MAX) {
-            return false;
-        }
-        for (int i = 0; i < username.length(); i++) {
-            char ch = username.charAt(i);
-            boolean ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
-                    || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
-            if (!ok) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static <T> T await(java.util.concurrent.CompletableFuture<T> future) {

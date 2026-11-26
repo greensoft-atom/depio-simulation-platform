@@ -1,13 +1,17 @@
 {
   "info": {
     "name": "Backend API",
-    "description": "The backend's HTTP APIs: the player API (platform, /v1/...) and the operator's admin API.\nRun in order: it is one scenario, and each request keeps in the collection's variables what later ones need.\nSet baseUrl (the platform, or https://<name> through nginx), adminUrl and adminToken first.\nReference: docs/api/ in the repository. The lobby WebSocket is not in a collection (Postman cannot export WebSocket requests): docs/api/02-lobby-websocket.md.",
+    "description": "The backend's HTTP APIs: the player API (platform, /v1/...) and the operator's admin API.\nRun in order: it is one scenario, and each request keeps in the collection's variables what later ones need.\nSet baseUrl (the platform, or https://<name> through nginx), accountUrl (the account service, or https://<name>/account through nginx), adminUrl and adminToken first.\nReference: docs/api/ in the repository. The lobby WebSocket is not in a collection (Postman cannot export WebSocket requests): docs/api/02-lobby-websocket.md.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     {
       "key": "baseUrl",
       "value": "http://127.0.0.1:8080"
+    },
+    {
+      "key": "accountUrl",
+      "value": "http://127.0.0.1:8083"
     },
     {
       "key": "adminUrl",
@@ -65,10 +69,10 @@
     },
     {
       "name": "01 Accounts and sessions",
-      "description": "Three players for the rest of the run (A, B, C), with names unique to this run, and a guest. Every register, login, guest creation, guest login and upgrade counts against 30 a minute per address (429 too_many_attempts with Retry-After), and password logins against 10 per username per 15 minutes. This folder makes 11 such calls.",
+      "description": "Three players for the rest of the run (A, B, C), with names unique to this run, and a guest linked to an account. Each signs up at the account service (accountUrl, D-117) and takes its access token to the backend once for a session. The account service counts its sign-ups and logins against 30 a minute per address and 10 per username per 15 minutes (7 calls here); the backend counts guests made and guests' logins against 30 a minute per address (3 calls here).",
       "item": [
         {
-          "name": "Register player A",
+          "name": "Sign up A at the account service",
           "event": [
             {
               "listen": "prerequest",
@@ -94,7 +98,7 @@
                   "});",
                   "let body = null;",
                   "try { body = pm.response.json(); } catch (e) { }",
-                  "pm.collectionVariables.set('playerIdA', body.playerId);"
+                  "pm.collectionVariables.set('accessTokenA', body.access_token);"
                 ]
               }
             }
@@ -108,153 +112,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/accounts",
+              "raw": "{{accountUrl}}/v1/accounts",
               "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "v1",
-                "accounts"
-              ]
-            },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"{{usernameA}}\",\n  \"password\": \"{{password}}\",\n  \"displayName\": \"Ada\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Register player B",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"POST /v1/accounts answers 201\", function () {",
-                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
-                  "});",
-                  "let body = null;",
-                  "try { body = pm.response.json(); } catch (e) { }",
-                  "pm.collectionVariables.set('playerIdB', body.playerId);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/v1/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "v1",
-                "accounts"
-              ]
-            },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"{{usernameB}}\",\n  \"password\": \"{{password}}\",\n  \"displayName\": \"Bob\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Register player C (no display name: the username is used)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"POST /v1/accounts answers 201\", function () {",
-                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
-                  "});",
-                  "let body = null;",
-                  "try { body = pm.response.json(); } catch (e) { }",
-                  "pm.collectionVariables.set('playerIdC', body.playerId);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/v1/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "v1",
-                "accounts"
-              ]
-            },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"{{usernameC}}\",\n  \"password\": \"{{password}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Register: the name is taken (409)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"POST /v1/accounts answers 409\", function () {",
-                  "    pm.expect(pm.response.code).to.be.oneOf([409]);",
-                  "});",
-                  "let body = null;",
-                  "try { body = pm.response.json(); } catch (e) { }",
-                  ""
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/v1/accounts",
-              "host": [
-                "{{baseUrl}}"
+                "{{accountUrl}}"
               ],
               "path": [
                 "v1",
@@ -274,19 +134,19 @@
           }
         },
         {
-          "name": "Log in A",
+          "name": "Sign up B at the account service",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"POST /v1/sessions answers 200\", function () {",
-                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "pm.test(\"POST /v1/accounts answers 201\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
                   "});",
                   "let body = null;",
                   "try { body = pm.response.json(); } catch (e) { }",
-                  "pm.collectionVariables.set('tokenA', body.token);"
+                  "pm.collectionVariables.set('accessTokenB', body.access_token);"
                 ]
               }
             }
@@ -300,61 +160,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/sessions",
+              "raw": "{{accountUrl}}/v1/accounts",
               "host": [
-                "{{baseUrl}}"
+                "{{accountUrl}}"
               ],
               "path": [
                 "v1",
-                "sessions"
-              ]
-            },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"{{usernameA}}\",\n  \"password\": \"{{password}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Log in B",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"POST /v1/sessions answers 200\", function () {",
-                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
-                  "});",
-                  "let body = null;",
-                  "try { body = pm.response.json(); } catch (e) { }",
-                  "pm.collectionVariables.set('tokenB', body.token);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/v1/sessions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "v1",
-                "sessions"
+                "accounts"
               ]
             },
             "description": "",
@@ -370,19 +182,19 @@
           }
         },
         {
-          "name": "Log in C",
+          "name": "Sign up C at the account service",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"POST /v1/sessions answers 200\", function () {",
-                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "pm.test(\"POST /v1/accounts answers 201\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
                   "});",
                   "let body = null;",
                   "try { body = pm.response.json(); } catch (e) { }",
-                  "pm.collectionVariables.set('tokenC', body.token);"
+                  "pm.collectionVariables.set('accessTokenC', body.access_token);"
                 ]
               }
             }
@@ -396,13 +208,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/sessions",
+              "raw": "{{accountUrl}}/v1/accounts",
               "host": [
-                "{{baseUrl}}"
+                "{{accountUrl}}"
               ],
               "path": [
                 "v1",
-                "sessions"
+                "accounts"
               ]
             },
             "description": "",
@@ -418,19 +230,68 @@
           }
         },
         {
-          "name": "Log in: wrong password (401)",
+          "name": "Sign up: the name is taken (409)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"POST /v1/sessions answers 401\", function () {",
-                  "    pm.expect(pm.response.code).to.be.oneOf([401]);",
+                  "pm.test(\"POST /v1/accounts answers 409\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([409]);",
                   "});",
                   "let body = null;",
                   "try { body = pm.response.json(); } catch (e) { }",
-                  ""
+                  "pm.test(\"error username_taken\", function () { pm.expect(body.error).to.eql('username_taken'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{accountUrl}}/v1/accounts",
+              "host": [
+                "{{accountUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{usernameA}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "A's first login here: its player made",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/sessions answers 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.collectionVariables.set('tokenA', body.token); pm.collectionVariables.set('playerIdA', body.playerId);",
+                  "pm.test(\"a new player\", function () { pm.expect(body.newPlayer).to.eql(true); });"
                 ]
               }
             }
@@ -456,7 +317,298 @@
             "description": "",
             "body": {
               "mode": "raw",
+              "raw": "{\n  \"accessToken\": \"{{accessTokenA}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "B's first login here",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/sessions answers 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.collectionVariables.set('tokenB', body.token); pm.collectionVariables.set('playerIdB', body.playerId);",
+                  "pm.test(\"a new player\", function () { pm.expect(body.newPlayer).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sessions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accessToken\": \"{{accessTokenB}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "C's first login here: named from its username",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/sessions answers 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.collectionVariables.set('tokenC', body.token); pm.collectionVariables.set('playerIdC', body.playerId);",
+                  "pm.test(\"a new player\", function () { pm.expect(body.newPlayer).to.eql(true); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sessions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accessToken\": \"{{accessTokenC}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Log in A at the account service",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/sessions answers 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.collectionVariables.set('accessTokenA', body.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{accountUrl}}/v1/sessions",
+              "host": [
+                "{{accountUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sessions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{usernameA}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "A's next login here: the same player",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/sessions answers 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.collectionVariables.set('tokenA', body.token);",
+                  "pm.test(\"the same player\", function () { pm.expect(body.playerId).to.eql(Number(pm.collectionVariables.get('playerIdA'))); pm.expect(body.newPlayer).to.eql(false); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sessions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accessToken\": \"{{accessTokenA}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Log in at the account service: wrong password (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/sessions answers 401\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([401]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.test(\"error invalid_credentials\", function () { pm.expect(body.error).to.eql('invalid_credentials'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{accountUrl}}/v1/sessions",
+              "host": [
+                "{{accountUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sessions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
               "raw": "{\n  \"username\": \"{{usernameA}}\",\n  \"password\": \"not-the-password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "An access token not taken (401 invalid_token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/sessions answers 401\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([401]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.test(\"code invalid_token\", function () { pm.expect(body.code).to.eql('invalid_token'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sessions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accessToken\": \"not.a.token\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -548,19 +700,67 @@
           }
         },
         {
-          "name": "Upgrade the guest to an account",
+          "name": "Sign up the guest's account at the account service",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"POST /v1/accounts/upgrade answers 200\", function () {",
+                  "pm.test(\"POST /v1/accounts answers 201\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.collectionVariables.set('accessTokenG', body.access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{accountUrl}}/v1/accounts",
+              "host": [
+                "{{accountUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"gus_{{run}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Link the guest to the account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/accounts/link answers 200\", function () {",
                   "    pm.expect(pm.response.code).to.be.oneOf([200]);",
                   "});",
                   "let body = null;",
                   "try { body = pm.response.json(); } catch (e) { }",
-                  ""
+                  "pm.test(\"the same player\", function () { pm.expect(body.playerId).to.eql(Number(pm.collectionVariables.get('playerIdG'))); });"
                 ]
               }
             }
@@ -578,20 +778,121 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/accounts/upgrade",
+              "raw": "{{baseUrl}}/v1/accounts/link",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "v1",
                 "accounts",
-                "upgrade"
+                "link"
               ]
             },
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"gus_{{run}}\",\n  \"password\": \"{{password}}\",\n  \"displayName\": \"Gus\"\n}",
+              "raw": "{\n  \"accessToken\": \"{{accessTokenG}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Link again: not a guest (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/accounts/link answers 409\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([409]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.test(\"code not_a_guest\", function () { pm.expect(body.code).to.eql('not_a_guest'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenG}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/accounts/link",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts",
+                "link"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accessToken\": \"{{accessTokenG}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "The guest's key logs in no more (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/sessions answers 401\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([401]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.test(\"code invalid_credentials\", function () { pm.expect(body.code).to.eql('invalid_credentials'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sessions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"guestKey\": \"{{guestKey}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5479,7 +5780,7 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{usernameC}}\",\n  \"password\": \"{{password}}\"\n}",
+              "raw": "{\n  \"accessToken\": \"{{accessTokenC}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -6164,22 +6465,22 @@
     },
     {
       "name": "13 Delete an account",
-      "description": "B deletes its account (D-84): its name, password, friends and boards erased, every session ended.",
+      "description": "B deletes its account at the account service (D-117), which tells the backend: B's player is erased (D-84), its friends and boards gone, every session ended, and its subject recorded, so its access token makes no new player.",
       "item": [
         {
-          "name": "B deletes its account: wrong password (403)",
+          "name": "B deletes here: an account's player deletes at the account service (409)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"DELETE /v1/accounts answers 403\", function () {",
-                  "    pm.expect(pm.response.code).to.be.oneOf([403]);",
+                  "pm.test(\"DELETE /v1/accounts answers 409\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([409]);",
                   "});",
                   "let body = null;",
                   "try { body = pm.response.json(); } catch (e) { }",
-                  "pm.test(\"code wrong_password\", function () { pm.expect(body.code).to.eql('wrong_password'); });"
+                  "pm.test(\"code delete_at_account_service\", function () { pm.expect(body.code).to.eql('delete_at_account_service'); });"
                 ]
               }
             }
@@ -6187,10 +6488,6 @@
           "request": {
             "method": "DELETE",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
               {
                 "key": "Authorization",
                 "value": "Bearer {{tokenB}}"
@@ -6204,6 +6501,50 @@
               "path": [
                 "v1",
                 "accounts"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "B deletes its account at the account service: wrong password (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"DELETE /v1/accounts/me answers 401\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([401]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.test(\"error invalid_credentials\", function () { pm.expect(body.error).to.eql('invalid_credentials'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenB}}"
+              }
+            ],
+            "url": {
+              "raw": "{{accountUrl}}/v1/accounts/me",
+              "host": [
+                "{{accountUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts",
+                "me"
               ]
             },
             "description": "",
@@ -6219,18 +6560,19 @@
           }
         },
         {
-          "name": "B deletes its account",
+          "name": "B deletes its account at the account service",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"DELETE /v1/accounts answers 204\", function () {",
+                  "pm.test(\"DELETE /v1/accounts/me answers 204\", function () {",
                   "    pm.expect(pm.response.code).to.be.oneOf([204]);",
                   "});",
                   "let body = null;",
-                  "try { body = pm.response.json(); } catch (e) { }"
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  ""
                 ]
               }
             }
@@ -6244,17 +6586,18 @@
               },
               {
                 "key": "Authorization",
-                "value": "Bearer {{tokenB}}"
+                "value": "Bearer {{accessTokenB}}"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/accounts",
+              "raw": "{{accountUrl}}/v1/accounts/me",
               "host": [
-                "{{baseUrl}}"
+                "{{accountUrl}}"
               ],
               "path": [
                 "v1",
-                "accounts"
+                "accounts",
+                "me"
               ]
             },
             "description": "",
@@ -6270,8 +6613,18 @@
           }
         },
         {
-          "name": "B's token no longer works (401)",
+          "name": "B's session ended by the account service's event (401)",
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// The account service posts its event to the platform at once; give it a moment to arrive.",
+                  "setTimeout(function () {}, 2000);"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
@@ -6281,7 +6634,8 @@
                   "    pm.expect(pm.response.code).to.be.oneOf([401]);",
                   "});",
                   "let body = null;",
-                  "try { body = pm.response.json(); } catch (e) { }"
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  ""
                 ]
               }
             }
@@ -6308,7 +6662,7 @@
           }
         },
         {
-          "name": "B's name logs in no more (401)",
+          "name": "B's access token makes no new player (401 invalid_token)",
           "event": [
             {
               "listen": "test",
@@ -6320,7 +6674,7 @@
                   "});",
                   "let body = null;",
                   "try { body = pm.response.json(); } catch (e) { }",
-                  "pm.test(\"code invalid_credentials\", function () { pm.expect(body.code).to.eql('invalid_credentials'); });"
+                  "pm.test(\"code invalid_token\", function () { pm.expect(body.code).to.eql('invalid_token'); });"
                 ]
               }
             }
@@ -6337,6 +6691,54 @@
               "raw": "{{baseUrl}}/v1/sessions",
               "host": [
                 "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "sessions"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accessToken\": \"{{accessTokenB}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "B's name logs in no more at the account service (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/sessions answers 401\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([401]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.test(\"error invalid_credentials\", function () { pm.expect(body.error).to.eql('invalid_credentials'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{accountUrl}}/v1/sessions",
+              "host": [
+                "{{accountUrl}}"
               ],
               "path": [
                 "v1",

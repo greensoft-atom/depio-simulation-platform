@@ -123,6 +123,11 @@ public final class PartyService {
         if (me < 0) {
             return new Result(Outcome.NO_SESSION, null);
         }
+        return leavePlayer(me);
+    }
+
+    /** The same for a player with no session to hand: an account deleted at the account service (D-117). */
+    public Result leavePlayer(long me) {
         Parties.Change change = parties.leave(me);
         told(change, me);
         return new Result(Outcome.OK, change.before() == null ? null : Parties.ended(change.before()));

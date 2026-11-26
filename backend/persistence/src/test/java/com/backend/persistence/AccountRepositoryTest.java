@@ -2,7 +2,6 @@ package com.backend.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -32,7 +31,6 @@ class AccountRepositoryTest {
     private static Database db;
     private static AccountRepository accounts;
 
-    private static final byte[] HASH = "$argon2id$fake".getBytes(StandardCharsets.UTF_8);
 
     @BeforeAll
     static void setUp() {
@@ -56,8 +54,8 @@ class AccountRepositoryTest {
     @Test
     @DisplayName("a player has a stats row from the start, so a first result locks a row, not a gap two first results deadlock in (D-43)")
     void aPlayerHasItsStatsRowFromTheStart() throws Exception {
-        long registered = accounts.register("ada", "Ada", HASH);
-        long guest = accounts.createGuest("~guest", "Guest 0001", new byte[32]);
+        long registered = accounts.createForSubject("ada", "Ada");
+        long guest = accounts.createGuest("Guest 0001", new byte[32]);
         try (java.sql.Connection c = db.dataSource().getConnection();
              java.sql.PreparedStatement ps = c.prepareStatement(
                      "SELECT player_id, matches, wins, kills FROM player_stat WHERE player_id IN (?, ?) ORDER BY player_id")) {
@@ -77,7 +75,7 @@ class AccountRepositoryTest {
     @Test
     @DisplayName("a player renames at once, then once in 30 days: refused until they have passed (04 §1, plan item 63)")
     void renaming() throws Exception {
-        long ada = accounts.register("ada", "Ada", HASH);
+        long ada = accounts.createForSubject("ada", "Ada");
         java.time.Instant t = java.time.Instant.parse("2026-10-01T12:00:00Z");
         java.time.Duration every = AccountRepository.RENAME_EVERY;
         assertThat(every).isEqualTo(java.time.Duration.ofDays(30));
@@ -91,9 +89,9 @@ class AccountRepositoryTest {
     }
 
     @Test
-    @DisplayName("registering creates the account and its player row together")
+    @DisplayName("an account made for a subject makes its player row with it, in one transaction (D-117)")
     void registerCreatesBothRows() throws Exception {
-        long id = accounts.register("ada", "Ada", HASH);
+        long id = accounts.createForSubject("ada", "Ada");
 
         assertThat(id).isPositive();
         Profile profile = accounts.findProfile(id);
@@ -117,26 +115,25 @@ class AccountRepositoryTest {
     }
 
     @Test
-    @DisplayName("a taken username is refused, including in a different case")
-    void duplicateUsernameIsRefused() throws Exception {
-        assertThat(accounts.register("ada", "Ada", HASH)).isPositive();
+    @DisplayName("a subject has one player: a second is refused; subjects compare exactly, case and all (D-117)")
+    void aSubjectHasOnePlayer() throws Exception {
+        assertThat(accounts.createForSubject("ada", "Ada")).isPositive();
 
-        assertThat(accounts.register("ada", "Ada Two", HASH)).isEqualTo(-1);
-        assertThat(accounts.register("ADA", "Ada Three", HASH))
-                .as("username_key is LOWER(username), so case cannot be used to duplicate")
-                .isEqualTo(-1);
+        assertThat(accounts.createForSubject("ada", "Ada Two")).isEqualTo(-1);
+        assertThat(accounts.createForSubject("ADA", "Ada Three"))
+                .as("the account service's ids are compared as they are: another subject")
+                .isPositive();
 
-        assertThat(count("SELECT COUNT(*) FROM account WHERE username_key = 'ada'", null))
-                .isEqualTo(1);
+        assertThat(count("SELECT COUNT(*) FROM account WHERE subject = 'ada'", null)).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("a refused registration leaves no half-made account behind")
+    @DisplayName("a refused second player of a subject leaves no half-made account behind")
     void refusedRegistrationRollsBack() throws Exception {
-        long first = accounts.register("ada", "Ada", HASH);
-        accounts.register("ada", "Ada Two", HASH);
+        long first = accounts.createForSubject("ada", "Ada");
+        accounts.createForSubject("ada", "Ada Two");
 
-        // The account insert fails, so the player insert never runs; but if registration
+        // The account insert fails, so the player insert never runs; but if making one
         // were two transactions, a second player row could exist with no account.
         assertThat(count("SELECT COUNT(*) FROM player", null)).isEqualTo(1);
         assertThat(count("SELECT COUNT(*) FROM account", null)).isEqualTo(1);
@@ -144,7 +141,7 @@ class AccountRepositoryTest {
     }
 
     @Test
-    @DisplayName("two simultaneous registrations of one username: exactly one succeeds")
+    @DisplayName("two first logins of one subject at once: exactly one makes its player")
     void concurrentRegistrationsOfOneName() throws Exception {
         int threads = 8;
         CountDownLatch go = new CountDownLatch(1);
@@ -157,7 +154,7 @@ class AccountRepositoryTest {
             new Thread(() -> {
                 try {
                     go.await();
-                    if (accounts.register("contested", "Contested", HASH) > 0) {
+                    if (accounts.createForSubject("contested", "Contested") > 0) {
                         created.incrementAndGet();
                     } else {
                         refused.incrementAndGet();
@@ -172,31 +169,31 @@ class AccountRepositoryTest {
         go.countDown();
         assertThat(done.await(30, TimeUnit.SECONDS)).isTrue();
 
-        assertThat(failed.get()).as("a contested name is an answer, not an error").isZero();
+        assertThat(failed.get()).as("a contested subject is an answer, not an error").isZero();
         assertThat(created.get()).as("the unique index decides, not a prior SELECT").isEqualTo(1);
         assertThat(refused.get()).isEqualTo(threads - 1);
         assertThat(count("SELECT COUNT(*) FROM account", null)).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("login lookup returns the stored hash and status, and is case-insensitive")
-    void findForLogin() throws Exception {
-        long id = accounts.register("ada", "Ada", HASH);
+    @DisplayName("a login's lookup by the subject: the player and the status, exactly that subject (D-117)")
+    void findBySubject() throws Exception {
+        long id = accounts.createForSubject("ada", "Ada");
 
-        Credentials c = accounts.findForLogin("AdA");
+        Credentials c = accounts.findBySubject("ada");
         assertThat(c).isNotNull();
         assertThat(c.playerId()).isEqualTo(id);
-        assertThat(c.passwordHash()).isEqualTo(HASH);
         assertThat(c.status()).isEqualTo(AccountRepository.Status.ACTIVE);
         assertThat(c.bannedUntilMillis()).isNull();
 
-        assertThat(accounts.findForLogin("nobody")).isNull();
+        assertThat(accounts.findBySubject("AdA")).isNull();
+        assertThat(accounts.findBySubject("nobody")).isNull();
     }
 
     @Test
     @DisplayName("the login timestamp is recorded")
     void touchLogin() throws Exception {
-        long id = accounts.register("ada", "Ada", HASH);
+        long id = accounts.createForSubject("ada", "Ada");
         assertThat(scalarIsNull("SELECT last_login_at FROM account WHERE id = ?", id)).isTrue();
 
         accounts.touchLogin(id);
@@ -216,7 +213,7 @@ class AccountRepositoryTest {
         long recent = guest(3);                                                     // logged in since
         long played = guest(4);                                                     // a day played since, no login
         long young = guest(5);                                                      // made since
-        long registered = accounts.register("ada", "Ada", HASH);                     // old, no login, not a guest
+        long registered = accounts.createForSubject("ada", "Ada");                     // old, no login, not a guest
         long erased = guest(6);                                                     // erased already
         long atSince = guest(7);                                                    // logged in at the moment itself
         long playedBefore = guest(8);                                               // a day played before, none since
@@ -238,7 +235,7 @@ class AccountRepositoryTest {
     private static long guest(int n) throws SQLException {
         byte[] key = new byte[32];
         key[0] = (byte) n;
-        return accounts.createGuest("~01JCIDLE0000000000000000" + n, "Guest" + n, key);
+        return accounts.createGuest("Guest" + n, key);
     }
 
     private static long count(String sql, Long arg) throws SQLException {
@@ -281,41 +278,36 @@ class AccountRepositoryTest {
     }
 
     @Test
-    @DisplayName("a guest: made under a name nobody can choose, found by its key's hash, upgraded once, keeping its player (D-46)")
+    @DisplayName("a guest: no subject, found by its key's hash, linked once to an account, keeping its player and name (D-46, D-117)")
     void guests() throws Exception {
         byte[] key = new byte[32];
         key[0] = 7;
-        long id = accounts.createGuest("~01JCGUEST0000000000000001", "Guest1234", key);
+        long id = accounts.createGuest("Guest1234", key);
         assertThat(accounts.findProfile(id).displayName()).isEqualTo("Guest1234");
         AccountRepository.Credentials found = accounts.findGuest(key);
         assertThat(found.playerId()).isEqualTo(id);
         assertThat(found.status()).isEqualTo(AccountRepository.Status.ACTIVE);
         assertThat(accounts.findGuest(new byte[32])).as("another key").isNull();
-        assertThat(accounts.findForLogin("~01JCGUEST0000000000000001").passwordHash()).as("no password").isEmpty();
+        assertThat(accounts.owner(id).subject()).as("no subject").isNull();
 
-        accounts.register("taken", "Taken", HASH);
-        assertThat(accounts.upgrade(id, "taken", HASH, null)).isEqualTo(AccountRepository.Upgraded.USERNAME_TAKEN);
+        accounts.createForSubject("taken", "Taken");
+        assertThat(accounts.link(id, "taken")).as("another player's account").isEqualTo(AccountRepository.Linked.ACCOUNT_IN_USE);
         assertThat(accounts.findGuest(key)).as("still a guest").isNotNull();
-        assertThat(accounts.upgrade(id, "adaline", HASH, "Adaline")).isEqualTo(AccountRepository.Upgraded.OK);
+        assertThat(accounts.link(id, "adaline")).isEqualTo(AccountRepository.Linked.OK);
         assertThat(accounts.findGuest(key)).as("the key stops working").isNull();
-        AccountRepository.Credentials upgraded = accounts.findForLogin("adaline");
-        assertThat(upgraded.playerId()).as("the same player").isEqualTo(id);
-        assertThat(upgraded.passwordHash()).isEqualTo(HASH);
-        assertThat(accounts.findProfile(id).displayName()).isEqualTo("Adaline");
-        assertThat(accounts.upgrade(id, "adaline2", HASH, null)).isEqualTo(AccountRepository.Upgraded.NOT_A_GUEST);
-
-        long other = accounts.createGuest("~01JCGUEST0000000000000002", "Guest5678", new byte[] {1, 2, 3, 4, 5, 6, 7, 8,
-                9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32});
-        assertThat(accounts.upgrade(other, "bobby", HASH, null)).isEqualTo(AccountRepository.Upgraded.OK);
-        assertThat(accounts.findProfile(other).displayName()).as("kept when none is given").isEqualTo("Guest5678");
+        assertThat(accounts.findBySubject("adaline").playerId()).as("the same player").isEqualTo(id);
+        assertThat(accounts.findProfile(id).displayName()).as("its name kept").isEqualTo("Guest1234");
+        assertThat(accounts.link(id, "adaline2")).isEqualTo(AccountRepository.Linked.NOT_A_GUEST);
+        long ada = accounts.createForSubject("ada", "Ada");
+        assertThat(accounts.link(ada, "ada3")).as("an account's player is no guest").isEqualTo(AccountRepository.Linked.NOT_A_GUEST);
     }
 
     @Test
-    @DisplayName("an erased account keeps no name, password or last login, and no one it knew; what others' history needs stays (D-84)")
+    @DisplayName("an erased account keeps no subject, key or last login, and no one it knew; what others' history needs stays (D-84, D-117)")
     void erasing() throws Exception {
-        long ada = accounts.register("ada", "Ada", HASH);
-        long bob = accounts.register("bob", "Bob", HASH);
-        long cy = accounts.register("cy", "Cy", HASH);
+        long ada = accounts.createForSubject("ada", "Ada");
+        long bob = accounts.createForSubject("bob", "Bob");
+        long cy = accounts.createForSubject("cy", "Cy");
         accounts.touchLogin(ada);
         jdbc("UPDATE player SET rated_duels = 12, rated_rffas = 11, rated_tvts = 10 WHERE id = ?", ada);
         exec("INSERT INTO friend (player_id, friend_id, since) VALUES (" + ada + ", " + bob + ", NOW(3)), ("
@@ -336,15 +328,16 @@ class AccountRepositoryTest {
                 + ", 0, 50, 50, 0, 'm1', 'm1:" + ada + "')");
 
         AccountRepository.Owner before = accounts.owner(ada);
-        assertThat(before.usernameKey()).isEqualTo("ada");
-        assertThat(before.passwordHash()).isEqualTo(HASH);
+        assertThat(before.subject()).isEqualTo("ada");
         assertThat(before.status()).isEqualTo(AccountRepository.Status.ACTIVE);
         assertThat(before.guest()).isFalse();
+        assertThat(accounts.erasedSubject("ada")).isFalse();
         assertThat(accounts.erase(ada)).isEqualTo(AccountRepository.Erased.ERASED);
 
-        assertThat(accounts.findForLogin("ada")).as("no login by the old name").isNull();
-        assertThat(count("SELECT COUNT(*) FROM account WHERE id = ? AND username = CONCAT('~deleted~', id)"
-                + " AND status = 3 AND password_hash = '' AND guest_key_hash IS NULL AND last_login_at IS NULL"
+        assertThat(accounts.findBySubject("ada")).as("no login by the account's subject").isNull();
+        assertThat(accounts.erasedSubject("ada")).as("its subject recorded erased").isTrue();
+        assertThat(count("SELECT COUNT(*) FROM account WHERE id = ? AND subject IS NULL"
+                + " AND status = 3 AND guest_key_hash IS NULL AND last_login_at IS NULL"
                 + " AND banned_until IS NULL", ada)).isEqualTo(1);
         assertThat(accounts.owner(ada).status()).isEqualTo(AccountRepository.Status.DELETED);
         assertThat(accounts.findProfile(ada).displayName()).isEqualTo(AccountRepository.ERASED_NAME);
@@ -361,9 +354,11 @@ class AccountRepositoryTest {
         assertThat(count("SELECT COUNT(*) FROM ledger WHERE player_id = ?", ada)).as("the ledger is kept").isEqualTo(1);
         assertThat(count("SELECT COUNT(*) FROM player_stat WHERE player_id = ?", ada)).as("and the stats").isEqualTo(1);
 
-        long again = accounts.register("ada", "Ada", HASH);
-        assertThat(again).as("the name is free again, for a new account").isPositive().isNotEqualTo(ada);
+        long again = accounts.createForSubject("ada-new", "Ada");
         assertThat(accounts.erase(ada)).as("a retry").isEqualTo(AccountRepository.Erased.ALREADY);
+        accounts.recordErasedSubject("never-played");
+        accounts.recordErasedSubject("never-played");
+        assertThat(accounts.erasedSubject("never-played")).as("a subject no player had, recorded; again, nothing more").isTrue();
         assertThat(accounts.erase(again + 1000)).isEqualTo(AccountRepository.Erased.NO_SUCH_PLAYER);
         assertThat(accounts.owner(again + 1000)).isNull();
     }
@@ -373,17 +368,18 @@ class AccountRepositoryTest {
     void erasingAGuest() throws Exception {
         byte[] key = new byte[32];
         key[0] = 9;
-        long id = accounts.createGuest("~01JCGUEST0000000000000003", "Guest4321", key);
+        long id = accounts.createGuest("Guest4321", key);
         assertThat(accounts.owner(id).guest()).isTrue();
         assertThat(accounts.erase(id)).isEqualTo(AccountRepository.Erased.ERASED);
         assertThat(accounts.findGuest(key)).isNull();
         assertThat(accounts.owner(id).guest()).as("no key, so no guest").isFalse();
+        assertThat(count("SELECT COUNT(*) FROM erased_subject", null)).as("a guest has no subject to record").isZero();
     }
 
     @Test
     @DisplayName("to the admin API an erased account is no account: no ban, no unban (D-84)")
     void anErasedAccountHasNoStatusToSet() throws Exception {
-        long ada = accounts.register("ada", "Ada", HASH);
+        long ada = accounts.createForSubject("ada", "Ada");
         accounts.erase(ada);
         AdminRepository admin = new AdminRepository(db.dataSource());
         assertThat(admin.setStatus(ada, AccountRepository.Status.ACTIVE, null, "unban", "{}", "active"))

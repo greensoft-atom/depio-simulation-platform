@@ -132,6 +132,22 @@ public final class TeamService {
         return Answer.of(Result.valueOf(outcome.name()));
     }
 
+    /**
+     * A player erased out of their team, whatever the role, as the worker's retention erases a guest (D-87): an account
+     * deleted at the account service has nobody left to ask to hand the team over (D-117). The rest are told.
+     */
+    public void erase(long playerId) throws SQLException {
+        TeamRepository.Team before = teams.teamOf(playerId);
+        if (teams.erase(playerId, clock.instant()) == TeamRepository.Outcome.OK && before != null) {
+            for (TeamRepository.Member m : before.members()) {
+                if (m.playerId() != playerId) {
+                    tellAll(teams.teamOf(m.playerId()));     // the team as it is now, through one still in it
+                    break;
+                }
+            }
+        }
+    }
+
     public Answer kick(String token, long playerId) throws SQLException {
         long p = auth.playerIdOf(token);
         if (p < 0) {

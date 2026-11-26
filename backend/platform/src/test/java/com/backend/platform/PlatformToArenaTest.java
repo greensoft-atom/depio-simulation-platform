@@ -66,7 +66,7 @@ class PlatformToArenaTest {
         client = store.newClient();
 
         accounts = new AccountRepository(db.dataSource());
-        auth = new AuthService(accounts, new PasswordHasher(), new SessionStore(client));
+        auth = new AuthService(accounts, new SessionStore(client), com.backend.platform.TestTokens.tokens());
         directory = new ArenaDirectory(client);
         tickets = new TicketStore(client);
         joins = new JoinService(auth, accounts, directory, tickets,
@@ -91,7 +91,7 @@ class PlatformToArenaTest {
 
     @Test
     @Timeout(60)
-    @DisplayName("register, log in, get a ticket, and play")
+    @DisplayName("a first login by an access token, a second, a ticket, and play")
     void theWholeChain() throws Exception {
         try (ArenaServer server = new ArenaServer(tickets, 3000f, 4096, 50, 200, 2, 4)) {
             int port = server.start(0);
@@ -99,8 +99,8 @@ class PlatformToArenaTest {
                     directory, "arena-test", "127.0.0.1", port, server.registry())) {
                 announcer.start();
 
-                long playerId = auth.register("ada", "Ada", "hunter2-hunter2".toCharArray()).playerId();
-                String token = auth.login("ada", "hunter2-hunter2".toCharArray()).token();
+                long playerId = auth.exchange(com.backend.platform.TestTokens.access("ada", "Ada")).playerId();
+                String token = auth.exchange(com.backend.platform.TestTokens.access("ada", "ada")).token();
 
                 JoinService.Grant grant = joins.requestJoin(token);
 
@@ -137,8 +137,8 @@ class PlatformToArenaTest {
             try (ArenaAnnouncer announcer = new ArenaAnnouncer(
                     directory, "arena-test", "127.0.0.1", port, server.registry())) {
                 announcer.start();
-                long playerId = auth.register("ada", "Ada", "hunter2-hunter2".toCharArray()).playerId();
-                String token = auth.login("ada", "hunter2-hunter2".toCharArray()).token();
+                long playerId = auth.exchange(com.backend.platform.TestTokens.access("ada", "Ada")).playerId();
+                String token = auth.exchange(com.backend.platform.TestTokens.access("ada", "ada")).token();
 
                 JoinService.Grant grant = joins.requestJoin(token);
                 assertThat(client.sync().zscore("seats:promised:arena-test", Long.toString(playerId)))
@@ -162,13 +162,13 @@ class PlatformToArenaTest {
         directory.announce(new ArenaDirectory.Endpoint("arena-b", "10.0.0.2", 9002, 0, 3)).get();
         java.util.Map<Integer, Integer> sent = new java.util.HashMap<>();
         for (int i = 0; i < 6; i++) {
-            auth.register("burst" + i, "Burst" + i, "hunter2-hunter2".toCharArray());
-            JoinService.Grant grant = joins.requestJoin(auth.login("burst" + i, "hunter2-hunter2".toCharArray()).token());
+            auth.exchange(com.backend.platform.TestTokens.access("burst" + i, "Burst" + i));
+            JoinService.Grant grant = joins.requestJoin(auth.exchange(com.backend.platform.TestTokens.access("burst" + i, "burst" + i)).token());
             sent.merge(grant.arenaPort(), 1, Integer::sum);
         }
         assertThat(sent).containsEntry(9001, 3).containsEntry(9002, 3);
-        auth.register("burst6", "Burst6", "hunter2-hunter2".toCharArray());
-        assertThat(joins.requestJoin(auth.login("burst6", "hunter2-hunter2".toCharArray()).token()).outcome())
+        auth.exchange(com.backend.platform.TestTokens.access("burst6", "Burst6"));
+        assertThat(joins.requestJoin(auth.exchange(com.backend.platform.TestTokens.access("burst6", "burst6")).token()).outcome())
                 .as("every place promised").isEqualTo(JoinService.Outcome.NO_ARENA);
     }
 
@@ -181,8 +181,8 @@ class PlatformToArenaTest {
             try (ArenaAnnouncer announcer = new ArenaAnnouncer(
                     directory, "arena-test", "127.0.0.1", port, server.registry())) {
                 announcer.start();
-                auth.register("ada", "Ada", "hunter2-hunter2".toCharArray());
-                String token = auth.login("ada", "hunter2-hunter2".toCharArray()).token();
+                auth.exchange(com.backend.platform.TestTokens.access("ada", "Ada"));
+                String token = auth.exchange(com.backend.platform.TestTokens.access("ada", "ada")).token();
                 JoinService.Grant grant = joins.requestJoin(token);
 
                 try (TestClient first = new TestClient(grant.arenaPort());
@@ -210,8 +210,8 @@ class PlatformToArenaTest {
     @Test
     @DisplayName("with no arena announced, nobody is sent anywhere")
     void noArenaMeansNoGrant() throws Exception {
-        auth.register("ada", "Ada", "hunter2-hunter2".toCharArray());
-        String token = auth.login("ada", "hunter2-hunter2".toCharArray()).token();
+        auth.exchange(com.backend.platform.TestTokens.access("ada", "Ada"));
+        String token = auth.exchange(com.backend.platform.TestTokens.access("ada", "ada")).token();
 
         JoinService.Grant grant = joins.requestJoin(token);
 

@@ -36,7 +36,6 @@ import com.backend.platform.Items;
 import com.backend.platform.JoinService;
 import com.backend.platform.LoginThrottle;
 import com.backend.platform.MatchQueue;
-import com.backend.platform.PasswordHasher;
 import com.backend.platform.PartyService;
 import com.backend.platform.QueueService;
 import com.backend.platform.ShopService;
@@ -51,7 +50,6 @@ import com.backend.platform.net.ApiMessages.OrderResponse;
 import com.backend.platform.net.ApiMessages.OrderView;
 import com.backend.platform.net.ApiMessages.PackView;
 import com.backend.platform.net.ApiMessages.PacksResponse;
-import com.backend.platform.net.ApiMessages.PasswordRequest;
 import com.backend.platform.net.ApiMessages.PassResponse;
 import com.backend.platform.net.ApiMessages.PremiumResponse;
 import com.backend.platform.net.ApiMessages.RewardView;
@@ -79,9 +77,8 @@ import com.backend.platform.net.ApiMessages.MyRankResponse;
 import com.backend.platform.net.ApiMessages.OfferView;
 import com.backend.platform.net.ApiMessages.PurchaseRequest;
 import com.backend.platform.net.ApiMessages.PurchaseResponse;
-import com.backend.platform.net.ApiMessages.RegisterRequest;
 import com.backend.platform.net.ApiMessages.RenameRequest;
-import com.backend.platform.net.ApiMessages.RegisterResponse;
+import com.backend.platform.net.ApiMessages.AccessTokenRequest;
 import com.backend.platform.net.ApiMessages.ShopResponse;
 import com.backend.platform.net.ApiMessages.InviteView;
 import com.backend.platform.net.ApiMessages.InvitesResponse;
@@ -145,7 +142,7 @@ public final class PlatformHttpServer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(PlatformHttpServer.class);
 
-    /** Enough for a username, a display name and a password; anything larger is not one. */
+    /** Enough for any body the API takes, an access token or an account event under a kilobyte; anything larger is not one. */
     private static final int MAX_BODY_BYTES = 4 * 1024;
 
     private static final int DEFAULT_BOARD_LIMIT = 50;
@@ -241,7 +238,10 @@ public final class PlatformHttpServer implements AutoCloseable {
         // The routes nginx limits, matched exactly (S-18); an id in any path is at most 18 digits, so
         // it always fits a long and a longer one names no route (S-17).
         server.createContext("/v1/accounts", this::accounts);
-        server.createContext("/v1/accounts/upgrade", exchange -> exact(exchange, "POST", "/v1/accounts/upgrade", this::upgrade));
+        server.createContext("/v1/accounts/link", exchange -> exact(exchange, "POST", "/v1/accounts/link", this::link));
+        // The account service's events (D-117): not routed by nginx, which answers only the routes it lists (D-107).
+        server.createContext("/v1/account-events",
+                exchange -> exact(exchange, "POST", "/v1/account-events", this::accountEvents));
         server.createContext("/v1/accounts/name", exchange -> exact(exchange, "PUT", "/v1/accounts/name", this::rename));
         server.createContext("/v1/guests", exchange -> exact(exchange, "POST", "/v1/guests", this::createGuest));
         server.createContext("/v1/sessions", this::sessions);
@@ -290,14 +290,11 @@ public final class PlatformHttpServer implements AutoCloseable {
         m.labeledHistogram("backend_platform_request_seconds",
                 "Time to answer an API request, by route: the API's path, not the request's.", "route", latency);
         m.labeledCounter("backend_platform_logins_total",
-                "Logins by outcome: ok, invalid_credentials, banned, throttled, busy.", "outcome",
-                logins);
+                "Logins by outcome: ok, invalid_token (an access token not taken), invalid_credentials (a guest key),"
+                + " banned, throttled.", "outcome", logins);
         m.labeledCounter("backend_platform_purchases_total", "Purchases by outcome: bought,"
                 + " already_bought, insufficient_funds, not_available, level_required, unknown_sku,"
                 + " invalid_key, no_session.", "outcome", purchases);
-        m.gauge("backend_platform_hasher_line",
-                "Requests holding or waiting for a password hash; 168 is full (S-7).",
-                auth::hasherLine);
     }
 
     /** Whose X-Forwarded-For to believe besides this machine's (D-82); before {@link #start}. */
@@ -333,24 +330,24 @@ public final class PlatformHttpServer implements AutoCloseable {
         });
     }
 
-    /** {@code POST} registers; {@code DELETE} erases the caller's own account (D-84). */
+    /** {@code DELETE} erases the caller's own guest (D-84); an account signs up at the account service (D-117). */
     private void accounts(HttpExchange exchange) throws IOException {
         guard(exchange, ex -> {
             if (!ex.getRequestURI().getPath().equals("/v1/accounts")) {
                 error(ex, 404, "no_such_route", "use /v1/accounts");
                 return;
             }
-            switch (ex.getRequestMethod()) {
-                case "POST" -> register(ex);
-                case "DELETE" -> deleteAccount(ex);
-                default -> methodNotAllowed(ex, "POST, DELETE");
+            if ("DELETE".equals(ex.getRequestMethod())) {
+                deleteAccount(ex);
+            } else {
+                methodNotAllowed(ex, "DELETE");
             }
         });
     }
 
     /**
-     * {@code DELETE /v1/accounts} {@code {"password"}}: the player's own account erased (04 §1, D-84). The password is
-     * asked again, so a session taken from a phone cannot end the account, and its attempts count as a login's.
+     * {@code DELETE /v1/accounts}: the session's guest erased (04 §1, D-84). A linked player's account is the account
+     * service's: deleted there, with its password, its event erases the player here (D-117).
      */
     private void deleteAccount(HttpExchange exchange) throws IOException, SQLException {
         String token = bearerToken(exchange);
@@ -358,109 +355,49 @@ public final class PlatformHttpServer implements AutoCloseable {
             error(exchange, 401, "no_token", "send Authorization: Bearer <token>");
             return;
         }
-        PasswordRequest request = read(exchange, PasswordRequest.class);
         com.backend.persistence.AccountRepository.Owner owner = deletion.owner(token);
         if (owner == null) {
             error(exchange, 401, "invalid_session", "log in again");
             return;
-        }
-        if (AccountDeletion.needsPassword(owner)) {
-            if (request == null || request.password() == null) {
-                error(exchange, 400, "invalid_body", "password is required");
-                return;
-            }
-            try (PasswordHasher.Admission place = auth.admit()) {
-                if (refusal(exchange, place, owner.usernameKey()) != null) {
-                    return;
-                }
-                char[] password = request.password().toCharArray();
-                boolean proved = auth.verifies(owner, password);
-                java.util.Arrays.fill(password, '\0');
-                if (!proved) {
-                    error(exchange, 403, "wrong_password", "that is not this account's password");
-                    return;
-                }
-            }
         }
         switch (deletion.erase(token, owner)) {
             case OK -> respond(exchange, 204, null);
             case NO_SESSION -> error(exchange, 401, "invalid_session", "log in again");
             case LEADER_WITH_MEMBERS -> error(exchange, 409, "leader_with_members",
                     "hand the team to another member first");
+            case AT_THE_ACCOUNT_SERVICE -> error(exchange, 409, "delete_at_account_service",
+                    "this player's account is the account service's: deleting it there erases the player here");
         }
     }
 
-    private void register(HttpExchange exchange) throws IOException, SQLException {
-        RegisterRequest request = read(exchange, RegisterRequest.class);
-        if (request == null || request.username() == null || request.password() == null) {
-            error(exchange, 400, "invalid_body", "username and password are required");
-            return;
-        }
-        AuthService.RegisterResult result;
-        try (PasswordHasher.Admission place = auth.admit()) {
-            if (refusal(exchange, place, null) != null) {
-                return;
-            }
-            char[] password = request.password().toCharArray();
-            result = auth.register(request.username(), request.displayName(), password);
-            java.util.Arrays.fill(password, '\0');
-        }
-
-        switch (result.outcome()) {
-            case OK -> respond(exchange, 201, Json.MAPPER.writeValueAsString(
-                    new RegisterResponse(result.playerId())));
-            case USERNAME_TAKEN -> error(exchange, 409, "username_taken", "that name is in use");
-            case INVALID_USERNAME -> error(exchange, 400, "invalid_username",
-                    "3 to 32 characters, letters, digits, underscore or hyphen");
-            case INVALID_PASSWORD -> error(exchange, 400, "invalid_password",
-                    "8 to 128 characters");
-            // The code is stable for a client to branch on; the message says which rule, so
-            // the player can be told what to change rather than just "no".
-            case INVALID_DISPLAY_NAME -> error(exchange, 400, "invalid_display_name",
-                    result.problem());
-            default -> error(exchange, 500, "internal", "unhandled outcome");
-        }
-    }
-
+    /**
+     * {@code POST /v1/sessions}: {@code {"accessToken"}}, the account service's, taken for a session (D-117); or
+     * {@code {"guestKey"}}, a guest's (D-46).
+     */
     private void login(HttpExchange exchange) throws IOException, SQLException {
         LoginRequest request = read(exchange, LoginRequest.class);
         if (request != null && request.guestKey() != null) {
             loginGuest(exchange, request.guestKey());
             return;
         }
-        if (request == null || request.username() == null || request.password() == null) {
-            error(exchange, 400, "invalid_body", "username and password are required");
+        if (request == null || request.accessToken() == null) {
+            error(exchange, 400, "invalid_body", "send {\"accessToken\"}, the account service's, or {\"guestKey\"}");
             return;
         }
-        AuthService.LoginResult result;
-        try (PasswordHasher.Admission place = auth.admit()) {
-            String refused = refusal(exchange, place, AuthService.usernameKey(request.username()));
-            if (refused != null) {
-                logins.increment(refused);
-                return;
-            }
-            char[] password = request.password().toCharArray();
-            result = auth.login(request.username(), password);
-            java.util.Arrays.fill(password, '\0');
-        }
-
+        AuthService.LoginResult result = auth.exchange(request.accessToken());
         logins.increment(result.outcome().name().toLowerCase(java.util.Locale.ROOT));
         switch (result.outcome()) {
             case OK -> respond(exchange, 200, Json.MAPPER.writeValueAsString(
-                    new LoginResponse(result.token(), result.playerId(), result.ttlSeconds())));
-            // One answer for "no such user" and "wrong password", as the service decided:
-            // telling them apart hands out a list of which usernames exist.
-            case INVALID_CREDENTIALS -> error(exchange, 401, "invalid_credentials",
-                    "username or password is wrong");
+                    new LoginResponse(result.token(), result.playerId(), result.ttlSeconds(), result.newPlayer())));
+            // Why is logged, never told (10 §4.2): one answer for every token not taken.
+            case INVALID_TOKEN -> error(exchange, 401, "invalid_token", "the access token is not one this backend takes:"
+                    + " refresh it at the account service, or log in there again");
             case BANNED -> error(exchange, 403, "banned", "this account cannot play");
             default -> error(exchange, 500, "internal", "unhandled outcome");
         }
     }
 
-    /**
-     * {@code POST /v1/sessions {"guestKey"}}: a guest's login (D-46), throttled per address, and
-     * with no place in the hasher's line, since nothing slow is hashed.
-     */
+    /** {@code POST /v1/sessions {"guestKey"}}: a guest's login (D-46), throttled per address. */
     private void loginGuest(HttpExchange exchange, String guestKey) throws IOException, SQLException {
         if (throttled(exchange)) {
             logins.increment("throttled");
@@ -470,13 +407,14 @@ public final class PlatformHttpServer implements AutoCloseable {
         logins.increment(result.outcome().name().toLowerCase(java.util.Locale.ROOT));
         switch (result.outcome()) {
             case OK -> respond(exchange, 200, Json.MAPPER.writeValueAsString(
-                    new LoginResponse(result.token(), result.playerId(), result.ttlSeconds())));
+                    new LoginResponse(result.token(), result.playerId(), result.ttlSeconds(), false)));
             case INVALID_CREDENTIALS -> error(exchange, 401, "invalid_credentials", "no guest has that key");
             case BANNED -> error(exchange, 403, "banned", "this account cannot play");
+            default -> error(exchange, 500, "internal", "unhandled outcome");
         }
     }
 
-    /** {@code POST /v1/guests}: a guest, made with nothing asked (Q-22), throttled per address as registering is. */
+    /** {@code POST /v1/guests}: a guest, made with nothing asked (Q-22), throttled per address. */
     private void createGuest(HttpExchange exchange) throws IOException, SQLException {
         if (throttled(exchange)) {
             return;
@@ -486,36 +424,56 @@ public final class PlatformHttpServer implements AutoCloseable {
                 new GuestResponse(guest.playerId(), guest.guestKey(), guest.displayName())));
     }
 
-    /** {@code POST /v1/accounts/upgrade}: the session's guest made a full account, the same player (Q-22). */
-    private void upgrade(HttpExchange exchange) throws IOException, SQLException {
+    /**
+     * {@code POST /v1/accounts/link} {@code {"accessToken"}}: the session's guest made the account service's account,
+     * the same player (D-117).
+     */
+    private void link(HttpExchange exchange) throws IOException, SQLException {
         String token = bearerToken(exchange);
         if (token == null) {
             error(exchange, 401, "no_token", "send Authorization: Bearer <token>");
             return;
         }
-        RegisterRequest request = read(exchange, RegisterRequest.class);
-        if (request == null || request.username() == null || request.password() == null) {
-            error(exchange, 400, "invalid_body", "username and password are required");
+        AccessTokenRequest request = read(exchange, AccessTokenRequest.class);
+        if (request == null || request.accessToken() == null) {
+            error(exchange, 400, "invalid_body", "send {\"accessToken\"}, the account service's");
             return;
         }
-        AuthService.UpgradeResult result;
-        try (PasswordHasher.Admission place = auth.admit()) {
-            if (refusal(exchange, place, null) != null) {
-                return;
-            }
-            char[] password = request.password().toCharArray();
-            result = auth.upgrade(token, request.username(), request.displayName(), password);
-            java.util.Arrays.fill(password, '\0');
-        }
-        switch (result.outcome()) {
-            case OK -> respond(exchange, 200, "{}");
+        switch (auth.link(token, request.accessToken())) {
+            case OK -> respond(exchange, 200, Json.MAPPER.createObjectNode().put("playerId", auth.playerIdOf(token)).toString());
             case NO_SESSION -> error(exchange, 401, "invalid_session", "log in again");
-            case INVALID_USERNAME -> error(exchange, 400, "invalid_username", "3 to 32 of a-z, A-Z, 0-9, _ and -");
-            case INVALID_PASSWORD -> error(exchange, 400, "invalid_password", "8 to 128 characters");
-            case INVALID_DISPLAY_NAME -> error(exchange, 400, "invalid_display_name", result.problem());
-            case USERNAME_TAKEN -> error(exchange, 409, "username_taken", "that name is in use");
-            case NOT_A_GUEST -> error(exchange, 409, "not_a_guest", "this account has a username already");
+            case INVALID_TOKEN -> error(exchange, 401, "invalid_token", "the access token is not one this backend takes");
+            case NOT_A_GUEST -> error(exchange, 409, "not_a_guest", "this player is an account's already");
+            case ACCOUNT_IN_USE -> error(exchange, 409, "account_in_use", "another player is this account's");
         }
+    }
+
+    /**
+     * {@code POST /v1/account-events}: the account service's events, Security Event Tokens pushed by RFC 8935 (D-117,
+     * 10 §3.5): 202 taken, 400 {@code {"err", "description"}} refused. Each is taken once or many times alike.
+     */
+    private void accountEvents(HttpExchange exchange) throws IOException, SQLException {
+        String type = exchange.getRequestHeaders().getFirst("Content-Type");
+        if (type == null || !type.trim().toLowerCase(java.util.Locale.ROOT).startsWith("application/secevent+jwt")) {
+            eventRefused(exchange, "invalid_request", "send a Security Event Token as application/secevent+jwt");
+            return;
+        }
+        String token = readText(exchange).trim();
+        com.backend.platform.AccountTokens.Event event = auth.event(token);
+        if (event == null) {
+            eventRefused(exchange, "authentication_failed", "the event is not one this backend takes");
+            return;
+        }
+        switch (event.kind()) {
+            case DELETED -> deletion.deletedAtTheAccountService(event.subject());
+            case SESSIONS_REVOKED -> deletion.sessionsRevokedAtTheAccountService(event.subject(), event.before());
+        }
+        log.info("account event {} taken: {}", event.jti(), event.kind());
+        respond(exchange, 202, null);
+    }
+
+    private static void eventRefused(HttpExchange exchange, String err, String description) throws IOException {
+        respond(exchange, 400, Json.MAPPER.createObjectNode().put("err", err).put("description", description).toString());
     }
 
     /** {@code PUT /v1/accounts/name} {@code {"displayName"}}: the player's own, once in 30 days (04 §1). */
@@ -544,11 +502,11 @@ public final class PlatformHttpServer implements AutoCloseable {
         }
     }
 
-    /** The per-address limit alone, for what hashes nothing slow: true once a 429 is answered. */
+    /** The per-address limit on guests made and logged in (04 §1): true once a 429 is answered. */
     private boolean throttled(HttpExchange exchange) throws IOException {
         InetAddress who = clientAddress(exchange.getRemoteAddress().getAddress(),
                 exchange.getRequestHeaders().get("X-Forwarded-For"), proxies);
-        LoginThrottle.Verdict verdict = throttle.attempt(LoginThrottle.addressKey(who), null);
+        LoginThrottle.Verdict verdict = throttle.attempt(LoginThrottle.addressKey(who));
         if (verdict.allowed()) {
             return false;
         }
@@ -2005,42 +1963,6 @@ public final class PlatformHttpServer implements AutoCloseable {
         return null;
     }
 
-    /**
-     * Answers a registration or login that is turned away before it costs anything, and
-     * says why: "busy" or "throttled", or null when it may go ahead.
-     *
-     * First 503 {@code busy} when the hasher's line is full, then 429 when this address or
-     * account has had its share. In that order, so that an attempt turned away for load is
-     * never counted: a player retrying through an overload would otherwise use up the
-     * account's attempts and be locked out for a quarter hour after the overload ended.
-     * Both come after the body is parsed and before any other check on it, so a refusal costs
-     * the caller the same whatever the request contained and says nothing about the account.
-     *
-     * The busy answer's {@code Retry-After} is spread over one to five seconds. A fixed value
-     * would bring every turned-away client back in the same second, which is the burst that
-     * filled the line.
-     */
-    private String refusal(HttpExchange exchange, PasswordHasher.Admission place, String account)
-            throws IOException {
-        if (place == null) {
-            exchange.getResponseHeaders().set("Retry-After",
-                    Integer.toString(1 + java.util.concurrent.ThreadLocalRandom.current().nextInt(5)));
-            error(exchange, 503, "busy", "too many logins at once; try again shortly");
-            return "busy";
-        }
-        InetAddress who = clientAddress(exchange.getRemoteAddress().getAddress(),
-                exchange.getRequestHeaders().get("X-Forwarded-For"), proxies);
-        LoginThrottle.Verdict verdict = throttle.attempt(LoginThrottle.addressKey(who), account);
-        if (verdict.allowed()) {
-            return null;
-        }
-        exchange.getResponseHeaders().set("Retry-After",
-                Integer.toString(verdict.retryAfterSeconds()));
-        error(exchange, 429, "too_many_attempts",
-                "try again in " + verdict.retryAfterSeconds() + " s");
-        return "throttled";
-    }
-
     private static final Pattern IPV4 = Pattern.compile("(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})");
 
     /**
@@ -2175,6 +2097,10 @@ public final class PlatformHttpServer implements AutoCloseable {
             error(exchange, 503, "storage_unavailable", "try again shortly");
         } catch (BodyTooLarge e) {
             error(exchange, 413, "body_too_large", "at most " + MAX_BODY_BYTES + " bytes");
+        } catch (com.backend.platform.AccountTokens.KeysUnavailable e) {
+            // Nothing is wrong with the request: the account service's key set cannot be had (10 §4.2).
+            log.error("the account service's keys cannot be had, serving {}: {}", exchange.getRequestURI(), e.toString());
+            error(exchange, 503, "keys_unavailable", "try again shortly");
         } catch (StoreUnavailableException e) {
             // 503 for the same reason a full system is: nothing is wrong with the request,
             // so the client should come back rather than report a fault.
@@ -2231,6 +2157,17 @@ public final class PlatformHttpServer implements AutoCloseable {
             return Json.MAPPER.readValue(body, type);
         } catch (com.fasterxml.jackson.core.JacksonException malformed) {
             return null;
+        }
+    }
+
+    /** The body as text, at most {@link #MAX_BODY_BYTES}: an event's token, which is not JSON. */
+    private static String readText(HttpExchange exchange) throws IOException {
+        try (InputStream in = exchange.getRequestBody()) {
+            byte[] body = in.readNBytes(MAX_BODY_BYTES + 1);
+            if (body.length > MAX_BODY_BYTES) {
+                throw new BodyTooLarge();
+            }
+            return new String(body, StandardCharsets.US_ASCII);
         }
     }
 

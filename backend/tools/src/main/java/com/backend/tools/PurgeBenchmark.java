@@ -43,7 +43,7 @@ public final class PurgeBenchmark {
             AccountRepository accounts = new AccountRepository(db.dataSource());
             long[] players = new long[PLAYERS];
             for (int i = 0; i < PLAYERS; i++) {
-                players[i] = accounts.register("pb" + i, "pb" + i, "$argon2id$bench".getBytes(StandardCharsets.UTF_8));
+                players[i] = accounts.createForSubject("pb" + i, "pb" + i);
             }
             long old = System.currentTimeMillis() - 100L * 24 * 3_600_000;       // past their 90 days
             long t0 = System.nanoTime();

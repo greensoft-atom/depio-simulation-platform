@@ -88,7 +88,7 @@ class StoredTimesTest {
         try (Connection c = db.dataSource().getConnection()) {
             long id;
             try (PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO account (username, password_hash) VALUES ('zoned', x'01')",
+                    "INSERT INTO account (subject) VALUES ('zoned')",
                     PreparedStatement.RETURN_GENERATED_KEYS)) {
                 ps.executeUpdate();
                 try (ResultSet keys = ps.getGeneratedKeys()) {

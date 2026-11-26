@@ -455,6 +455,7 @@ rooms.
 (umask 077; head -c 24 /dev/urandom | base64 > work/admin-token)   # the admin API's secret, kept in work/
 export BACKEND_PAYMENT_PROVIDER=simulated BACKEND_ADMIN_ADDR=127.0.0.1:9120 \
        BACKEND_ADMIN_TOKEN_FILE=$PWD/work/admin-token
+./dev-account.sh build && ./dev-account.sh start   # the account service, on 8083: players sign up and log in there (D-117)
 ./run-local.sh start
 ```
 
@@ -463,12 +464,12 @@ export BACKEND_PAYMENT_PROVIDER=simulated BACKEND_ADMIN_ADDR=127.0.0.1:9120 \
 ```console
 $ curl -s http://127.0.0.1:8080/health
 {"status":"ok"}
-$ curl -s -X POST http://127.0.0.1:8080/v1/accounts -H 'Content-Type: application/json' \
-       -d '{"username":"try_1","password":"example-password-1"}'
-{"playerId":1}
+$ curl -s -X POST http://127.0.0.1:8083/v1/accounts -H 'Content-Type: application/json' \
+       -d '{"username":"try_1","password":"example-password-1"}'          # the account service (D-117)
+{"access_token":"eyJraWQiOiJwS29UcGxVR1pHb2VDV1hU...","token_type":"Bearer","expires_in":900,"refresh_token":"INh7kmxA9JugZ-m_OIcfndQfV0ChDL7w2C62o-KpSPk","account_id":"GZaZ3-aiO6cQ1xvmiqd8EA"}
 $ curl -s -X POST http://127.0.0.1:8080/v1/sessions -H 'Content-Type: application/json' \
-       -d '{"username":"try_1","password":"example-password-1"}'
-{"token":"vEw_g8LL08jNXDiHOeFlswTCagwkg-lykE9z9u2mNYw","playerId":1,"expiresInSeconds":94879}
+       -d '{"accessToken":"<its access_token>"}'
+{"token":"GVgfvvt5RrKB72HV7BpyELyV8Zu-HctuEzlnGzpFssU","playerId":1,"expiresInSeconds":79767,"newPlayer":true}
 $ curl -s http://127.0.0.1:8080/v1/inventory -H "Authorization: Bearer vEw_g8LL08jNXDiHOeFlswTCagwkg-lykE9z9u2mNYw"
 {"coins":0,"gems":0,"items":[]}
 $ curl -s http://127.0.0.1:9120/admin/arenas -H "Authorization: Bearer $(cat work/admin-token)"
@@ -480,6 +481,7 @@ $ curl -s http://127.0.0.1:9120/admin/arenas -H "Authorization: Bearer $(cat wor
 
 **HTTP, with Postman.** Import `docs/api/backend.postman_collection.json`, and set its variables:
 - `baseUrl` to `http://127.0.0.1:8080`;
+- `accountUrl` to `http://127.0.0.1:8083`, the account service;
 - `adminUrl` to `http://127.0.0.1:9120`;
 - `adminToken` to the contents of `work/admin-token`.
 
@@ -488,12 +490,14 @@ season, closes a room and bans its third player. Run again on the same data, a f
 left (`409 season_ended`, a room no longer there). To run it again from scratch:
 
 ```bash
-./run-local.sh stop && ./dev-mysql.sh stop
-rm -rf work/mysql            # the development MySQL's data, made again at the next start
+./run-local.sh stop && ./dev-account.sh stop && ./dev-mysql.sh stop
+rm -rf work/mysql            # the development MySQL's data, made again at the next start, the account service's too
+./dev-mysql.sh start && ./dev-account.sh start
 ./run-local.sh start         # with the three variables above still exported
 ```
 
-On fresh data it passed 131 of 131, run straight after the lobby example below.
+On fresh data it passed 131 of 131, run straight after the lobby example below; on 2026-11-26, with the account
+service beside it (D-117), 145 requests and 159 checks, none failed.
 
 **The lobby WebSocket.** In Postman, by hand:
 1. New, WebSocket; URL `ws://127.0.0.1:8081/lobby`; Connect.

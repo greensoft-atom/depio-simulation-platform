@@ -11,64 +11,63 @@ A client calls the API through the front's nginx: over HTTPS on 443, or in clear
 nginx passes both to a platform the same way, so the diagrams draw one nginx. Where a diagram has no
 nginx, the client's calls still pass it.
 
-## Register and log in
+## Log in by the account service's token
 
-The classes: `PlatformHttpServer.register` and `login`, `PasswordHasher.admit`,
-`LoginThrottle.attempt`, `AuthService.register` and `login`, and `handoff/SessionStore.open`.
+Since D-117 an account signs up and logs in at the account service, which hashes the password and
+signs an access token ([10](../detailed-design/10-accounts.md)); the platform takes that token once
+for a session. The classes: `PlatformHttpServer.login`, `AuthService.exchange`, `AccountTokens.access`,
+`persistence/AccountRepository.findBySubject`, `erasedSubject` and `createForSubject`, and
+`handoff/SessionStore.create`.
 
-- Every check that can refuse runs before Argon2, the slow password hash, so a refusal costs no
-  hash.
-- A refusal for load (503 `busy`) is answered before anything is counted.
-- Before the platform, nginx limits these routes to 2 requests a second for each address, with a
-  burst of 30 (429). That is only a cheap outer guard; the platform's own limits are the precise
-  ones.
+- The token is checked by the account service's published keys, kept five minutes: a login asks the
+  account service nothing, unless the token names a key the set lacks (10 §4.2).
+- Every reason a token is not taken gets the one answer, 401 `invalid_token`; why is logged.
+- Before the platform, nginx limits `/v1/sessions` to 2 requests a second for each address, with a
+  burst of 30 (429).
 
 ```mermaid
 sequenceDiagram
     participant C as client
+    participant AS as account service
     participant N as nginx
     participant P as platform
     participant S as store
     participant D as MySQL
-    C->>N: POST /v1/accounts with username, password, displayName
+    C->>AS: POST /account/v1/sessions with username and password
+    AS-->>C: access token 15 min, refresh token
+    C->>N: POST /v1/sessions with accessToken
     N->>P: forwarded, X-Forwarded-For appended
-    P->>P: a place in the hasher's line, else 503 busy
-    P->>S: count the address, LoginThrottle
-    alt over 30 a minute
-        P-->>C: 429 too_many_attempts with Retry-After
-    else allowed
-        P->>P: username, password and display name rules, else 400
-        P->>P: Argon2id hash, m 19 MiB, t 2, p 1
-        P->>D: insert the account and its player
-        P-->>C: 201 playerId, or 409 username_taken
+    P->>P: ES256 by a key of the set, at+jwt, issuer, audience, times, claims
+    opt a key the set lacks, at most twice in 30 s
+        P->>AS: GET /.well-known/jwks.json on the private network
     end
-    C->>N: POST /v1/sessions with username and password
-    N->>P: forwarded
-    P->>P: a place in the hasher's line, else 503 busy
-    P->>S: count the address and the account
-    alt over a limit
-        P-->>C: 429 too_many_attempts with Retry-After
-    else allowed
-        P->>D: find the account by its username
-        P->>P: verify, against a decoy hash when there is no account
-        alt wrong password or no such account
-            P-->>C: 401 invalid_credentials
-        else banned, or suspended until later
+    alt not taken
+        P-->>C: 401 invalid_token
+    else no key set to be had
+        P-->>C: 503 keys_unavailable
+    else taken
+        P->>D: the player of the token's subject
+        alt the subject was erased
+            P-->>C: 401 invalid_token
+        else no player yet
+            P->>D: account, player and stats for the subject, named from preferred_username
+        end
+        alt banned, or suspended until later
             P-->>C: 403 banned
-        else verified
-            P->>D: rehash if the stored cost is old, record the login time
+        else
+            P->>D: record the login time
             P->>S: MULTI, HSET the session, EXPIRE a day and up to 10 percent either way, index it by player, EXEC
-            P-->>C: 200 token, playerId, expiresInSeconds
+            P-->>C: 200 token, playerId, expiresInSeconds, newPlayer
         end
     end
 ```
 
-## Guests and the upgrade
+## Guests, and linking an account
 
 A guest is an account made with nothing asked, which the device logs in to with a secret key. The
-classes: `AuthService.createGuest`, `loginGuest` and `upgrade`, and
-`persistence/AccountRepository.createGuest`, `findGuest`, `upgradable` and `upgrade`. A guest's key
-is never stored, only its SHA-256, so a guest's login needs no slow hash.
+classes: `AuthService.createGuest`, `loginGuest` and `link`, and
+`persistence/AccountRepository.createGuest`, `findGuest` and `link`. A guest's key is never stored,
+only its SHA-256, so a guest's login needs no slow hash.
 
 ```mermaid
 sequenceDiagram
@@ -79,7 +78,7 @@ sequenceDiagram
     C->>P: POST /v1/guests
     P->>S: count the address, else 429
     P->>P: 32 random bytes, the key, and a name Guest and four digits
-    P->>D: the account under a username nobody can register, the key's SHA-256
+    P->>D: the account with no subject, the key's SHA-256
     P-->>C: 201 playerId, guestKey, displayName
     Note over C: the key is kept on the device
     C->>P: POST /v1/sessions with guestKey
@@ -93,17 +92,48 @@ sequenceDiagram
         P->>S: open a session
         P-->>C: 200 token, playerId, expiresInSeconds
     end
-    C->>P: POST /v1/accounts/upgrade with the session, username, password
-    P->>P: a place in the hasher's line, then the address counted
+    Note over C: later, signed up or logged in at the account service
+    C->>P: POST /v1/accounts/link with the session and accessToken
     P->>S: the session's player
-    P->>P: the rules of registering
-    P->>D: a guest, and the name free, before any hash
-    alt not a guest, or the name taken
-        P-->>C: 409 not_a_guest or username_taken
-    else upgradable
-        P->>P: Argon2id hash
-        P->>D: username and hash set, the key cleared, in one statement
-        P-->>C: 200, the same player, the key no longer works
+    P->>P: the access token checked, as at a login
+    P->>D: the subject set and the key cleared, in one statement, guarded by the key being there
+    alt not a guest
+        P-->>C: 409 not_a_guest
+    else the subject has a player already
+        P-->>C: 409 account_in_use
+    else linked
+        P-->>C: 200 playerId, the same player, the key no longer works
+    end
+```
+
+## The account service's events
+
+A password changed or an account deleted at the account service is written to its outbox in the
+same transaction, and posted to the platform until taken (10 §3.5). The classes:
+`PlatformHttpServer.accountEvents`, `AccountTokens.event`, and
+`AccountDeletion.deletedAtTheAccountService` and `sessionsRevokedAtTheAccountService`.
+
+```mermaid
+sequenceDiagram
+    participant AS as account service
+    participant P as platform
+    participant S as store
+    participant D as MySQL
+    AS->>P: POST /v1/account-events, a signed event, application/secevent+jwt, on the private network
+    P->>P: ES256, secevent+jwt, issuer, audience, one event it knows
+    alt not taken
+        P-->>AS: 400 err authentication_failed, retried and logged there
+    else deleted
+        P->>S: out of the queue and the party
+        P->>D: out of the team whatever its role; then erased in one transaction, the subject recorded
+        P->>S: off the boards, every session ended, each lobby told deleted
+        P-->>AS: 202
+    else sessions-revoked
+        P->>S: the sessions made before the event ended, those after kept
+        opt one ended
+            P->>S: the lobby told signed_out, whichever session it was on
+        end
+        P-->>AS: 202
     end
 ```
 

@@ -86,11 +86,11 @@ public final class RankBenchmark {
             c.setAutoCommit(false);
             for (int from = 1; from <= accounts; from += 1_000) {
                 int to = Math.min(accounts, from + 999);
-                StringBuilder a = new StringBuilder("INSERT INTO account (id, username, password_hash) VALUES ");
+                StringBuilder a = new StringBuilder("INSERT INTO account (id, subject) VALUES ");
                 StringBuilder p = new StringBuilder("INSERT INTO player (id, public_code, display_name) VALUES ");
                 for (int id = from; id <= to; id++) {
                     String sep = id == from ? "" : ",";
-                    a.append(sep).append("(").append(id).append(",'rb").append(id).append("',x'00')");
+                    a.append(sep).append("(").append(id).append(",'rb").append(id).append("')");
                     p.append(sep).append("(").append(id).append(",'").append(String.format("P%011d", id))
                             .append("','rb").append(id).append("')");
                 }

@@ -77,7 +77,8 @@ checked to be Java 21 bytecode or older. The parent `pom.xml` pins the versions.
 | com.zaxxer:HikariCP | 7.1.0 | persistence |
 | org.flywaydb:flyway-core, flyway-mysql | 13.7.0 | persistence |
 | com.fasterxml.jackson.core:jackson-databind | 2.22.3 | handoff, platform, worker, gateway, tools |
-| org.bouncycastle:bcprov-jdk18on | 1.86 | platform (Argon2id), crypto-examples |
+| org.bouncycastle:bcprov-jdk18on | 1.86 | the account service (Argon2id, D-117; the platform's until then), crypto-examples |
+| com.nimbusds:nimbus-jose-jwt | 10.10 | platform (the account service's tokens checked, D-117), the account service |
 | org.bouncycastle:bcpkix-jdk18on | 1.86 | crypto-examples |
 | org.hdrhistogram:HdrHistogram | 2.2.2 | common (tick percentiles), tools |
 | org.slf4j:slf4j-api / ch.qos.logback:logback-classic | 2.0.20 / 1.6.3 | all |

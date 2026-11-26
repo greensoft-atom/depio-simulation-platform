@@ -332,7 +332,8 @@ Its numbers answer to numbers in the code, and the files say which:
 |---|---|
 | lobby `proxy_read_timeout 150s` | the gateway closes a silent socket at 120 s; the gateway should decide, not nginx |
 | platform upstream `keepalive 32`, `keepalive_timeout 20s` | the platform drops idle connections at 30 s and keeps at most 1 000. The other way round, it closed connections nginx was about to reuse, and nginx does not retry a POST: a 502. Measured on the JDK server, 63 of 16 806 requests failed at its default idle limit of 200 and none at 5 000 |
-| `limit_req` 2/s, burst 30 on the four that make or open an account (`/v1/sessions`, `/v1/accounts`, `/v1/guests`, `/v1/accounts/upgrade`, each matched exactly, as platform matches them: S-18) | a cheap outer guard in front of Java; the precise per-address and per-account limits are the platform's ([04 §1](../detailed-design/04-platform-services.md#1-auth-and-sessions)) |
+| `limit_req` 2/s, burst 30 on the four that make or open a player's session (`/v1/sessions`, `/v1/accounts`, `/v1/guests`, `/v1/accounts/link`, each matched exactly, as platform matches them: S-18) | a cheap outer guard in front of Java; the precise per-address limit on guests is the platform's ([04 §1](../detailed-design/04-platform-services.md#1-auth-and-sessions)), the limits on passwords the account service's (D-117) |
+| `= /v1/account-events` answered 404 | the account service's events reach a platform on the private network; the internet has no business posting them (D-117) |
 | `client_max_body_size 4k` | the platform reads at most 4 KiB |
 | `X-Forwarded-For $proxy_add_x_forwarded_for` | the platform believes the last entry, from a peer on this machine or one in `BACKEND_TRUSTED_PROXIES`, the front's nginx (D-82) |
 | port 80: the same server, in clear, and `/match/<name>` to the arena by `backend-arenas.conf` | for the clients without TLS, the owner's choice ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included), Q-64): what they send crosses in clear. No redirect to 443: a login sent to `http://` has already crossed, and a client that follows a 301 turns the POST into a GET |
@@ -536,7 +537,7 @@ connections mid-play, 20 logins, 20 results applied, and the queue empty afterwa
   0.040 is the deadline itself, past which ticks overrun);
 - `backend_store_connected` at 0;
 - `backend_worker_queue_depth` growing for minutes;
-- `backend_platform_hasher_line` at 168;
+- `account_hasher_line` at 168, the account service's password hasher (D-117);
 - `backend_gateway_store_subscribed` at 0, or `backend_platform_pushes_unheard_total` rising: a gateway's
   subscription is lost or astray, and every push to its lobbies with it
   ([03 §5](../detailed-design/03-gateway.md#5-push-routing));

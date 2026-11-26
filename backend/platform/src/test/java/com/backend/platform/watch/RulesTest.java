@@ -174,18 +174,18 @@ class RulesTest {
     }
 
     @Test
-    @DisplayName("HasherLineFull at 168 for a minute, not at 167; TickSlow above 15 ms for five minutes, by room")
+    @DisplayName("HasherLineFull at 168 for a minute, not at 167, the account service's line since D-117; TickSlow above 15 ms for five minutes, by room")
     void hasherAndTick() {
-        String p = "{job=\"platform\",instance=\"127.0.0.1:9101\"}";
+        String p = "{job=\"account\",instance=\"127.0.0.1:9104\"}";
         String tick = "backend_arena_tick_p99_seconds{job=\"arena\",instance=\"127.0.0.1:9110\",room=\"";
-        repeat(20, "backend_platform_hasher_line" + p + " 167\n" + tick + "1\"} 0.015\n" + tick + "2\"} 0.016\n");
+        repeat(20, "account_hasher_line" + p + " 167\n" + tick + "1\"} 0.015\n" + tick + "2\"} 0.016\n");
         assertThat(firing()).as("4m45s").isEmpty();
-        repeat(1, "backend_platform_hasher_line" + p + " 167\n" + tick + "1\"} 0.015\n" + tick + "2\"} 0.016\n");
+        repeat(1, "account_hasher_line" + p + " 167\n" + tick + "1\"} 0.015\n" + tick + "2\"} 0.016\n");
         assertThat(firing()).as("5 min at 0.016 fires; 167 and 0.015 never").containsExactly("TickSlow");
         assertThat(engine.firing().get(0).labels()).containsEntry("room", "2");
-        repeat(5, "backend_platform_hasher_line" + p + " 168\n" + tick + "1\"} 0.015\n" + tick + "2\"} 0.016\n");
+        repeat(5, "account_hasher_line" + p + " 168\n" + tick + "1\"} 0.015\n" + tick + "2\"} 0.016\n");
         assertThat(firing()).as("a minute at 168").containsExactly("HasherLineFull", "TickSlow");
-        repeat(1, "backend_platform_hasher_line" + p + " 168\n");
+        repeat(1, "account_hasher_line" + p + " 168\n");
         assertThat(firing()).as("the arena's series gone from the round: its alert resolves").containsExactly("HasherLineFull");
     }
 

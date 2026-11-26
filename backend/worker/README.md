@@ -362,7 +362,7 @@ store to install.
 | `SeasonKeeperTest` | A season closed, paid and reset once; the teams'; the lock; a run stopped part-way and finished by the next |
 | `LedgerCheckTest` | Once a day across the fleet; a mismatch in coins or gems found and reported; a failed check gives the day back |
 | `LeaderboardRebuildTest` | A rebuild equal to the live boards; nothing lowered on a live store; an erased player not rebuilt (D-84) |
-| `IdleGuestsTest` | The idle guests erased as a deletion erases: off the boards, the team handed over, the key gone, recent guests and registered players kept; a batch at a time; the store first, so a store that fails erases nothing (D-87) |
+| `IdleGuestsTest` | The idle guests erased as a deletion erases: off the boards, the team handed over, the key gone, recent guests and accounts' players kept; a batch at a time; the store first, so a store that fails erases nothing (D-87) |
 | `ReplicaWatchTest` | The heartbeat stamped through the pool every second; a replica that cannot be read reported so; the stores' replicas counted (D-58) |
 | `EloRatingTest`, `AccountLevelsTest`, `BackupWatchTest` | The rules, and the backup metrics, without a database |
 | `WorkerMainTest` | The store's port argument out of range refuses the start (O-101) |

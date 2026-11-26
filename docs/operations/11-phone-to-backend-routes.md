@@ -131,7 +131,7 @@ and it says why in its own log and metrics.
 
 | Route | The app | nginx | The process behind |
 |---|---|---|---|
-| ① the API | gives up after 10 s | 15 s for an answer; a body up to 4 KiB; the four sign-up and login paths: 2 a second per address, a burst of 30, then 429 | the platform: a body up to 4 KiB; password attempts limited precisely, nginx's limit only a flood guard in front of it |
+| ① the API | gives up after 10 s | 15 s for an answer; a body up to 4 KiB; the four login and guest paths: 2 a second per address, a burst of 30, then 429 | the platform: a body up to 4 KiB; password attempts limited precisely, nginx's limit only a flood guard in front of it |
 | ② the lobby | a ping every 30 s; the lobby counts as lost when a ping has no answer in 10 s; it reconnects after about 1 s, the wait doubling up to 30 s, each wait spread by ±50 % | closes after 150 s without a byte | the gateway: the token within 5 s; closes a lobby silent for 120 s |
 | ③ a match | 5 s to dial; a ping every 10 s in every state | 5 s to reach the arena; closes after 60 s without a byte | the arena: `Join` within 10 s; drops a connection after 30 s without a frame |
 | ③ in clear, `/match/` | `client-simple-no-tls`: 10 s to dial; the full client (D-116): 5 s to dial and be answered, as ③; each reads nginx's answer up to its blank line, 4 KiB at most; then as ③ | the same: 5 s to reach the arena, 60 s without a byte either way | the same, once it has read nginx's request, 1 KiB at most |
@@ -188,7 +188,7 @@ At the top, outside the server:
 
 | Setting | Value | Why |
 |---|---|---|
-| `limit_req_zone` | `$binary_remote_addr zone=backend_auth:10m rate=2r/s` | The flood guard on the sign-up and login paths, by the phone's address; 10 MB holds about 160 000 addresses |
+| `limit_req_zone` | `$binary_remote_addr zone=backend_auth:10m rate=2r/s` | The flood guard on the login and guest paths, by the phone's address; 10 MB holds about 160 000 addresses |
 | `limit_req_status` | `429` | What a phone over it is answered |
 | `server_tokens` | `off` | No version in errors or headers |
 | `include` | `backend-upstreams.conf` | The platforms and the gateways (§4.4) |
@@ -215,7 +215,8 @@ Its locations, the most specific first:
 | Location | Goes to | Its own settings | Why |
 |---|---|---|---|
 | `= /lobby` | `backend_gateway` | `proxy_http_version 1.1`; `Upgrade $http_upgrade` and `Connection "upgrade"`; `X-Forwarded-For` and `Host` again; `proxy_read_timeout` and `proxy_send_timeout` `150s` | The WebSocket's upgrade passed on. A location that sets any `proxy_set_header` inherits none from the server, so every header it needs is set in it. 150 s is longer than the gateway's 120 s, so the gateway decides when a lobby is dead |
-| `= /v1/sessions`, `= /v1/accounts`, `= /v1/guests`, `= /v1/accounts/upgrade` | `backend_platform` | `limit_req zone=backend_auth burst=30 nodelay`, and `backend-platform.conf` | Logins, registrations and guests, each an Argon2 hash on the platform: 2 a second an address, 30 at once. The platform answers only these exact paths, so a slash added is no way past the limit |
+| `= /v1/sessions`, `= /v1/accounts`, `= /v1/guests`, `= /v1/accounts/link` | `backend_platform` | `limit_req zone=backend_auth burst=30 nodelay`, and `backend-platform.conf` | Logins, guests made, a guest linked, a guest deleted: 2 a second an address, 30 at once. The platform answers only these exact paths, so a slash added is no way past the limit. Until D-117 each was an Argon2 hash on the platform; the passwords are the account service's now |
+| `= /v1/account-events` | nothing: `return 404` | | The account service's events, which it posts to a platform on the private network (D-117); not the internet's to send |
 | `/v1/` | `backend_platform` | `backend-platform.conf` | The rest of the API |
 | `~ ^/match/(?<backend_match_name>[a-z0-9.-]+)$` | `$backend_match_arena`, the arena the name maps to | `return 404` for a name not in the list; `proxy_http_version 1.1`; `proxy_pass_request_headers off`; `Upgrade $http_upgrade`, `Connection "upgrade"`, `X-Forwarded-For $remote_addr`, `Host`; `proxy_connect_timeout 5s`, `proxy_read_timeout` and `proxy_send_timeout` `60s` | A match without TLS (D-115), passed on as the lobby's WebSocket is: the arena answers 101, and the match's bytes go both ways. The arena reads the request's line and these four headers alone, none of the phone's; `X-Forwarded-For` is the address nginx saw, never one the phone sent. 60 s as 9001's `proxy_timeout`. Answered on 443 too, where nothing needs it |
 | `/` | none | `return 404` | Anything else, `/health` included: that is for the machine's own monitoring, on loopback |
@@ -502,13 +503,13 @@ examples are in [api/01](../api/01-http-api.md).
 
 | Route | Auth | Body | Success | nginx | Through nginx, in the runs |
 |---|---|---|---|---|---|
-| `POST /v1/accounts` | none (throttled per address; 503 `busy` when the hasher's line is full) | `RegisterRequest`: `username` string req, `password` string req (missing either: 400 `invalid_body`), `displayName` string opt | 201 `{"playerId"}` | `= /v1/accounts`: 2 a second an address, burst 30 | the client and the collection |
-| `DELETE /v1/accounts` | bearer, plus the account's password in the body for a registered account | `PasswordRequest`: `password` string. Required when `AccountDeletion.needsPassword` holds (not a guest and not already deleted), else 400 `invalid_body`. Ignored for a guest | 204 | `= /v1/accounts`: 2 a second an address, burst 30 | the client and the collection |
-| `POST /v1/accounts/upgrade` | bearer (the guest's) | `RegisterRequest`: `username` req, `password` req (400 `invalid_body`), `displayName` opt | 200 `{}` | `= /v1/accounts/upgrade`: 2 a second an address, burst 30 | the client and the collection |
+| `DELETE /v1/accounts` | bearer, a guest's; an account's player is answered 409 `delete_at_account_service` (D-117) | none: a body is ignored | 204 | `= /v1/accounts`: 2 a second an address, burst 30 | the client and the collection, as before D-117; since, not yet (plan item 142 (e)) |
+| `POST /v1/accounts/link` | bearer (the guest's) | `AccessTokenRequest`: `accessToken` string req (400 `invalid_body`) | 200 `{"playerId"}` | `= /v1/accounts/link`: 2 a second an address, burst 30 | not yet (plan item 142 (e)) |
 | `PUT /v1/accounts/name` | bearer | `RenameRequest`: `displayName` string req. A missing one reaches `AuthService.rename` as `""` and answers 400 `invalid_display_name`, never `invalid_body` | 200 `{"playerId","displayName"}` | `/v1/` | the client and the collection |
 | `POST /v1/guests` | none (throttled per address) | none | 201 `{"playerId","guestKey","displayName"}` | `= /v1/guests`: 2 a second an address, burst 30 | the client and the collection |
-| `POST /v1/sessions` | none (throttled; the password form is also throttled per account and can answer `busy`) | `LoginRequest`: either `guestKey` string alone (if present, it wins and the rest is ignored), or `username` string req + `password` string req (400 `invalid_body`) | 200 `{"token","playerId","expiresInSeconds"}` | `= /v1/sessions`: 2 a second an address, burst 30 | the client and the collection |
+| `POST /v1/sessions` | none (a guest's key throttled per address; an access token checked by the account service's keys, 503 `keys_unavailable` when none can be had) | `LoginRequest`: either `guestKey` string alone (if present, it wins and the rest is ignored), or `accessToken` string req (400 `invalid_body`) | 200 `{"token","playerId","expiresInSeconds","newPlayer"}` | `= /v1/sessions`: 2 a second an address, burst 30 | a guest's: the client and the collection; an access token's: not yet (plan item 142 (e)) |
 | `DELETE /v1/sessions` | bearer, present only: an unknown token gets 204 too | none | 204 | `= /v1/sessions`: 2 a second an address, burst 30 | the collection |
+| `POST /v1/account-events` | the event's own signature, the account service's (D-117) | a Security Event Token, `Content-Type: application/secevent+jwt` (RFC 8935) | 202; 400 `{"err","description"}` | not passed: `= /v1/account-events` answers 404 | never: the account service posts it on the private network; the platform's tests |
 
 #### Content
 

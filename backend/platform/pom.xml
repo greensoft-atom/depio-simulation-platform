@@ -9,7 +9,7 @@
     <dependency><groupId>com.backend</groupId><artifactId>sim</artifactId></dependency>
     <dependency><groupId>com.jredis</groupId><artifactId>j-redis-client</artifactId></dependency>
     <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId></dependency>
-    <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk18on</artifactId></dependency>
+    <dependency><groupId>com.nimbusds</groupId><artifactId>nimbus-jose-jwt</artifactId></dependency>
     <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId></dependency>
     <dependency><groupId>com.jredis</groupId><artifactId>j-redis-embedded</artifactId><scope>test</scope></dependency>
     <!-- Test scope only, and not transitive: it lets one test drive a real arena end to end

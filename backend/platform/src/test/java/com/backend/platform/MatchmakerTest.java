@@ -66,8 +66,15 @@ class MatchmakerTest {
     }
 
     @BeforeEach
-    void fresh() {
+    void fresh() throws Exception {
         store.sync().send("FLUSHALL");
+        // A push the last test's matcher sent can still be on its way here (T-70): what this client published before
+        // the marker reaches the subscriber before it, so once the marker has come nothing of the last test is left.
+        String marker = "marker-" + System.nanoTime();
+        store.publish("push:gw-1", marker).get(5, TimeUnit.SECONDS);
+        for (String m = pushed.poll(5, TimeUnit.SECONDS); !marker.equals(m); m = pushed.poll(5, TimeUnit.SECONDS)) {
+            assertThat(m).as("the marker").isNotNull();
+        }
         pushed.clear();
         queue = new MatchQueue(store);
         tickets = new TicketStore(store);

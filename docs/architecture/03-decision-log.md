@@ -3931,3 +3931,6 @@ apart. Design: [detailed-design/10](../detailed-design/10-accounts.md).
   the platform is down, the event waits in the outbox.
 - No email: no verification and no password reset, which need a mail service (the owner's rule: no third-party
   service). A forgotten password is a new account.
+- The backend's `V3` drops `account`'s username and password hash in one step, an exception to expand and contract
+  ([06 §8](../detailed-design/06-persistence-mysql.md#8-migrations)): nothing has launched, so no database that
+  matters holds them and no older process runs beside the new one.

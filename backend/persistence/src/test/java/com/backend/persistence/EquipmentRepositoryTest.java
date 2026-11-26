@@ -48,10 +48,9 @@ class EquipmentRepositoryTest {
         try (Connection c = db.dataSource().getConnection()) {
             long id;
             try (PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO account (username, password_hash) VALUES (?, ?)",
+                    "INSERT INTO account (subject) VALUES (?)",
                     PreparedStatement.RETURN_GENERATED_KEYS)) {
                 ps.setString(1, name);
-                ps.setBytes(2, new byte[] {1, 2, 3});
                 ps.executeUpdate();
                 try (ResultSet keys = ps.getGeneratedKeys()) {
                     keys.next();

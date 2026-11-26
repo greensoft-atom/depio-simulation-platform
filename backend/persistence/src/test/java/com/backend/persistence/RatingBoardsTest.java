@@ -45,7 +45,7 @@ class RatingBoardsTest {
 
     /** A player with a duel rating after so many rated duels, and a ranked free-for-all's of 1 500 after twenty. */
     private static long player(String name, int rating, int rated) throws SQLException {
-        long id = accounts.register(name, name, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+        long id = accounts.createForSubject(name, name);
         try (Connection c = db.dataSource().getConnection();
              PreparedStatement ps = c.prepareStatement("UPDATE player SET rating_duel = ?, rated_duels = ?,"
                      + " rating_rffa = 1500, rated_rffas = 20 WHERE id = ?")) {
@@ -123,7 +123,7 @@ class RatingBoardsTest {
     @DisplayName("a place, and the top, read the listed players and not the accounts never rated, however many (D-35, D-57)")
     void aPlaceReadsOnlyTheListed() throws Exception {
         for (int i = 0; i < 300; i++) {
-            accounts.register("idle" + i, "idle" + i, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+            accounts.createForSubject("idle" + i, "idle" + i);
         }
         player("ada", 1_400, 10);
         player("bob", 1_300, 10);

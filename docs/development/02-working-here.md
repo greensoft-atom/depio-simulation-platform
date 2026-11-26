@@ -238,6 +238,11 @@ Each trap below happened at least once. Each says what went wrong and what to do
   `bash`: `dev-env.sh` is bash, and `sh -c '. dev-env.sh && mvn …'` dies at once with "Bad substitution". That made
   fourteen mutants "invalid" in a row (item 105, 2026-10-26). Python's `subprocess.run(shell=True)` uses `sh`
   unless told `executable='/bin/bash'`.
+- **Two test runs on one test database spoil each other.** Every test of the backend's modules that uses MySQL
+  starts by having Flyway clean `backend_test` and migrate it again, so a second `mvn test` beside the first drops
+  its tables under it: errors such as `Unknown table 'backend_test.matches'` or "`flyway_schema_history` doesn't
+  exist", and a test failing on its first request, none of them the code's (plan item 142 (d), 2026-11-26). Run the
+  backend's suites one after another; the account service's own, on `account_test`, may run beside them.
 - **`pkill -f` and `pgrep -f` match the shell that runs them** when the pattern is in that shell's command line.
   Use the bracket trick: `pkill -f "[A]renaMain"`. And match a class's **full name**: `WorkerMain` alone also
   matches VS Code's own worker processes (`...WorkerMain --node-ipc`), which a stop of the stack once killed

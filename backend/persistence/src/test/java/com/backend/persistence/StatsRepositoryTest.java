@@ -49,7 +49,7 @@ class StatsRepositoryTest {
 
     /** A player first active on {@code first} and active on each of {@code days}. */
     private static long player(String name, String first, String... days) throws SQLException {
-        long id = accounts.register(name, name, "$argon2id$fake".getBytes(StandardCharsets.UTF_8));
+        long id = accounts.createForSubject(name, name);
         try (Connection c = db.dataSource().getConnection()) {
             try (PreparedStatement ps = c.prepareStatement("UPDATE player SET first_played_on = ? WHERE id = ?")) {
                 ps.setString(1, first);
