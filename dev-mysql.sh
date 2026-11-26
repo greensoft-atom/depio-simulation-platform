@@ -5,7 +5,8 @@
 # its own port, socket and data. The socket is named relative to the data directory, where mysqld
 # runs, so that no path is too long for a socket (107 bytes) however deep the checkout. Each start
 # makes sure of the databases backend_test (the tests'; they wipe it) and backend_dev (a run by
-# hand's), and of their user, backend / backend-dev-password.
+# hand's), and of their user, backend / backend-dev-password; and of the account service's, account_test and
+# account_dev, and their user, account / account-dev-password (D-117).
 #
 #   ./dev-mysql.sh start | stop | restart | status
 #   ./dev-mysql.sh test      it answers: backend logs in over TCP to both databases, backend_dev's schema named (D-92)
@@ -41,7 +42,10 @@ start)
     (cd "$D/data" && "$M/mysql" --no-defaults -S mysqld.sock -u root -e "
         CREATE DATABASE IF NOT EXISTS backend_test; CREATE DATABASE IF NOT EXISTS backend_dev;
         CREATE USER IF NOT EXISTS backend@'127.0.0.1' IDENTIFIED BY 'backend-dev-password';
-        GRANT ALL ON backend_test.* TO backend@'127.0.0.1'; GRANT ALL ON backend_dev.* TO backend@'127.0.0.1'")
+        GRANT ALL ON backend_test.* TO backend@'127.0.0.1'; GRANT ALL ON backend_dev.* TO backend@'127.0.0.1';
+        CREATE DATABASE IF NOT EXISTS account_test; CREATE DATABASE IF NOT EXISTS account_dev;
+        CREATE USER IF NOT EXISTS account@'127.0.0.1' IDENTIFIED BY 'account-dev-password';
+        GRANT ALL ON account_test.* TO account@'127.0.0.1'; GRANT ALL ON account_dev.* TO account@'127.0.0.1'")
     echo "the development MySQL runs on 127.0.0.1:$MYSQL_PORT, its files in $D" ;;
 stop)
     if up; then admin shutdown; echo "the development MySQL stopped"

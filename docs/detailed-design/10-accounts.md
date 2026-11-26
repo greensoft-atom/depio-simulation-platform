@@ -82,7 +82,7 @@ JSON in and out, at most 4 KiB a body; each route answers its own path alone, an
 |---|---|---|
 | `POST /v1/accounts` | `{"username", "password"}` | 201, a token answer; 400 `invalid_username`, `invalid_password`; 409 `username_taken`; 429 `too_many_attempts`; 503 `busy` |
 | `POST /v1/sessions` | `{"username", "password"}` | 200, a token answer; 401 `invalid_credentials`; 429; 503 `busy` |
-| `POST /v1/sessions/refresh` | `{"refresh_token"}` | 200, a token answer; 401 `invalid_grant` |
+| `POST /v1/sessions/refresh` | `{"refresh_token"}` | 200, a token answer; 400 `invalid_grant` (RFC 6749 §5.2) |
 | `DELETE /v1/sessions` | `{"refresh_token"}` | 204, always: its family spent |
 | `PUT /v1/accounts/me/password` | `{"current_password", "new_password"}`, bearer access token | 200, a token answer (a new family); 401 `invalid_token`, `invalid_credentials`; 400 `invalid_password`; 429; 503 `busy` |
 | `DELETE /v1/accounts/me` | `{"password"}`, bearer access token | 204; 401 `invalid_token`, `invalid_credentials`; 429; 503 `busy` |
@@ -201,8 +201,9 @@ its reason logged, never told:
    choose (RFC 8725 §3.1);
 2. its `typ` is `at+jwt` for an access token, `secevent+jwt` for an event: one cannot pass as the other;
 3. its `kid` names a key in the account service's set. The set is fetched from `BACKEND_ACCOUNT_JWKS_URL`, kept 5
-   minutes, fetched again ahead of its end, and at once for a `kid` it lacks, at most once in 30 seconds. While the
-   set cannot be had, a login is 503 `keys_unavailable`;
+   minutes, fetched again ahead of its end, and at once for a `kid` it lacks, at most twice in 30 seconds (Nimbus's
+   limit). While the account service cannot be reached, the set last fetched serves an hour; while no set can be had,
+   a login is 503 `keys_unavailable`;
 4. `iss` is the setting exactly, and `aud` holds this backend's name;
 5. `exp` is to come and `iat` past, with 60 seconds' leeway for the clocks;
 6. `sub` is 1 to 64 ASCII characters, and `jti` and `client_id` are there.

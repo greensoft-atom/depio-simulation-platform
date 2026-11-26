@@ -4704,7 +4704,21 @@ bundle as its local repository downloaded Nimbus's jar and POM alone; the enforc
 from an empty local repository, 451 artifacts from the bundle and none from anywhere else; the jar's line in the
 inventory, so not `later`; 301 jars, none above Java 21. The probe was the session's, as the bundle's first ones were
 not kept either; what it showed is in the bundle's README §8. The bundle's 123 `_remote.repositories` files, committed
-before this, are left as they were.
+before this, are left as they were. **(c) done 2026-11-26:** `account-service/` as designed: its routes, Argon2id and
+the hasher's line (the platform's, moved), the limits in MySQL, access tokens and events signed ES256, refresh tokens
+rotated with reuse and its 30 s overlap, the key set, the outbox and its delivery, housekeeping, metrics; its schema,
+`V1`. Its own copies of the backend's `Database`, `PrimaryDataSource`, `Tx`, `Secrets` and `TrustedProxies`, each
+saying so. Test first, round by round against stubs: 74 tests on `account_test`, 18 of them the platform's moved with
+the hasher or the backend's with its copied classes. 56 mutants: 50 caught; 5 survived for a test missing or code that
+did nothing (a type check never tested alone; a cap at the family's end and the family's check, each making the other
+redundant: the cap gone; a purge's margin with no token inside it; the arguments' refusal passing for another
+reason), each mended, then caught; 1 was a mutant of mine that changed nothing, run again fairly and caught. Found:
+OpenSSL 3's `genpkey` writes its DER as SEC1, not PKCS #8, which Java refuses: `scripts/account-key.sh` converts, its
+test failing first. `dev-account.sh` (8083, its debugger 5010, its key made once in `work/account/`, run live: up, its
+three checks, down); `dev-mysql.sh`'s `account_dev` and `account_test` and their user; `dev-env.sh`'s `ACCOUNT_PORT`
+and `ACCOUNT_JDBC_URL`; `ReadmeTestListsTest` holds the service's README to its tests too. The design corrected where
+building showed it wrong: `invalid_grant` is 400 (RFC 6749 §5.2); Nimbus refetches a key set at most twice in its
+interval. Nothing calls the service yet: that is (d) on.
 
 ---
 

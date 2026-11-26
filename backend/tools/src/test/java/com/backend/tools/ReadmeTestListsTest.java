@@ -26,6 +26,8 @@ class ReadmeTestListsTest {
 
     /** The backend's modules, beside this one: Maven runs the tests in the module's directory. */
     private static final Path BACKEND = Path.of("..").toAbsolutePath().normalize();
+    /** The account service, a project of its own beside the backend, held to the same rule (D-117). */
+    private static final Path ACCOUNT_SERVICE = BACKEND.resolveSibling("account-service");
     /** A test's annotation, or the same written with its package, {@code @org.junit.jupiter.api.Test} (DOC-47). */
     private static final Pattern A_TEST = Pattern.compile(
             "^\\s*@(?:[\\w.]+\\.)?(Test|ParameterizedTest|RepeatedTest|TestFactory)\\b", Pattern.MULTILINE);
@@ -33,12 +35,17 @@ class ReadmeTestListsTest {
     private static final Pattern NAMED = Pattern.compile("`(?:\\w+/)*(\\w+Test)`");
 
     @Test
-    @DisplayName("every module's README names each of its test classes, with the number of tests where its row gives one (DOC-29)")
+    @DisplayName("every module's README, and the account service's, names each of its test classes, with the number of tests where its row gives one (DOC-29)")
     void everyReadmeListsItsTests() throws IOException {
         List<String> wrong = new ArrayList<>();
         int modules = 0;
+        List<Path> projects;
         try (Stream<Path> dirs = Files.list(BACKEND)) {
-            for (Path module : dirs.filter(d -> Files.isDirectory(d.resolve("src/test/java"))).sorted().toList()) {
+            projects = new ArrayList<>(dirs.filter(d -> Files.isDirectory(d.resolve("src/test/java"))).sorted().toList());
+        }
+        projects.add(ACCOUNT_SERVICE);
+        {
+            for (Path module : projects) {
                 modules++;
                 String name = module.getFileName().toString();
                 Map<String, Integer> tests = testsIn(module.resolve("src/test/java"));
@@ -67,7 +74,7 @@ class ReadmeTestListsTest {
                 }
             }
         }
-        assertThat(modules).as("modules with tests under " + BACKEND).isGreaterThanOrEqualTo(10);
+        assertThat(modules).as("modules with tests under " + BACKEND + ", and the account service").isGreaterThanOrEqualTo(11);
         assertThat(wrong).as("each module's README against its tests").isEmpty();
     }
 

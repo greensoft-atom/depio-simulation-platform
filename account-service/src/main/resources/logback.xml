@@ -1,0 +1,31 @@
+<!--
+  The default logging for every process: INFO to standard output, which systemd hands to the
+  journal. Without this file logback falls back to DEBUG, and the worker and gateway logged
+  some 150 DEBUG lines in a 20-second run, mostly the store client's reconnection chatter,
+  which would bury the lines that matter. An operator overrides it with
+  -Dlogback.configurationFile=/etc/backend/logback.xml, no rebuild needed.
+
+  Written by a thread of its own, never by the one that logs. A journal that stops reading
+  blocks whoever writes to it, and the loggers include room threads mid-tick and Netty's event
+  loops: written directly, a stuck journald stalled the simulation (LoggingTest). Queued
+  instead, and when the queue is full lines are dropped rather than wait - by then nothing
+  reaches the journal anyway. INFO goes first, with a fifth of the queue left.
+
+  The queue is written out when a process stops (Logs.flush, at the end of each shutdown), so
+  the last lines, which say what a stop left undone, are not lost with it.
+-->
+<configuration>
+  <appender name="OUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+  <appender name="QUEUED" class="ch.qos.logback.classic.AsyncAppender">
+    <queueSize>8192</queueSize>
+    <neverBlock>true</neverBlock>
+    <appender-ref ref="OUT"/>
+  </appender>
+  <root level="INFO">
+    <appender-ref ref="QUEUED"/>
+  </root>
+</configuration>

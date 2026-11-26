@@ -51,9 +51,13 @@ export MYSQL_PORT=${MYSQL_PORT:-3314}
 [ "${JDBC_URL:-}" != "${DEV_JDBC_URL:-}" ] || unset JDBC_URL
 export DEV_JDBC_URL="jdbc:mysql://127.0.0.1:$MYSQL_PORT/backend_test?useSSL=false&allowPublicKeyRetrieval=true"
 export JDBC_URL=${JDBC_URL:-$DEV_JDBC_URL}
+# The account service's tests, on their own database, by the same rule (D-117).
+[ "${ACCOUNT_JDBC_URL:-}" != "${DEV_ACCOUNT_JDBC_URL:-}" ] || unset ACCOUNT_JDBC_URL
+export DEV_ACCOUNT_JDBC_URL="jdbc:mysql://127.0.0.1:$MYSQL_PORT/account_test?useSSL=false&allowPublicKeyRetrieval=true"
+export ACCOUNT_JDBC_URL=${ACCOUNT_JDBC_URL:-$DEV_ACCOUNT_JDBC_URL}
 # A run by hand's ports and address, the same for each of its scripts (D-92): j-redis, the platform, the gateway
 # and the arena on 127.0.0.1, nginx on every address on the site's ports, and the arena announcing nginx's.
-STORE_PORT=${STORE_PORT:-6380} PLATFORM_PORT=${PLATFORM_PORT:-8080} GATEWAY_PORT=${GATEWAY_PORT:-8081}
+STORE_PORT=${STORE_PORT:-6380} PLATFORM_PORT=${PLATFORM_PORT:-8080} GATEWAY_PORT=${GATEWAY_PORT:-8081} ACCOUNT_PORT=${ACCOUNT_PORT:-8083}
 ARENA_PORT=${ARENA_PORT:-9021} ARENA_TLS_NAME=${ARENA_TLS_NAME:-a1.arena.internal}
 NGINX_HTTP_PORT=${NGINX_HTTP_PORT:-80} NGINX_HTTPS_PORT=${NGINX_HTTPS_PORT:-443} NGINX_MATCH_PORT=${NGINX_MATCH_PORT:-9001}
 # PLAIN=1: nginx and the arena without TLS, the API and the lobby on NGINX_HTTP_PORT, matches on NGINX_MATCH_PORT, for
