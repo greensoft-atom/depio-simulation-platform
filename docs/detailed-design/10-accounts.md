@@ -382,8 +382,9 @@ backups, the watch and the install guide; and the two machines.
   failed stops the time they read. Retention keeps each database's own; the binlogs are the server's, both
   databases' in one series, pruned before the earliest file any kept dump needs.
 - **The runbook's restore** makes both databases, each from its own dump and the binlogs filtered to it.
-- **`promote-mysql.sh`** changes nothing: the account service follows the primary itself, as the backend does
-  (`PrimaryDataSource`).
+- **`promote-mysql.sh`** raises the account service's epoch beside the backend's: the account service follows the
+  primary itself, as the backend does (`PrimaryDataSource`), by its own database's `ha_epoch`, which a promotion that
+  raised the backend's alone left behind (O-103). A server without the account database says so.
 - **The watch** scrapes the account service as `account=127.0.0.1:9104`, so `TargetDown` covers it, and
   `HasherLineFull` reads its `account_hasher_line`.
 

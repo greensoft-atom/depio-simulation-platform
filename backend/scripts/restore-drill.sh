@@ -28,6 +28,10 @@
 #             target database must not exist yet (nothing is dropped), and the checks are what holds
 #             without a source: every table restored, the newest migration named, the ledger
 #             reconciled to every balance. Restore under the production name onto the new primary.
+#
+# A database's own checks are what it holds (D-117, 10 §6.3): the backend's, which has a ledger, the newest
+# ledger row and match as the proof's floor and the ledger reconciled to every balance; the account service's,
+# which has none, its newest account and event as the floor, and no reconciliation.
 set -euo pipefail
 # The release's MySQL tools first, from mysql/ beside scripts/ in /opt/backend (docs/detailed-design/09
 # §6); run from the source tree, the machine's own.
@@ -56,6 +60,11 @@ elif [ "$SOURCE" = "$SCRATCH" ] && { [ "${SOURCE_CNF:-}" = "${SCRATCH_CNF:-}" ] 
     echo "the scratch database must not be the source" >&2; exit 2
 fi
 now() { date +%s.%N; }
+# The backend's database has a ledger; the account service's has none (10 §6.3). <database> <mysql...>
+ledger_in() { [ "$("${@:2}" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$1' AND table_name = 'ledger'")" = 1 ]; }
+floors() {   # floors <ledger: 1|0>: the tables whose newest row a copy must hold
+    if [ "$1" = 1 ]; then echo "ledger matches"; else echo "account event_outbox"; fi
+}
 # awk, not bc: bc is not on a minimal install, and these scripts run from units there.
 secs() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.1f", b - a }'; }
 
@@ -64,13 +73,19 @@ secs() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%.1f", b - a }'; }
 # drill would replicate a whole scratch database to every replica.
 NOLOG="SET sql_log_bin = 0;"
 
-# The proof's floor: the newest ledger row and match the source has, read before its position,
-# so that everything they name was committed before it and must be in the copy.
+# Which database this is: the source's, read now; with no source, the copy's, once it is restored.
+LEDGER=1
+[ "$NO_SOURCE" = 1 ] || { ledger_in "$SOURCE" "${SRC[@]}" || LEDGER=0; }
+read -r FLOOR_A FLOOR_B <<< "$(floors "$LEDGER")"
+
+# The proof's floor: the newest row of each floor table the source has (the backend's ledger and matches, the
+# account service's accounts and events), read before its position, so that everything they name was committed
+# before it and must be in the copy.
 if [ "${PROOF:-0}" = 1 ] && [ "${TO_COPIES_END:-0}" != 1 ]; then
     # Assigned, then read: a failed query inside the here-string was read as no floor at all, and passed (O-70).
-    FLOOR=$("${SRC[@]}" -N -e "SELECT (SELECT COALESCE(MAX(id), 0) FROM \`$SOURCE\`.ledger),
-        (SELECT COALESCE(MAX(id), 0) FROM \`$SOURCE\`.matches)")
-    read -r FLOOR_LEDGER FLOOR_MATCH <<< "$FLOOR"
+    FLOOR=$("${SRC[@]}" -N -e "SELECT (SELECT COALESCE(MAX(id), 0) FROM \`$SOURCE\`.$FLOOR_A),
+        (SELECT COALESCE(MAX(id), 0) FROM \`$SOURCE\`.$FLOOR_B)")
+    read -r FLOOR_1 FLOOR_2 <<< "$FLOOR"
 fi
 
 # Where the source is now: the drill carries the restore forward to exactly this moment.
@@ -160,6 +175,7 @@ if [ "$NO_SOURCE" = 1 ]; then
     printf '  %-22s %s\n' "migration" "$("${DST[@]}" -N -e "SELECT version FROM \`$SCRATCH\`.flyway_schema_history
         WHERE success ORDER BY installed_rank DESC LIMIT 1")"
     TABLES=()
+    ledger_in "$SCRATCH" "${DST[@]}" || LEDGER=0
 else
     mapfile -t TABLES < <("${SRC[@]}" -N -e "SELECT table_name FROM information_schema.tables
         WHERE table_schema = '$SOURCE' AND table_type = 'BASE TABLE' ORDER BY table_name")
@@ -183,9 +199,9 @@ if [ "${PROOF:-0}" = 1 ]; then
     b=$("${DST[@]}" -N -e "$(printf "$MIGRATION" "\`$SCRATCH\`")")
     mark=ok; [ "$a" = "$b" ] || { mark=DIFFERS; FAIL=1; }
     printf '  %-22s source %8s  restored %8s  %s\n' "migration" "$a" "$b" "$mark"
-    read -r GOT_LEDGER GOT_MATCH <<< "$("${DST[@]}" -N -e "SELECT (SELECT COALESCE(MAX(id), 0) FROM \`$SCRATCH\`.ledger),
-        (SELECT COALESCE(MAX(id), 0) FROM \`$SCRATCH\`.matches)")"
-    for pair in "ledger ${FLOOR_LEDGER:-0} $GOT_LEDGER" "matches ${FLOOR_MATCH:-0} $GOT_MATCH"; do
+    read -r GOT_1 GOT_2 <<< "$("${DST[@]}" -N -e "SELECT (SELECT COALESCE(MAX(id), 0) FROM \`$SCRATCH\`.$FLOOR_A),
+        (SELECT COALESCE(MAX(id), 0) FROM \`$SCRATCH\`.$FLOOR_B)")"
+    for pair in "$FLOOR_A ${FLOOR_1:-0} $GOT_1" "$FLOOR_B ${FLOOR_2:-0} $GOT_2"; do
         read -r t want got <<< "$pair"
         mark=ok; [ "$got" -ge "$want" ] || { mark=MISSING; FAIL=1; }
         printf '  %-22s newest before the capture %8s  restored %8s  %s\n' "$t" "$want" "$got" "$mark"
@@ -195,18 +211,27 @@ if [ -n "${STOP_AT:-}" ]; then
     # Nothing at or after the moment: the mistake is not in the copy. created_at is UTC, as the
     # application's sessions write it (connectionTimeZone +00:00), and STOP_AT is UTC: compared as
     # they are (O-14: read through UNIX_TIMESTAMP, they took this session's zone).
-    LATE=$("${DST[@]}" -N -e "SELECT COUNT(*) FROM \`$SCRATCH\`.ledger WHERE created_at >= '$STOP_AT'")
-    printf '  %-22s %s ledger rows at or after %s\n' "stopped" "$LATE" "$STOP_AT"
+    # The account service's: an account made, or an event of a change, at or after it (10 §6.3).
+    if [ "$LEDGER" = 1 ]; then
+        LATE=$("${DST[@]}" -N -e "SELECT COUNT(*) FROM \`$SCRATCH\`.ledger WHERE created_at >= '$STOP_AT'")
+        printf '  %-22s %s ledger rows at or after %s\n' "stopped" "$LATE" "$STOP_AT"
+    else
+        LATE=$("${DST[@]}" -N -e "SELECT (SELECT COUNT(*) FROM \`$SCRATCH\`.account WHERE created_at >= '$STOP_AT')
+            + (SELECT COUNT(*) FROM \`$SCRATCH\`.event_outbox WHERE created_at >= '$STOP_AT')")
+        printf '  %-22s %s accounts and events at or after %s\n' "stopped" "$LATE" "$STOP_AT"
+    fi
     [ "$LATE" = 0 ] || FAIL=1
 fi
 # The ledger must reconcile to every balance, coins and gems, as in production (06 §3; O-13: it
-# summed coins alone, and gems have moved through it since item 68).
-MISMATCH=$("${DST[@]}" -N -e "SELECT COUNT(*) FROM \`$SCRATCH\`.player p LEFT JOIN
-    (SELECT player_id, SUM(IF(currency = 0, delta, 0)) coins, SUM(IF(currency = 1, delta, 0)) gems
-     FROM \`$SCRATCH\`.ledger GROUP BY player_id) l
-    ON l.player_id = p.id WHERE p.coins <> COALESCE(l.coins, 0) OR p.gems <> COALESCE(l.gems, 0)")
-printf '  %-22s %s players whose coins or gems differ from their ledger\n' "reconciliation" "$MISMATCH"
-[ "$MISMATCH" = 0 ] || FAIL=1
+# summed coins alone, and gems have moved through it since item 68). The account service's has none.
+if [ "$LEDGER" = 1 ]; then
+    MISMATCH=$("${DST[@]}" -N -e "SELECT COUNT(*) FROM \`$SCRATCH\`.player p LEFT JOIN
+        (SELECT player_id, SUM(IF(currency = 0, delta, 0)) coins, SUM(IF(currency = 1, delta, 0)) gems
+         FROM \`$SCRATCH\`.ledger GROUP BY player_id) l
+        ON l.player_id = p.id WHERE p.coins <> COALESCE(l.coins, 0) OR p.gems <> COALESCE(l.gems, 0)")
+    printf '  %-22s %s players whose coins or gems differ from their ledger\n' "reconciliation" "$MISMATCH"
+    [ "$MISMATCH" = 0 ] || FAIL=1
+fi
 # One line a caller can record (restore-proof.sh): how long each part took, and how far behind
 # the copies were.
 echo "summary: restore $(secs "$T0" "$T1") s, replay $(secs "$T1" "$T2") s, recovery point ${LAG:-0.0} s"

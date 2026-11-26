@@ -118,7 +118,7 @@ BACKEND_ACCOUNT_JWKS_URL=http://127.0.0.1:8070/.well-known/jwks.json
 BACKEND_PAYMENT_PROVIDER=simulated
 BACKEND_METRICS_ADDR=127.0.0.1:9101
 BACKEND_ADMIN_ADDR=127.0.0.1:9120
-BACKEND_WATCH_TARGETS=platform=127.0.0.1:9101,gateway=127.0.0.1:9103,arena=127.0.0.1:9110,worker=127.0.0.1:9102
+BACKEND_WATCH_TARGETS=platform=127.0.0.1:9101,gateway=127.0.0.1:9103,arena=127.0.0.1:9110,worker=127.0.0.1:9102,account=127.0.0.1:9104
 BACKEND_WATCH_MACHINE=one
 BACKEND_DB_PASSWORD=db-secret-1f3a
 BACKEND_STORE_PASSWORD=store-secret-7c2e
@@ -324,6 +324,8 @@ while down || ! admin alerts | grep -q '"alerts":\['; do [ $(( $(date +%s) - T0 
 if down; then bad "TargetDown still listed 60 s after the worker's start"
 elif ! admin alerts | grep -q '"alerts":\['; then bad "the admin API does not answer: $(admin alerts | cut -c1-120)"
 else ok "resolved within $(( $(date +%s) - T0 )) s of the worker's start"; fi
+admin watch | grep -q '"job":"account","instance":"127.0.0.1:9104","up":true' \
+    && ok "the account service read by the watch, up (D-117)" || bad "the account service in the watch's report: $(admin watch | grep -o '"job":"account"[^}]*}' || echo none)"
 
 echo "--- backend-nginx-logs: nginx's logs rotated as the unit runs it (D-85, O-45)"
 systemctl enable backend-nginx-logs.timer 2> /dev/null && systemctl list-timers --all --no-pager | grep -q backend-nginx-logs \

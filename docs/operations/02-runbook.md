@@ -179,7 +179,8 @@ had not carried yet was lost (O-64). If the wait times out, the script refuses, 
 (`SET PERSIST super_read_only = OFF` there gives writes back). Running it again once the replica has caught up is
 safe.
 
-**Then it promotes**: it stops replication, makes the replica writable persistently, raises the epoch, and prints the
+**Then it promotes**: it stops replication, makes the replica writable persistently, raises the epoch, the backend's
+and the account service's beside it (its database's own, which the account service follows: O-103), and prints the
 epoch with the executed GTID set. Keep that line for the incident's record.
 
 **If a run ends with an error after it has stopped replication**, before its last line, it may have left the epoch
@@ -420,9 +421,9 @@ disk on purpose, and runs this block.
 
 <!-- one-machine-restore -->
 ```bash
-systemctl stop 'backend-arena@*' backend-gateway backend-platform 'backend-worker@*' backend-binlog-stream backend-mysql
+systemctl stop 'backend-arena@*' backend-gateway backend-platform backend-account 'backend-worker@*' backend-binlog-stream backend-mysql
 # MySQL made again on the new, empty disk at /var/lib/backend-mysql, as the install guide's §6: its users,
-# not the database, which the restore makes.
+# not the databases, which the restore makes.
 install -d -o mysql -g mysql -m 0750 /var/lib/backend-mysql
 /opt/backend/mysql/bin/mysqld --defaults-file=/etc/backend/mysql/backend.cnf --initialize-insecure --user=mysql
 systemctl start backend-mysql
@@ -432,29 +433,35 @@ SQL
 /opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf <<SQL
     CREATE USER 'backend'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/db-password)';
     GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON backend.* TO 'backend'@'127.0.0.1';
+    CREATE USER 'account'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/account-db-password)';
+    GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON account.* TO 'account'@'127.0.0.1';
     CREATE USER 'backup'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/backup-password)';
     GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, RELOAD, REPLICATION CLIENT ON *.* TO 'backup'@'127.0.0.1';
     CREATE USER 'binlog'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/binlog-password)';
     GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'binlog'@'127.0.0.1';
 SQL
-# The newest dump, carried through the binlog copies to their end, under the production name
-dump=$(ls /var/lib/backend/mysql-dumps/backend-*.sql.gz | sort | tail -1)
-NO_SOURCE=1 SCRATCH_CNF=/etc/backend/credentials/mysql-root.cnf \
-    /opt/backend/scripts/restore-drill.sh "$dump" backend backend /var/lib/backend/binlog
+# Each database's newest dump, the backend's and the account service's (D-117), carried through the binlog copies
+# to their end, under its production name
+for db in backend account; do
+    dump=$(ls /var/lib/backend/mysql-dumps/$db-*.sql.gz | sort | tail -1)
+    NO_SOURCE=1 SCRATCH_CNF=/etc/backend/credentials/mysql-root.cnf \
+        /opt/backend/scripts/restore-drill.sh "$dump" $db $db /var/lib/backend/binlog
+done
 /opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf \
     -e "GRANT INSERT ON backend.backup_run TO 'backup'@'127.0.0.1'"
 # The old server's copies and dumps set aside: the new server's binlogs are numbered from 000001 again, so the
 # stream would write over copies of the same name, and the next dump would prune the new copies by an old dump's.
 aside=/var/lib/backend/before-$(date -u +%Y%m%dT%H%M%S)
 mkdir "$aside" && mv /var/lib/backend/binlog /var/lib/backend/mysql-dumps "$aside"/
-systemctl start backend-platform backend-worker@c1 backend-worker@c2 backend-gateway \
+systemctl start backend-account backend-platform backend-worker@c1 backend-worker@c2 backend-gateway \
     backend-arena@a1 backend-arena@a2 backend-arena@a3 backend-binlog-stream
 systemctl start backend-mysql-backup          # the new server's first dump: the copies' new starting point
 ```
 <!-- /one-machine-restore -->
 
-`restore-drill.sh` ends by naming every table restored, the newest migration, and the ledger reconciled
-([06 §10](../detailed-design/06-persistence-mysql.md#10-backup-and-recovery)). Keep the set-aside copies until the
+`restore-drill.sh` ends by naming every table restored, the newest migration, and, for the backend's database, the
+ledger reconciled ([06 §10](../detailed-design/06-persistence-mysql.md#10-backup-and-recovery)); the account service's
+has no ledger, and is checked for what holds without one (10 §6.3). Keep the set-aside copies until the
 next weekly proof has passed on the new ones.
 
 ### On two machines (D-96)
@@ -574,8 +581,8 @@ then, the alerts are read on a machine, and the daily checks in §6 stand.
 | Weekly | Restart the arenas one at a time, when traffic is low; while one drains, the others take every new match. A few minutes before, tell the players: `POST /admin/notice {"text", "reason"}` reaches everyone in the lobby ([04 §10](../detailed-design/04-platform-services.md#the-third-slice-a-notice-to-the-lobby-designed-2026-10-01-plan-item-44)). A stop drains ([01 §8.6](../detailed-design/01-arena.md#86-draining-an-arena-designed-2026-09-29-plan-item-7)): public players go back to the lobby at once with their results, and made matches play out, so `systemctl stop` may take up to eleven minutes. The journal says `drained in N s`, or `the drain ran out` if a match was cut short (paid, not rated) |
 | Weekly | Review the `WARN` counts; run `install-certificate.sh --check` on each machine |
 | Per release | Rolling deployment ([01-deploy §5](01-deploy.md#5-rolling-deployment)) |
-| Weekly, by itself | **The restore proof** (`backend-restore-proof.timer`, Sundays 04:00 UTC): the newest dump and the copies restored onto the scratch server, into `backend_proof`, and checked. Its outcome is recorded in `backup_run`, whatever it is. Its alert, or the daily check above, is the check. |
-| Monthly | **The restore drill** (below), by hand, with its exact counts, at a quiet hour; from the copy off the site once there is one (`fetch-offsite.sh`). The store's drill, on each store's primary. The proof from off the site also runs by itself, on the first Sunday at 05:00 UTC (`backend-restore-proof-offsite.timer`), into `backend_proof_offsite`, never at the same time as the weekly one. |
+| Weekly, by itself | **The restore proof** (`backend-restore-proof.timer`, Sundays 04:00 UTC): each database's newest dump and the copies restored onto the scratch server, into `backend_proof` and `account_proof`, and checked. Its outcome is recorded in `backup_run`, whatever it is. Its alert, or the daily check above, is the check. |
+| Monthly | **The restore drill** (below), by hand, with its exact counts, at a quiet hour; from the copy off the site once there is one (`fetch-offsite.sh`). The store's drill, on each store's primary. The proof from off the site also runs by itself, on the first Sunday at 05:00 UTC (`backend-restore-proof-offsite.timer`), into `backend_proof_offsite` and `account_proof_offsite`, never at the same time as the weekly one. |
 | Monthly, by itself too | **Security fixes for what the release carries** (D-77): the operating system's updates no longer reach the Java runtime, MySQL, nginx or the OpenSSL compiled into nginx. Read the advisories for Temurin 21, MySQL 8.4, nginx and OpenSSL 3.5 (the versions are in the release's `VERSIONS.md`). A fix is a new version in `vendor/` (`vendor/VERSIONS.md`, "Moving a version") and a new release, rolled out as §5 of the deploy document says. |
 | Yearly, a month before its end | **The site's certificate**: issued again from the backend's root, and installed on every machine ([06 §6](06-certificates.md#6-renewing-every-year)). `install-certificate.sh --check` says the days left, and so does the gateway's `backend_gateway_edge_certificate_expiry_timestamp_seconds`; the watch alerts under 14 days. |
 | Quarterly | **Rehearse a failover.** A promotion procedure that has never been run is a hypothesis. |
@@ -595,7 +602,9 @@ by a promotion: the replica has replayed the mistake too.
    SOURCE_CNF=... SCRATCH_CNF=... STOP_AT='2026-10-04 14:02:59' \
        restore-drill.sh /var/lib/backend/mysql-dumps/<dump>.sql.gz backend backend_before /var/lib/backend/binlog
    ```
-   It checks that nothing at or after the moment is in the copy, and that the ledger reconciles.
+   It checks that nothing at or after the moment is in the copy, and that the ledger reconciles. A mistake in the
+   account service's database is undone the same way, from its own dump (`account-<time>.sql.gz`, `account`
+   `account_before`): its check is that no account made and no event written at or after the moment is in the copy.
 3. Take from the copy what the mistake changed, and write it back to the primary as ordinary statements, logged and
    replicated. If the mistake was wide, a whole table perhaps: the scale is the operator's decision. The platform's
    writes since the moment are in the primary only.
@@ -610,13 +619,15 @@ server set up as [01 §9](01-deploy.md#9-mysql) says, as root, with the key from
 ```
 OFFSITE_TARGET=<user@host:dir> OFFSITE_KEY=<the key file> OFFSITE_SSH="ssh -i <its key>" \
     fetch-offsite.sh /var/tmp/restore
-NO_SOURCE=1 SCRATCH_CNF=<option file for the new server> \
-    restore-drill.sh /var/tmp/restore/dumps/<newest>.sql.gz backend <database> /var/tmp/restore/binlog
+for db in backend account; do                      # the backend's database and the account service's (D-117)
+    NO_SOURCE=1 SCRATCH_CNF=<option file for the new server> \
+        restore-drill.sh "$(ls /var/tmp/restore/dumps/$db-*.sql.gz | sort | tail -1)" $db $db /var/tmp/restore/binlog
+done
 ```
 
 - **`NO_SOURCE=1` reads nothing from a source.** The copies are replayed to the end of the newest one, and only the
   checks that need no source are made, the ledger's reconciliation among them.
-- **`<database>` must not exist yet** on the new server (`backend`, for the production name). With no source to
+- **The databases must not exist yet** on the new server (`backend` and `account`, the production names). With no source to
   compare against, nothing is dropped, and a name that exists is refused (O-19).
 - **What comes back is as old as the copy off the site's last hourly run.**
 - **The restore and the replay are the recovery time** that the 4-hour objective watches (§5, D-72).
@@ -631,7 +642,7 @@ starts `from off the site:`.
 - **A gap in the copies, or copies that never reached the primary's position**, is the stream's fault: check
   `backend-binlog-stream`, and start a dump at once; it is the new starting point.
 - **A count or a reconciliation that differs** is the backup's own fault: keep the failed copy on the scratch server
-  (`backend_proof`, or `backend_proof_offsite` for the monthly proof), and run the drill by hand from the dump before,
+  (`backend_proof` and `account_proof`, or `…_proof_offsite` for the monthly proof), and run the drill by hand from the dump before,
   to learn which one is wrong.
 - **From off the site, a fetch that failed** (ssh or rsync refused, or `bad decrypt` from a wrong key) is quoted the
   same way, since the fetch's errors go into the proof's log (O-15). A wrong key is the one that matters most: the

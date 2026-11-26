@@ -41,7 +41,7 @@ cannot use makes the platform refuse to start (exit 2), before it serves anythin
 
 | Setting | What | Example on A |
 |---|---|---|
-| `BACKEND_WATCH_TARGETS` | this machine's processes' metrics, as `job=host:port` pairs; `arena` and `worker` repeat, one pair each; unset: the watch is off, and the log says so | `platform=127.0.0.1:9101,gateway=127.0.0.1:9103,arena=127.0.0.1:9110,arena=127.0.0.1:9111` |
+| `BACKEND_WATCH_TARGETS` | this machine's processes' metrics, as `job=host:port` pairs; `arena` and `worker` repeat, one pair each; unset: the watch is off, and the log says so | `platform=127.0.0.1:9101,gateway=127.0.0.1:9103,account=127.0.0.1:9104,arena=127.0.0.1:9110,arena=127.0.0.1:9111` |
 | `BACKEND_WATCH_PEERS` | the other machines' platforms, as `name=host:port` | `B=10.0.0.2:8080,C=10.0.0.3:8080` |
 | `BACKEND_WATCH_DISKS` | the paths whose file systems are watched; default `/,/var/lib,/var/log,/opt/backend` | the default |
 | `BACKEND_WATCH_MACHINE` | this machine's name on its alerts; default the host name | `A` |
@@ -53,10 +53,10 @@ cannot use makes the platform refuse to start (exit 2), before it serves anythin
 
 | Machine | `BACKEND_WATCH_TARGETS` reads | `BACKEND_WATCH_PEERS` |
 |---|---|---|
-| A | the platform 9101, the gateway 9103, the arenas 9110 and 9111 | `B=10.0.0.2:8080,C=10.0.0.3:8080` |
-| B | the platform, the gateway, the arenas 9110, 9111 and 9113 | `A=10.0.0.1:8080,C=10.0.0.3:8080` |
-| C | the platform, the gateway, the arenas 9110 and 9111, the workers 9102 and 9112 | A and B |
-| the launch's one machine | the platform, the gateway, the arenas 9110, 9111 and 9113, the workers 9102 and 9112 | none |
+| A | the platform 9101, the gateway 9103, the account service 9104 (D-117), the arenas 9110 and 9111 | `B=10.0.0.2:8080,C=10.0.0.3:8080` |
+| B | the platform, the gateway, the account service, the arenas 9110, 9111 and 9113 | `A=10.0.0.1:8080,C=10.0.0.3:8080` |
+| C | the platform, the gateway, the account service, the arenas 9110 and 9111, the workers 9102 and 9112 | A and B |
+| the launch's one machine | the platform, the gateway, the account service, the arenas 9110, 9111 and 9113, the workers 9102 and 9112 | none |
 
 - **On the launch's one machine**
   ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players))
@@ -86,7 +86,7 @@ cannot use makes the platform refuse to start (exit 2), before it serves anythin
 | `ResultSetAside`, `ResultsBacklogGrowing`, `WorkerFailing`, `ResultTrimmedUnapplied`, `TournamentsStalling` | the result pipeline | [§3](02-runbook.md#3-per-component-procedures) |
 | `ResultsUnreplicated` | results not confirmed by the `events` replica: each lives on one machine until the replica is back | [§2](02-runbook.md#2-stateful-primary-failure) |
 | `LedgerMismatch`, `LedgerCheckStale` | the ledger's nightly check | [§3](02-runbook.md#3-per-component-procedures) |
-| `HasherLineFull`, `TickSlow`, `ArenaCrashLoop` | the account service turning logins away (D-117; a watch target from plan item 142 (f)); a room's tick too slow; an arena restarting again and again | [§5](02-runbook.md#5-what-to-watch) |
+| `HasherLineFull`, `TickSlow`, `ArenaCrashLoop` | the account service turning logins away (D-117; its target, `account`, 9104); a room's tick too slow; an arena restarting again and again | [§5](02-runbook.md#5-what-to-watch) |
 | `DiskFilling`, `DiskFillsWithinAWeek`, `MemoryLow` | the machine | [§5](02-runbook.md#5-what-to-watch) |
 | `BackupDumpStale`, `BackupProofStale`, `BackupOffsiteStale`, `BackupFailed`, `RestoreTooSlow` | the backups | [§5](02-runbook.md#5-what-to-watch) |
 | `TableTooBig`, `RetentionSlow` | the database's growth | [§5](02-runbook.md#5-what-to-watch) |

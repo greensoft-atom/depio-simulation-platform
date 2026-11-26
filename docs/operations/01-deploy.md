@@ -968,9 +968,10 @@ binlogs a point-in-time restore replays. So both are taken from another machine,
   - A restarted stream resumes from its newest copy. `--raw` rewrites that file from the start, so a half-written
     file is completed, never duplicated.
 - **The nightly dump.** `backend-mysql-backup.timer` runs `scripts/backup-mysql.sh` at 03:30 UTC (up to 15 minutes
-  later), with the connection in an option file, into `/var/lib/backend/mysql-dumps`. After a dump succeeds, the
-  script deletes the dumps older than `KEEP_DAYS` (8), and every binlog copy before the file that the oldest
-  remaining dump starts from. That rule is exact. Pruning the copies by age would delete the file an old dump starts
+  later), with the connection in an option file, into `/var/lib/backend/mysql-dumps`: each database's, the
+  backend's and the account service's (D-117, 10 §6.3), a file each, recorded as one run that succeeded only if both
+  did. After it succeeds, the script deletes each database's dumps older than `KEEP_DAYS` (8), and every binlog copy
+  before the file that the oldest remaining dump of either database starts from: the binlogs are the server's. That rule is exact. Pruning the copies by age would delete the file an old dump starts
   in, whenever the database had been idle before that dump.
 
 **The recovery that matters was rehearsed**: with the full stack writing to a TLS primary, a remote dump, 20 more
@@ -1041,9 +1042,10 @@ units; the scratch server's unit was run under systemd on its own (below).
    to setup unix socket lock file", O-16). Run under systemd on Ubuntu 24.04: on 2026-09-28 with the distribution's
    8.0; on 2026-10-05 with the release's 8.4 under `Type=notify`: "Server is operational", active, and stopped
    cleanly.
-3. **`backend-restore-proof.service` and `.timer`**, the timer enabled. Every Sunday at 04:00 UTC, the newest dump
-   and the binlog copies are restored onto the scratch server, into `backend_proof`, while the primary keeps
-   writing; then checked, and recorded in `backup_run`. Every outcome is recorded, a failure with the lines of its
+3. **`backend-restore-proof.service` and `.timer`**, the timer enabled. Every Sunday at 04:00 UTC, each database's
+   newest dump and the binlog copies are restored onto the scratch server, into `backend_proof` and `account_proof`,
+   while the primary keeps writing; then checked, each as its database is (the ledger's reconciliation the
+   backend's alone), and recorded in `backup_run` as one proof. Every outcome is recorded, a failure with the lines of its
    log that say why.
 
 **The copy off the site**, once the owner has named the host (Q-53):

@@ -1383,6 +1383,16 @@ runs. **Fixed:** the statements on standard input. By the install guide's check,
 anything, and its failure is said as the release's nginx not running on this machine, glibc 2.28 named. Test first,
 with a stub failing as the loader does: the old line, then the new; the check skipped, the old line again.
 
+**O-103 (M), found 2026-11-26, FIXED the same day** (plan item 142 (f), designing the backups of two databases). A
+MySQL promotion raised the backend's failover epoch alone. The account service follows the primary as the backend
+does, by the writable host with the highest epoch, never below the highest it has seen (`PrimaryDataSource`, D-35),
+but by its own database's `ha_epoch`, which its code says "a promotion raises with the backend's": `promote-mysql.sh`
+never did. After a promotion both servers' account epochs stayed equal, so an old primary that came back writable
+could take the account service's writes again, the split the epoch is there to stop. Not reached yet: nothing has
+run the account service against a promoted MySQL. **Fixed:** the promotion raises the account database's epoch after
+the backend's, where that database is on the server, and says so where it is not. Test first, `check-promote.sh`'s
+two new checks failing on the old script; a mutant raising it without asking whether the database is there, caught.
+
 **O-102 (L), found 2026-11-26, FIXED the same day** (plan item 142 (e), pointing the bots at the account service).
 `dev-account.sh` said its issuer, `http://127.0.0.1:$ACCOUNT_PORT`, was the one `dev-backend.sh` gives the platform;
 `dev-backend.sh` gave the platform nothing, so it took its built-in defaults, the account service on 8083. With

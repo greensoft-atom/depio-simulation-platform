@@ -3,7 +3,8 @@
 # each takes for an old primary that is down and what for one that answers, and that a planned handover fences the
 # old MySQL primary in the order that loses nothing. An old primary that answers, refusing the account or the
 # password, is up, so --old-is-down refuses it; --demote-old refuses one it cannot fence or demote, since one it
-# cannot reach may still serve the clients on its side; an old primary given without its port is refused. The real
+# cannot reach may still serve the clients on its side; an old primary given without its port is refused. A promotion
+# raises the account service's epoch beside the backend's, where its database is (O-103, D-117). The real
 # promotions are the failover drills' (client/headless-drill.sh, MYSQL_FAILOVER=demote and FAILOVER=1).
 #
 #   scripts/check-promote.sh      from anywhere; seconds. Ends "--- <n> failed", non-zero on any.
@@ -36,6 +37,7 @@ if [ -z "$host" ]; then
         *RECEIVED_TRANSACTION_SET*) echo "aaaa:1-10" ;;
         *WAIT_FOR_EXECUTED_GTID_SET*) echo 0 ;;
         *"CONCAT('epoch '"*) echo "epoch 2" ;;
+        *information_schema.tables*ha_epoch*) echo "${ACCOUNT_HERE:-1}" ;;
         *gtid_executed*) echo "aaaa:1-12" ;;
     esac
     exit 0
@@ -74,6 +76,15 @@ out=$(pm down 10.0.0.1:3306 --demote-old)
 out=$(pm denied 10.0.0.1:3306 --demote-old)
 ! promoted && grep -q REFUSED <<< "$out" && pass "--demote-old, the old one refusing the account: refused" \
     || fail "--demote-old, the old one refusing the account: $out"
+out=$(pm down 10.0.0.1:3306 --old-is-down)
+raised=$(grep -E "^here: UPDATE [a-z_]+\.ha_epoch SET epoch = epoch \+ 1" "$T/log" | cut -d' ' -f3 | tr '\n' ' ')
+[ "$raised" = "backend.ha_epoch account.ha_epoch " ] \
+    && pass "promoted: the backend's epoch raised, and the account service's beside it (O-103)" || fail "the epochs raised: '$raised'"
+out=$(ACCOUNT_HERE=0 pm down 10.0.0.1:3306 --old-is-down)
+raised=$(grep -E "^here: UPDATE [a-z_]+\.ha_epoch" "$T/log" | cut -d' ' -f3 | tr '\n' ' ')
+promoted && [ "$raised" = "backend.ha_epoch " ] && grep -q "no account database here" <<< "$out" \
+    && pass "a server without the account service's database: the backend's epoch raised, the other said absent" \
+    || fail "without the account database: '$raised', $out"
 out=$(pm up 10.0.0.1:3306 --demote-old)
 order=$(grep -n -e "^old: SET PERSIST super_read_only" -e "^here: SELECT WAIT_FOR_EXECUTED_GTID_SET('aaaa:1-12'" \
     -e "^old: SET GLOBAL offline_mode" -e "^here: STOP REPLICA" "$T/log" | cut -d: -f3 | tr -d ' ' | cut -c1-12 | tr '\n' ' ')

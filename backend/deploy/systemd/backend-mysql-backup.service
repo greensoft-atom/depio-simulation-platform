@@ -18,7 +18,7 @@ Environment=BINLOG_DIR=%S/backend/binlog
 Environment=KEEP_DAYS=8
 StateDirectory=backend/mysql-dumps backend/binlog
 StateDirectoryMode=0700
-ExecStart=/opt/backend/scripts/backup-mysql.sh backend %S/backend/mysql-dumps
+ExecStart=/opt/backend/scripts/backup-mysql.sh backend,account %S/backend/mysql-dumps
 
 NoNewPrivileges=yes
 ProtectSystem=strict

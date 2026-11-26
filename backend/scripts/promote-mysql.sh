@@ -16,7 +16,8 @@
 # as a replica and close it when it is next promoted (06 §10). Then it waits until
 # this replica has applied every transaction it received, stops replicating and forgets its source,
 # becomes writable with SET PERSIST (which outranks the configuration file, so a restart keeps it
-# so), and raises the failover epoch, which the backend's processes follow.
+# so), and raises the failover epoch, which the backend's processes follow, and the account service's beside it,
+# which the account service follows (O-103, D-117), where its database is on this server.
 #
 # First it says what a promotion would lose (D-58, O-10): the primary's last heartbeat this replica
 # applied, and how old it is. Older than five minutes, or not readable, it refuses before touching
@@ -28,7 +29,8 @@
 # [client] with its user and password, and [client_remote], read only for the old primary, with
 # the TLS settings. This machine's server is reached as [client] says: its socket, which the file must name
 # (socket = /run/backend-mysql/mysqld.sock), since the release's client defaults to /tmp/mysql.sock (O-50).
-# BACKEND_DB_NAME: the backend's database (backend). MYSQL: the client (mysql).
+# BACKEND_DB_NAME: the backend's database (backend). ACCOUNT_DB_NAME: the account service's (account). MYSQL: the
+# client (mysql).
 set -euo pipefail
 # The release's MySQL tools first, from mysql/ beside scripts/ in /opt/backend (docs/detailed-design/09
 # §6); run from the source tree, the machine's own.
@@ -40,6 +42,7 @@ STALE_OK=${3:-}
 [ -z "$STALE_OK" ] || [ "$STALE_OK" = --stale-ok ] || { echo "the third argument, if any, is --stale-ok"; exit 2; }
 CNF=${MYSQL_FAILOVER_CNF:-/etc/backend/credentials/mysql-failover.cnf}
 DB=${BACKEND_DB_NAME:-backend}
+ACC=${ACCOUNT_DB_NAME:-account}
 read -r -a MYSQL <<< "${MYSQL:-mysql}"
 [ -r "$CNF" ] || { echo "cannot read $CNF"; exit 2; }
 
@@ -142,4 +145,11 @@ if [ -n "$RECEIVED" ]; then
 fi
 here "STOP REPLICA; RESET REPLICA ALL; SET PERSIST super_read_only = OFF; SET PERSIST read_only = OFF"
 here "UPDATE $DB.ha_epoch SET epoch = epoch + 1 WHERE id = 1"
+# The account service's own epoch, which its processes follow as the backend's follow this one (O-103): raised with
+# it, where its database is; a server without one says so.
+if [ "$(here "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$ACC' AND table_name = 'ha_epoch'")" = 1 ]; then
+    here "UPDATE $ACC.ha_epoch SET epoch = epoch + 1 WHERE id = 1"
+else
+    echo "no account database here ($ACC): its epoch not raised"
+fi
 echo "now: a primary, $(here "SELECT CONCAT('epoch ', epoch) FROM $DB.ha_epoch WHERE id = 1"), executed $(here "SELECT REPLACE(@@global.gtid_executed, '\\n', '')")"

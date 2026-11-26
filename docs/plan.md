@@ -4796,6 +4796,29 @@ collection, through nginx's `/account`; `play account` straight; `dev-nginx.sh t
 both of nginx's ways. **DOC-59**: the platform's unit still sized its heap for Argon2, which (d) took out of it.
 Next: MySQL's backups of both databases, the runbook's restore, the watch's target, and the install guide with its
 check.
+**(f), second of three commits, done 2026-11-26: MySQL, its backups, the watch and the install guide** (10 §6.3).
+`backup-mysql.sh` takes its databases as a list (`backend,account`, the default), dumps each to its own file in one
+run and records one outcome, good only if every dump was, a failure naming the database; retention keeps each
+database's own, and the binlog copies are pruned before the earliest file any kept dump of any database needs.
+`restore-proof.sh` proves each into `<database><suffix>` and records one outcome the same way, never quoting a
+database that passed; `restore-drill.sh` checks a database as what it holds, the backend's ledger reconciled and its
+ledger and matches as the floor, the account service's accounts and events as its floor with no ledger;
+`fetch-offsite.sh` brings each database's newest dump back. The units pass both. **O-103**: a promotion raised the
+backend's epoch alone, while the account service follows its own database's; `promote-mysql.sh` raises both now,
+test first in `check-promote.sh`, a mutant caught. The watch's `account=127.0.0.1:9104` in `platform.env.example`,
+08 and the install guide. The install guide installs the account service in every step (its user and secret, its
+database and user, its settings and key, the platform's issuer and key set, its heap, nginx's upstream, its start,
+the check's sign-up and session), and the runbook's restore on one machine makes both databases. The
+backups' drill first, the account service's database seeded beside the backend's: against the old scripts it stopped
+at the dump (`Unknown database 'backend_dev,account_dev'`); with the new, two failures of the new code's own (the
+off-site fetch bringing the one newest dump of all; a failed proof's record quoting the passing database's
+reconciliation first) mended, then 40 checks passed. Ten mutants of the new rules, eight caught at once; one of mine
+was not fair (it broke the name check too) and, run fairly, was caught; one, the passing database quoted, survived
+for want of a check that the record names its reason and not the other's, written and caught. Live: the install
+guide run as written in UBI 9.5 by its check, no check failing at the install, after the restart, or after the
+database's disk was lost and the runbook's restore made both databases again, the account signed up after the dump
+logging in; `check-units-el9.sh` with the watch reading the account service, up; `MYSQL_FAILOVER=1`, `play account`,
+the promotion saying the drill's servers have no account database; `check-promote.sh`. Next: the two machines.
 
 ---
 

@@ -214,7 +214,7 @@ its example, initialised as the example's header says. Then it checks, as one ma
 - an arena with TLS of its own, its keystore made by this repository's `install-certificate.sh`;
 - [operations/07](../../docs/operations/07-start-stop-restart.md)'s reloads, restarts and patterns, as written;
 - the platform's watch: the worker stopped, `TargetDown` listed by the admin API within three minutes, and gone once
-  the worker is back (D-86);
+  the worker is back (D-86); the account service among its targets, read and up (`GET /admin/watch`, D-117);
 - `backend-nginx-logs`, nginx's logs rotated as the unit runs it (D-85);
 - nginx reloaded, and every unit stopped.
 
@@ -239,13 +239,16 @@ Runs the [install guide](../../docs/operations/03-install-guide.md) as written: 
 network**, on a plain copy of the repository's files: what a clone has, tracked and new files, nothing ignored. It
 covers, in order:
 
-1. from the build with `build-offline.sh` to a registration through nginx;
-2. the launch's one machine as D-93 lays it out: every unit active, each arena reached by its name through nginx's
-   9001 and 80, every process's metrics watched, the result stream on its own store, and a dump and its proof
-   recorded and seen by the worker;
+1. from the build with `build-offline.sh` to a sign-up at the account service through nginx and its token taken for
+   a session (D-117);
+2. the launch's one machine as D-93 lays it out: every unit active, the account service among them, each arena
+   reached by its name through nginx's 9001 and 80, every process's metrics watched, the account service's too, the
+   result stream on its own store, no secret in `systemctl show`, and a dump and its proof of both databases recorded
+   and seen by the worker;
 3. all of step 2 again after the container is restarted, as the machine would be at a reboot;
 4. the database's disk lost, then the runbook's restore on one machine, run as written
-   ([runbook §4](../../docs/operations/02-runbook.md#on-the-launchs-one-machine-d-93)), with nothing committed lost.
+   ([runbook §4](../../docs/operations/02-runbook.md#on-the-launchs-one-machine-d-93)), with nothing committed lost:
+   an account signed up after the dump, and its player, both back, the two databases made again.
 
 The header also shows how to run it on a server that already has the operating system's own Java and MySQL
 installed and running (the guide's §1): an image with them, and the backend's MySQL on another port
@@ -446,8 +449,9 @@ binlog-stream.sh <out-dir>
 
 ### backup-mysql.sh
 
-Takes a consistent full dump of one database, with the binlog position it was taken at, so that a restore can be
-carried forward to any later moment.
+Takes a consistent full dump of each database named, with the binlog position it was taken at, so that a restore can
+be carried forward to any later moment. The databases are a comma-separated list, by default the backend's and the
+account service's (D-117, 10 §6.3), each to a file of its own, `<database>-<UTC time>.sql.gz`, in one run.
 
 - The dump: `mysqldump --single-transaction --source-data=2 --routines --triggers --events --set-gtid-purged=OFF
   --no-tablespaces`, gzipped. `--single-transaction` reads one snapshot without locking InnoDB tables.
@@ -455,16 +459,18 @@ carried forward to any later moment.
   production without touching it.
 - It is written as `.partial` and renamed when whole. A dump without a binlog position is refused before it is
   renamed (O-67).
-- After a dump has succeeded, the script deletes dumps older than `KEEP_DAYS`. With `BINLOG_DIR` it also deletes
-  every binlog copy before the earliest file that a remaining dump starts from. It takes the earliest start of all
-  the dumps, not the oldest dump's: a dump kept from another server (a primary before a failover) names a file of
-  another series, and that series keeps its own start (O-66).
-- It records its outcome, success or failure, through `record-backup.sh`, as kind `dump`. The alerts read when a
-  dump last succeeded.
+- After every dump has succeeded, the script deletes each database's dumps older than `KEEP_DAYS`. With `BINLOG_DIR`
+  it also deletes every binlog copy before the earliest file that a remaining dump starts from. It takes the
+  earliest start of all the dumps, of every database in `out-dir` (the binlogs are the server's), not the oldest
+  dump's: a dump kept from another server (a primary before a failover) names a file of another series, and that
+  series keeps its own start (O-66).
+- It records the run's outcome, success or failure, through `record-backup.sh`, as kind `dump`: one row, a success
+  only if every database's dump was, a failure naming the database that failed. The alerts read when a dump last
+  succeeded, so a database that fails stops that time.
 - It writes its files private (`umask 077`).
 
 ```
-backup-mysql.sh [database] [out-dir]        defaults: backend, /var/backups/backend
+backup-mysql.sh [databases] [out-dir]        defaults: backend,account, /var/backups/backend
 ```
 
 | | |
@@ -472,7 +478,7 @@ backup-mysql.sh [database] [out-dir]        defaults: backend, /var/backups/back
 | Settings | `MYSQL_CNF`, the backup account's option file (`host`, `user`, `password`, `ssl-mode=VERIFY_IDENTITY`, `ssl-ca`; unset: the client's defaults). `KEEP_DAYS` (8). `BINLOG_DIR`, `binlog-stream.sh`'s copies (unset: no binlog copy is pruned). `RECORD` (1; 0 records nothing) |
 | Needs | `mysqldump`, `mysql`, `gzip`. The account `backup`, with `SELECT`, `SHOW VIEW`, `TRIGGER`, `EVENT`, `RELOAD` and `REPLICATION CLIENT` on `*.*`, and `INSERT` on `backend.backup_run`, and nothing more. Each grant was checked by removing it: without `RELOAD` (`FLUSH TABLES`) or `REPLICATION CLIENT` (`SHOW MASTER STATUS`) the dump is refused. `PROCESS` is not needed with `--no-tablespaces`, and it would show the user every session's statements |
 | Runs | on the backup machine: a dump on the disk it protects is lost with that disk |
-| Run by | `backend-mysql-backup.service` (as `backend-backup`; arguments `backend /var/lib/backend/mysql-dumps`; `BINLOG_DIR=/var/lib/backend/binlog`, `KEEP_DAYS=8`), started by `backend-mysql-backup.timer` at 03:30 UTC, at a random moment within the 15 minutes after |
+| Run by | `backend-mysql-backup.service` (as `backend-backup`; arguments `backend,account /var/lib/backend/mysql-dumps`; `BINLOG_DIR=/var/lib/backend/binlog`, `KEEP_DAYS=8`), started by `backend-mysql-backup.timer` at 03:30 UTC, at a random moment within the 15 minutes after |
 
 ### record-backup.sh
 
@@ -527,8 +533,8 @@ backup-offsite.sh <dump-dir> <binlog-dir> <mirror-dir>
 ### fetch-offsite.sh
 
 Brings the copy from off the site back and decrypts it, for a restore. It writes the dumps into `<out-dir>/dumps`
-and the binlogs into `<out-dir>/binlog`, the layout `restore-drill.sh` reads. By default it fetches the newest dump
-and every binlog copy: what a restore to the copies' end reads. `ALL_DUMPS=1` fetches every dump, for a restore from
+and the binlogs into `<out-dir>/binlog`, the layout `restore-drill.sh` reads. By default it fetches each database's
+newest dump (the backend's and the account service's) and every binlog copy: what a restore to the copies' end reads. `ALL_DUMPS=1` fetches every dump, for a restore from
 an older one. It decrypts each file and removes its encrypted copy as it goes, so the disk holds the set once, not
 twice (O-21). It writes its files private (`umask 077`).
 
@@ -538,32 +544,34 @@ fetch-offsite.sh <out-dir>
 
 | | |
 |---|---|
-| Settings | `OFFSITE_TARGET` and `OFFSITE_KEY` (both required) and `OFFSITE_SSH`, as for `backup-offsite.sh`. `ALL_DUMPS` (unset: the newest dump only) |
+| Settings | `OFFSITE_TARGET` and `OFFSITE_KEY` (both required) and `OFFSITE_SSH`, as for `backup-offsite.sh`. `ALL_DUMPS` (unset: each database's newest dump only) |
 | Needs | `rsync`, `ssh`, `openssl`; room for the set once, and for the largest file's encrypted copy beside it |
 | Returns | non-zero, with `no dump in <target>/dumps`, when the target holds no dump |
 | Run by | `restore-proof.sh` with `FROM_OFFSITE=1`; a person, for a restore from off the site ([runbook](../../docs/operations/02-runbook.md#a-last-resort-restore-with-no-source-left)) |
 
 ### restore-proof.sh
 
-The weekly proof that the backups restore. It restores the newest dump of the source and the binlog copies onto
-the scratch server with `restore-drill.sh` and `PROOF=1`, while the primary keeps writing. It records the outcome as
-kind `proof`, with the restore's and the replay's seconds. It records every outcome: a failure's detail quotes the
-lines of its log that say why (else the log's last three lines).
+The weekly proof that the backups restore. For each database named (by default the backend's and the account
+service's, D-117), it restores its newest dump and the binlog copies onto the scratch server, into
+`<database><suffix>`, with `restore-drill.sh` and `PROOF=1`, while the primary keeps writing. It records the outcome
+as one row of kind `proof`, a success only if every database was proved, with the restores' and the replays' seconds.
+It records every outcome: a failure's detail quotes the lines of its log that say why (else the log's last three
+lines), never a database's that passed.
 
 With `FROM_OFFSITE=1` it first fetches and decrypts the copy from off the site into a temporary directory (with the
 fetch's errors in its log), then replays the copies to their end. The record's detail then starts with
 `from off the site:`. This proves the copy off the site as well.
 
 ```
-restore-proof.sh <dump-dir> <binlog-dir> [source-db] [scratch-db]   defaults: backend, backend_proof
+restore-proof.sh <dump-dir> <binlog-dir> [databases] [suffix]   defaults: backend,account, _proof
 ```
 
 | | |
 |---|---|
-| Settings | `SOURCE_CNF` (required), the backup account's option file: the primary is read there, and the outcome recorded there. `SCRATCH_CNF` (required), the scratch server's. `FROM_OFFSITE` (0), with `fetch-offsite.sh`'s settings |
+| Settings | `SOURCE_CNF` (required), the backup account's option file: the primary is read there, and the outcome recorded there. `SCRATCH_CNF` (required), the scratch server's. `RECORD_DB` (`backend`), the database whose `backup_run` the outcome goes in. `FROM_OFFSITE` (0), with `fetch-offsite.sh`'s settings |
 | Needs | what `restore-drill.sh` needs, and what `fetch-offsite.sh` needs for the copy off the site |
 | Runs | on the backup machine, against its scratch server (`127.0.0.1:3309`) |
-| Run by | `backend-restore-proof.service` (arguments `… backend backend_proof`), started by `backend-restore-proof.timer` on Sundays at 04:00 UTC; and `backend-restore-proof-offsite.service` (`FROM_OFFSITE=1`, arguments `… backend backend_proof_offsite`), started by `backend-restore-proof-offsite.timer` on the first Sunday of the month at 05:00 UTC. Both units take one lock with `flock`, so the two never run at once |
+| Run by | `backend-restore-proof.service` (arguments `… backend,account _proof`), started by `backend-restore-proof.timer` on Sundays at 04:00 UTC; and `backend-restore-proof-offsite.service` (`FROM_OFFSITE=1`, arguments `… backend,account _proof_offsite`), started by `backend-restore-proof-offsite.timer` on the first Sunday of the month at 05:00 UTC. Both units take one lock with `flock`, so the two never run at once |
 
 ### restore-drill.sh
 
@@ -574,8 +582,10 @@ never been restored is not a backup. The script never writes to the source.
 - Before it loads anything, it refuses copies that do not start at the dump's file or that have a gap, and a scratch
   database that is the source (the same name on the same server).
 - It drops the scratch database first if it exists, so give it a name nothing else uses.
-- The checks: every table's row count against the source's (exact only when nothing writes meanwhile), and the
-  ledger reconciled with every balance, coins and gems.
+- The checks: every table's row count against the source's (exact only when nothing writes meanwhile), and, for the
+  backend's database, the ledger reconciled with every balance, coins and gems. A database is the backend's if it
+  has a `ledger` table; the account service's has none, and its own checks are its newest account and event as the
+  proof's floor, and no account made or event written at or after a `STOP_AT` (D-117, 10 §6.3).
 - It reads the source's position with `SHOW MASTER STATUS`, or with `SHOW BINARY LOG STATUS` on a server that lacks
   the first (8.4).
 - It ends with a `summary:` line (the restore's and the replay's seconds, and how far behind the copies were), then
@@ -709,7 +719,9 @@ Promotes MySQL's replica to primary, on the replica's machine. It works in this 
 3. **The replica catches up.** It waits up to 60 s for the replica to apply everything it received.
 4. **The promotion.** It stops replicating and forgets its source (`STOP REPLICA`, `RESET REPLICA ALL`), becomes
    writable with `SET PERSIST` (which outranks the configuration file, so a restart keeps it), raises the failover
-   epoch in `ha_epoch`, which the backend's processes follow, and prints the epoch and the executed GTID set.
+   epoch in `ha_epoch`, which the backend's processes follow, and the account service's own (`ACCOUNT_DB_NAME`,
+   `account`), which it follows (O-103, D-117), where that database is; and prints the epoch and the executed GTID
+   set.
 
 Run on a primary already, it prints the epoch and changes nothing.
 
@@ -736,7 +748,9 @@ Checks the two promotion scripts with stand-in clients and no server, in seconds
 - with `--demote-old`: an old primary that does not answer, or that refuses, is refused;
 - MySQL's handover in its order: read-only, the replica's wait for everything the old primary executed,
   `offline_mode`, the promotion;
-- the store's handover: the old primary demoted, then this one promoted.
+- the store's handover: the old primary demoted, then this one promoted;
+- a MySQL promotion raising the account service's epoch after the backend's, and on a server without the account
+  database, the backend's alone, the other said absent (O-103).
 
 The real promotions are checked by the failover drills of `client/headless-drill.sh` (`MYSQL_FAILOVER=demote` and
 `FAILOVER=1`).
@@ -930,23 +944,28 @@ ROTATE=<another rotate-nginx-logs.sh> scripts/check-nginx-logs.sh        a mutat
 
 A live drill of the backups, on MySQL servers of its own:
 
-- a primary on 3307 (binary log, GTIDs), seeded with a copy of `SEED_DB` from the development MySQL
-  (`dev-mysql.sh`, `127.0.0.1:3314` or `MYSQL_PORT`; started for the drill when it is not running, and stopped
-  after; never the machine's own MySQL on 3306, O-40);
+- a primary on 3307 (binary log, GTIDs), seeded with a copy of `SEED_DB` and of the account service's `account_dev`
+  (D-117) from the development MySQL (`dev-mysql.sh`, `127.0.0.1:3314` or `MYSQL_PORT`; started for the drill when it
+  is not running, and stopped after; never the machine's own MySQL on 3306, O-40);
 - a scratch server on 3309 (no binary log), which the proof restores onto.
 
 It runs each backup script as production does, and checks what each must do and what each must refuse:
 
-1. the binlog stream copying; the dump, recorded; writes after it, and a mistake at a known moment;
+1. the binlog stream copying; the dump of both databases in one run, recorded once, naming both; writes to both
+   after it, and a mistake in each at a known moment;
 2. the copy off the site, encrypted, into a directory that stands in for the host;
-3. the proof while a writer keeps writing; a restore to the moment before the mistake;
-4. the proof from off the site; and with the wrong key, refused and recorded as a failure (O-15);
+3. the proof of both while a writer keeps writing, the accounts made after the dump in the account service's copy;
+   a restore of each to the moment before the mistake;
+4. the proof of both from off the site, each database's newest dump fetched; with the wrong key, refused and recorded
+   as a failure (O-15); the last resort for each, the account service's with no ledger to reconcile;
 5. refused, each one: a gap in the copies, a dump whose gems do not reconcile, a proof whose replay stops short of
-   what was committed, and a moment before the dump;
+   what was committed, a moment before the dump, a run whose second database fails (recorded as failed, naming it,
+   though the first's dump was taken), and a proof with one database's dump missing (recorded so);
 6. the scripts' own refusals (plan item 116): a proof without `SCRATCH_CNF` refused (O-65); a dump kept from another
-   series leaving the new dump's binlogs (O-66); a dump that records no position never named as one (O-67); a push
-   off the site with no dump refused, and the host's copy kept (O-69);
-7. the monthly drill's exact counts, once nothing writes.
+   series leaving the new dump's binlogs (O-66), and another database's dump keeping those it starts from; a dump that
+   records no position never named as one (O-67); a push off the site with no dump refused, and the host's copy kept
+   (O-69);
+7. the monthly drill's exact counts, once nothing writes, for each database.
 
 It runs the scripts, not the units.
 
@@ -957,7 +976,7 @@ RELEASE=backend/target/release/backend-<version> TMPDIR=<scratch directory> back
 
 | | |
 |---|---|
-| Settings | `TMPDIR` (default `/tmp`), where its working directory goes. `SEED_DB` (default `backend_dev`) and `SEED_PASSWORD` (default `backend-dev-password`), the development MySQL's database and its `backend` user's password; `MYSQL_PORT` (3314), its port. `RELEASE`, a release directory: its `mysql/`, MySQL 8.4, runs the drill's own servers and is first on `PATH` for the scripts; unset, or a release without `mysql/`, the machine's |
+| Settings | `TMPDIR` (default `/tmp`), where its working directory goes. `SEED_DB` (default `backend_dev`) and `SEED_PASSWORD` (default `backend-dev-password`), the development MySQL's database and its `backend` user's password; `SEED_ACCOUNT_PASSWORD` (default `account-dev-password`), its `account` user's, for `account_dev`; `MYSQL_PORT` (3314), its port. `RELEASE`, a release directory: its `mysql/`, MySQL 8.4, runs the drill's own servers and is first on `PATH` for the scripts; unset, or a release without `mysql/`, the machine's |
 | Needs | `mysqld`, `mysql`, `mysqldump`, `mysqlbinlog` (the release's with `RELEASE`, else `/usr/sbin/mysqld` and the machine's tools), `openssl`, `rsync`; ports 3307 and 3309 free (`MYSQL_FAILOVER` in `client/headless-drill.sh` uses 3307 too, so do not run both at once); the seed database at the current schema, which has `backup_run` (a drill or `./run-local.sh start` makes it) |
 | Runs | on a development machine only |
 | Prints | `ok` or `FAIL` per check, then `BACKUP DRILL PASSED` or `BACKUP DRILL FAILED: <n>`, with the working directory, which holds every step's log |

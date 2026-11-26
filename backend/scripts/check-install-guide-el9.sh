@@ -2,11 +2,12 @@
 # Runs docs/operations/03-install-guide.md as written: every bash block between its guide-steps
 # markers, in order, in Red Hat's UBI 9 init image (systemd its first process) with NO network, on a
 # plain copy of the repository's files (what a clone has: tracked and new, nothing ignored). From the
-# build with build-offline.sh to a registration through nginx; then the launch's one machine as D-93 lays
+# build with build-offline.sh to a sign-up at the account service through nginx and its session (D-117); then the
+# launch's one machine as D-93 lays
 # it out (every unit, each arena by its name through nginx's 9001 and 80, every process's metrics watched, the result
 # stream on its own store, a dump and its proof recorded and seen by the worker); all of it again
 # after the container is restarted, as the machine at a reboot; and the database's disk lost, then the
-# runbook's restore on one machine run as written (operations/02 §4), nothing committed lost.
+# runbook's restore on one machine run as written (operations/02 §4), both databases, nothing committed lost.
 #
 #   scripts/check-install-guide-el9.sh        needs docker and git; about twenty-five minutes
 #   IMAGE=registry.access.redhat.com/ubi9/ubi-init:9.6 scripts/check-install-guide-el9.sh
@@ -50,7 +51,7 @@ fi
 
 # The launch's one machine (D-93): its units, each arena by its name, every process watched, the stores apart. The
 # arenas are the machine's settings' (D-97): a1 to a3 here, B's own on a standby that runs arenas, after A's loss.
-LAUNCH_UNITS="backend-mysql backend-store@session backend-store@events backend-platform backend-gateway
+LAUNCH_UNITS="backend-mysql backend-store@session backend-store@events backend-account backend-platform backend-gateway
     backend-worker@c1 backend-worker@c2 backend-nginx backend-binlog-stream backend-scratch-mysql"
 LAUNCH_TIMERS="backend-mysql-backup.timer backend-restore-proof.timer backend-nginx-logs.timer"
 fail() { echo "  FAIL $*"; FAILS=$((FAILS + 1)); }
@@ -68,6 +69,16 @@ store() {   # port, command...: the store's reply, its first line, after AUTH
     echo "${r%$'\r'}"
 }
 setting() { sed -n "s/^$2=//p" "$1" 2> /dev/null | tail -1; }   # setting <env file> <name>: the value it sets
+# login <username> [sessions|accounts]: logged in (or signed up) at the account service through nginx, and the access
+# token taken by the platform there (D-117): both statuses
+login() {
+    local made
+    made=$(curl -s --cacert /etc/backend/tls/ca.pem -w ' %{http_code}' -X POST -H 'Content-Type: application/json' \
+        -d "{\"username\":\"$1\",\"password\":\"install-check-1\"}" "https://127.0.0.1/account/v1/${2:-sessions}")
+    echo "${made##* } $(curl -s --cacert /etc/backend/tls/ca.pem -o /tmp/session.json -w '%{http_code}' -X POST \
+        -H 'Content-Type: application/json' -d "{\"accessToken\":\"$(sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p' <<< "$made")\"}" \
+        https://127.0.0.1/v1/sessions)"
+}
 launch_checks() {
     local u s n f a up listening targets want hosts arenas units
     arenas=$(ls /etc/backend/arena-*.env 2> /dev/null | sed 's|.*/arena-\(.*\)\.env$|\1|')
@@ -110,8 +121,8 @@ launch_checks() {
     # A JVM still starting on a loaded machine has not opened its port yet: up to two minutes for all of them.
     want=
     for f in /etc/backend/platform.env /etc/backend/gateway.env /etc/backend/worker-c1.env /etc/backend/worker-c2.env \
-             $(printf '/etc/backend/arena-%s.env ' $arenas); do
-        a=$(setting "$f" BACKEND_METRICS_ADDR)
+             /etc/backend/account.env $(printf '/etc/backend/arena-%s.env ' $arenas); do
+        a=$(setting "$f" BACKEND_METRICS_ADDR); [ -n "$a" ] || a=$(setting "$f" ACCOUNT_METRICS_ADDR)
         [ -n "$a" ] || fail "$f gives no metrics address: nothing watches that process"
         want="$want$a"$'\n'
     done
@@ -154,7 +165,8 @@ launch_checks() {
     f=$(grep -lE 'LoadCredential|%d/' /etc/systemd/system/backend-*.service /etc/systemd/system/backend-*.service.d/*.conf 2> /dev/null)
     [ -z "$f" ] || fail "a credential still named in: $f"
     f=$(for u in $units; do systemctl show "$u" | grep -qF -e "$(cat /etc/backend/credentials/db-password)" \
-        -e "$(cat /etc/backend/credentials/store-password)" && echo "$u"; done)
+        -e "$(cat /etc/backend/credentials/store-password)" -e "$(cat /etc/backend/credentials/account-db-password)" \
+        -e "$(sed -n 's/^ACCOUNT_SIGNING_KEY=//p' /etc/backend/account.env | cut -c1-40)" && echo "$u"; done)
     [ -z "$f" ] || fail "systemctl show prints a password: $f"
 }
 
@@ -178,9 +190,8 @@ if [ "${1:-}" = --after-boot ]; then
     code=$(curl -s --cacert /etc/backend/tls/ca.pem -o /dev/null -w '%{http_code}' \
         -H "Authorization: Bearer $(cat /var/tmp/check-session)" https://127.0.0.1/v1/inventory)
     [ "$code" = 200 ] || fail "the session made before the restart is not served through nginx: $code"
-    code=$(curl -s --cacert /etc/backend/tls/ca.pem -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
-        -d '{"username":"installcheck","password":"install-check-1"}' https://127.0.0.1/v1/sessions)
-    [ "$code" = 200 ] || fail "the account made before the restart does not log in through nginx: $code"
+    code=$(login installcheck)
+    [ "$code" = "200 200" ] || fail "the account made before the restart does not log in through nginx: $code"
     echo "--- after the restart: $FAILS failed"
     [ "$FAILS" = 0 ]
     exit
@@ -188,14 +199,10 @@ fi
 
 if [ "${1:-}" = --disk-lost ]; then
     FAILS=0
-    login() {   # username: the login's status through nginx
-        curl -s --cacert /etc/backend/tls/ca.pem -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
-            -d "{\"username\":\"$1\",\"password\":\"install-check-1\"}" https://127.0.0.1/v1/sessions
-    }
-    # A write after the last dump, which only the binlog copies hold.
-    code=$(curl -s --cacert /etc/backend/tls/ca.pem -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
-        -d '{"username":"afterdump","password":"install-check-1"}' https://127.0.0.1/v1/accounts)
-    [ "$code" = 201 ] || fail "no account registered after the dump: $code"
+    # Writes after the last dump, which only the binlog copies hold: an account at the account service, and its
+    # player at the backend, made by its first session.
+    code=$(login afterdump accounts)
+    [ "$code" = "201 200" ] || fail "no account signed up and its player made after the dump: $code"
     sleep 3
     # The database's disk lost: MySQL stopped, its files gone.
     systemctl stop backend-mysql && rm -rf /var/lib/backend-mysql
@@ -210,8 +217,11 @@ if [ "${1:-}" = --disk-lost ]; then
     curl -s -o /dev/null http://127.0.0.1:8080/health || fail "the platform does not answer five minutes after the restore"
     sleep 15
     for u in installcheck afterdump; do
-        code=$(login $u); [ "$code" = 200 ] || fail "$u does not log in after the restore: $code"
+        code=$(login $u); [ "$code" = "200 200" ] || fail "$u does not log in after the restore: $code"
     done
+    n=$(/opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf -N \
+        -e "SELECT COUNT(*) FROM account.account WHERE username = 'afterdump'" 2> /dev/null)
+    [ "$n" = 1 ] || fail "the account service's database not restored to its last write: afterdump's account $n"
     launch_checks
     last=$(/opt/backend/mysql/bin/mysql --defaults-extra-file=/etc/backend/credentials/mysql-root.cnf -N \
         -e "SELECT CONCAT(kind, ':', ok) FROM backend.backup_run ORDER BY id DESC LIMIT 1" 2> /dev/null)
@@ -248,12 +258,13 @@ awk '
 echo "--- the guide's steps: $(grep -c '^echo "=== step' /tmp/guide-steps.sh) blocks"
 
 # awk, not head: head ends at its sixtieth line, and the pipe's close then ended tee and the steps with it (O-79).
-bash /tmp/guide-steps.sh 2>&1 | tee /tmp/guide.log | grep -E "^=== step|^active|^inactive|^failed|^activating|registration|ERROR|error|refus" | awk 'NR <= 60'
+bash /tmp/guide-steps.sh 2>&1 | tee /tmp/guide.log | grep -E "^=== step|^active|^inactive|^failed|^activating|sign-up|session|ERROR|error|refus" | awk 'NR <= 60'
 rc=${PIPESTATUS[0]}
 echo "--- the steps ran: exit $rc"
 FAILS=0
 [ "$rc" = 0 ] || { FAILS=1; tail -25 /tmp/guide.log; }
-grep -q "a registration through nginx: 201" /tmp/guide.log || { echo "  FAIL no registration through nginx"; FAILS=1; }
+grep -q "a sign-up through nginx: 201" /tmp/guide.log || { echo "  FAIL no sign-up through nginx"; FAILS=1; }
+grep -q "its access token taken for a session: 200" /tmp/guide.log || { echo "  FAIL no session for the access token"; FAILS=1; }
 bad=$(grep -cE "^(inactive|failed|activating)$" /tmp/guide.log)
 [ "$bad" = 0 ] || { echo "  FAIL $bad units not active"; FAILS=1; }
 launch_checks
@@ -268,10 +279,8 @@ for port in 9102 9112; do
     done
 done
 ls /var/lib/backend/binlog/binlog.0* > /dev/null 2>&1 || fail "no binlog copy in /var/lib/backend/binlog"
-# A session, kept for the check after the restart.
-curl -s --cacert /etc/backend/tls/ca.pem -X POST -H 'Content-Type: application/json' \
-    -d '{"username":"installcheck","password":"install-check-1"}' https://127.0.0.1/v1/sessions \
-    | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' > /var/tmp/check-session
+# A session, kept for the check after the restart: logged in at the account service, its token taken.
+[ "$(login installcheck)" = "200 200" ] && sed -n 's/.*"token":"\([^"]*\)".*/\1/p' /tmp/session.json > /var/tmp/check-session
 [ -s /var/tmp/check-session ] || fail "no login through nginx"
 # The operating system's own, where the image has them: still there, and still running.
 if command -v java > /dev/null; then echo "--- the system's java: $(java -version 2>&1 | head -1)"; fi

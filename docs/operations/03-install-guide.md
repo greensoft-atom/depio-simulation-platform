@@ -2,7 +2,7 @@
 
 This guide installs the backend on one fresh RHEL 9.x server, from a clone of this repository. It is for the operator
 who sets up the site's machine. It starts from an empty server and ends with every process running and a player
-registered through nginx. Nothing is installed from the operating system's packages except `git`, and that only to
+signed up through nginx. Nothing is installed from the operating system's packages except `git`, and that only to
 clone the repository. Every command is here, in the order you run it. The reasons behind the steps are in
 [01 — Deployment](01-deploy.md) and [09](../detailed-design/09-release-and-packaging.md); the words this project uses
 (front, arena, store, TLS name, grant) are defined in the [glossary](../glossary.md).
@@ -10,7 +10,8 @@ clone the repository. Every command is here, in the order you run it. The reason
 **Tested as written.** `backend/scripts/check-install-guide-el9.sh` runs this guide exactly as it is written here:
 
 - It runs every `bash` block of the steps below, in order, in Red Hat's UBI 9.5 image with systemd and **no
-  network**, on a plain copy of the repository. The last step registers an account through nginx.
+  network**, on a plain copy of the repository. The last step signs an account up at the account service through
+  nginx, and takes its token for a session.
 - Then it checks the launch's one machine (D-93): every unit active and enabled; each arena reached by its name
   through 9001 and passed to its own port, and reached by the same name through 80 in clear (D-115); every metrics
   port watched; the result stream on its own store; each store's `maxmemory` under half its heap; the first dump
@@ -18,11 +19,16 @@ clone the repository. Every command is here, in the order you run it. The reason
 - It restarts the container, as a reboot would, and checks all of that again. A session made before the restart is
   still served after it.
 - Last, it loses the database's disk and runs the [runbook's restore on one
-  machine](02-runbook.md#on-the-launchs-one-machine-d-93) as written. An account registered after the dump logs in
-  after the restore, and the next proof passes.
+  machine](02-runbook.md#on-the-launchs-one-machine-d-93) as written. An account signed up after the dump logs in
+  after the restore, both databases made again, and the next proof passes.
 
 What its runs found:
 
+- **2026-11-26**, with the account service (D-117): no check failed, at the install, after the restart or after the
+  restore; the sign-up through nginx `201` and its session `200`, the watch reading the account service, the dump
+  and the proof of both databases recorded once each, and the runbook's restore making both again, the account
+  signed up after the dump logging in. The binlog stream restarted once after the container's restart, MySQL not
+  yet answering, as in earlier runs (plan item 114): systemd starts it again.
 - **2026-11-25**, after D-115: no check failed, at the install, after the restart or after the restore, and 80 was
   listening (plan item 137).
 - **2026-11-01**, in UBI 9.5: every check passed, in about eleven minutes. Eleven mutants of the guide and the
@@ -42,7 +48,8 @@ MySQL, and the firewall.
 
 **What the steps install** is **the launch's machine**: one machine with every role, for up to about 5 000 players
 ([D-93](../architecture/03-decision-log.md#d-93--the-site-launches-on-one-machine-for-up-to-about-5-000-players)).
-It runs nginx in front, a platform, a gateway, three arenas, two workers, both stores, and MySQL with its backups. The
+It runs nginx in front, the account service (D-117), a platform, a gateway, three arenas, two workers, both stores,
+and MySQL with its backups, the backend's database and the account service's. The
 same steps serve for a trial machine. When the site grows, this machine becomes the first of three: a second
 machine, its standby, is [10](10-two-machines.md) (D-96), and [Three machines](#three-machines) says what differs.
 
@@ -152,40 +159,42 @@ SKIP_TESTS=1 WORK=/var/tmp/backend-build ./build-offline.sh
 ## 4. The release in /opt
 
 The block unpacks the release into `/opt`, points the link `/opt/backend` at the newest release there, and prints the
-last three lines of its `VERSIONS.md`: the backend's version and commit, j-redis's version, and the runtime's.
+last four lines of its `VERSIONS.md`: the backend's version and commit, j-redis's version, the account service's, and
+the runtime's.
 
 ```bash
 tar -xzf "$SRC"/backend/target/release/backend-*.tar.gz -C /opt
 ln -sfn "$(ls -d /opt/backend-*/ | sort | tail -1 | sed 's:/$::')" /opt/backend
-tail -3 /opt/backend/VERSIONS.md
+tail -4 /opt/backend/VERSIONS.md
 ```
 
 ## 5. Users, directories, secrets, units
 
 The block does four things:
 
-1. **The system users**, each without a home or a login shell: `backend` (the Java processes), `nginx` (nginx's
-   workers), `jredis` (the stores) and `backend-backup` (the backups). And `mysql`, with `/var/lib/backend-mysql` as
+1. **The system users**, each without a home or a login shell: `backend` (the Java processes), `backend-account`
+   (the account service, D-117), `nginx` (nginx's workers), `jredis` (the stores) and `backend-backup` (the backups). And `mysql`, with `/var/lib/backend-mysql` as
    its home, unless the system's MySQL made it already (§1).
 2. **The directories** in `/etc/backend/`: `tls`, `mysql` and `nginx`, readable by all, and `credentials`, root's
    alone (0700).
-3. **Six secrets**, each 24 random bytes written in hex, made here and never typed: the database account's
-   (`db-password`), the stores' (`store-password`), MySQL root's (`mysql-root`), the backups' two accounts'
-   (`backup-password`, `binlog-password`), and the scratch server root's (`scratch-root`). A secret already there is
+3. **Seven secrets**, each 24 random bytes written in hex, made here and never typed: the database account's
+   (`db-password`), the account service's database account's (`account-db-password`), the stores' (`store-password`),
+   MySQL root's (`mysql-root`), the backups' two accounts' (`backup-password`, `binlog-password`), and the scratch
+   server root's (`scratch-root`). The account service's signing key is the eighth, made in step 8, where it goes. A secret already there is
    kept. Only root can read them. Steps 6 and 8 then write each one where its process reads it (D-102).
 4. **The units**: the release's services and timers copied into `/etc/systemd/system/`, and systemd told to read
    them.
 
 ```bash
-for u in backend nginx jredis backend-backup; do
+for u in backend backend-account nginx jredis backend-backup; do
     id "$u" > /dev/null 2>&1 || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin "$u"
 done
 id mysql > /dev/null 2>&1 || useradd --system --home-dir /var/lib/backend-mysql --shell /usr/sbin/nologin mysql
 install -d -m 0755 /etc/backend /etc/backend/tls /etc/backend/mysql /etc/backend/nginx
 install -d -m 0700 /etc/backend/credentials
-# The secrets, made here, never typed: the database's, the store's, MySQL's root, the backups' two
-# accounts and the scratch server's root. Root's alone; §6 and §8 write each where its process reads it (D-102).
-for s in db-password store-password mysql-root backup-password binlog-password scratch-root; do
+# The secrets, made here, never typed: the database's, the account service's, the store's, MySQL's root, the backups'
+# two accounts and the scratch server's root. Root's alone; §6 and §8 write each where its process reads it (D-102).
+for s in db-password account-db-password store-password mysql-root backup-password binlog-password scratch-root; do
     [ -s "/etc/backend/credentials/$s" ] || (umask 077; openssl rand -hex 24 > "/etc/backend/credentials/$s")
 done
 cp /opt/backend/systemd/*.service /opt/backend/systemd/*.timer /etc/systemd/system/
@@ -207,8 +216,9 @@ The block:
 3. enables and starts `backend-mysql`;
 4. sets root's password through MySQL's socket, and writes it into `/etc/backend/credentials/mysql-root.cnf`
    (root's alone) for the commands that follow;
-5. makes the application's database, `backend`, and three users, each on `127.0.0.1` alone with 01 §9's grants:
-   `backend` for the processes, and `backup` and `binlog` for the backups.
+5. makes the application's database, `backend`, and the account service's, `account` (D-117), and four users, each on
+   `127.0.0.1` alone with 01 §9's grants: `backend` for the processes, `account` for the account service, and
+   `backup` and `binlog` for the backups.
 
 ```bash
 sed -e "s/^bind-address .*/bind-address               = 127.0.0.1/" \
@@ -229,6 +239,9 @@ SQL
     CREATE DATABASE backend;
     CREATE USER 'backend'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/db-password)';
     GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON backend.* TO 'backend'@'127.0.0.1';
+    CREATE DATABASE account;
+    CREATE USER 'account'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/account-db-password)';
+    GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON account.* TO 'account'@'127.0.0.1';
     CREATE USER 'backup'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/backup-password)';
     GRANT SELECT, SHOW VIEW, TRIGGER, EVENT, RELOAD, REPLICATION CLIENT ON *.* TO 'backup'@'127.0.0.1';
     CREATE USER 'binlog'@'127.0.0.1' IDENTIFIED BY '$(cat /etc/backend/credentials/binlog-password)';
@@ -236,8 +249,8 @@ SQL
 SQL
 ```
 
-The tables are made by the platform at its first start (Flyway: `V1` makes the tables, `V2` adds the first rows), so
-there is nothing else to load.
+The tables are made by the platform at its first start (Flyway: `V1` makes the tables, `V2` adds the first rows), and
+the account service's by its own first start, so there is nothing else to load.
 
 ### Its backups, on this machine
 
@@ -245,9 +258,9 @@ The backups run on this machine as they run on C in the three-machine layout
 ([01 §10](01-deploy.md#10-copies-off-the-databases-machine)):
 
 - the binary logs copied as MySQL writes them (`backend-binlog-stream`);
-- a dump every night at 03:30 UTC (`backend-mysql-backup.timer`);
-- every Sunday, a proof that the newest dump and the copies restore, onto a scratch MySQL server of their own
-  (`backend-restore-proof.timer`).
+- a dump of both databases every night at 03:30 UTC (`backend-mysql-backup.timer`), recorded as one run;
+- every Sunday, a proof that each database's newest dump and the copies restore, onto a scratch MySQL server of their
+  own (`backend-restore-proof.timer`).
 
 They run as the user `backend-backup`, whose files the `backend` processes cannot read, and they write into
 `/var/lib/backend`, the second disk (§1). They are started with the rest in §10. The copy off the site waits until
@@ -322,7 +335,12 @@ processes on loopback (D-82), so everything here is on `127.0.0.1`.
    target (the platform, the gateway, the three arenas and the two workers: D-93, O-59), and no peer machine.
 2. **`worker-c1.env` and `worker-c2.env`**: each worker's own metrics port, 9102 and 9112. The watch also reads the
    backups' state there.
-3. **`arena-a1.env` to `arena-a3.env`**, for the three arenas behind nginx. Each listens on loopback, on a port of
+3. **`account.env`**, the account service's (D-117): bound to `127.0.0.1`; its database, `account`, on `127.0.0.1`;
+   no trusted proxy but loopback; its issuer the site's, `https://ADDRESS/account`, which `platform.env` names too,
+   with its key set on `http://127.0.0.1:8070`; its events to this machine's platform; its metrics on 9104, watched
+   with the rest. Its signing key comes from the release's `account-key.sh`, written into the file with the other
+   secrets.
+4. **`arena-a1.env` to `arena-a3.env`**, for the three arenas behind nginx. Each listens on loopback, on a port of
    its own, with a TLS name and a metrics port of its own. Each reaches both stores on `127.0.0.1` (the events store
    on 6380), and announces this machine's address (`ADDRESS`) and 9001 to the players:
 
@@ -332,23 +350,25 @@ processes on loopback (D-82), so everything here is on `127.0.0.1`.
    | `a2` | `127.0.0.1:9012` | `a2.arena.internal` | `127.0.0.1:9111` |
    | `a3` | `127.0.0.1:9013` | `a3.arena.internal` | `127.0.0.1:9113` |
 
-4. **The secrets**, as plain variables in each process's own file (D-102). First every settings file is made root's
+5. **The secrets**, as plain variables in each process's own file (D-102). First every settings file is made root's
    alone (0600), because systemd reads it as root before the process starts. Then the values §5 made are added: the
-   database password to `platform.env` and `worker.env`, and the store password to those two, to `gateway.env` and to
-   the three arenas' files. No secret ever goes into a unit's `Environment=`.
-5. **The heaps for one machine** (D-93): a systemd drop-in for each unit, `heap.conf`, which sets `_JAVA_OPTIONS`;
+   database password to `platform.env` and `worker.env`, the account service's database password and its signing
+   key to `account.env`, and the store password to `platform.env`, `worker.env`, `gateway.env` and the three arenas'
+   files. No secret ever goes into a unit's `Environment=`.
+6. **The heaps for one machine** (D-93): a systemd drop-in for each unit, `heap.conf`, which sets `_JAVA_OPTIONS`;
    and each store's heap, with its `maxmemory` at 40 % of it:
 
-   | The machine's memory | Platform, gateway | Each worker | Each arena | Each store: heap, `maxmemory` |
-   |---|---|---|---|---|
-   | 48 GB or more | 2 GB each | 1 GB | 4 GB | 4 GB, 1 600 MB |
-   | under 48 GB | 512 MB, growing to 1 GB (`-XX:-AlwaysPreTouch`) | the same | the same | 1 GB, 400 MB (O-60) |
+   | The machine's memory | Platform, gateway | The account service | Each worker | Each arena | Each store: heap, `maxmemory` |
+   |---|---|---|---|---|---|
+   | 48 GB or more | 2 GB each | 1 GB, its unit's | 1 GB | 4 GB | 4 GB, 1 600 MB |
+   | under 48 GB | 512 MB, growing to 1 GB (`-XX:-AlwaysPreTouch`) | the same | the same | the same | 1 GB, 400 MB (O-60) |
 
 ```bash
 local_db="jdbc:mysql://127.0.0.1:$MYSQL_PORT/backend?sslMode=REQUIRED"
-# Every process's metrics watched: the platform, the gateway, the three arenas and the two workers (D-93, O-59).
+# Every process's metrics watched: the platform, the gateway, the three arenas, the two workers (D-93, O-59) and the
+# account service (D-117).
 watch=platform=127.0.0.1:9101,gateway=127.0.0.1:9103,arena=127.0.0.1:9110,arena=127.0.0.1:9111,arena=127.0.0.1:9113
-watch=$watch,worker=127.0.0.1:9102,worker=127.0.0.1:9112
+watch=$watch,worker=127.0.0.1:9102,worker=127.0.0.1:9112,account=127.0.0.1:9104
 # Everything on loopback: this machine is its own front, and nginx reaches its processes there (D-82).
 for p in platform gateway worker; do
     sed -e "s/^STORE_HOST=.*/STORE_HOST=127.0.0.1/" -e "s#^BACKEND_DB_URL=.*#BACKEND_DB_URL=$local_db#" \
@@ -356,8 +376,16 @@ for p in platform gateway worker; do
         -e "s#^PLATFORM_URL=.*#PLATFORM_URL=http://127.0.0.1:8080#" -e "s/^BACKEND_TRUSTED_PROXIES=.*/BACKEND_TRUSTED_PROXIES=/" \
         -e "s/^BACKEND_WATCH_TARGETS=.*/BACKEND_WATCH_TARGETS=$watch/" -e "s/^BACKEND_WATCH_PEERS=.*/BACKEND_WATCH_PEERS=/" \
         -e "s/^#BACKEND_EVENTS_STORE=10.0.0.2:6380$/BACKEND_EVENTS_STORE=127.0.0.1:6380/" \
+        -e "s#^BACKEND_ACCOUNT_ISSUER=.*#BACKEND_ACCOUNT_ISSUER=https://$ADDRESS/account#" \
+        -e "s#^BACKEND_ACCOUNT_JWKS_URL=.*#BACKEND_ACCOUNT_JWKS_URL=http://127.0.0.1:8070/.well-known/jwks.json#" \
         "/opt/backend/env/$p.env.example" > "/etc/backend/$p.env"
 done
+# The account service (D-117): on loopback, its database there, the site's issuer, its events to this machine's platform.
+sed -e "s/^ACCOUNT_BIND=.*/ACCOUNT_BIND=127.0.0.1/" -e "s/^ACCOUNT_TRUSTED_PROXIES=.*/ACCOUNT_TRUSTED_PROXIES=/" \
+    -e "s#^ACCOUNT_DB_URL=.*#ACCOUNT_DB_URL=jdbc:mysql://127.0.0.1:$MYSQL_PORT/account?sslMode=REQUIRED#" \
+    -e "s#^ACCOUNT_ISSUER=.*#ACCOUNT_ISSUER=https://$ADDRESS/account#" \
+    -e "s#^ACCOUNT_EVENTS_URL=.*#ACCOUNT_EVENTS_URL=http://127.0.0.1:8080/v1/account-events#" \
+    /opt/backend/env/account.env.example > /etc/backend/account.env
 # Each worker's metrics, a port each: the watch reads the backups' state there too.
 echo "BACKEND_METRICS_ADDR=127.0.0.1:9102" > /etc/backend/worker-c1.env
 echo "BACKEND_METRICS_ADDR=127.0.0.1:9112" > /etc/backend/worker-c2.env
@@ -377,6 +405,9 @@ done
 chmod 0600 /etc/backend/*.env
 db=$(cat /etc/backend/credentials/db-password) store=$(cat /etc/backend/credentials/store-password)
 for f in platform worker; do echo "BACKEND_DB_PASSWORD=$db" >> "/etc/backend/$f.env"; done
+echo "ACCOUNT_DB_PASSWORD=$(cat /etc/backend/credentials/account-db-password)" >> /etc/backend/account.env
+# The account service's signing key (10 §3.4): made once, here, by the release's script; the same on a second machine.
+grep -q '^ACCOUNT_SIGNING_KEY=' /etc/backend/account.env || /opt/backend/scripts/account-key.sh | grep '^ACCOUNT_SIGNING_KEY=' >> /etc/backend/account.env
 for f in platform worker gateway arena-a1 arena-a2 arena-a3; do echo "BACKEND_STORE_PASSWORD=$store" >> "/etc/backend/$f.env"; done
 # The heaps for one machine (D-93), a drop-in a unit, and the stores' with their maxmemory at 40 % of the heap;
 # under 48 GB, 1g each, the stores' maxmemory 400mb with it (O-60).
@@ -384,7 +415,7 @@ heap() { mkdir -p "/etc/systemd/system/$1.service.d"
          printf '[Service]\nEnvironment="_JAVA_OPTIONS=%s"\n' "$2" > "/etc/systemd/system/$1.service.d/heap.conf"; }
 mem_gb=$(awk '/MemTotal/ {print int($2 / 1048576)}' /proc/meminfo)
 if [ "$mem_gb" -lt 48 ]; then
-    for u in backend-platform backend-gateway backend-worker@ backend-arena@; do heap "$u" "-Xms512m -Xmx1g -XX:-AlwaysPreTouch"; done
+    for u in backend-platform backend-gateway backend-account backend-worker@ backend-arena@; do heap "$u" "-Xms512m -Xmx1g -XX:-AlwaysPreTouch"; done
     store_heap=1g maxmemory=400mb
 else
     heap backend-platform "-Xms2g -Xmx2g"; heap backend-gateway "-Xms2g -Xmx2g"
@@ -412,8 +443,8 @@ The block:
 
 1. copies the release's nginx files into `/etc/backend/nginx/`, and puts `ADDRESS` in place of the example's address
    in `backend.conf` (its `server_name`);
-2. writes `backend-upstreams.conf` for one machine: one gateway, `127.0.0.1:8090`, and one platform,
-   `127.0.0.1:8080`;
+2. writes `backend-upstreams.conf` for one machine: one gateway, `127.0.0.1:8090`, one platform, `127.0.0.1:8080`, and
+   one account service, `127.0.0.1:8070`;
 3. writes `backend-arenas.conf`, the list of arenas that both of nginx's maps read (9001's, by the TLS name, and
    80's, by `/match/<name>`): `a1.arena.internal` to `a3.arena.internal`, at `127.0.0.1:9011` to `9013`;
 4. makes nginx's log directory, `/var/log/backend-nginx`;
@@ -424,9 +455,10 @@ The block:
 ```bash
 cp /opt/backend/nginx-conf/*.conf /etc/backend/nginx/
 sed -i "s/203\.0\.113\.10/$ADDRESS/" /etc/backend/nginx/backend.conf
-# This machine's platform, gateway and arenas, on loopback: the site's addresses, for one machine.
+# This machine's platform, account service, gateway and arenas, on loopback: the site's addresses, for one machine.
 printf '%s\n' 'upstream backend_gateway {' '    least_conn;' '    server 127.0.0.1:8090;' '}' \
     'upstream backend_platform {' '    server 127.0.0.1:8080;' '    keepalive 32;' '    keepalive_timeout 20s;' '}' \
+    'upstream backend_account {' '    server 127.0.0.1:8070;' '    keepalive 32;' '    keepalive_timeout 20s;' '}' \
     > /etc/backend/nginx/backend-upstreams.conf
 printf '%s\n' 'a1.arena.internal  127.0.0.1:9011;' 'a2.arena.internal  127.0.0.1:9012;' 'a3.arena.internal  127.0.0.1:9013;' \
     > /etc/backend/nginx/backend-arenas.conf
@@ -450,7 +482,7 @@ file `ca.pem` beside it is the root's certificate, not a secret: it goes into th
 The block starts the units in this order, and enables each one, so that it also starts by itself at every boot from
 now on:
 
-1. both stores;
+1. both stores, and the account service, which makes its tables in its empty database at its first start;
 2. the platform, which makes the tables in the empty database at its first start. The block waits until the
    platform answers on `/health`, up to five minutes on a slow machine;
 3. a grant to the backups' account: `INSERT` on `backend.backup_run`, the table where each backup step records its
@@ -466,6 +498,7 @@ block.
 
 ```bash
 systemctl enable --now backend-store@session backend-store@events
+systemctl enable --now backend-account            # the account service, which migrates its own database (D-117)
 systemctl enable --now backend-platform           # migrates the empty database at its first start
 # It answers only once the migration is done: wait for it, up to five minutes on a slow machine.
 for i in $(seq 300); do curl -s -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
@@ -485,8 +518,9 @@ The block:
 
 1. waits for the platform's `/health`, then ten seconds more;
 2. prints the state of every unit;
-3. registers an account through nginx on 443, as a device would, trusting the backend's root alone. (`--connect-to`
-   sends the request to this machine's own 443 while it still names `ADDRESS`, as a device does);
+3. signs an account up at the account service through nginx on 443, as a device would, trusting the backend's root
+   alone, and takes its access token to the platform for a session (D-117). (`--connect-to` sends each request to
+   this machine's own 443 while it still names `ADDRESS`, as a device does);
 4. opens a TLS connection to 9001 for each arena's TLS name, and checks the certificate against the root for that
    name;
 5. runs `install-certificate.sh --check`, which connects to each port as a device would;
@@ -497,13 +531,17 @@ The block:
 for i in $(seq 90); do curl -s -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done
 sleep 10
 arenas=$(ls /etc/backend/arena-*.env | sed 's|.*/arena-\(.*\)\.env$|backend-arena@\1|')
-systemctl is-active backend-mysql backend-store@session backend-store@events backend-platform backend-gateway \
+systemctl is-active backend-mysql backend-store@session backend-store@events backend-account backend-platform backend-gateway \
     backend-worker@c1 backend-worker@c2 $arenas backend-nginx backend-binlog-stream backend-scratch-mysql
-# A registration as a device makes it, through nginx, trusting the backend's root alone
-curl -s --cacert /etc/backend/tls/ca.pem --connect-to "$ADDRESS:443:127.0.0.1:443" -o /dev/null \
-    -w "a registration through nginx: %{http_code}\n" \
+# A sign-up as a device makes it, at the account service through nginx, then its access token taken for a session,
+# trusting the backend's root alone (D-117)
+signup=$(curl -s --cacert /etc/backend/tls/ca.pem --connect-to "$ADDRESS:443:127.0.0.1:443" -w ' %{http_code}' \
     -X POST -H 'Content-Type: application/json' -d '{"username":"installcheck","password":"install-check-1"}' \
-    "https://$ADDRESS/v1/accounts"
+    "https://$ADDRESS/account/v1/accounts")
+echo "a sign-up through nginx: ${signup##* }"
+curl -s --cacert /etc/backend/tls/ca.pem --connect-to "$ADDRESS:443:127.0.0.1:443" -o /dev/null \
+    -w "its access token taken for a session: %{http_code}\n" -X POST -H 'Content-Type: application/json' \
+    -d "{\"accessToken\":\"$(sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p' <<< "$signup")\"}" "https://$ADDRESS/v1/sessions"
 # Match traffic's TLS on 9001, as a device sees it: each arena's name, verified against the root
 for n in $(sed -n 's/^BACKEND_ADVERTISE_TLS_NAME=//p' /etc/backend/arena-*.env); do
     echo | openssl s_client -connect 127.0.0.1:9001 -servername "$n" -verify_hostname "$n" \
@@ -519,10 +557,10 @@ systemctl start backend-mysql-backup && systemctl start backend-restore-proof
 **What you should see:**
 
 - every unit `active`;
-- `a registration through nginx: 201`;
+- `a sign-up through nginx: 201`, and `its access token taken for a session: 200`;
 - for each arena (three here), a `subject=` line naming `backend`, then `Verify return code: 0 (ok)`;
 - the certificate check naming both ports, 443 and 9001;
-- two rows of `backup_run`: kind 1 (the dump) and kind 2 (the proof), each with `ok` 1.
+- two rows of `backup_run`: kind 1 (the dump, of both databases) and kind 2 (the proof, of both), each with `ok` 1.
 
 Look for the `subject=` line, not only for the return code. On a port that speaks no TLS, `openssl s_client` gets
 no certificate and still prints `Verify return code: 0 (ok)`.

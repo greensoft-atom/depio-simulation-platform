@@ -20,7 +20,7 @@ StateDirectory=backend/mysql-dumps backend/binlog backend/proof
 StateDirectoryMode=0700
 # One proof at a time (O-18): the weekly and the monthly share the scratch server, and either one's
 # restore starts by dropping its database; flock waits for the other to finish.
-ExecStart=/usr/bin/flock %S/backend/proof/lock /opt/backend/scripts/restore-proof.sh %S/backend/mysql-dumps %S/backend/binlog backend backend_proof
+ExecStart=/usr/bin/flock %S/backend/proof/lock /opt/backend/scripts/restore-proof.sh %S/backend/mysql-dumps %S/backend/binlog backend,account _proof
 TimeoutStartSec=6h
 
 NoNewPrivileges=yes

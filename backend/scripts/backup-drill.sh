@@ -1,6 +1,7 @@
 #!/bin/bash
 # A live drill of the backups (06 §10, D-71), on MySQL servers of its own: a primary on 3307 (binary
-# log, GTIDs) seeded with a copy of SEED_DB (default backend_dev) on the development MySQL (dev-mysql.sh,
+# log, GTIDs) seeded with a copy of SEED_DB (default backend_dev) and of the account service's account_dev (D-117,
+# 10 §6.3: every dump and proof is of both, recorded as one) on the development MySQL (dev-mysql.sh,
 # 127.0.0.1:3314 or MYSQL_PORT; started for the drill when it is not running, and stopped after; never
 # the machine's own on 3306, O-40), and a scratch server on
 # 3309 (no binary log), what the proof restores onto. It runs each script as production does, and
@@ -24,6 +25,7 @@ fi
 HERE=$(cd "$(dirname "$0")" && pwd)
 W=$(mktemp -d "${TMPDIR:-/tmp}/backup-drill.XXXXXX")
 DB=backend_dev
+ACC=account_dev
 PIDS=()
 cleanup() {
     for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null || true; done
@@ -69,11 +71,18 @@ seed() { mysql -h 127.0.0.1 -P "$SEED_PORT" --protocol=TCP -u backend -p"${SEED_
 mysqldump -h 127.0.0.1 -P "$SEED_PORT" --protocol=TCP -u backend -p"${SEED_PASSWORD:-backend-dev-password}" --single-transaction \
     --set-gtid-purged=OFF --no-tablespaces "${SEED_DB:-backend_dev}" 2>/dev/null | mysql --protocol=TCP -h 127.0.0.1 -P 3307 -u root "$DB"
 msql 3307 "GRANT INSERT ON $DB.backup_run TO 'backup'@'%'"
+# The account service's database beside it, as on the site's server (10 §6.3).
+[ "$(mysql -h 127.0.0.1 -P "$SEED_PORT" --protocol=TCP -u account -p"${SEED_ACCOUNT_PASSWORD:-account-dev-password}" -N -B \
+     -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$ACC' AND table_name = 'event_outbox'" 2>/dev/null)" = 1 ] \
+    || { echo "$ACC on 127.0.0.1:$SEED_PORT has no schema yet: ./dev-account.sh start or a drill makes it" >&2; exit 1; }
+msql 3307 "CREATE DATABASE $ACC"
+mysqldump -h 127.0.0.1 -P "$SEED_PORT" --protocol=TCP -u account -p"${SEED_ACCOUNT_PASSWORD:-account-dev-password}" --single-transaction \
+    --set-gtid-purged=OFF --no-tablespaces "$ACC" 2>/dev/null | mysql --protocol=TCP -h 127.0.0.1 -P 3307 -u root "$ACC"
 cnf backup backup backup-drill 3307
 cnf binlog binlog binlog-drill 3307
 cnf scratch root "" 3309
 PLAYERS=$(msql 3307 "SELECT COUNT(*) FROM $DB.player")
-echo "--- seeded: $PLAYERS players, $(msql 3307 "SELECT COUNT(*) FROM $DB.ledger") ledger rows"
+echo "--- seeded: $PLAYERS players, $(msql 3307 "SELECT COUNT(*) FROM $DB.ledger") ledger rows; $(msql 3307 "SELECT COUNT(*) FROM $ACC.account") accounts"
 WHO=$(msql 3307 "SELECT MIN(id) FROM $DB.player")
 
 # A move of a gem through the ledger's one path, as the platform makes it: a row and its balance, its
@@ -85,6 +94,12 @@ gem() {
         UPDATE $DB.player SET gems = gems + 1 WHERE id = $WHO; COMMIT"
 }
 
+# An account signed up, as the account service writes one, named for when it was made: its time in UTC.
+acct() {
+    msql 3307 "SET time_zone = '+00:00'; INSERT INTO $ACC.account (subject, username)
+        VALUES (LEFT(REPLACE(UUID(), '-', ''), 22), CONCAT('$1', '-', FLOOR(RAND() * 1000000000)))"
+}
+
 echo "--- the stream and the dump"
 mkdir -p "$W/backup/binlog" "$W/backup/dumps"
 BINLOG_CNF=$W/binlog.cnf "$HERE/binlog-stream.sh" "$W/backup/binlog" > "$W/stream.log" 2>&1 & PIDS+=($!)
@@ -93,18 +108,24 @@ sleep 1.2
 EARLY=$(date -u '+%Y-%m-%d %H:%M:%S')
 sleep 1.2
 gem between-the-moment-and-the-dump
-MYSQL_CNF=$W/backup.cnf RECORD_DB=$DB BINLOG_DIR=$W/backup/binlog "$HERE/backup-mysql.sh" "$DB" "$W/backup/dumps" > "$W/dump.log" 2>&1
+acct between
+MYSQL_CNF=$W/backup.cnf RECORD_DB=$DB BINLOG_DIR=$W/backup/binlog "$HERE/backup-mysql.sh" "$DB,$ACC" "$W/backup/dumps" > "$W/dump.log" 2>&1
 DUMP=$(find "$W/backup/dumps" -name "$DB-*.sql.gz" | sort | tail -1)
-check '[ -s "$DUMP" ]' "a dump taken ($(basename "$DUMP"))"
-check '[ "$(msql 3307 "SELECT COUNT(*) FROM $DB.backup_run WHERE kind = 1 AND ok")" = 1 ]' "and recorded, a dump that succeeded"
-for _ in 1 2 3; do gem after-the-dump; msql 3307 "FLUSH BINARY LOGS"; done
+ADUMP=$(find "$W/backup/dumps" -name "$ACC-*.sql.gz" | sort | tail -1)
+check '[ -s "$DUMP" ] && [ -s "$ADUMP" ]' "a dump of each database, in one run ($(basename "$DUMP"), $(basename "$ADUMP"))"
+check '[ "$(msql 3307 "SELECT COUNT(*) FROM $DB.backup_run WHERE kind = 1 AND ok")" = 1 ]' "and recorded once, a run that succeeded"
+check '[ "$(msql 3307 "SELECT detail FROM $DB.backup_run WHERE kind = 1 AND ok" | grep -c "sql.gz")" = 1 ] && msql 3307 "SELECT detail FROM $DB.backup_run WHERE kind = 1 AND ok" | grep -q "$(basename "$ADUMP")"' \
+    "its record names both dumps"
+for _ in 1 2 3; do gem after-the-dump; acct after-dump; msql 3307 "FLUSH BINARY LOGS"; done
 
 echo "--- a mistake at a known moment"
 gem before-the-mistake
+acct before-mistake
 sleep 1.2
 MOMENT=$(date -u '+%Y-%m-%d %H:%M:%S')
 sleep 1.2
 gem the-mistake
+acct the-mistake
 echo "  the mistake after $MOMENT UTC"
 
 echo "--- off the site, into $W/offsite"
@@ -126,13 +147,15 @@ echo "--- the proof, while a writer keeps writing"
 ( while [ ! -e "$W/stop-writing" ]; do gem the-writer; sleep 0.2; done ) > /dev/null 2>&1 & WRITER=$!
 PIDS+=("$WRITER")
 sleep 1
-SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf "$HERE/restore-proof.sh" "$W/backup/dumps" "$W/backup/binlog" "$DB" backend_proof \
+RECORD_DB=$DB SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf "$HERE/restore-proof.sh" "$W/backup/dumps" "$W/backup/binlog" "$DB,$ACC" _proof \
     > "$W/proof.log" 2>&1 && PROOF_OK=1 || PROOF_OK=0
 check '[ "$PROOF_OK" = 1 ]' "the proof passed: $(grep -m1 '^summary:' "$W/proof.log" || tail -3 "$W/proof.log")"
 check '[ "$(msql 3307 "SELECT COUNT(*) FROM $DB.backup_run WHERE kind = 2 AND ok AND detail LIKE \"restore %\" AND seconds > 0")" = 1 ]' \
     "and recorded, with its times and the restore's seconds, what the objective watches (D-72)"
-check '[ "$(msql 3309 "SELECT COUNT(*) FROM backend_proof.ledger WHERE ref = \"the-writer\"")" -gt 0 ]' \
+check '[ "$(msql 3309 "SELECT COUNT(*) FROM ${DB}_proof.ledger WHERE ref = \"the-writer\"")" -gt 0 ]' \
     "the writer's rows written before the capture are in the copy"
+check '[ "$(msql 3309 "SELECT COUNT(*) FROM ${ACC}_proof.account WHERE username LIKE \"after-dump-%\"")" = 3 ]' \
+    "and the account service's database proved beside it: the accounts made after its dump replayed"
 
 echo "--- to the moment before the mistake"
 SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf STOP_AT=$MOMENT "$HERE/restore-drill.sh" "$DUMP" "$DB" backend_moment \
@@ -140,18 +163,22 @@ SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf STOP_AT=$MOMENT "$HERE/resto
 check '[ "$MOMENT_OK" = 1 ]' "restored to $MOMENT UTC"
 check '[ "$(msql 3309 "SELECT COUNT(*) FROM backend_moment.ledger WHERE ref = \"before-the-mistake\"")" = 1 ]' "what came before is there"
 check '[ "$(msql 3309 "SELECT COUNT(*) FROM backend_moment.ledger WHERE ref = \"the-mistake\"")" = 0 ]' "the mistake is not"
+SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf STOP_AT=$MOMENT "$HERE/restore-drill.sh" "$ADUMP" "$ACC" account_moment \
+    "$W/backup/binlog" > "$W/moment-account.log" 2>&1 && AMOMENT_OK=1 || AMOMENT_OK=0
+check '[ "$AMOMENT_OK" = 1 ] && [ "$(msql 3309 "SELECT COUNT(*) FROM account_moment.account WHERE username LIKE \"before-mistake-%\"")" = 1 ] && [ "$(msql 3309 "SELECT COUNT(*) FROM account_moment.account WHERE username LIKE \"the-mistake-%\"")" = 0 ]' \
+    "the account service's database to the same moment: what came before there, the mistake not ($(grep -m1 '^summary:' "$W/moment-account.log" || tail -2 "$W/moment-account.log"))"
 
 echo "--- the proof from the copy off the site"
 FROM_OFFSITE=1 OFFSITE_TARGET=$W/offsite OFFSITE_KEY=$W/offsite.key SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf \
-    "$HERE/restore-proof.sh" /nonexistent /nonexistent "$DB" backend_offsite > "$W/proof-offsite.log" 2>&1 && OFF_OK=1 || OFF_OK=0
+    RECORD_DB=$DB "$HERE/restore-proof.sh" /nonexistent /nonexistent "$DB,$ACC" _offsite > "$W/proof-offsite.log" 2>&1 && OFF_OK=1 || OFF_OK=0
 check '[ "$OFF_OK" = 1 ]' "restored from off the site, decrypted: $(grep -m1 '^summary:' "$W/proof-offsite.log" || tail -3 "$W/proof-offsite.log")"
-check '[ "$(msql 3309 "SELECT COUNT(*) FROM backend_offsite.ledger WHERE ref = \"the-mistake\"")" = 1 ]' \
-    "to the end of its closed binlogs, the mistake included"
+check '[ "$(msql 3309 "SELECT COUNT(*) FROM ${DB}_offsite.ledger WHERE ref = \"the-mistake\"")" = 1 ] && [ "$(msql 3309 "SELECT COUNT(*) FROM ${ACC}_offsite.account WHERE username LIKE \"the-mistake-%\"")" = 1 ]' \
+    "to the end of its closed binlogs, the mistake included, in both databases"
 check '[ "$(msql 3307 "SELECT COUNT(*) FROM $DB.backup_run WHERE kind = 2 AND ok AND detail LIKE \"from off the site:%\"")" = 1 ]' \
     "and recorded as such"
 head -c 32 /dev/urandom | base64 > "$W/wrong.key"
 FROM_OFFSITE=1 OFFSITE_TARGET=$W/offsite OFFSITE_KEY=$W/wrong.key SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf \
-    "$HERE/restore-proof.sh" /nonexistent /nonexistent "$DB" backend_wrongkey > "$W/proof-wrongkey.log" 2>&1 && WRONG_OK=1 || WRONG_OK=0
+    RECORD_DB=$DB "$HERE/restore-proof.sh" /nonexistent /nonexistent "$DB,$ACC" _wrongkey > "$W/proof-wrongkey.log" 2>&1 && WRONG_OK=1 || WRONG_OK=0
 check '[ "$WRONG_OK" = 0 ] && [ "$(msql 3307 "SELECT COUNT(*) FROM $DB.backup_run WHERE kind = 2 AND NOT ok AND detail LIKE \"from off the site: failed%\"")" = 1 ]' \
     "with the wrong key: refused, and recorded as a failure (O-15)"
 
@@ -168,6 +195,11 @@ NO_SOURCE=1 SCRATCH_CNF=$W/scratch.cnf "$HERE/restore-drill.sh" "$LAST_DUMP" "$D
     "$W/fetched/binlog" > "$W/lastresort-again.log" 2>&1 && AGAIN_OK=1 || AGAIN_OK=0
 check '[ "$AGAIN_OK" = 0 ] && grep -q "exists on the target" "$W/lastresort-again.log" && [ "$(msql 3309 "SELECT COUNT(*) FROM backend_lastresort.ledger WHERE ref = \"the-mistake\"")" = 1 ]' \
     "and onto a name that exists: refused, nothing dropped"
+LAST_ADUMP=$(find "$W/fetched/dumps" -name "$ACC-*.sql.gz" | sort | tail -1)
+NO_SOURCE=1 SCRATCH_CNF=$W/scratch.cnf "$HERE/restore-drill.sh" "$LAST_ADUMP" "$ACC" account_lastresort \
+    "$W/fetched/binlog" > "$W/lastresort-account.log" 2>&1 && ALAST_OK=1 || ALAST_OK=0
+check '[ "$ALAST_OK" = 1 ] && [ "$(msql 3309 "SELECT COUNT(*) FROM account_lastresort.account WHERE username LIKE \"the-mistake-%\"")" = 1 ] && ! grep -q reconciliation "$W/lastresort-account.log"' \
+    "the account service's database the same way: restored to the copies' end, with no ledger to reconcile"
 
 echo "--- what must be refused"
 mkdir -p "$W/gap" && cp "$W/backup/binlog"/* "$W/gap/"
@@ -179,7 +211,7 @@ TO_COPIES_END=1 SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf "$HERE/resto
     > "$W/gap.log" 2>&1 && GAP=passed || GAP=refused
 check '[ "$GAP" = refused ] && grep -q "the copies have a gap" "$W/gap.log"' "copies with $GAPPED missing: refused, saying so"
 # A player nothing writes to after the dump: the replay's row images would put the writer's own back.
-SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf "$HERE/restore-proof.sh" "$W/backup/dumps" "$W/gap" "$DB" backend_gap \
+RECORD_DB=$DB SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf "$HERE/restore-proof.sh" "$W/backup/dumps" "$W/gap" "$DB" _gap \
     > "$W/proof-gap.log" 2>&1 && PGAP=passed || PGAP=refused
 check '[ "$PGAP" = refused ] && [ "$(msql 3307 "SELECT COUNT(*) FROM $DB.backup_run WHERE kind = 2 AND NOT ok AND detail LIKE \"failed:%\"")" = 1 ]' \
     "a proof that fails is recorded as failed, saying why"
@@ -197,8 +229,22 @@ check '[ "$EARLY_OK" = refused ] && grep -qE "stopped +[1-9]" "$W/early.log"' \
 check '[ "$(msql 3307 "SELECT COUNT(*) FROM $DB.player p LEFT JOIN (SELECT player_id, SUM(IF(currency = 0, delta, 0)) c, SUM(IF(currency = 1, delta, 0)) g FROM $DB.ledger GROUP BY player_id) l ON l.player_id = p.id WHERE p.coins <> COALESCE(l.c, 0) OR p.gems <> COALESCE(l.g, 0)")" = 0 ]' \
     "the primary still reconciles: the drill's own writes were consistent"
 
+# One database of the run failing fails the run, and the record says which, though the other's dump was taken.
+MYSQL_CNF=$W/backup.cnf RECORD_DB=$DB "$HERE/backup-mysql.sh" "$DB,nosuch_db" "$W/partial" > "$W/partial.log" 2>&1 \
+    && PARTIAL=passed || PARTIAL=refused
+check '[ "$PARTIAL" = refused ] && [ -n "$(find "$W/partial" -name "$DB-*.sql.gz")" ] && [ "$(msql 3307 "SELECT COUNT(*) FROM $DB.backup_run WHERE kind = 1 AND NOT ok AND detail LIKE \"%nosuch_db%\"")" = 1 ]' \
+    "a run whose second database fails: refused and recorded as failed, naming it, though the first's dump was taken (10 §6.3)"
+# A proof that finds one database's dump and not the other's.
+mkdir -p "$W/onedump" && cp "$DUMP" "$W/onedump/"
+RECORD_DB=$DB SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf "$HERE/restore-proof.sh" "$W/onedump" "$W/backup/binlog" "$DB,$ACC" _onedump \
+    > "$W/proof-onedump.log" 2>&1 && ONEDUMP=passed || ONEDUMP=refused
+check '[ "$ONEDUMP" = refused ] && [ "$(msql 3307 "SELECT COUNT(*) FROM $DB.backup_run WHERE kind = 2 AND NOT ok AND detail LIKE \"%no dump of $ACC%\"")" = 1 ]' \
+    "a proof with one database's dump missing: refused and recorded as failed, naming it"
+check '[ "$(msql 3307 "SELECT COUNT(*) FROM $DB.backup_run WHERE kind = 2 AND NOT ok AND detail LIKE \"%no dump of $ACC%\" AND detail LIKE \"%players whose coins%\"")" = 0 ]' \
+    "and quoting its reason, not the reconciliation of the database that passed"
+
 echo "--- what must be refused or kept, the scripts' own (item 116)"
-SOURCE_CNF=$W/backup.cnf "$HERE/restore-proof.sh" "$W/backup/dumps" "$W/backup/binlog" "$DB" backend_noscratch \
+SOURCE_CNF=$W/backup.cnf "$HERE/restore-proof.sh" "$W/backup/dumps" "$W/backup/binlog" "$DB" _noscratch \
     > "$W/proof-noscratch.log" 2>&1 && NOSCRATCH=passed || NOSCRATCH=refused
 check '[ "$NOSCRATCH" = refused ] && grep -q "SCRATCH_CNF must name" "$W/proof-noscratch.log"' \
     "a proof without SCRATCH_CNF: refused before anything (O-65)"
@@ -206,11 +252,16 @@ check '[ "$NOSCRATCH" = refused ] && grep -q "SCRATCH_CNF must name" "$W/proof-n
 mkdir -p "$W/series/dumps" "$W/series/binlog"
 cp "$W/backup/binlog"/* "$W/series/binlog/"
 printf -- "-- CHANGE REPLICATION SOURCE TO SOURCE_LOG_FILE='bin.000450', SOURCE_LOG_POS=157;\n" | gzip > "$W/series/dumps/$DB-20200101T000000Z.sql.gz"
+# And the other database's dump, kept from this series' first file: the binlogs are the server's, every database's.
+FIRST=$(find "$W/series/binlog" -maxdepth 1 -type f -printf '%f\n' | sort | head -1)
+printf -- "-- CHANGE REPLICATION SOURCE TO SOURCE_LOG_FILE='%s', SOURCE_LOG_POS=157;\n" "$FIRST" | gzip > "$W/series/dumps/$ACC-20260101T000000Z.sql.gz"
+touch -d "1 day ago" "$W/series/dumps/$ACC-20260101T000000Z.sql.gz"
 MYSQL_CNF=$W/backup.cnf RECORD=0 BINLOG_DIR=$W/series/binlog "$HERE/backup-mysql.sh" "$DB" "$W/series/dumps" > "$W/series.log" 2>&1 || true
 STARTS=$( { zcat "$(find "$W/series/dumps" -name "$DB-*.sql.gz" | sort | tail -1)" | head -40; } 2>/dev/null \
     | grep -m1 -oE "SOURCE_LOG_FILE='[^']+'" | cut -d"'" -f2 || true)
 check '[ -n "$STARTS" ] && [ -e "$W/series/binlog/$STARTS" ]' \
     "a dump kept from another series: the new dump's binlogs kept, ${STARTS:-none read} among them (O-66)"
+check '[ -e "$W/series/binlog/$FIRST" ]' "and those another database's dump starts from, kept: $FIRST (10 §6.3)"
 # A dump that says nothing of its position, as a mysqldump of another version might write it.
 mkdir -p "$W/fakebin"
 printf '#!/bin/sh\necho "CREATE TABLE t (i INT);"\n' > "$W/fakebin/mysqldump"; chmod +x "$W/fakebin/mysqldump"
@@ -234,5 +285,8 @@ wait "$WRITER" 2>/dev/null || true
 SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf "$HERE/restore-drill.sh" "$DUMP" "$DB" backend_exact "$W/backup/binlog" \
     > "$W/exact.log" 2>&1 && EXACT_OK=1 || EXACT_OK=0
 check '[ "$EXACT_OK" = 1 ] && ! grep -q DIFFERS "$W/exact.log"' "every table's count the source's, row for row"
+SOURCE_CNF=$W/backup.cnf SCRATCH_CNF=$W/scratch.cnf "$HERE/restore-drill.sh" "$ADUMP" "$ACC" account_exact "$W/backup/binlog" \
+    > "$W/exact-account.log" 2>&1 && AEXACT_OK=1 || AEXACT_OK=0
+check '[ "$AEXACT_OK" = 1 ] && ! grep -q DIFFERS "$W/exact-account.log"' "and the account service's database's, row for row"
 echo
 [ "$FAILS" = 0 ] && { echo "BACKUP DRILL PASSED ($W)"; exit 0; } || { echo "BACKUP DRILL FAILED: $FAILS ($W)"; exit 1; }

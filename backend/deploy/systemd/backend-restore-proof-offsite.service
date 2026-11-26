@@ -22,8 +22,8 @@ StateDirectory=backend/proof backend/offsite-fetch
 Environment=TMPDIR=%S/backend/offsite-fetch
 StateDirectoryMode=0700
 # One proof at a time, and a database of its own on the scratch server (O-18): the weekly proof's
-# backend_proof is kept when it fails, for the operator to look at.
-ExecStart=/usr/bin/flock %S/backend/proof/lock /opt/backend/scripts/restore-proof.sh /nonexistent /nonexistent backend backend_proof_offsite
+# backend_proof_offsite and account_proof_offsite are kept when it fails, for the operator to look at.
+ExecStart=/usr/bin/flock %S/backend/proof/lock /opt/backend/scripts/restore-proof.sh /nonexistent /nonexistent backend,account _proof_offsite
 TimeoutStartSec=8h
 
 NoNewPrivileges=yes

@@ -1416,6 +1416,13 @@ known (Q-3).
 | Point-in-time | binlog shipping, `binlog_format=ROW`, retained 7 days (`binlog_expire_logs_seconds = 604800`) | RPO (the most recent data a restore can lose) ≈ 1 minute |
 | Replica | asynchronous with GTIDs, on machine C, read-only | Promotion is a script an operator runs ([D-8](../architecture/03-decision-log.md#d-8--failover-is-scripted-not-automatic)), below |
 
+**Two databases, one server** (D-117, [10 §6.3](10-accounts.md#63-mysql-the-backups-and-the-watch)): the backend's,
+`backend`, and the account service's, `account`, share the server, its replica and its binlogs. Each night's run dumps
+both, a file each, and is recorded as one outcome, good only if both dumps were; the weekly proof restores both and is
+recorded the same way, so a database that failed stops the time the alerts read. Each is checked as what it holds:
+the backend's ledger reconciled, the account service's accounts and events as its floor. The binlog copies are
+pruned before the earliest file any kept dump of either needs.
+
 **On the launch's one machine** (D-93) there is no replica. The backups run on that machine, as the user
 `backend-backup`, whose copies the `backend` processes cannot read. The copies belong on a disk of their own
 (`/var/lib/backend`). They cover a mistake (a table dropped, a migration gone wrong) and a lost database disk, not a

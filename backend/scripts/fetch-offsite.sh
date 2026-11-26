@@ -4,7 +4,8 @@
 #
 #   fetch-offsite.sh <out-dir>        with OFFSITE_TARGET and OFFSITE_KEY as backup-offsite.sh's
 #
-# The newest dump only, and every binlog copy: what a restore to the copies' end reads. ALL_DUMPS=1
+# Each database's newest dump only (the backend's and the account service's, D-117), and every binlog copy: what a
+# restore to the copies' end reads. ALL_DUMPS=1
 # brings every dump, for a restore from an older one. Each file is decrypted and its encrypted copy
 # removed as it goes, so the disk holds the set once, not twice (O-21).
 set -euo pipefail
@@ -18,11 +19,12 @@ SSH=(); [[ "$OFFSITE_TARGET" == *:* ]] && SSH=(-e "${OFFSITE_SSH:-ssh -o BatchMo
 if [ "${ALL_DUMPS:-0}" = 1 ]; then
     rsync -a "${SSH[@]}" "$OFFSITE_TARGET/dumps/" "$OUT/enc/dumps/"
 else
-    # The names carry the dump's UTC time, so they sort in the order the dumps were taken.
-    NEWEST=$(rsync --list-only "${SSH[@]}" "$OFFSITE_TARGET/dumps/" | awk '{ print $NF }' \
-        | grep '\.sql\.gz\.enc$' | sort | tail -1 || true)
-    [ -n "$NEWEST" ] || { echo "no dump in $OFFSITE_TARGET/dumps" >&2; exit 1; }
-    rsync -a "${SSH[@]}" "$OFFSITE_TARGET/dumps/$NEWEST" "$OUT/enc/dumps/"
+    # The names, <database>-<UTC time>.sql.gz.enc, sort in the order the dumps were taken: the last of each database's.
+    mapfile -t NEWEST < <(rsync --list-only "${SSH[@]}" "$OFFSITE_TARGET/dumps/" | awk '{ print $NF }' \
+        | grep '\.sql\.gz\.enc$' | sort \
+        | awk '{ db = $0; sub(/-[0-9]+T[0-9]+Z\.sql\.gz\.enc$/, "", db); last[db] = $0 } END { for (d in last) print last[d] }' || true)
+    [ "${#NEWEST[@]}" -gt 0 ] || { echo "no dump in $OFFSITE_TARGET/dumps" >&2; exit 1; }
+    for n in "${NEWEST[@]}"; do rsync -a "${SSH[@]}" "$OFFSITE_TARGET/dumps/$n" "$OUT/enc/dumps/"; done
 fi
 rsync -a "${SSH[@]}" "$OFFSITE_TARGET/binlog/" "$OUT/enc/binlog/"
 for kind in dumps binlog; do
