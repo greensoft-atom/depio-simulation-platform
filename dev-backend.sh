@@ -10,8 +10,8 @@
 #   ./dev-backend.sh start [platform worker gateway arena]   all four unless some are named
 #   ./dev-backend.sh stop [process ...] | restart [process ...]
 #   ./dev-backend.sh status
-#   ./dev-backend.sh test                  two bots through nginx, as a phone's app: signed in at the account service,
-#                                          the API, the lobby, a match
+#   ./dev-backend.sh test                  two bots through nginx, as a phone's app: signed in at the account service
+#                                          (nginx's /account), the API, the lobby, a match
 #   ./dev-backend.sh bots [count] [seconds]   bots play (20 for 15 s): the account service, the API and the lobby
 #                                          straight, matches through nginx
 #
@@ -217,13 +217,13 @@ test)
     if [ "$PLAIN" = 1 ]; then
         api=http://127.0.0.1$([ "$NGINX_HTTP_PORT" = 80 ] || echo ":$NGINX_HTTP_PORT")
         lobby=ws://${api#http://}/lobby
-        how="plain through nginx, $api/: signed in at $ACCOUNT_URL, a session, the lobby, a ticket for $match, plain"
+        how="plain through nginx, $api/: signed in at $api/account, a session, the lobby, a ticket for $match, plain"
     else
         api=https://127.0.0.1$([ "$NGINX_HTTPS_PORT" = 443 ] || echo ":$NGINX_HTTPS_PORT")
         lobby=wss://${api#https://}/lobby
-        how="through nginx, $api/: signed in at $ACCOUNT_URL, a session, the lobby, a ticket for $match, TLS as $ARENA_TLS_NAME"
+        how="through nginx, $api/: signed in at $api/account, a session, the lobby, a ticket for $match, TLS as $ARENA_TLS_NAME"
     fi
-    out=$(bots 2 5 "$api" "$lobby" "$ACCOUNT_URL" 2>&1) || true
+    out=$(bots 2 5 "$api" "$lobby" "$api/account" 2>&1) || true
     if grep -q -E '^lobby: 2 of 2 bots' <<< "$out" && grep -q -F "2 bots connected to $match" <<< "$out" \
         && grep -q -E '^welcomes 2 +disconnects 0 +kicks 0 .*lobby failures 0$' <<< "$out" && grep -q -E '^stays 2,' <<< "$out"; then
         echo "ok      2 bots $how, 5 s played and left"

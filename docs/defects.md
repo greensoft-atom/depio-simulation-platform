@@ -1697,6 +1697,12 @@ names that do not exist (`RespDecoder`, `ReplyWriter`, `CommandThread`, `Db.over
 settings, the replica's output limit, the shipped configuration and systemd unit. Each read in the code and corrected
 in place.
 
+**DOC-59, found 2026-11-26, FIXED the same day** (plan item 142 (f), writing the account service's unit beside the
+platform's). `backend-platform.service` still sized its heap for Argon2's 8 x 19 MiB, which left the platform with
+its password hashing in (d) (D-117). **Fixed:** its comment says the account service hashes, whose unit carries the
+sizing now (`backend-account.service`, 10 §6.1). The heap itself, 3 GiB, stays: the capacity model's, whose other
+parts are unchanged.
+
 ## 7. Documentation
 
 The audit found the documents have drifted from the code in ~60 places. The six

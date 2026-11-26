@@ -70,16 +70,18 @@ Every machine runs nginx, so that any machine can be the front. Only the front's
 
 | Port | What listens | Bound to | Who connects | Set in |
 |---|---|---|---|---|
-| **443**/tcp | nginx (`backend-nginx`): HTTPS, ending TLS. `/v1/` goes to the platforms, `/lobby` to the gateways, of all three machines | every address, IPv4 and IPv6 | players | `listen 443 ssl` in `/etc/backend/nginx/backend.conf`; the upstreams in `backend-upstreams.conf` |
+| **443**/tcp | nginx (`backend-nginx`): HTTPS, ending TLS. `/v1/` goes to the platforms, `/account/v1/` to the account services (D-117), `/lobby` to the gateways, of all three machines | every address, IPv4 and IPv6 | players | `listen 443 ssl` in `/etc/backend/nginx/backend.conf`; the upstreams in `backend-upstreams.conf` |
 | **9001**/tcp | nginx's `stream`: ends match traffic's TLS, and passes each connection to the arena its handshake named (the TLS name, sent as SNI) | every address, IPv4 and IPv6 | players | `listen 9001 ssl` and its map in `/etc/backend/nginx/backend-stream.conf`, which reads the list of arenas, `backend-arenas.conf` |
 | **80**/tcp | nginx in clear (D-115): 443's server, with the same locations, and `/match/<name>` to the arena by the same list | every address, IPv4 and IPv6 | players without TLS | `listen 80` in `backend.conf` |
 | **22**/tcp | sshd, the system's own | every address | operators, from the internal network alone (§5) | the system |
 | 8080 | the platform (`backend-platform`): the API, plain HTTP | the machine's private address | the front's nginx; this machine's gateway | `PLATFORM_BIND`, `PLATFORM_PORT` in `platform.env`; `PLATFORM_URL` in `gateway.env`; `backend-upstreams.conf` |
+| 8070 | the account service (`backend-account`, D-117): sign-up, login and tokens, plain HTTP; its key set, which the platforms read | the machine's private address | the front's nginx; this machine's platform, for the key set | `ACCOUNT_BIND`, `ACCOUNT_PORT` in `account.env`; `BACKEND_ACCOUNT_JWKS_URL` in `platform.env`; `backend-upstreams.conf` |
 | 8090 | the gateway (`backend-gateway`): the lobby, plain WebSocket | the machine's private address | the front's nginx | `GATEWAY_BIND`, `GATEWAY_PORT` in `gateway.env`; `backend-upstreams.conf` |
 | 9011, 9012, and 9013 on B | the arenas (`backend-arena@<name>`): match traffic, plain TCP behind nginx. One port each, §3 | the machine's private address | the front's nginx | `ARENA_PORT`, `ARENA_BIND` in `arena-<name>.env`; `backend-arenas.conf` |
 | 9120 | the platform's admin API, only when it is named (unset, there is none) | loopback, enforced: given any other address, the platform refuses to start (exit 2) | an operator on the machine, or over SSH: `ssh -L 9120:127.0.0.1:9120 <machine>` ([api/03](../api/03-admin-api.md)) | `BACKEND_ADMIN_ADDR` in `platform.env`, with its secret, `BACKEND_ADMIN_TOKEN`, in the same file (D-102) |
 | 9101 | the platform's metrics, `GET /metrics` | `127.0.0.1` | this machine's platform's watch ([08](08-monitoring.md)) | `BACKEND_METRICS_ADDR` in `platform.env` |
 | 9103 | the gateway's metrics | `127.0.0.1` | the watch | `BACKEND_METRICS_ADDR` in `gateway.env` |
+| 9104 | the account service's metrics | `127.0.0.1` | the watch | `ACCOUNT_METRICS_ADDR` in `account.env` |
 | 9110, 9111, and 9113 on B | the arenas' metrics, one port per arena (§3) | `127.0.0.1` | the watch | `BACKEND_METRICS_ADDR` in `arena-<name>.env` |
 
 The gateway's default port in the code is 8081. The shipped settings give it 8090, and nginx's upstreams name 8090.
@@ -91,7 +93,7 @@ So a gateway started by hand without `GATEWAY_PORT` would not be the one nginx s
 |---|---|---|---|---|---|
 | **6379**/tcp | j-redis `session`: sessions, tickets, the arena directory, leaderboards, the channels of the pushes and the commands. The primary on A, its replica on B | A, B | `127.0.0.1` and the machine's private address (01 §3) | every platform, gateway and arena on A, B and C, and the workers on C. Each is given both addresses, and asks each which one is the primary (D-34). On A, also B's replica, which replicates from it. The store's scripts, on its own machine by `127.0.0.1`, and a promotion from B | `port` and `bind` in `/etc/backend/store-session.conf` |
 | **6380**/tcp | j-redis `events`: the stream of match results (D-7). The primary on B, its replica on C | B, C | `127.0.0.1` and the private address | the arenas on A, B and C, and the workers on C (both addresses each). On B, also C's replica, which replicates from it; a promotion from C | `port` and `bind` in `/etc/backend/store-events.conf` |
-| **3306**/tcp | MySQL (`backend-mysql`), TLS required. The primary on A, its replica on C | A, C | the private address alone, not `127.0.0.1` (`bind-address`) | every platform on A, B and C, and the workers on C. Each is given both hosts, and asks each which one is writable (06 §10). On C: the replica (its replication, and the clone that made it), the binlog stream, the nightly dump and the proofs, all reading A's | `bind-address` in `/etc/backend/mysql/backend.cnf`; no `port` line, so MySQL's default, 3306 |
+| **3306**/tcp | MySQL (`backend-mysql`), TLS required. The primary on A, its replica on C | A, C | the private address alone, not `127.0.0.1` (`bind-address`) | every platform and account service on A, B and C, and the workers on C. Each is given both hosts, and asks each which one is writable (06 §10). On C: the replica (its replication, and the clone that made it), the binlog stream, the nightly dump and the proofs, all reading A's | `bind-address` in `/etc/backend/mysql/backend.cnf`; no `port` line, so MySQL's default, 3306 |
 | 9102, 9112 | the workers' metrics, `backend-worker@c1` and `@c2` | C | `127.0.0.1` | the watch | `BACKEND_METRICS_ADDR` in `/etc/backend/worker-<id>.env` |
 | 3309 | the scratch MySQL server that the weekly and monthly proofs restore onto (01 §10) | C | `127.0.0.1` | the proofs, on C | `port` and `bind-address` in `/etc/backend/scratch-my.cnf` |
 
@@ -197,12 +199,13 @@ On the launch's one machine the arenas are `a1` to `a3`, on `127.0.0.1:9011` to 
 
 | From | To | Port | Why |
 |---|---|---|---|
-| the front's nginx | A, B and C | 8080, 8090 | the API and the lobby, passed on; a machine that fails is passed over |
+| the front's nginx | A, B and C | 8080, 8070, 8090 | the API, the account service and the lobby, passed on; a machine that fails is passed over |
+| each account service | A, B and C | 8080 | its events, posted to the platforms' receivers, this machine's first (D-117) |
 | the front's nginx | each arena's machine | 9011 to 9013 | match traffic, by the arena's name |
 | each platform's watch | the other two machines | 8080 | `GET /health`, so that the two others see a machine lost ([08](08-monitoring.md), D-86); on a port already open |
 | A, B, C: platform, gateway, arenas; C: workers | A and B | 6379 | the `session` store, its primary and its replica |
 | A, B, C: arenas; C: workers | B and C | 6380 | the `events` store, its primary and its replica |
-| A, B, C: platform; C: workers | A and C | 3306 | MySQL, its primary and its replica |
+| A, B, C: platform, account service; C: workers | A and C | 3306 | MySQL, its primary and its replica: the `backend` and `account` databases |
 | B: the `session` replica | A | 6379 | replication |
 | C: the `events` replica | B | 6380 | replication |
 | C: the MySQL replica, the binlog stream, the dump, the proofs | A | 3306 | replication, the clone, the copies off the database's machine (01 §10) |
@@ -224,16 +227,18 @@ On the launch's one machine:
 ```
  the app                                 the front (one public address, 203.0.113.10)
  ① API    https://203.0.113.10/v1/...  ─▶ :443  nginx, TLS ended ──▶ platform  127.0.0.1:8080
+          https://…/account/v1/...     ─▶ :443  nginx, TLS ended ──▶ account service 127.0.0.1:8070 (D-117)
  ② lobby  wss://203.0.113.10/lobby     ─▶ :443  nginx, TLS ended ──▶ gateway   127.0.0.1:8090 ──▶ platform
  ③ match  TLS to 203.0.113.10:9001     ─▶ :9001 nginx, TLS ended ──▶ arena a1  127.0.0.1:9011
           (name given: a1.arena.internal)       the arena by that name        a2 :9012, a3 :9013
- in clear: ① http://…/v1/  ② ws://…/lobby  ─▶ :80 nginx, as 443's
+ in clear: ① http://…/v1/, http://…/account/v1/  ② ws://…/lobby  ─▶ :80 nginx, as 443's
            ③ GET /match/a1.arena.internal  ─▶ :80 nginx, the arena by that name ──▶ arena a1, which answers 101
 ```
 
 | Route | The app dials | Its TLS checks | nginx | Then | Limits and waits |
 |---|---|---|---|---|---|
-| ① the API | `https://203.0.113.10/v1/…` | the address, in the certificate | `backend.conf`: `/v1/` to the platforms, anything else 404 | the platform (`backend_platform`) | a body of 4 KiB at most, in nginx and in the platform; `POST` to `/v1/sessions`, `/v1/accounts`, `/v1/guests` and `/v1/accounts/link`: 2 a second per address, a burst of 30, then 429; the app waits 10 s for an answer, nginx 15 s |
+| ① the API | `https://203.0.113.10/v1/…` | the address, in the certificate | `backend.conf`: `/v1/` to the platforms, anything else 404 | the platform (`backend_platform`) | a body of 4 KiB at most, in nginx and in the platform; `POST` to `/v1/sessions`, `/v1/guests` and `/v1/accounts/link`, and `/v1/accounts`: 2 a second per address, a burst of 30, then 429; the app waits 10 s for an answer, nginx 15 s |
+| ① the account service (D-117) | `https://203.0.113.10/account/v1/…` | the address | `location /account/v1/`, to the account services' `/v1/`; its key set, `/account/.well-known/`, 404 | the account service (`backend_account`), any machine's | every route as the logins: 2 a second per address, a burst of 30; a body of 4 KiB; the app waits 10 s, nginx 15 s |
 | ② the lobby | `wss://203.0.113.10/lobby` | the address | `location = /lobby`, the WebSocket's upgrade passed on | the gateway with the fewest connections (`backend_gateway`), which calls its machine's platform | the session token within 5 s; a ping every 30 s; the gateway closes a lobby silent for 120 s, nginx at 150 s |
 | ③ a match | TCP to `203.0.113.10:9001`, the TLS handshake giving the grant's `tlsName` | `tlsName` (`a1.arena.internal`), in the certificate | `backend-stream.conf`: the arena the name maps to; a name not in the list, or no name, closed | the arena, plaintext, with the grant's single-use ticket | 5 s to dial; the arena drops a connection after 30 s without a frame, nginx at 60 s |
 | ①②③ in clear | `http://203.0.113.10/v1/…`, `ws://203.0.113.10/lobby`, and TCP to `203.0.113.10:80` with `GET /match/<tlsName>` | nothing: no TLS | the same server on 80; `/match/` to the arena the name maps to, the request passed on, 404 for a name not in the list | as above; the arena answers the request with 101, then takes the ticket | as above; the arena reads 1 KiB of request at most |
@@ -327,11 +332,11 @@ firewall-cmd --permanent --zone=public --remove-service=cockpit --remove-service
 # SSH from the internal network alone (10.0.0.0/24 stands for it)
 firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="10.0.0.0/24" service name="ssh" accept'
 # B and C, by their private addresses: SSH, the session store, MySQL, and for the front's nginx
-# the platform, the gateway and this machine's arenas
+# the account service, the platform, the gateway and this machine's arenas
 firewall-cmd --permanent --new-zone=backend
 firewall-cmd --permanent --zone=backend --add-source=10.0.0.2 --add-source=10.0.0.3
 firewall-cmd --permanent --zone=backend --add-service=ssh
-firewall-cmd --permanent --zone=backend --add-port=6379/tcp --add-port=3306/tcp --add-port=8080/tcp --add-port=8090/tcp --add-port=9011-9012/tcp
+firewall-cmd --permanent --zone=backend --add-port=6379/tcp --add-port=3306/tcp --add-port=8070/tcp --add-port=8080/tcp --add-port=8090/tcp --add-port=9011-9012/tcp
 firewall-cmd --reload
 ```
 <!-- /firewall -->
@@ -346,12 +351,12 @@ firewall-cmd --permanent --zone=public --add-port=9001/tcp
 firewall-cmd --permanent --zone=public --remove-service=cockpit --remove-service=ssh
 # SSH from the internal network alone (10.0.0.0/24 stands for it)
 firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="10.0.0.0/24" service name="ssh" accept'
-# A and C, by their private addresses: SSH, both stores, and for the front's nginx the platform,
-# the gateway and this machine's arenas
+# A and C, by their private addresses: SSH, both stores, and for the front's nginx the account
+# service, the platform, the gateway and this machine's arenas
 firewall-cmd --permanent --new-zone=backend
 firewall-cmd --permanent --zone=backend --add-source=10.0.0.1 --add-source=10.0.0.3
 firewall-cmd --permanent --zone=backend --add-service=ssh
-firewall-cmd --permanent --zone=backend --add-port=6379/tcp --add-port=6380/tcp --add-port=8080/tcp --add-port=8090/tcp --add-port=9011-9013/tcp
+firewall-cmd --permanent --zone=backend --add-port=6379/tcp --add-port=6380/tcp --add-port=8070/tcp --add-port=8080/tcp --add-port=8090/tcp --add-port=9011-9013/tcp
 firewall-cmd --reload
 ```
 <!-- /firewall -->
@@ -368,11 +373,11 @@ firewall-cmd --permanent --zone=public --remove-service=cockpit --remove-service
 # SSH from the internal network alone (10.0.0.0/24 stands for it)
 firewall-cmd --permanent --zone=public --add-rich-rule='rule family="ipv4" source address="10.0.0.0/24" service name="ssh" accept'
 # A and B, by their private addresses: SSH, the events store, MySQL, and for the front's nginx
-# the platform, the gateway and this machine's arenas
+# the account service, the platform, the gateway and this machine's arenas
 firewall-cmd --permanent --new-zone=backend
 firewall-cmd --permanent --zone=backend --add-source=10.0.0.1 --add-source=10.0.0.2
 firewall-cmd --permanent --zone=backend --add-service=ssh
-firewall-cmd --permanent --zone=backend --add-port=6380/tcp --add-port=3306/tcp --add-port=8080/tcp --add-port=8090/tcp --add-port=9011-9012/tcp
+firewall-cmd --permanent --zone=backend --add-port=6380/tcp --add-port=3306/tcp --add-port=8070/tcp --add-port=8080/tcp --add-port=8090/tcp --add-port=9011-9012/tcp
 firewall-cmd --reload
 ```
 <!-- /firewall -->
@@ -416,11 +421,13 @@ system's, is left out):
 10.0.0.1:3306              mysqld
 10.0.0.1:6379              java     the session store
 127.0.0.1:6379             java     the session store
+[::ffff:10.0.0.1]:8070     java     the account service
 [::ffff:10.0.0.1]:8080     java     the platform
 [::ffff:10.0.0.1]:8090     java     the gateway
 [::ffff:10.0.0.1]:9011     java     arena a1
 [::ffff:127.0.0.1]:9101    java     the platform's metrics
 [::ffff:127.0.0.1]:9103    java     the gateway's metrics
+[::ffff:127.0.0.1]:9104    java     the account service's metrics
 [::ffff:127.0.0.1]:9110    java     a1's metrics
 [::ffff:127.0.0.1]:9120    java     the admin API
 ```
@@ -453,8 +460,8 @@ firewall-cmd --zone=public --list-all
 timeout 3 bash -c '</dev/tcp/10.0.0.1/6379' && echo open || echo closed
 ```
 
-From B and C, A's 6379, 3306, 8080, 8090 and its arenas' ports are `open`. From outside, the front's 80, 443 and
-9001 are `open`, and 22, 6379, 3306, 8080, 9011 and 9120 are not.
+From B and C, A's 6379, 3306, 8070, 8080, 8090 and its arenas' ports are `open`. From outside, the front's 80, 443
+and 9001 are `open`, and 22, 6379, 3306, 8070, 8080, 9011 and 9120 are not.
 
 **Where nginx sent each request and connection**, on the front:
 
@@ -483,6 +490,7 @@ Each port is named in more than one place. Change all of them together, or the p
 | Port | Change together | Then |
 |---|---|---|
 | The platform's, 8080 | `PLATFORM_PORT` in `platform.env`; `PLATFORM_URL` in `gateway.env`; the three `server …:8080` lines in `backend-upstreams.conf`, on every machine; this machine's entry in `BACKEND_WATCH_PEERS` in the other two machines' `platform.env` ([08 §2](08-monitoring.md)); the `backend` zone's port on every machine | restart the platform and the gateway, then the other two machines' platforms; reload nginx |
+| The account service's, 8070 | `ACCOUNT_PORT` in `account.env`; `BACKEND_ACCOUNT_JWKS_URL` in `platform.env`; the three `server …:8070` lines in `backend-upstreams.conf`, on every machine; the `backend` zone's port | restart the account service, then the platform; reload nginx |
 | The gateway's, 8090 | `GATEWAY_PORT` in `gateway.env`; the three `server …:8090` lines in `backend-upstreams.conf`, on every machine; the `backend` zone's port | restart the gateway; reload nginx |
 | An arena's, 9011 to 9013 | its `ARENA_PORT`; its line in `backend-arenas.conf`, on every machine; the `backend` zone's port on its machine | restart that arena (it drains first: 01 §5); reload nginx |
 | An arena's name | its `BACKEND_ADVERTISE_TLS_NAME`; its line in `backend-arenas.conf`, on every machine; the site's certificate, issued again with it ([06](06-certificates.md)) | install the certificate; restart that arena; reload nginx |
@@ -501,10 +509,10 @@ These ports are on a developer's machine, not on A, B or C. All of them are boun
 | Port | What | Started by |
 |---|---|---|
 | 3314 | the development MySQL (`backend_test`, `backend_dev`), `vendor/`'s 8.4 | `dev-mysql.sh`, and `build-offline.sh` for the tests (D-80) |
-| 6380, 8080, 8081, 9021 | the store, the platform, the gateway, the arena | `dev-jredis.sh`, `dev-backend.sh`, or `run-local.sh start` ([development/03](../development/03-build-and-run.md), D-92) |
+| 6380, 8083, 8080, 8081, 9021 | the store, the account service, the platform, the gateway, the arena | `dev-jredis.sh`, `dev-account.sh`, `dev-backend.sh`, or `run-local.sh start` ([development/03](../development/03-build-and-run.md), D-92) |
 | 80, 443, 9001, every IPv4 address | the release's nginx in front of them, as on the site: the API and the lobby on 80 in clear and on 443 over TLS, matches on 9001 and on 80 by name. With `PLAIN=1`, 80 and 9001 alone, without TLS: the API and the lobby on 80, matches on 9001 (D-101) | `dev-nginx.sh`, as root |
-| 5005 to 5009 | the debugger, one port per process | `DEBUG=1 ./run-local.sh start` ([development/05](../development/05-vscode.md)) |
-| 6390, 6392, 8093, 8094, 9011, 9195 to 9199, 3307, 3308 | the live drill's processes, MySQL servers and metrics | `client/headless-drill.sh` |
+| 5005 to 5010 | the debugger, one port per process, the account service's 5010 | `DEBUG=1 ./run-local.sh start` ([development/05](../development/05-vscode.md)) |
+| 6390, 6392, 8093, 8094, 8097, 9011, 9195 to 9199, 3307, 3308 | the live drill's processes (8097 its account service), MySQL servers and metrics | `client/headless-drill.sh` |
 | 9193, 9194 | with `IDLEGUEST=1`, a second worker's metrics; with `WATCH=1`, the drill's receiver of alerts | `client/headless-drill.sh` |
 | 8095, 8096, 9095, every IPv4 address | with `FRONT=http` or `plain`, the drill's own nginx, as `dev-nginx.sh` sets it up: 8095 for 80, 8096 for 443, 9095 for 9001 (D-107). `FRONT=https` is refused since D-116 | `client/headless-drill.sh` |
 | 3307, 3309 | the backup drill's MySQL servers | `backup-drill.sh` |
@@ -523,7 +531,9 @@ production machine much of it is free on `127.0.0.1`: 3314 always, and on A 6380
 [`backend/scripts/check-ports-el9.sh`](../../backend/scripts/README.md#check-ports-el9sh): **on 2026-10-19**, 156
 checks, none failing; **again on 2026-11-25**, with 80 open (D-115), 181 checks, none failing. Both runs drove the C#
 client through 443 and 9001, on .NET 8. Since D-116 the check drives it through 80 in clear, on Unity 2019's Mono
-(the C# client's line below).
+(the C# client's line below). **On 2026-11-26**, with the account service on A and B (D-117), 197 checks, none
+failing; its first run failed one, a check of its own made stale by D-117 (the platform's limit counts guests alone,
+and a minute's window had passed): it now makes a guest as the player before it reads them.
 - **Where**: Rocky Linux 9.5, which is rebuilt from RHEL 9's sources, with RHEL 9's firewalld (1.3.4), systemd as its
   first process, and no network.
 - **What ran**, from a release built from the code as it is now, each process with the settings the release ships:
@@ -568,7 +578,9 @@ client through 443 and 9001, on .NET 8. Since D-116 the check drives it through 
 open while the commands ran, went on working after `--reload`; a new one was refused. A player's ping was answered.
 
 **Through the front, as a player trusting the backend's root alone:**
-- four registrations by HTTPS to the address, `201` each, and the lobby, `101 Switching Protocols`;
+- four registrations by HTTPS to the address, `201` each, and the lobby, `101 Switching Protocols`; on 2026-11-26,
+  four sign-ups at the account service through `/account`, `201` each, their tokens taken for sessions, `200`, the
+  account service's key set refused, `404`, and 8070 open from B alone, after §5's commands, as 8080 is;
 - port 80 (2026-11-25, D-115): the API's health in clear, `200`; `/match/a1.arena.internal` and
   `/match/b1.arena.internal`, each answered `101 Switching Protocols` by A's arena and by B's, through nginx by the
   list; `/match/nope.arena.internal`, `404`;
@@ -590,7 +602,9 @@ open while the commands ran, went on working after `--reload`; a new one was ref
   (`10.0.0.3:8080, 10.0.0.1:8080`);
 - the login limits' keys in the store named the player's address, `198.51.100.7`, and never the front's:
   `BACKEND_TRUSTED_PROXIES` at work;
-- with A's platform stopped, a registration still answered `201`, served by B's.
+- with A's platform stopped, a registration still answered `201`, served by B's; on 2026-11-26, with A's platform and
+  account service stopped, a sign-up and its token taken, `201 200`, served by B's; nginx's log named both machines'
+  account services, and the account services' limits counted the player's address, never the front's.
 
 **And then:**
 - the rules held after a restart of firewalld;

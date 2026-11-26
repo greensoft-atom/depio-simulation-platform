@@ -15,9 +15,9 @@ User=backend
 Group=backend
 EnvironmentFile=/etc/backend/platform.env
 LogsDirectory=backend
-# 2c / 4G in the capacity model (architecture/01 §3). Argon2's 8 x 19 MiB is inside the heap
-# (Bouncy Castle's blocks are Java arrays); what is left outside is for thread stacks, the
-# JIT's code and direct buffers.
+# 2c / 4G in the capacity model (architecture/01 §3). What is left outside the heap is for thread
+# stacks, the JIT's code and direct buffers. Passwords are hashed by the account service now
+# (backend-account.service, D-117), not here.
 # maxIdleConnections sits above nginx's upstream keepalive pool: with the JDK default of
 # 200, idle connections the client was about to reuse were closed under it (measured: 63
 # failed requests in a 3 000-login storm at 200, none at 5 000).

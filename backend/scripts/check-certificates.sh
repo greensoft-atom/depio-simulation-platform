@@ -5,23 +5,26 @@
 # list of arenas (backend-arenas.conf); refused before anything is installed: a certificate short of an arena's name or of the address, one
 # from another root, and a key that is not the certificate's; installed, with the key private; and when nginx
 # refuses the new files, the previous ones put back. With no root in TLS_DIR, the system's roots are the trust,
-# and the backend's certificate is refused.
+# and the backend's certificate is refused. And the account service's account-key.sh (D-117, 10 §3.4), on the same
+# openssl: its key PKCS #8 on P-256 by name, as Java reads it, its public half the key's, a new one each run.
 #
 #   scripts/check-certificates.sh      from anywhere; a few seconds. Ends "--- <n> failed", non-zero on any.
 #   IMAGE=<image> scripts/check-certificates.sh   the same, in that container image, on its openssl (D-103): UBI 9's
 #                                      3.x as it is, UBI 8's 1.1.1 with openssl added, which a RHEL 8 server has:
 #                                      docker build -t backend-ubi8-openssl - <<< $'FROM registry.access.redhat.com/ubi8/ubi:8.10\nRUN dnf install -y -q openssl'
 #
-# CA and IC name another private-ca.sh or install-certificate.sh, for a mutation check (on this machine).
+# CA, IC and AK name another private-ca.sh, install-certificate.sh or account-key.sh, for a mutation check (on this machine).
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 DEPLOY=$HERE/../deploy
 if [ -n "${IMAGE:-}" ]; then
-    exec docker run --rm --network none -v "$HERE:/backend/scripts:ro" -v "$DEPLOY:/backend/deploy:ro" "$IMAGE" \
+    exec docker run --rm --network none -v "$HERE:/backend/scripts:ro" -v "$DEPLOY:/backend/deploy:ro" \
+        -v "$HERE/../../account-service/scripts:/account-service/scripts:ro" -e AK=/account-service/scripts/account-key.sh "$IMAGE" \
         bash -c 'openssl version; /backend/scripts/check-certificates.sh'
 fi
 CA=${CA:-$HERE/private-ca.sh}
 IC=${IC:-$HERE/install-certificate.sh}
+AK=${AK:-$HERE/../../account-service/scripts/account-key.sh}
 T=$(mktemp -d "${TMPDIR:-/tmp}/check-certificates.XXXXXX")
 trap 'rm -rf "$T"' EXIT
 fails=0
@@ -155,6 +158,33 @@ printf '#!/bin/bash\n[ "$1" = verify ] && { echo "verify: Unknown option: -x"; e
 chmod +x "$T/odd/openssl"
 PATH=$T/odd:$PATH expect_refused "a verify failing with no error line: refused in openssl's words" \
     "does not verify: verify: Unknown option: -x$" install_with "$T/site/fullchain.pem" "$T/site/privkey.pem"
+
+# ---- account-key.sh (D-117, 10 §3.4): the account service's signing key ----
+
+if out=$("$AK" 2> "$T/ak.err"); then
+    key=$(sed -n 's/^ACCOUNT_SIGNING_KEY=//p' <<< "$out")
+    pub=$(sed -n 's/^# its public half, for ACCOUNT_RETIRED_KEYS once it is rotated out: //p' <<< "$out")
+    [ "$(wc -l <<< "$out")" = 2 ] && [ -n "$key" ] && [ -n "$pub" ] \
+        && pass "account-key.sh: two lines, the key's and its public half's" || fail "account-key.sh's lines: $out"
+    printf '%s' "$key" | base64 -d > "$T/ak.der"
+    # PKCS #8's PrivateKeyInfo names the algorithm, then the curve; SEC1's (RFC 5915), which Java refuses, names no
+    # algorithm, and pkcs8 reads PKCS #8 alone.
+    a=$(openssl asn1parse -inform DER -in "$T/ak.der" 2>&1)
+    grep -q ':id-ecPublicKey' <<< "$a" && grep -q ':prime256v1' <<< "$a" \
+        && openssl pkcs8 -inform DER -nocrypt -in "$T/ak.der" -out "$T/ak.pem" 2> /dev/null \
+        && pass "the key: PKCS #8, EC on P-256 by name, the form Java reads" \
+        || fail "the key is not PKCS #8 on P-256: $(grep -oE ':[A-Za-z0-9-]+$' <<< "$a" | head -4 | tr '\n' ' ')"
+    [ "$(openssl pkey -inform DER -in "$T/ak.der" -pubout -outform DER 2> /dev/null | base64 | tr -d '\n')" = "$pub" ] \
+        && pass "its public half is the key's" || fail "the public half printed is not the key's"
+    printf '%s' "$pub" | base64 -d | openssl pkey -pubin -inform DER -out "$T/ak-pub.pem" 2> /dev/null
+    printf 'an event' > "$T/ak.msg"
+    openssl dgst -sha256 -sign "$T/ak.pem" -out "$T/ak.sig" "$T/ak.msg" 2> /dev/null \
+        && openssl dgst -sha256 -verify "$T/ak-pub.pem" -signature "$T/ak.sig" "$T/ak.msg" 2>&1 | grep -q 'Verified OK' \
+        && pass "a signature by the key verifies by the public half" || fail "the key's signature does not verify by its public half"
+    [ "$("$AK" | sed -n 's/^ACCOUNT_SIGNING_KEY=//p')" != "$key" ] && pass "a second run, a new key" || fail "a second run gave the same key"
+else
+    fail "account-key.sh: $(cat "$T/ak.err")"
+fi
 
 echo "--- $fails failed"
 [ "$fails" = 0 ]

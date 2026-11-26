@@ -3,9 +3,10 @@
 # script runs itself in Red Hat's UBI 9 minimal image, the release mounted read-only, finds no symbolic link
 # in it (D-106: a copy that does not keep links leaves text in their place), finds every library of every native
 # file in it, starts every MySQL program and has the server load every MySQL plugin (D-110), and starts what
-# the release carries: MySQL 8.4 (initialised), j-redis, the platform (which migrates the database and
-# serves a registration and a login), the gateway, a worker, an arena, and nginx in front of the
-# platform over HTTP and HTTPS; then the shipped nginx configuration's own test. It prints what the
+# the release carries: MySQL 8.4 (initialised), j-redis, the account service (which migrates its database and
+# signs an account up, D-117, its key made by the release's own script outside), the platform (which migrates the
+# database and takes that account's access token for a session), the gateway, a worker, an arena, and nginx in
+# front of the platform over HTTP and HTTPS; then the shipped nginx configuration's own test. It prints what the
 # scripts take from the system that the image lacks: a server installation has them.
 #
 #   scripts/check-release-el9.sh [release-dir]       default: target/release/backend-*/; needs docker
@@ -17,7 +18,10 @@ if [ "${1:-}" != --inside ]; then
     # Checked: cd "" stays where it is, and the caller's directory was taken for the release (O-79).
     [ -n "$REL" ] && REL=$(cd "$REL" && pwd) || { echo "no release: scripts/make-release.sh first, or name one" >&2; exit 1; }
     IMAGE=${IMAGE:-registry.access.redhat.com/ubi9/ubi-minimal:9.5}
-    exec docker run --rm --name "backend-check-el9-$$" -e REL_NAME="$(basename "$REL")" \
+    # The account service's signing key, by the release's own script with this machine's openssl, which the minimal
+    # image lacks: the install makes it so too (10 §6.1).
+    KEY=$([ -x "$REL/scripts/account-key.sh" ] && "$REL/scripts/account-key.sh" | sed -n 's/^ACCOUNT_SIGNING_KEY=//p')
+    exec docker run --rm --name "backend-check-el9-$$" -e REL_NAME="$(basename "$REL")" -e ACCOUNT_SIGNING_KEY="$KEY" \
         -v "$REL:/opt/$(basename "$REL"):ro" -v "$(cd "$(dirname "$0")" && pwd)/check-release-el9.sh:/check.sh:ro" \
         "$IMAGE" bash /check.sh --inside
 fi
@@ -69,7 +73,8 @@ mkdir -p /tmp/m
     --mysqlx=OFF --socket=/tmp/m/s --log-error=/tmp/m/err.log --default-time-zone=+00:00 &
 for i in $(seq $((60 * PACE))); do "$R/mysql/bin/mysqladmin" -S /tmp/m/s -u root ping > /dev/null 2>&1 && break; sleep 1; done
 "$R/mysql/bin/mysql" -S /tmp/m/s -u root -e "CREATE DATABASE backend_dev; CREATE USER backend@'%' IDENTIFIED BY 'pw';
-    GRANT ALL ON backend_dev.* TO backend@'%'" && ok "running: $("$R/mysql/bin/mysql" -S /tmp/m/s -u root -N -e 'SELECT VERSION()')" \
+    GRANT ALL ON backend_dev.* TO backend@'%'; CREATE DATABASE account_dev; CREATE USER account@'%' IDENTIFIED BY 'apw';
+    GRANT ALL ON account_dev.* TO account@'%'" && ok "running: $("$R/mysql/bin/mysql" -S /tmp/m/s -u root -N -e 'SELECT VERSION()')" \
     || bad "MySQL not serving"
 # INSTALL PLUGIN loads the file before it looks for the name in it: 1127, no such name, is a file the server loaded
 # with every symbol bound; 1126 is one it could not, with the loader's reason. Components and client plugins too.
@@ -85,8 +90,28 @@ echo "--- j-redis"
 sleep $((4 * PACE))
 kill -0 $! 2>/dev/null && ok "running" || { bad "j-redis"; tail -5 /tmp/jredis.log; }
 
+echo "--- the account service (D-117)"
+[ -n "${ACCOUNT_SIGNING_KEY:-}" ] && ok "a signing key, from the release's scripts/account-key.sh" \
+    || bad "no signing key: the release has no scripts/account-key.sh"
+[ -d "$R/account/lib" ] && ok "account/lib: $(ls "$R"/account/lib/*.jar | wc -l) jars" || bad "the release has no account/lib"
+ACCOUNT_BIND=127.0.0.1 ACCOUNT_PORT=8070 ACCOUNT_ISSUER=http://127.0.0.1:8070 \
+    ACCOUNT_DB_URL="jdbc:mysql://127.0.0.1:3306/account_dev?useSSL=false&allowPublicKeyRetrieval=true" \
+    ACCOUNT_DB_USER=account ACCOUNT_DB_PASSWORD=apw ACCOUNT_EVENTS_URL=http://127.0.0.1:8080/v1/account-events \
+    "$R/runtime/bin/java" -cp "$R/account/lib/*" com.backend.account.AccountMain > /tmp/account.log 2>&1 &
+for i in $(seq $((90 * PACE))); do curl -s -o /dev/null http://127.0.0.1:8070/v1/health && break; sleep 1; done
+curl -s -o /dev/null http://127.0.0.1:8070/v1/health && ok "serving, on the release's runtime" \
+    || { bad "the account service"; tail -15 /tmp/account.log; }
+"$R/mysql/bin/mysql" -S /tmp/m/s -u root -N -e "SELECT CONCAT('migrated: ', GROUP_CONCAT(version ORDER BY installed_rank), ', ',
+    (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'account_dev'), ' tables')
+    FROM account_dev.flyway_schema_history" 2> /dev/null | sed 's/^/  ok   /'
+code=$(curl -s -o /tmp/signup.json -w "%{http_code}" -X POST -H 'Content-Type: application/json' \
+    -d '{"username":"ubinine","password":"hunter2-hunter2"}' http://127.0.0.1:8070/v1/accounts)
+[ "$code" = 201 ] && ok "a sign-up: 201, its tokens" || bad "a sign-up: $code $(cat /tmp/signup.json)"
+ACCESS=$(sed -E 's/.*"access_token":"([^"]+)".*/\1/' /tmp/signup.json)
+
 export BACKEND_DB_URL="jdbc:mysql://127.0.0.1:3306/backend_dev?useSSL=false&allowPublicKeyRetrieval=true"
 export BACKEND_DB_USER=backend BACKEND_DB_PASSWORD=pw
+export BACKEND_ACCOUNT_ISSUER=http://127.0.0.1:8070 BACKEND_ACCOUNT_JWKS_URL=http://127.0.0.1:8070/.well-known/jwks.json
 
 echo "--- platform"
 BACKEND_PAYMENT_PROVIDER=simulated "$R/runtime/bin/java" $O -cp "$R/lib/platform/*" com.backend.platform.PlatformMain \
@@ -96,12 +121,10 @@ curl -s -o /dev/null http://127.0.0.1:8080/health && ok "serving" || { bad "plat
 "$R/mysql/bin/mysql" -S /tmp/m/s -u root -N -e "SELECT CONCAT('migrated: ', GROUP_CONCAT(version ORDER BY installed_rank), ', ',
     (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'backend_dev'), ' tables')
     FROM backend_dev.flyway_schema_history" | sed 's/^/  ok   /'
-code=$(curl -s -o /tmp/reg.json -w "%{http_code}" -X POST -H 'Content-Type: application/json' \
-    -d '{"username":"ubinine","password":"hunter2-hunter2"}' http://127.0.0.1:8080/v1/accounts)
-[ "$code" = 201 ] && ok "a registration: 201" || bad "a registration: $code $(cat /tmp/reg.json)"
 code=$(curl -s -o /tmp/login.json -w "%{http_code}" -X POST -H 'Content-Type: application/json' \
-    -d '{"username":"ubinine","password":"hunter2-hunter2"}' http://127.0.0.1:8080/v1/sessions)
-[ "$code" = 200 ] && ok "a login: 200, a token" || bad "a login: $code $(cat /tmp/login.json)"
+    -d "{\"accessToken\":\"$ACCESS\"}" http://127.0.0.1:8080/v1/sessions)
+grep -q '"newPlayer":true' /tmp/login.json && [ "$code" = 200 ] \
+    && ok "the account's access token taken: 200, a session, the player made" || bad "the exchange: $code $(cat /tmp/login.json)"
 
 echo "--- gateway, worker, arena"
 "$R/runtime/bin/java" $O -cp "$R/lib/gateway/*" com.backend.gateway.GatewayMain 127.0.0.1 8094 http://127.0.0.1:8080 \

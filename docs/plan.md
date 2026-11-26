@@ -4775,6 +4775,27 @@ by hand, `run-local.sh` with the account service, `dev-backend.sh test` and twen
 `--account` against it, its players guests and `erase` said to be skipped. Not yet: the account service is not in the
 release, nginx or the site (the drills and the simple clients reach it straight), and with `MYSQL_FAILOVER` its
 database stays on the development MySQL; that is (f).
+**(f), first of three commits, done 2026-11-26: the release and nginx** (10 §6.1, §6.2). The release carries
+`account/lib/` (14 jars, built from `account-service/` as j-redis is, its jar read by the runtime's module check,
+which needed nothing more) and `scripts/account-key.sh`; `backend-account.service` (user `backend-account`, 1 GiB,
+the platform's sandbox) and `account.env.example`; nginx's `upstream backend_account` and `location /account/v1/`,
+limited as the logins, the key set left to `/`'s 404; `dev-nginx.sh` maps it and its `test` asks for it; the drills
+run the release's `account/`, and with `FRONT=` the clients reach it through nginx's `/account`; `dev-backend.sh
+test`'s bots too. 01-deploy's install steps, users and the `account` database and its grants; 05's ports, routes and
+every machine's firewall commands (8070 beside 8080); 07's units; the deploy and scripts READMEs; 09's release; 11's
+routes. The checks first, each failing first where it could: `check-release-el9.sh` (no `account/lib`, no key
+script: five failed), then passing on UBI 9.5 and UBI 8.10, the account service on the release's runtime signing an
+account up and the platform taking its token; `check-units-el9.sh` under systemd, the account service as its own
+user, a sign-up through nginx over HTTPS and its session, the key set refused, no secret in `systemctl show`, both
+through MySQL's restart; `check-certificates.sh`'s new checks of `account-key.sh` (PKCS #8 on P-256, the public half
+the key's, a signature, a new key each run), two mutants of the script caught, on OpenSSL 3.0, 3.2.2 (UBI 9) and
+1.1.1k (UBI 8); `check-ports-el9.sh`, 197 checks, its first run failing one check of its own made stale by D-117
+(the platform's limit counts guests alone, and a minute had passed: it now makes a guest before it reads them).
+Live: `FRONT=http` and `FRONT=plain`, `play lobby duel account erase guest banned` with both simple clients and the
+collection, through nginx's `/account`; `play account` straight; `dev-nginx.sh test` and `dev-backend.sh test` in
+both of nginx's ways. **DOC-59**: the platform's unit still sized its heap for Argon2, which (d) took out of it.
+Next: MySQL's backups of both databases, the runbook's restore, the watch's target, and the install guide with its
+check.
 
 ---
 

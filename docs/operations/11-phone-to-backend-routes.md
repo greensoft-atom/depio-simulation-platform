@@ -217,6 +217,7 @@ Its locations, the most specific first:
 | `= /lobby` | `backend_gateway` | `proxy_http_version 1.1`; `Upgrade $http_upgrade` and `Connection "upgrade"`; `X-Forwarded-For` and `Host` again; `proxy_read_timeout` and `proxy_send_timeout` `150s` | The WebSocket's upgrade passed on. A location that sets any `proxy_set_header` inherits none from the server, so every header it needs is set in it. 150 s is longer than the gateway's 120 s, so the gateway decides when a lobby is dead |
 | `= /v1/sessions`, `= /v1/accounts`, `= /v1/guests`, `= /v1/accounts/link` | `backend_platform` | `limit_req zone=backend_auth burst=30 nodelay`, and `backend-platform.conf` | Logins, guests made, a guest linked, a guest deleted: 2 a second an address, 30 at once. The platform answers only these exact paths, so a slash added is no way past the limit. Until D-117 each was an Argon2 hash on the platform; the passwords are the account service's now |
 | `= /v1/account-events` | nothing: `return 404` | | The account service's events, which it posts to a platform on the private network (D-117); not the internet's to send |
+| `/account/v1/` | `backend_account`'s `/v1/` | `limit_req zone=backend_auth burst=30 nodelay`; `proxy_http_version 1.1`, `Connection ""`; `X-Forwarded-For` and `Host` again; `proxy_read_timeout 15s` | The account service (D-117, [10 §6.2](../detailed-design/10-accounts.md#62-nginx)): sign-up, login, refresh, logout, a password, a deletion, every one limited as the platform's logins. Its key set, `/account/.well-known/jwks.json`, falls to `/`: the platforms read it on the private network |
 | `/v1/` | `backend_platform` | `backend-platform.conf` | The rest of the API |
 | `~ ^/match/(?<backend_match_name>[a-z0-9.-]+)$` | `$backend_match_arena`, the arena the name maps to | `return 404` for a name not in the list; `proxy_http_version 1.1`; `proxy_pass_request_headers off`; `Upgrade $http_upgrade`, `Connection "upgrade"`, `X-Forwarded-For $remote_addr`, `Host`; `proxy_connect_timeout 5s`, `proxy_read_timeout` and `proxy_send_timeout` `60s` | A match without TLS (D-115), passed on as the lobby's WebSocket is: the arena answers 101, and the match's bytes go both ways. The arena reads the request's line and these four headers alone, none of the phone's; `X-Forwarded-For` is the address nginx saw, never one the phone sent. 60 s as 9001's `proxy_timeout`. Answered on 443 too, where nothing needs it |
 | `/` | none | `return 404` | Anything else, `/health` included: that is for the machine's own monitoring, on loopback |
@@ -232,13 +233,14 @@ Included in every `/v1` location:
 | `proxy_set_header X-Forwarded-For`, `Host` | as the server's | Set again for the reason in §4.2 |
 | `proxy_read_timeout` | `15s` | A login waits for Argon2 and may queue behind 160 others; the app allows 10 s |
 
-### 4.4 `backend-upstreams.conf`, the platforms and the gateways
+### 4.4 `backend-upstreams.conf`, the platforms, the account services and the gateways
 
 As the release ships it, for three machines:
 
 | Upstream | Servers | Settings | Why |
 |---|---|---|---|
 | `backend_gateway` | `10.0.0.1:8090`, `10.0.0.2:8090`, `10.0.0.3:8090` | `least_conn` | A lobby lasts the session, so each new one goes to the gateway holding the fewest |
+| `backend_account` | `10.0.0.1:8070`, `10.0.0.2:8070`, `10.0.0.3:8070` | `keepalive 32`, `keepalive_timeout 20s` | The JDK's HTTP server, as the platform's: the same idle limits, the same reason (D-117) |
 | `backend_platform` | `10.0.0.1:8080`, `10.0.0.2:8080`, `10.0.0.3:8080` | `keepalive 32`, `keepalive_timeout 20s` | Kept below the platform's 1 000 idle connections, and dropped before its 30 s idle timeout: the other way round the platform closed a connection nginx was about to reuse, and nginx does not send a `POST` again, so a login failed with 502 |
 
 A server that fails is passed over for 10 s (nginx's defaults, `max_fails 1` and `fail_timeout 10s`). A `POST` that
@@ -283,9 +285,10 @@ writes the two files in full, one directive a line):
 
 ```bash
 sed -i "s/203\.0\.113\.10/$ADDRESS/" /etc/backend/nginx/backend.conf     # server_name: the machine's address
-# backend-upstreams.conf: one platform and one gateway, on loopback
+# backend-upstreams.conf: one platform, one account service and one gateway, on loopback
 upstream backend_gateway  { least_conn; server 127.0.0.1:8090; }
 upstream backend_platform { server 127.0.0.1:8080; keepalive 32; keepalive_timeout 20s; }
+upstream backend_account  { server 127.0.0.1:8070; keepalive 32; keepalive_timeout 20s; }
 # backend-arenas.conf: this machine's three arenas, on loopback, for 9001 and 80 alike
 a1.arena.internal  127.0.0.1:9011;
 a2.arena.internal  127.0.0.1:9012;
@@ -503,11 +506,11 @@ examples are in [api/01](../api/01-http-api.md).
 
 | Route | Auth | Body | Success | nginx | Through nginx, in the runs |
 |---|---|---|---|---|---|
-| `DELETE /v1/accounts` | bearer, a guest's; an account's player is answered 409 `delete_at_account_service` (D-117) | none: a body is ignored | 204 | `= /v1/accounts`: 2 a second an address, burst 30 | the client and the collection, as before D-117; since, not yet (plan item 142 (e)) |
-| `POST /v1/accounts/link` | bearer (the guest's) | `AccessTokenRequest`: `accessToken` string req (400 `invalid_body`) | 200 `{"playerId"}` | `= /v1/accounts/link`: 2 a second an address, burst 30 | not yet (plan item 142 (e)) |
+| `DELETE /v1/accounts` | bearer, a guest's; an account's player is answered 409 `delete_at_account_service` (D-117) | none: a body is ignored | 204 | `= /v1/accounts`: 2 a second an address, burst 30 | the client and the collection |
+| `POST /v1/accounts/link` | bearer (the guest's) | `AccessTokenRequest`: `accessToken` string req (400 `invalid_body`) | 200 `{"playerId"}` | `= /v1/accounts/link`: 2 a second an address, burst 30 | the client (`guest`, `account`; 2026-11-26) |
 | `PUT /v1/accounts/name` | bearer | `RenameRequest`: `displayName` string req. A missing one reaches `AuthService.rename` as `""` and answers 400 `invalid_display_name`, never `invalid_body` | 200 `{"playerId","displayName"}` | `/v1/` | the client and the collection |
 | `POST /v1/guests` | none (throttled per address) | none | 201 `{"playerId","guestKey","displayName"}` | `= /v1/guests`: 2 a second an address, burst 30 | the client and the collection |
-| `POST /v1/sessions` | none (a guest's key throttled per address; an access token checked by the account service's keys, 503 `keys_unavailable` when none can be had) | `LoginRequest`: either `guestKey` string alone (if present, it wins and the rest is ignored), or `accessToken` string req (400 `invalid_body`) | 200 `{"token","playerId","expiresInSeconds","newPlayer"}` | `= /v1/sessions`: 2 a second an address, burst 30 | a guest's: the client and the collection; an access token's: not yet (plan item 142 (e)) |
+| `POST /v1/sessions` | none (a guest's key throttled per address; an access token checked by the account service's keys, 503 `keys_unavailable` when none can be had) | `LoginRequest`: either `guestKey` string alone (if present, it wins and the rest is ignored), or `accessToken` string req (400 `invalid_body`) | 200 `{"token","playerId","expiresInSeconds","newPlayer"}` | `= /v1/sessions`: 2 a second an address, burst 30 | the client and the collection, a guest's and an access token's (2026-11-26) |
 | `DELETE /v1/sessions` | bearer, present only: an unknown token gets 204 too | none | 204 | `= /v1/sessions`: 2 a second an address, burst 30 | the collection |
 | `POST /v1/account-events` | the event's own signature, the account service's (D-117) | a Security Event Token, `Content-Type: application/secevent+jwt` (RFC 8935) | 202; 400 `{"err","description"}` | not passed: `= /v1/account-events` answers 404 | never: the account service posts it on the private network; the platform's tests |
 
@@ -623,6 +626,28 @@ In the runs, every route went through nginx except two:
 - `POST /v1/queue/decline`, which the app sends as the lobby's `match.decline` (§10.2). The gateway passes it to the
   platform on the private side, not through nginx.
 - `/health`, the process's own, which nginx does not pass on.
+
+### 10.1a HTTP, to the account service
+
+Added 2026-11-26 (D-117, [10 §3.2](../detailed-design/10-accounts.md#32-the-routes)). Every row goes through
+`location /account/v1/`, to `backend_account`'s `/v1/` (§4.2), limited as the logins: 2 a second an address, a burst
+of 30. A body of 4 KiB at most. An error is RFC 6749's `{"error","error_description"}`; every answer is
+`Cache-Control: no-store`. The app's address for it is the site's with `/account`: `https://203.0.113.10/account`.
+
+| Route | Auth | Body | Success |
+|---|---|---|---|
+| `POST /account/v1/accounts` | none | `{"username","password"}` | 201, a token answer: `{"access_token","token_type","expires_in","refresh_token","account_id"}` |
+| `POST /account/v1/sessions` | none | `{"username","password"}` | 200, a token answer |
+| `POST /account/v1/sessions/refresh` | none | `{"refresh_token"}` | 200, a token answer; 400 `invalid_grant` |
+| `DELETE /account/v1/sessions` | none | `{"refresh_token"}` | 204, always |
+| `PUT /account/v1/accounts/me/password` | bearer, an access token | `{"current_password","new_password"}` | 200, a token answer of a new family |
+| `DELETE /account/v1/accounts/me` | bearer, an access token | `{"password"}` | 204 |
+| `GET /account/v1/health` | none | none | 200 |
+| `GET /account/.well-known/jwks.json` | | | not routed: 404 from nginx's `/` |
+
+Through nginx, in the runs of 2026-11-26: the C# client (`headless-drill.sh` `FRONT=http` and `FRONT=plain`, every
+row but the health), the collection, both simple clients, and `check-units-el9.sh` and `check-ports-el9.sh` over
+443.
 
 ### 10.2 The lobby, to a gateway
 

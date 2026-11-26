@@ -6,8 +6,9 @@ operators who run these scripts on the machines and for the developers who chang
 what the script does, how to run it, what it needs, and what it prints or returns. Each script's header comment is
 its full reference; this page puts them side by side.
 
-**Where they live.** The release carries fifteen of these scripts in its `scripts/` directory, and a machine has
-them as `/opt/backend/scripts/` ([make-release.sh](#make-releasesh) lists them). The backup units and the log
+**Where they live.** The release carries fifteen of these scripts in its `scripts/` directory, and a sixteenth, the
+account service's `account-key.sh` (D-117, its reference in `account-service/README.md`); a machine has them as
+`/opt/backend/scripts/` ([make-release.sh](#make-releasesh) lists them). The backup units and the log
 rotation's unit run them from there. The others (`make-release.sh`, every `check-*.sh` except `check-bind.sh`, and
 `backup-drill.sh`) stay in the source tree and run on a build or development machine.
 
@@ -79,38 +80,41 @@ order:
 
 1. **j-redis first.** It runs `mvn -o -DskipTests clean install` in `../j-redis-service`. The backend builds against
    j-redis's client, and the release carries j-redis's server. The build is `clean`, as the backend's is (O-84).
-2. **The backend, clean.** It runs `mvn -o -DskipTests clean install` in `backend/`, offline. The clean step matters:
+2. **The account service** (D-117). It runs `mvn -o -DskipTests clean package` in `../account-service`, whose jar
+   and runtime libraries land in its `target/lib`.
+3. **The backend, clean.** It runs `mvn -o -DskipTests clean install` in `backend/`, offline. The clean step matters:
    a file deleted from the sources (for example a migration replaced by the baseline, D-75) would otherwise stay in
    `target/` and ship. The clean empties `backend/target/`, earlier releases included.
-3. **One `lib/` per process.** For each of `arena`, `platform`, `worker` and `gateway`, it copies the module's
+4. **One `lib/` per process.** For each of `arena`, `platform`, `worker` and `gateway`, it copies the module's
    runtime dependencies and its own jar into `lib/<process>/`. There is one directory per process, not one shared
    directory: `handoff`'s module graph keeps the MySQL driver off the arena's classpath, and a shared directory
    would put it back.
-4. **What the processes run on**
+5. **What the processes run on**
    ([09 §4](../../docs/detailed-design/09-release-and-packaging.md#4-the-release)): j-redis's server, client and
    tools (jars and launchers) into `jredis/`, with the template of its configuration; the Java runtime, linked by
    `jlink` from the JDK's `jmods/` into `runtime/`; and `vendor/mysql-8.4` and `vendor/nginx-1.30`, as committed,
-   into `mysql/` and `nginx/`.
-5. **The runtime's modules are a fixed list**: `java.se`, `jdk.httpserver`, `jdk.unsupported`, `jdk.jfr`,
+   into `mysql/` and `nginx/`; and the account service's jar and libraries into `account/lib/`.
+6. **The runtime's modules are a fixed list**: `java.se`, `jdk.httpserver`, `jdk.unsupported`, `jdk.jfr`,
    `jdk.net`, `jdk.crypto.ec`, `jdk.jcmd`, `jdk.management` and `jdk.management.agent`. `jdeps` cannot compute the
    list, because the libraries are modules whose optional requirements are absent. So the script runs `jdeps` on
-   the backend's own jars and j-redis's, and **a module they use that is not in the list stops the release**, with
+   the backend's own jars, j-redis's and the account service's, and **a module they use that is not in the list stops the release**, with
    "the runtime lacks …: add it to modules"
    ([09 §4.1](../../docs/detailed-design/09-release-and-packaging.md#41-the-runtime)).
-6. **The configuration and the scripts.** It copies `deploy/systemd` and `deploy/env`, `deploy/mysql` as
-   `mysql-conf/` and `deploy/nginx` as `nginx-conf/`, and the fifteen operational scripts: `backup-mysql.sh`,
+7. **The configuration and the scripts.** It copies `deploy/systemd` and `deploy/env`, `deploy/mysql` as
+   `mysql-conf/` and `deploy/nginx` as `nginx-conf/`, and the sixteen operational scripts, the account service's
+   `account-key.sh` among them: `backup-mysql.sh`,
    `backup-store.sh`, `binlog-stream.sh`, `restore-drill.sh`, `store-restore-drill.sh`, `install-certificate.sh`,
    `promote-store.sh`, `promote-mysql.sh`, `record-backup.sh`, `restore-proof.sh`, `backup-offsite.sh`,
-   `fetch-offsite.sh`, `private-ca.sh`, `rotate-nginx-logs.sh` and `check-bind.sh`.
-7. **No symbolic link.** It replaces every symbolic link in the release with a copy of the file it names
+   `fetch-offsite.sh`, `private-ca.sh`, `rotate-nginx-logs.sh`, `check-bind.sh` and `account-key.sh`.
+8. **No symbolic link.** It replaces every symbolic link in the release with a copy of the file it names
    ([D-106](../../docs/architecture/03-decision-log.md#d-106--nothing-in-the-repository-or-a-release-is-a-symbolic-link)).
    `jlink` makes such links in the runtime's `legal/`. A copy that does not keep links (Git for Windows by default,
    an archive unpacked on Windows) would leave a small text file in each one's place.
-8. **What it was built from.** It writes `COMMIT`, the git commit, with `-dirty` when the tree differs from that
+9. **What it was built from.** It writes `COMMIT`, the git commit, with `-dirty` when the tree differs from that
    commit (O-84), and `VERSIONS.md`: `vendor/VERSIONS.md`, then the backend's version and commit, j-redis's version,
-   and the runtime's version and modules.
-9. **The archive.** It packs the directory, then prints the number of jars in each `lib/` and the sizes of
-   `runtime/`, `mysql/`, `nginx/` and `jredis/`.
+   the account service's version, and the runtime's version and modules.
+10. **The archive.** It packs the directory, then prints the number of jars in each `lib/` and `account/lib/`, and
+    the sizes of `runtime/`, `mysql/`, `nginx/`, `jredis/` and `account/`.
 
 The release's layout is in the [deploy README](../deploy/README.md#the-release).
 
@@ -122,7 +126,7 @@ scripts/make-release.sh    ->  target/release/backend-<version>/  and  target/re
 |---|---|
 | Arguments | none. The version is the first `<version>` in `backend/pom.xml` (`0.1.0-SNAPSHOT`) |
 | Settings | `MVN`, the Maven command (default `mvn`). A local repository filled from more than one source needs `MVN="mvn -Daether.enhancedLocalRepository.trackingFilename=_none"`. `JDK`, the JDK 21 whose `jdeps` checks the jars and whose `jmods/` the runtime is linked from (default `vendor/jdk-21`) |
-| Needs | JDK 21 and Maven to run the build; a local repository that holds every dependency of the backend and of j-redis (the `java21-offline` bundle); `../j-redis-service` and `../vendor` beside `backend/`; tar; git for `COMMIT` (optional). `build-offline.sh`, at the repository's root, runs this script on the committed JDK and Maven with no network ([09 §3](../../docs/detailed-design/09-release-and-packaging.md#3-the-build-from-the-repository-alone)) |
+| Needs | JDK 21 and Maven to run the build; a local repository that holds every dependency of the backend, of j-redis and of the account service (the `java21-offline` bundle); `../j-redis-service`, `../account-service` and `../vendor` beside `backend/`; tar; git for `COMMIT` (optional). `build-offline.sh`, at the repository's root, runs this script on the committed JDK and Maven with no network ([09 §3](../../docs/detailed-design/09-release-and-packaging.md#3-the-build-from-the-repository-alone)) |
 | Runs | on the build machine, from any directory: it changes to `backend/` itself |
 | Prints | `release: <dir>`, the jar count of each `lib/`, the sizes above. Exits non-zero when a step fails |
 
@@ -138,7 +142,10 @@ Red Hat's UBI 9 minimal image, with the release mounted read-only, and checks, e
   the server
   ([D-110](../../docs/architecture/03-decision-log.md#d-110--every-native-file-in-the-release-loads-on-rhel-9-each-one-checked-rhel-8s-libcryptso1-beside-libaio-and-libnuma));
 - MySQL 8.4 initialised and started; j-redis started;
-- the platform migrating the database and serving a registration and a login;
+- the account service from `account/lib/` on the release's runtime, its key made by the release's
+  `scripts/account-key.sh` (with this machine's openssl, which the image lacks), migrating its database and signing
+  an account up (D-117);
+- the platform migrating the database and taking that account's access token for a session;
 - the gateway, a worker and an arena running, and whether the arena uses Netty's native epoll;
 - nginx passing requests to the platform over HTTP and HTTPS;
 - `nginx -t` on the shipped `nginx-conf/`, installed as on a machine.
@@ -197,11 +204,13 @@ Red Hat's UBI 9 init image, with systemd as the first process, the release mount
 [§9](../../docs/operations/01-deploy.md#9-mysql) say: the users, the units, and the database's configuration from
 its example, initialised as the example's header says. Then it checks, as one machine that is the front (D-82):
 
-- `backend-mysql`, `backend-store@session`, `backend-platform`, `backend-gateway`, `backend-worker@c1`,
-  `backend-arena@a1` and `backend-nginx` started;
-- an account registered through nginx over HTTPS, and a match connection through nginx's 9001 to the arena;
+- `backend-mysql`, `backend-store@session`, `backend-account` (as its own user, its key written into its settings
+  by the release's `account-key.sh`), `backend-platform`, `backend-gateway`, `backend-worker@c1`, `backend-arena@a1`
+  and `backend-nginx` started;
+- an account signed up at the account service through nginx over HTTPS and its access token taken for a session
+  (D-117), the account service's key set not routed, and a match connection through nginx's 9001 to the arena;
 - port 80 in clear (D-115): the API's health, and the arena asked for by name;
-- the secrets in the settings files alone, root's, and nowhere systemd shows them (D-102);
+- the secrets in the settings files alone, root's, and nowhere systemd shows them, the signing key's neither (D-102);
 - an arena with TLS of its own, its keystore made by this repository's `install-certificate.sh`;
 - [operations/07](../../docs/operations/07-start-stop-restart.md)'s reloads, restarts and patterns, as written;
 - the platform's watch: the worker stopped, `TargetDown` listed by the admin API within three minutes, and gone once
@@ -296,11 +305,12 @@ Checks [operations/05, ports and firewall](../../docs/operations/05-ports-and-fi
 [06, certificates](../../docs/operations/06-certificates.md), as written, for the site's front (D-82). It runs in
 Rocky Linux 9.5 (RHEL 9's firewalld), with systemd as its first process and no network. It builds this layout:
 
-- **A**, the front (`10.0.0.1`, and the public `198.51.100.1`): MySQL with TLS, the session store, the platform, the
-  gateway, the arena `a1` and nginx, from a release with the settings it ships; two of C's processes, the first
+- **A**, the front (`10.0.0.1`, and the public `198.51.100.1`): MySQL with TLS, the session store, the account
+  service (D-117), the platform, the gateway, the arena `a1` and nginx, from a release with the settings it ships; two of C's processes, the first
   worker and the scratch MySQL, for their ports; and a stand-in for sshd on 22, which echoes. nginx has the shipped
   configuration and a certificate made by `private-ca.sh` and installed by `install-certificate.sh`.
-- **B** (`10.0.0.2`), in a network namespace: its platform, gateway and arena `b1`, on A's store and MySQL.
+- **B** (`10.0.0.2`), in a network namespace: its account service, platform, gateway and arena `b1`, on A's store
+  and MySQL.
 - **C** (`10.0.0.3`), a stranger on the internal network (`10.0.0.50`) and a player (`198.51.100.7`), each in a
   namespace too.
 
@@ -311,7 +321,8 @@ Then it checks:
 2. B, C, the stranger and the player each try every port that matters: first with the firewall stopped, as RHEL 9
    has it, then after [05 §5](../../docs/operations/05-ports-and-firewall.md#5-the-firewall-on-rhel-9)'s commands
    for A, which the script takes from the page;
-3. as a player who trusts the backend's root alone: registrations and the lobby through 443; match TLS through 9001
+3. as a player who trusts the backend's root alone: sign-ups at the account service and their tokens taken, the
+   account service's key set refused, and the lobby, through 443; match TLS through 9001
    by each arena's name, with a wrong name and a wrong root refused; 80 in clear (D-115), the API's health on it,
    and A's and B's arenas by name through `/match/`, answered 101, with an unknown name answered 404;
 4. the C# headless driver, built for .NET Framework 4.5 and run on Unity 2019's Mono, playing fifteen scenarios
@@ -319,8 +330,8 @@ Then it checks:
    own TLS stops at 1.0, and nginx's is 1.2 and 1.3, so 443's and 9001's TLS are checked by `openssl s_client`
    alone (step 3). The arenas log each join from the player's address without a port, from nginx's
    `X-Forwarded-For` (D-115);
-5. what nginx's logs say it routed; the player's address in the login limits' keys; A's platform stopped and B's
-   serving;
+5. what nginx's logs say it routed, to both machines' account services too; the player's address in the platforms'
+   and the account services' limits; A's platform and account service stopped, and B's serving;
 6. the rules after a restart of firewalld, the commands run twice, B's and C's commands, and the install guide's
    [§12](../../docs/operations/03-install-guide.md#12-open-the-firewall).
 
@@ -834,13 +845,17 @@ Checks `private-ca.sh` and `install-certificate.sh` on this machine, with openss
 - installed, with the key private; and when nginx refuses the new files, the previous ones put back;
 - the machine's OpenSSL (D-103): a version older than 1.1.1 refused, a later major version taken, a root in
   `SSL_CERT_DIR` kept out while the backend's root is in `TLS_DIR`, and a chain that does not verify refused in
-  openssl's own words.
+  openssl's own words;
+- the account service's `account-key.sh` on the same openssl (D-117): its two lines, the key PKCS #8 on P-256 by name
+  (the form Java reads, not the SEC1 that OpenSSL 3's `genpkey` writes as DER), its public half the key's, a
+  signature by the key verified by that half, and a new key each run. Two mutants, the key straight from `genpkey`
+  and a public half from another key, each caught; on OpenSSL 3.0 here, 3.2.2 (UBI 9) and 1.1.1k (UBI 8).
 
 ```
 scripts/check-certificates.sh
 IMAGE=registry.access.redhat.com/ubi9/ubi:9.5 scripts/check-certificates.sh    # RHEL 9's OpenSSL 3.2.2
 IMAGE=backend-ubi8-openssl scripts/check-certificates.sh    # RHEL 8's 1.1.1k: UBI 8 + openssl (header)
-CA=<another private-ca.sh> IC=<another install-certificate.sh> scripts/check-certificates.sh    # a mutation check
+CA=<another private-ca.sh> IC=<another install-certificate.sh> AK=<another account-key.sh> scripts/check-certificates.sh    # a mutation check
 ```
 
 | | |

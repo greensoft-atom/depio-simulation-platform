@@ -5,9 +5,9 @@
 # on Unity 2019's Mono (D-116); 443's and 9001's TLS checked by openssl s_client, trusting the backend's root alone.
 # In Rocky Linux 9.5 (RHEL 9's firewalld), systemd its first process, with no network:
 #   - A, the front here (10.0.0.1, and the public 198.51.100.1): MySQL with TLS (01 §9), the session store, the
-#     platform, the gateway, the arena a1 and nginx, from a release with the settings it ships; and two of C's,
+#     account service (D-117), the platform, the gateway, the arena a1 and nginx, from a release with the settings it ships; and two of C's,
 #     the first worker and the scratch MySQL, for their ports; a stand-in for sshd on 22, which echoes;
-#   - B (10.0.0.2), a network namespace: its platform, gateway and arena b1, on A's store and MySQL;
+#   - B (10.0.0.2), a network namespace: its account service, platform, gateway and arena b1, on A's store and MySQL;
 #   - C (10.0.0.3), a stranger on the internal network (10.0.0.50) and a player (198.51.100.7), namespaces too.
 # The certificate is made by private-ca.sh and installed by install-certificate.sh, as 06 says. The firewall is
 # 05 §5's commands for A, taken from the page, seen stopped, as RHEL 9 has it, and after; then B's and C's, and
@@ -104,10 +104,11 @@ ip addr add fd00:51::1/64 dev pub0 nodad && ip -n player addr add fd00:51::7/64 
 # Secrets, and MySQL's own TLS, as the install guide and 01 §9 make them.
 install -d -m 0755 /etc/backend /etc/backend/tls /etc/backend/nginx /etc/backend/mysql /etc/mysql-tls
 install -d -m 0700 /etc/backend/credentials
-for s in db-password store-password admin-token; do
+for s in db-password store-password admin-token account-db-password; do
     head -c 24 /dev/urandom | base64 | tr -d '/+=' > "/etc/backend/credentials/$s"
 done
 DBPW=$(cat /etc/backend/credentials/db-password)
+ACCOUNTPW=$(cat /etc/backend/credentials/account-db-password)
 STOREPW=$(cat /etc/backend/credentials/store-password)
 useradd --system --home-dir /var/lib/backend-mysql --shell /usr/sbin/nologin mysql
 useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin nginx
@@ -143,7 +144,9 @@ for _ in $(seq 60); do
 done
 "$R/mysql/bin/mysql" -S /run/backend-mysql/mysqld.sock -u root -e "CREATE DATABASE backend;
     CREATE USER 'backend'@'10.0.0.%' IDENTIFIED BY '$DBPW' REQUIRE SSL;
-    GRANT ALL ON backend.* TO 'backend'@'10.0.0.%';" || fail "MySQL's database and user"
+    GRANT ALL ON backend.* TO 'backend'@'10.0.0.%';
+    CREATE DATABASE account; CREATE USER 'account'@'10.0.0.%' IDENTIFIED BY '$ACCOUNTPW' REQUIRE SSL;
+    GRANT ALL ON account.* TO 'account'@'10.0.0.%';" || fail "MySQL's databases and users"
 
 # The session store, from the release's template: its port, the bind 01 §3 gives A, a password.
 sed -e 's/^bind .*/bind 127.0.0.1 10.0.0.1/' -e "s/^requirepass .*/requirepass $STOREPW/" \
@@ -156,14 +159,20 @@ nohup "${J[@]}" -Djava.net.preferIPv4Stack=true -jar "$R/jredis/lib/j-redis-serv
 
 # The settings, from the shipped examples as an operator fills them: A's as they are, but for the site's address
 # here and the admin API named; B's with B's address where a process listens; C's first worker.
-cp "$R/env/platform.env.example" /etc/backend/platform.env
+sed "s/203\.0\.113\.10/$PUB/" "$R/env/platform.env.example" > /etc/backend/platform.env
 sed -i 's/^#BACKEND_ADMIN_ADDR=/BACKEND_ADMIN_ADDR=/' /etc/backend/platform.env
+# The account service's (D-117): the site's address in its issuer, and its secrets at the end, the key the release's
+# script makes, the same on both machines (10 §6.4).
+{ sed "s/203\.0\.113\.10/$PUB/" "$R/env/account.env.example"; echo "ACCOUNT_DB_PASSWORD=$ACCOUNTPW"
+  "$R/scripts/account-key.sh" | grep '^ACCOUNT_SIGNING_KEY='; } > /etc/backend/account.env
 cp "$R/env/gateway.env.example" /etc/backend/gateway.env
 sed "s/^ADVERTISE_HOST=.*/ADVERTISE_HOST=$PUB/" "$R/env/arena.env.example" > /etc/backend/arena-a1.env
 cp "$R/env/worker.env.example" /etc/backend/worker.env
 cp "$R/env/worker-instance.env.example" /etc/backend/worker-c1.env
 mkdir -p /etc/backend/b
-sed 's/^PLATFORM_BIND=.*/PLATFORM_BIND=10.0.0.2/' /etc/backend/platform.env > /etc/backend/b/platform.env
+sed -e 's/^PLATFORM_BIND=.*/PLATFORM_BIND=10.0.0.2/' -e 's#^BACKEND_ACCOUNT_JWKS_URL=http://10\.0\.0\.1:#BACKEND_ACCOUNT_JWKS_URL=http://10.0.0.2:#' \
+    /etc/backend/platform.env > /etc/backend/b/platform.env
+sed 's/^ACCOUNT_BIND=.*/ACCOUNT_BIND=10.0.0.2/' /etc/backend/account.env > /etc/backend/b/account.env
 sed -e 's/^GATEWAY_BIND=.*/GATEWAY_BIND=10.0.0.2/' -e 's#^PLATFORM_URL=.*#PLATFORM_URL=http://10.0.0.2:8080#' \
     /etc/backend/gateway.env > /etc/backend/b/gateway.env
 sed -e 's/^ARENA_BIND=.*/ARENA_BIND=10.0.0.2/' -e 's/^BACKEND_ADVERTISE_TLS_NAME=.*/BACKEND_ADVERTISE_TLS_NAME=b1.arena.internal/' \
@@ -183,6 +192,10 @@ platform() {
     export BACKEND_ADMIN_TOKEN_FILE=/etc/backend/credentials/admin-token
     exec "${J[@]}" -Dsun.net.httpserver.maxIdleConnections=1000 -cp "$R/lib/platform/*" \
         com.backend.platform.PlatformMain "$PLATFORM_BIND" "$PLATFORM_PORT" "$STORE_HOST" "$STORE_PORT"
+}
+account() {
+    envfile "$1"
+    exec "${J[@]}" -Dsun.net.httpserver.maxIdleConnections=1000 -cp "$R/account/lib/*" com.backend.account.AccountMain
 }
 gateway() {
     envfile "$1"
@@ -210,6 +223,8 @@ wait_for() {   # wait_for <address:port> <log> [ip netns exec b]
     fail "nothing on $1 after 120 s; $2 ends:"; tail -5 "$2"; return 1
 }
 wait_for 10.0.0.1:6379 "$L/store.log"
+(account /etc/backend/account.env) > "$L/account.log" 2>&1 & ACCOUNT_A=$!     # its java, by the exec
+wait_for 10.0.0.1:8070 "$L/account.log"
 (platform /etc/backend/platform.env) > "$L/platform.log" 2>&1 &
 wait_for 10.0.0.1:8080 "$L/platform.log"
 (worker c1) > "$L/worker.log" 2>&1 &
@@ -238,11 +253,11 @@ nohup ip netns exec player ncat -lk 198.51.100.7 4444 > /dev/null 2>&1 &    # so
 
 EXPECTED=(0.0.0.0:80 [::]:80 0.0.0.0:443 [::]:443 0.0.0.0:9001 [::]:9001 0.0.0.0:22 [::]:22 10.0.0.1:3306 10.0.0.1:6379 127.0.0.1:6379
           10.0.0.1:8080 10.0.0.1:8090 10.0.0.1:9011 127.0.0.1:9101 127.0.0.1:9103 127.0.0.1:9110 127.0.0.1:9120
-          127.0.0.1:9102 127.0.0.1:3309)
+          127.0.0.1:9102 127.0.0.1:3309 10.0.0.1:8070 127.0.0.1:9104)
 for a in "${EXPECTED[@]}"; do
     wait_for "$a" "$L/$(case $a in *:80|*:443|*:9001) echo ../../var/log/backend-nginx/error ;; *:9011|*:9110) echo arena-a1 ;;
         *:3306) echo backend.cnf ;; *:3309) echo scratch-my.cnf ;; *:6379) echo store ;; *:8090|*:9103) echo gateway ;;
-        *:9102) echo worker ;; *) echo platform ;; esac).log"
+        *:9102) echo worker ;; *:8070|*:9104) echo account ;; *) echo platform ;; esac).log"
 done
 sleep 3
 
@@ -270,6 +285,7 @@ MATRIX=(
     "player $PUB 443|$O|$N|$O"            "player $PUB 9001|$O|$N|$O"
     "player $PUB 80|$O|$N|$O"             "player $PUB 22|$O|$O|$N"
     "player $PUB 9090|$C|$C|$N"           "player $PUB 8080|$C|$N|$N"
+    "player $PUB 8070|$C|$N|$N"           "player 10.0.0.1 8070|$O|$N|$N"
     "player $PUB 9011|$C|$N|$N"           "player $PUB 9120|$C|$N|$N"
     "player 10.0.0.1 6379|$O|$N|$N"       "player 10.0.0.1 3306|$O|$N|$N"
     "player 10.0.0.1 8080|$O|$N|$N"       "player 10.0.0.1 9011|$O|$N|$N"
@@ -278,6 +294,7 @@ MATRIX=(
     "b 10.0.0.1 6379|$O|$N|$O"            "b 10.0.0.1 3306|$O|$N|$O"
     "b 10.0.0.1 8080|$O|$N|$O"            "b 10.0.0.1 8090|$O|$N|$O"
     "b 10.0.0.1 9011|$O|$N|$O"            "b 10.0.0.1 22|$O|$O|$O"
+    "b 10.0.0.1 8070|$O|$N|$O"            "stranger 10.0.0.1 8070|$O|$N|$N"
     "b 10.0.0.1 443|$O|$N|$N"
     "c 10.0.0.1 6379|$O|$N|$O"            "c 10.0.0.1 9011|$O|$N|$O"
     "stranger 10.0.0.1 22|$O|$O|$O"       "stranger 10.0.0.1 6379|$O|$N|$N"
@@ -326,7 +343,9 @@ firewall-cmd --zone=public --list-rich-rules | grep -q 'source address="10.0.0.0
     && ok "SSH from the internal network alone, by a rule" || fail "no rule for SSH from 10.0.0.0/24"
 ip netns exec player ping -c 1 -W 2 "$PUB" > /dev/null 2>&1 && ok "a player's ping answered" || fail "a player's ping not answered"
 
-echo "--- B's platform, gateway and arena b1, in B's namespace, on A's store and MySQL through the firewall:"
+echo "--- B's account service, platform, gateway and arena b1, in B's namespace, on A's store and MySQL through the firewall:"
+(ip netns exec b bash -c "$(declare -p J R); $(declare -f envfile account); account /etc/backend/b/account.env") > "$L/b-account.log" 2>&1 &
+wait_for 10.0.0.2:8070 "$L/b-account.log" "ip netns exec b"
 (ip netns exec b bash -c "$(declare -p J R BACKEND_DB_PASSWORD_FILE BACKEND_STORE_PASSWORD_FILE); $(declare -f envfile platform); platform /etc/backend/b/platform.env") > "$L/b-platform.log" 2>&1 &
 wait_for 10.0.0.2:8080 "$L/b-platform.log" "ip netns exec b"
 (ip netns exec b bash -c "$(declare -p J R BACKEND_DB_PASSWORD_FILE BACKEND_STORE_PASSWORD_FILE); $(declare -f envfile gateway); gateway /etc/backend/b/gateway.env gateway-b") > "$L/b-gateway.log" 2>&1 &
@@ -337,11 +356,18 @@ sleep 4
 
 echo "--- through the front, as a player, trusting the backend's root alone:"
 curlp() { ip netns exec player curl -s --max-time 10 --cacert "$CA/ca.pem" "$@"; }
-for i in 1 2 3 4; do
+signup() {   # signup <name>: signed up at the account service through the front, its token taken there: both statuses
+    local made code
+    made=$(curlp -w ' %{http_code}' -X POST -H 'Content-Type: application/json' \
+        -d "{\"username\":\"$1\",\"password\":\"port-check-pw\"}" "https://$PUB/account/v1/accounts")
     code=$(curlp -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
-        -d "{\"username\":\"portcheck$i\",\"password\":\"port-check-$i\"}" "https://$PUB/v1/accounts")
-    expect "a registration through nginx, by its IP's certificate ($i)" 201 "$code"
+        -d "{\"accessToken\":\"$(sed -n -E 's/.*"access_token":"([^"]+)".*/\1/p' <<< "$made")\"}" "https://$PUB/v1/sessions")
+    echo "${made##* } $code"
+}
+for i in 1 2 3 4; do
+    expect "a sign-up at the account service through nginx, by its IP's certificate, and its token taken ($i)" "201 200" "$(signup portcheck$i)"
 done
+expect "the account service's key set through the front" 404 "$(curlp -o /dev/null -w '%{http_code}' "https://$PUB/account/.well-known/jwks.json")"
 lobby=$(curlp --http1.1 --max-time 3 -i -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
     -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "https://$PUB/lobby" 2> /dev/null | head -1 | tr -d '\r')
 expect "the lobby through nginx" "HTTP/1.1 101 Switching Protocols" "$lobby"
@@ -381,7 +407,7 @@ echo "--- the C# headless client, in the player's namespace, through 80 in clear
 SCENARIOS=(play resume coldresume badticket lifecycle lobby duel walkover guest replaced badsession phrase
            decline party prediction)
 ip netns exec player env HOME=/tmp MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=/check-mono/lib/mono/unityjit \
-    /check-mono/bin/mono /check/headless/Backend.Client.Headless.exe "http://$PUB" --lobby "ws://$PUB/lobby" \
+    /check-mono/bin/mono /check/headless/Backend.Client.Headless.exe "http://$PUB" --account "http://$PUB/account" --lobby "ws://$PUB/lobby" \
     "${SCENARIOS[@]}" > "$L/headless.log" 2>&1
 rc=$?
 grep -E '^--- |FAIL|PASSED|FAILED' "$L/headless.log" | sed 's/^/      /' | tail -30
@@ -408,22 +434,26 @@ other=$(cat "$L/arena-a1.log" "$L/b-arena.log" | grep 'joined from ' | grep -v '
     && ok "the arenas know the player's address: $a joins on a1, $b on b1, each from 198.51.100.7 (D-115)" \
     || fail "the player's address in the arenas: $a joins on a1, $b on b1 from it; ${other:-none} otherwise"
 ACCESS=/var/log/backend-nginx/access.log
-for up in 10.0.0.1:8080 10.0.0.2:8080 10.0.0.1:8090 10.0.0.2:8090; do
+for up in 10.0.0.1:8080 10.0.0.2:8080 10.0.0.1:8090 10.0.0.2:8090 10.0.0.1:8070 10.0.0.2:8070; do
     grep -q " $up\( \|,\)" "$ACCESS" && ok "nginx sent requests to $up" || fail "no request went to $up"
 done
-grep -q '10\.0\.0\.3:80[89]0, ' "$ACCESS" && ok "C, which runs none, passed over: $(grep -o '10\.0\.0\.3:80[89]0, [0-9.:]*' "$ACCESS" | head -1)" \
+grep -q '10\.0\.0\.3:80[789]0, ' "$ACCESS" && ok "C, which runs none, passed over: $(grep -o '10\.0\.0\.3:80[789]0, [0-9.:]*' "$ACCESS" | head -1)" \
     || fail "nothing shows C passed over"
+# The platform counts guests made and their logins alone since D-117, a minute a window: one made now, as the player.
+curlp -o /dev/null -X POST "https://$PUB/v1/guests"
 keys=$(printf 'AUTH %s\nSCAN 0 MATCH rl:login:addr:* COUNT 10000\n' "$STOREPW" \
     | JAVA_HOME="$R/runtime" "$R/jredis/bin/j-redis-cli" --raw -h 127.0.0.1 -p 6379 2> /dev/null | grep '^rl:login:addr:' | sort -u)
 echo "$keys" | sed 's/^/      /'
 [ -n "$keys" ] && ! grep -q 'rl:login:addr:10\.0\.0\.' <<< "$keys" && grep -q 'rl:login:addr:198\.51\.100\.7:' <<< "$keys" \
     && ok "the platforms counted the player's own address, not the front's" || fail "the login limits counted: $keys"
+counted=$("$R/mysql/bin/mysql" -S /run/backend-mysql/mysqld.sock -u root -N -e "SELECT DISTINCT k FROM account.attempt WHERE k LIKE 'a:%'")
+echo "$counted" | sed 's/^/      /'
+grep -qx 'a:198\.51\.100\.7' <<< "$counted" && ! grep -q '^a:10\.0\.0\.' <<< "$counted" \
+    && ok "the account services counted the player's own address, not the front's" || fail "the account service's limits counted: $counted"
 
-echo "--- A's platform stopped: nginx passes it over"
-pkill -f 'com.backend.platform.PlatformMain 10.0.0.1 ' ; sleep 2
-code=$(curlp -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
-    -d '{"username":"portcheckz","password":"port-check-z"}' "https://$PUB/v1/accounts")
-expect "a registration with A's platform down" 201 "$code"
+echo "--- A's platform and account service stopped: nginx passes them over"
+pkill -f 'com.backend.platform.PlatformMain 10.0.0.1 ' ; kill "$ACCOUNT_A"; sleep 2     # B's has the same command line
+expect "a sign-up and its token taken with A's down: B's" "201 200" "$(signup portcheckz)"
 
 echo "--- after a restart of firewalld, the rules still hold:"
 systemctl restart firewalld
@@ -443,8 +473,8 @@ for m in B C; do
     block "$m" > "$L/firewall-$m.sh"
     bash "$L/firewall-$m.sh" 2>&1 | sort | uniq -c | sed 's/^/      /'
     case $m in
-        B) want_src="10.0.0.1 10.0.0.3"; want_ports="6379/tcp 6380/tcp 8080/tcp 8090/tcp 9011-9013/tcp" ;;
-        C) want_src="10.0.0.1 10.0.0.2"; want_ports="6380/tcp 3306/tcp 8080/tcp 8090/tcp 9011-9012/tcp" ;;
+        B) want_src="10.0.0.1 10.0.0.3"; want_ports="6379/tcp 6380/tcp 8070/tcp 8080/tcp 8090/tcp 9011-9013/tcp" ;;
+        C) want_src="10.0.0.1 10.0.0.2"; want_ports="6380/tcp 3306/tcp 8070/tcp 8080/tcp 8090/tcp 9011-9012/tcp" ;;
     esac
     expect "$m: the backend zone's sources" "$(words $want_src)" "$(words $(firewall-cmd --zone=backend --list-sources))"
     expect "$m: its ports" "$(words $want_ports)" "$(words $(firewall-cmd --zone=backend --list-ports))"

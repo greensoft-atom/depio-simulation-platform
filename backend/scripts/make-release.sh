@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds a release directory: one lib/ per process type, the Java runtime they run on, the j-redis
-# store, MySQL and nginx, the units, their configuration and the example settings
+# store, the account service (account/, D-117), MySQL and nginx, the units, their configuration and the example settings
 # (docs/detailed-design/09 §4, docs/operations/01-deploy.md §7).
 #
 #   scripts/make-release.sh            -> target/release/backend-<version>/ and a .tar.gz
@@ -20,6 +20,7 @@ MVN=${MVN:-mvn}
 VENDOR=$(cd ../vendor && pwd)
 JDK=${JDK:-$VENDOR/jdk-21}
 JREDIS_SRC=$(cd ../j-redis-service && pwd)
+ACCOUNT_SRC=$(cd ../account-service && pwd)
 # The project's own <version>, the first one in the root pom (the parent block has none).
 VERSION=$(sed -n 's:^  <version>\(.*\)</version>$:\1:p' pom.xml | head -1)
 [ -n "$VERSION" ] || { echo "could not read the version from pom.xml" >&2; exit 1; }
@@ -27,6 +28,9 @@ OUT=target/release/backend-$VERSION
 
 # The store first: the backend builds against its client, and the release carries its server.
 (cd "$JREDIS_SRC" && $MVN -q -o -DskipTests clean install)    # clean, as the backend's below (O-84)
+# The account service (10 §6.1): a project of its own, its jar and its runtime libraries in target/lib.
+(cd "$ACCOUNT_SRC" && $MVN -q -o -DskipTests clean package)
+ACCOUNT_VERSION=$(sed -n 's:^  <version>\(.*\)</version>$:\1:p' "$ACCOUNT_SRC/pom.xml" | head -1)
 # Clean first: a file deleted from the sources, such as a migration replaced by the baseline (D-75),
 # would otherwise stay in target/classes and ship. Clean empties target/, the release's own folder too.
 $MVN -q -o -DskipTests clean install
@@ -47,6 +51,10 @@ for m in server cli tools; do
 done
 cp "$JREDIS_SRC/dist/conf/j-redis.conf" "$OUT/jredis/conf/"
 
+# The account service: its jar and its libraries, one lib/ of its own.
+mkdir -p "$OUT/account/lib"
+cp "$ACCOUNT_SRC/target/account-service-$ACCOUNT_VERSION.jar" "$ACCOUNT_SRC"/target/lib/*.jar "$OUT/account/lib/"
+
 # The runtime (09 §4.1): java.se, every java.* module, and the jdk.* ones the processes use:
 # jdk.httpserver (the platform's API and every metrics endpoint), jdk.unsupported (Netty, JCTools),
 # jdk.jfr, jdk.net (socket options), jdk.crypto.ec (the curves TLS negotiates, which no static
@@ -55,8 +63,8 @@ cp "$JREDIS_SRC/dist/conf/j-redis.conf" "$OUT/jredis/conf/"
 # optional requirements are absent (Netty's codec-marshalling's JBoss Marshalling), so jdeps cannot
 # resolve them; it reads our own jars, and anything they use outside this list stops the release.
 modules=java.se,jdk.httpserver,jdk.unsupported,jdk.jfr,jdk.net,jdk.crypto.ec,jdk.jcmd,jdk.management,jdk.management.agent
-for dir in "$OUT"/lib/* "$OUT/jredis/lib"; do
-    own=$(ls "$dir"/*.jar | grep -E "/(arena|platform|worker|gateway|common|handoff|persistence|protocol|sim)-$VERSION\.jar$|/j-redis-" || true)
+for dir in "$OUT"/lib/* "$OUT/jredis/lib" "$OUT/account/lib"; do
+    own=$(ls "$dir"/*.jar | grep -E "/(arena|platform|worker|gateway|common|handoff|persistence|protocol|sim)-$VERSION\.jar$|/j-redis-|/account-service-$ACCOUNT_VERSION\.jar$" || true)
     used=$("$JDK/bin/jdeps" -q --multi-release 21 --ignore-missing-deps --print-module-deps \
                --class-path "$dir/*" $own)
     for m in ${used//,/ }; do
@@ -84,7 +92,7 @@ cp scripts/backup-mysql.sh scripts/backup-store.sh scripts/binlog-stream.sh \
     scripts/restore-drill.sh scripts/store-restore-drill.sh scripts/install-certificate.sh \
     scripts/promote-store.sh scripts/promote-mysql.sh scripts/record-backup.sh scripts/restore-proof.sh \
     scripts/backup-offsite.sh scripts/fetch-offsite.sh scripts/private-ca.sh scripts/rotate-nginx-logs.sh \
-    scripts/check-bind.sh "$OUT/scripts/"
+    scripts/check-bind.sh "$ACCOUNT_SRC/scripts/account-key.sh" "$OUT/scripts/"
 # No link in the release (D-106): a copy that does not keep links leaves a text file in each one's place. jlink
 # makes the runtime's legal/ of them; each becomes the file it names.
 find "$OUT" -type l | while read -r l; do cp -p --remove-destination "$(readlink -f "$l")" "$l"; done
@@ -97,6 +105,7 @@ c=$(git describe --always --dirty --abbrev=40 2>/dev/null) && echo "$c" > "$OUT/
     echo
     echo "- backend $VERSION, commit $(cat "$OUT/COMMIT" 2>/dev/null || echo unknown)"
     echo "- j-redis $(basename "$JREDIS_SRC"/j-redis-server/target/j-redis-server-*-all.jar | sed 's/j-redis-server-\(.*\)-all.jar/\1/')"
+    echo "- the account service $ACCOUNT_VERSION, $(ls "$OUT/account/lib" | wc -l) jars"
     echo "- runtime: $("$OUT/runtime/bin/java" -version 2>&1 | head -1), modules $modules"
 } > "$OUT/VERSIONS.md"
 tar -C target/release -czf "target/release/backend-$VERSION.tar.gz" "backend-$VERSION"
@@ -104,4 +113,5 @@ echo "release: $OUT"
 for process in arena platform worker gateway; do
     printf '  lib/%-9s %3d jars\n' "$process" "$(ls "$OUT/lib/$process" | wc -l)"
 done
-du -sh "$OUT/runtime" "$OUT/mysql" "$OUT/nginx" "$OUT/jredis" | sed 's/^/  /'
+printf '  %-13s %3d jars\n' account/lib "$(ls "$OUT/account/lib" | wc -l)"
+du -sh "$OUT/runtime" "$OUT/mysql" "$OUT/nginx" "$OUT/jredis" "$OUT/account" | sed 's/^/  /'

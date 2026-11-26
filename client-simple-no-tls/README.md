@@ -357,7 +357,7 @@ with `NO_TLS=1`. Nothing ran inside the Unity editor or on a phone.
   - through nginx run plain (`FRONT=plain`);
   - straight to the processes (no `FRONT`).
 
-  Each way: the account service, reached straight until the site routes it (D-117), and the API; the lobby (kept open 125 s by its heartbeat, then replaced by a second connection); a match
+  Each way: the account service (D-117), through nginx's `/account` behind a `FRONT`, and the API; the lobby (kept open 125 s by its heartbeat, then replaced by a second connection); a match
   (snapshots while sending inputs, a Pong, the app paused and back, a lost connection resumed, `Leave`); and every
   lobby and match callback on the thread that calls `Update()`.
 

@@ -3,9 +3,10 @@
 # Hat's UBI 9 init image, systemd its first process, with a release (read-only) and this repository's
 # deploy/; installs as docs/operations/01-deploy.md §7 and §9 say (the users, the units, the
 # database's configuration from its example, initialised as its header says), then starts
-# backend-mysql, backend-store@session, backend-platform, backend-gateway, backend-worker@c1,
-# backend-arena@a1 and backend-nginx, as one machine's front (D-82): registers an account through nginx
-# over HTTPS, opens a match connection through its 9001 to the arena, asks 80 for the API's health and the
+# backend-mysql, backend-store@session, backend-account, backend-platform, backend-gateway, backend-worker@c1,
+# backend-arena@a1 and backend-nginx, as one machine's front (D-82): signs an account up at the account service
+# through nginx over HTTPS and takes its access token for a session (D-117), finds its key set not routed, opens a
+# match connection through its 9001 to the arena, asks 80 for the API's health and the
 # arena by name, in clear (D-115), reloads nginx, and stops them
 # all. The secrets are in the settings files (D-102), and an arena of its own TLS takes its keystore from
 # this repository's install-certificate.sh. Smaller heaps than production's, by a drop-in: this is a
@@ -42,7 +43,7 @@ R=/opt/backend
 echo "--- $(cat /etc/redhat-release), systemd $(systemctl --version | head -1 | awk '{print $2}')"
 
 echo "--- users and files, as the deploy document says"
-for u in backend nginx jredis; do useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin "$u"; done
+for u in backend backend-account nginx jredis; do useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin "$u"; done
 useradd --system --home-dir /var/lib/backend-mysql --shell /usr/sbin/nologin mysql
 cp /deploy/systemd/*.service /deploy/systemd/*.timer /etc/systemd/system/
 mkdir -p /etc/backend/mysql /etc/backend/nginx /etc/backend/tls /etc/backend/credentials
@@ -59,7 +60,7 @@ systemctl daemon-reload
 
 # Production's heaps add up to about 13 GB, more than a check may take: every Java unit gets smaller
 # ones by a drop-in (_JAVA_OPTIONS is read after the command line, so it wins), for this check only.
-for u in backend-platform backend-gateway backend-worker@ backend-arena@ backend-store@; do
+for u in backend-account backend-platform backend-gateway backend-worker@ backend-arena@ backend-store@; do
     mkdir -p "/etc/systemd/system/$u.service.d"
     printf '[Service]\nEnvironment="_JAVA_OPTIONS=-Xms256m -Xmx768m -XX:-AlwaysPreTouch"\n' \
         > "/etc/systemd/system/$u.service.d/check-heap.conf"
@@ -71,7 +72,9 @@ systemctl start backend-mysql
 active backend-mysql && ok "active (Type=notify): $($R/mysql/bin/mysql -S /run/backend-mysql/mysqld.sock -u root -N -e 'SELECT VERSION()')" \
     || { bad "backend-mysql"; journalctl -u backend-mysql --no-pager | tail -8; }
 $R/mysql/bin/mysql -S /run/backend-mysql/mysqld.sock -u root -e "CREATE DATABASE backend;
-    CREATE USER backend@'127.0.0.1' IDENTIFIED BY 'db-secret-1f3a'; GRANT ALL ON backend.* TO backend@'127.0.0.1'"
+    CREATE USER backend@'127.0.0.1' IDENTIFIED BY 'db-secret-1f3a'; GRANT ALL ON backend.* TO backend@'127.0.0.1';
+    CREATE DATABASE account; CREATE USER account@'127.0.0.1' IDENTIFIED BY 'acct-secret-5e8b';
+    GRANT ALL ON account.* TO account@'127.0.0.1'"
 
 echo "--- backend-store@session"
 sed -e 's#^dir .*#dir /var/lib/backend-store/session#' -e 's/^requirepass .*/requirepass store-secret-7c2e/' \
@@ -82,6 +85,26 @@ active backend-store@session 30 && sleep 3 && [ "$(systemctl is-active backend-s
     && ok "active, on the release's runtime, data in $(stat -c '%U %a' /var/lib/backend-store/session)" \
     || { bad "backend-store@session"; journalctl -u backend-store@session --no-pager | tail -8; }
 
+echo "--- backend-account (D-117)"
+# Its signing key by the release's script, the line written into its settings file, as the install does (10 §6.1).
+{ cat <<EOF
+ACCOUNT_BIND=127.0.0.1
+ACCOUNT_PORT=8070
+ACCOUNT_DB_URL=jdbc:mysql://127.0.0.1:3306/account?useSSL=false&allowPublicKeyRetrieval=true
+ACCOUNT_DB_USER=account
+ACCOUNT_ISSUER=https://127.0.0.1/account
+ACCOUNT_EVENTS_URL=http://127.0.0.1:8080/v1/account-events
+ACCOUNT_METRICS_ADDR=127.0.0.1:9104
+ACCOUNT_DB_PASSWORD=acct-secret-5e8b
+EOF
+  $R/scripts/account-key.sh | grep '^ACCOUNT_SIGNING_KEY='; } > /etc/backend/account.env
+chmod 0600 /etc/backend/account.env
+systemctl daemon-reload
+systemctl start backend-account
+for i in $(seq 90); do curl -s -o /dev/null http://127.0.0.1:8070/v1/health && break; sleep 1; done
+curl -s -o /dev/null http://127.0.0.1:8070/v1/health && ok "active and serving as $(ps -o user= -p "$(systemctl show -p MainPID --value backend-account)"), migrated at its start" \
+    || { bad "backend-account"; journalctl -u backend-account --no-pager | tail -12; }
+
 echo "--- backend-platform"
 cat > /etc/backend/platform.env <<EOF
 PLATFORM_BIND=127.0.0.1
@@ -90,6 +113,8 @@ STORE_HOST=127.0.0.1
 STORE_PORT=6379
 BACKEND_DB_URL=jdbc:mysql://127.0.0.1:3306/backend?useSSL=false&allowPublicKeyRetrieval=true
 BACKEND_DB_USER=backend
+BACKEND_ACCOUNT_ISSUER=https://127.0.0.1/account
+BACKEND_ACCOUNT_JWKS_URL=http://127.0.0.1:8070/.well-known/jwks.json
 BACKEND_PAYMENT_PROVIDER=simulated
 BACKEND_METRICS_ADDR=127.0.0.1:9101
 BACKEND_ADMIN_ADDR=127.0.0.1:9120
@@ -156,9 +181,10 @@ named=$(grep -lE 'LoadCredential|%d/' /etc/systemd/system/backend-*.service /etc
 [ -z "$named" ] && ok "no unit or drop-in has LoadCredential= or %d" || bad "a credential still named in: $named"
 loose=$(for f in /etc/backend/*.env; do [ "$(stat -c '%U %G %a' "$f")" = "root root 600" ] || echo "$f $(stat -c '%U:%G %a' "$f")"; done)
 [ -z "$loose" ] && ok "every settings file root's alone, 0600: $(ls /etc/backend/*.env | wc -l)" || bad "settings files others may read: $loose"
-shown=$(for u in backend-platform backend-gateway backend-worker@c1 backend-arena@a1; do
-    systemctl show "$u" | grep -qE 'db-secret|store-secret|admin-secret' && echo "$u"; done)
-[ -z "$shown" ] && ok "systemctl show prints no secret of the four" || bad "systemctl show prints a secret of: $shown"
+KEY=$(sed -n 's/^ACCOUNT_SIGNING_KEY=//p' /etc/backend/account.env | cut -c1-40)
+shown=$(for u in backend-account backend-platform backend-gateway backend-worker@c1 backend-arena@a1; do
+    systemctl show "$u" | grep -qE "db-secret|store-secret|admin-secret|acct-secret|$KEY" && echo "$u"; done)
+[ -z "$shown" ] && ok "systemctl show prints no secret of the five, the signing key's neither" || bad "systemctl show prints a secret of: $shown"
 pid=$(systemctl show -p MainPID --value backend-platform)
 runuser -u nobody -- cat "/proc/$pid/environ" > /dev/null 2>&1 && bad "another user reads the platform's environment" \
     || ok "another user reads neither the platform's environment ($(stat -c '%U %a' "/proc/$pid/environ")) nor its file: $(runuser -u nobody -- cat /etc/backend/platform.env 2>&1 | head -1)"
@@ -168,6 +194,7 @@ cp /deploy/nginx/*.conf /etc/backend/nginx/
 # One machine, as the install guide's §9 makes it: this machine's platform, gateway and arena, on loopback.
 printf '%s\n' 'upstream backend_gateway {' '    least_conn;' '    server 127.0.0.1:8090;' '}' \
     'upstream backend_platform {' '    server 127.0.0.1:8080;' '    keepalive 32;' '    keepalive_timeout 20s;' '}' \
+    'upstream backend_account {' '    server 127.0.0.1:8070;' '    keepalive 32;' '    keepalive_timeout 20s;' '}' \
     > /etc/backend/nginx/backend-upstreams.conf
 printf '%s\n' 'a1.arena.internal  127.0.0.1:9011;' > /etc/backend/nginx/backend-arenas.conf
 # The certificate from a root of its own, for this machine's address and the arena's name (06 §2, §3).
@@ -179,9 +206,15 @@ systemctl start backend-nginx
 active backend-nginx 20 && ok "active, workers as $(ps -o user= -C nginx 2>/dev/null | sort -u | tr '\n' ' ')" \
     || { bad "backend-nginx"; journalctl -u backend-nginx --no-pager | tail -8; }
 code=$(curl -s --cacert /tmp/ca/ca.pem -o /tmp/reg -w "%{http_code}" -X POST \
-    -H 'Content-Type: application/json' -d '{"username":"unitsnine","password":"hunter2-hunter2"}' https://127.0.0.1/v1/accounts)
-[ "$code" = 201 ] && ok "a registration through nginx over HTTPS, its root trusted alone: 201" \
-    || bad "a registration through nginx: $code $(head -c 200 /tmp/reg)"
+    -H 'Content-Type: application/json' -d '{"username":"unitsnine","password":"hunter2-hunter2"}' https://127.0.0.1/account/v1/accounts)
+[ "$code" = 201 ] && ok "a sign-up at the account service through nginx over HTTPS, its root trusted alone: 201" \
+    || bad "a sign-up through nginx: $code $(head -c 200 /tmp/reg)"
+code=$(curl -s --cacert /tmp/ca/ca.pem -o /tmp/session -w "%{http_code}" -X POST -H 'Content-Type: application/json' \
+    -d "{\"accessToken\":\"$(sed -E 's/.*"access_token":"([^"]+)".*/\1/' /tmp/reg)\"}" https://127.0.0.1/v1/sessions)
+[ "$code" = 200 ] && grep -q '"newPlayer":true' /tmp/session && ok "its access token taken by the platform through nginx: 200, the player made" \
+    || bad "the exchange through nginx: $code $(head -c 200 /tmp/session)"
+code=$(curl -s --cacert /tmp/ca/ca.pem -o /dev/null -w "%{http_code}" https://127.0.0.1/account/.well-known/jwks.json)
+[ "$code" = 404 ] && ok "the account service's key set not routed: 404" || bad "the key set through nginx: $code"
 # 80 in clear (D-115): the API, and a match asking for its arena by name, which the arena answers 101.
 code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" http://127.0.0.1/v1/health)
 [ "$code" = 200 ] && ok "80 in clear: the API's health, 200" || bad "80 in clear: the API's health, $code"
@@ -233,12 +266,18 @@ done
 systemctl stop backend-arena@a2
 
 echo "--- operations/07 as written: reloads, restarts, patterns"
-register() {   # register <name>: the registration's status through nginx, retried for 15 s
-    local code
+register() {   # register <name>: signed up at the account service and its token taken, through nginx: the session's status, retried for 15 s
+    local code access
     for _ in $(seq 15); do
+        access=$(curl -s --cacert /tmp/ca/ca.pem -X POST -H 'Content-Type: application/json' \
+            -d "{\"username\":\"$1\",\"password\":\"hunter2-hunter2\"}" https://127.0.0.1/account/v1/accounts \
+            | sed -n -E 's/.*"access_token":"([^"]+)".*/\1/p')
+        [ -n "$access" ] || access=$(curl -s --cacert /tmp/ca/ca.pem -X POST -H 'Content-Type: application/json' \
+            -d "{\"username\":\"$1\",\"password\":\"hunter2-hunter2\"}" https://127.0.0.1/account/v1/sessions \
+            | sed -n -E 's/.*"access_token":"([^"]+)".*/\1/p')
         code=$(curl -s --cacert /tmp/ca/ca.pem -o /dev/null -w "%{http_code}" -X POST -H 'Content-Type: application/json' \
-            -d "{\"username\":\"$1\",\"password\":\"hunter2-hunter2\"}" https://127.0.0.1/v1/accounts)
-        [ "$code" = 201 ] && break
+            -d "{\"accessToken\":\"$access\"}" https://127.0.0.1/v1/sessions)
+        [ "$code" = 200 ] && break
         sleep 1
     done
     echo "$code"
@@ -247,17 +286,18 @@ cp /etc/backend/nginx/backend-upstreams.conf /tmp/upstreams.good
 echo 'upstream broken {' >> /etc/backend/nginx/backend-upstreams.conf
 if systemctl reload backend-nginx 2> /dev/null; then bad "nginx reloaded a configuration it cannot read"
 else ok "a broken configuration: the reload refused"; fi
-[ "$(systemctl is-active backend-nginx)" = active ] && [ "$(register unitsseven1)" = 201 ] \
-    && ok "and the old one still serving: a registration, 201" || bad "nginx after a refused reload"
+[ "$(systemctl is-active backend-nginx)" = active ] && [ "$(register unitsseven1)" = 200 ] \
+    && ok "and the old one still serving: a sign-up and a session, 200" || bad "nginx after a refused reload"
 cp /tmp/upstreams.good /etc/backend/nginx/backend-upstreams.conf
 systemctl reload backend-nginx && ok "the configuration put back, reloaded" || bad "the reload after the fix"
 systemctl restart backend-mysql
 code=$(register unitsseven2)
-[ "$code" = 201 ] && [ "$(systemctl is-active backend-platform)" = active ] \
-    && ok "MySQL restarted alone: the platform, not restarted, registers again: $code" || bad "after MySQL's restart: $code"
+[ "$code" = 200 ] && [ "$(systemctl is-active backend-platform)" = active ] && [ "$(systemctl is-active backend-account)" = active ] \
+    && ok "MySQL restarted alone: the account service and the platform, not restarted, sign up and take a session again: $code" \
+    || bad "after MySQL's restart: $code"
 systemctl restart backend-store@session
 code=$(register unitsseven3)
-[ "$code" = 201 ] && ok "the store restarted alone: a registration, $code" || bad "after the store's restart: $code"
+[ "$code" = 200 ] && ok "the store restarted alone: a sign-up and a session, $code" || bad "after the store's restart: $code"
 systemctl stop 'backend-arena@*' 'backend-worker@*'
 [ "$(systemctl is-active backend-arena@a1)" != active ] && [ "$(systemctl is-active backend-worker@c1)" != active ] \
     && ok "a pattern stops what runs: the arena and the worker stopped" || bad "the stop by pattern"
@@ -295,15 +335,15 @@ else
     bad "backend-nginx-logs"; journalctl -u backend-nginx-logs --no-pager | tail -6
 fi
 rotated=$(ls /var/log/backend-nginx/access.log.*Z.gz 2> /dev/null | grep -v 20261004 | head -1)
-[ -n "$rotated" ] && zcat "$rotated" | grep -q 'POST /v1/accounts' && ok "access.log renamed, compressed, the registrations in it" \
+[ -n "$rotated" ] && zcat "$rotated" | grep -q 'POST /account/v1/accounts' && ok "access.log renamed, compressed, the sign-ups in it" \
     || bad "no rotated access.log: $(ls /var/log/backend-nginx | paste -sd ' ')"
 [ -e /var/log/backend-nginx/access.log.20261004T000500Z.gz ] && bad "a rotated file past KEEP_DAYS kept" || ok "one past KEEP_DAYS deleted"
-[ "$(register unitslogs)" = 201 ] && sleep 1 && grep -q 'POST /v1/accounts' /var/log/backend-nginx/access.log \
+[ "$(register unitslogs)" = 200 ] && sleep 1 && grep -q 'POST /account/v1/accounts' /var/log/backend-nginx/access.log \
     && ok "the workers, as $(stat -c %U /var/log/backend-nginx/access.log), write the fresh access.log after the reopen" \
     || bad "the fresh access.log after the reopen: $(ls -la /var/log/backend-nginx/access.log 2>&1) $(tail -2 /var/log/backend-nginx/error.log)"
 
 echo "--- stopping"
-for u in backend-nginx backend-arena@a1 backend-worker@c1 backend-gateway backend-platform backend-store@session backend-mysql; do
+for u in backend-nginx backend-arena@a1 backend-worker@c1 backend-gateway backend-platform backend-account backend-store@session backend-mysql; do
     systemctl stop "$u"; s=$(systemctl show -p Result --value "$u"); [ "$s" = success ] && ok "$u stopped: $s" || bad "$u stopped: $s"
 done
 echo "--- $FAILS failed"

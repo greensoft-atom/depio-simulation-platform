@@ -253,7 +253,7 @@ A **run by hand** is the whole backend on this machine, from the release, each s
 It runs:
 1. the development MySQL;
 2. j-redis, the store;
-3. the account service (D-117), from its own build until the release carries it, on 8083, against `account_dev`;
+3. the account service (D-117), from its own build, as j-redis is, on 8083, against `account_dev`;
 4. the backend: the platform, a worker, the gateway and an arena, on the release's own runtime, against
    `backend_dev`, the platform taking the account service's tokens;
 5. the release's nginx in front of them, on the site's ports (§5.0).
@@ -296,7 +296,7 @@ each check (`--` for a check it cannot make), and exits with 1 on a failure:
 |---|---|
 | `dev-mysql.sh` | the `backend` user logs in over TCP to both databases; `backend_dev`'s schema version |
 | `dev-jredis.sh` | `PING`, then a key of its own set, read and deleted |
-| `dev-backend.sh` | the four processes running; nginx running, the same way as the command (TLS or plain); the account service answering; and two bots through nginx: signed in at the account service, a session, the lobby, a ticket, five seconds played, and left |
+| `dev-backend.sh` | the four processes running; nginx running, the same way as the command (TLS or plain); the account service answering; and two bots through nginx: signed in at the account service (its `/account`), a session, the lobby, a ticket, five seconds played, and left |
 | `dev-nginx.sh` | `nginx -t`; the root certificate is RSA; 80 in clear with the platform behind it; 443's certificate for the address, with the platform behind it; 9001's certificate for the arena's name; and 80's `/match/<the arena's name>`, which the arena answers with 101 (D-115). Plain: `nginx -t` and 80 alone |
 
 **Each script refuses to start without what it needs, and names the script that gives it**: the backend's `start`

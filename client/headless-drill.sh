@@ -1,7 +1,7 @@
 #!/bin/bash
 # The client's core, headless, against the real stack from a release: j-redis, platform, an
-# arena and a worker, on ports of their own, and the account service from its own build (D-117,
-# until the release carries it). Stops everything on the way out (docs 08 §6).
+# arena, a worker and the account service (D-117), on ports of their own. Stops everything on the
+# way out (docs 08 §6).
 #
 #   client/headless-drill.sh [scenario ...]          the client on Unity 2019's Mono, in clear alone (D-116)
 #   DRAIN_AFTER=<s> client/headless-drill.sh duel     stops the arena <s> seconds in: it drains
@@ -76,10 +76,11 @@
 # others. An older release without them: a JDK 21 (/opt/jdk21), j-redis-service built, and
 # /usr/sbin/mysqld. Ports: 6390 j-redis, 8093 platform, 8094 gateway,
 # 9011 arena, 9195 platform's metrics, 9196 platform's admin API, 9197 the arena's metrics,
-# 9198 the gateway's metrics, 9199 the worker's metrics, 8097 the account service: its build,
-# account-service/target (dev-account.sh build), on the development MySQL's account_dev, a key of
-# the drill's own, its issuer http://127.0.0.1:8097; reached straight in every FRONT mode until the
-# site routes it (10 §5.4). Every player the driver makes is an account signed up there.
+# 9198 the gateway's metrics, 9199 the worker's metrics, 8097 the account service: the release's
+# account/ (its build, account-service/target, for a release made before it), on the development
+# MySQL's account_dev, a key of the drill's own, its issuer http://127.0.0.1:8097; with FRONT, the
+# clients reach it through nginx's /account, as a phone does (10 §6.2). Every player the driver makes
+# is an account signed up there.
 set -u
 C="$(cd "$(dirname "$0")" && pwd)"
 B="$(dirname "$C")"
@@ -127,13 +128,19 @@ build_headless "$D/headless" || { echo "DRILL FAILED: the headless client does n
 # The store's jars copied, and the tools' below, and the account service's: a build beside a long drill deletes its
 # target directory, and every sample of the store starts the command-line client afresh (T-31).
 cp "$JREDIS" "$JREDIS_CLI" "$D/"; JREDIS=$D/${JREDIS##*/}; JREDIS_CLI=$D/${JREDIS_CLI##*/}
-ACC_JAR=$(ls "$B"/account-service/target/account-service-*.jar 2> /dev/null | grep -v -- -sources | head -1)
-[ -n "$ACC_JAR" ] && [ -d "$B/account-service/target/lib" ] \
-  || { echo "DRILL FAILED: the account service is not built (./dev-account.sh build)"; exit 1; }
-mkdir -p "$D/account"; cp -r "$ACC_JAR" "$B/account-service/target/lib" "$D/account/"
+# The account service: the release's account/lib, or, from a release made before it, its own build's jar and lib/.
+mkdir -p "$D/account/lib"
+if [ -d "$R/account/lib" ]; then cp "$R"/account/lib/*.jar "$D/account/lib/"
+else
+  ACC_JAR=$(ls "$B"/account-service/target/account-service-*.jar 2> /dev/null | grep -v -- -sources | head -1)
+  [ -n "$ACC_JAR" ] && [ -d "$B/account-service/target/lib" ] \
+    || { echo "DRILL FAILED: the release has no account/, and the account service is not built (./dev-account.sh build)"; exit 1; }
+  cp "$ACC_JAR" "$B"/account-service/target/lib/*.jar "$D/account/lib/"
+fi
 (umask 077 && "$B/account-service/scripts/account-key.sh" | sed -n 's/^ACCOUNT_SIGNING_KEY=//p' > "$D/account/signing.key") \
   && [ -s "$D/account/signing.key" ] || { echo "DRILL FAILED: no signing key for the account service"; exit 1; }
-ACCOUNT=http://127.0.0.1:8097
+# Straight, for the platform's key set, the bots and the probes; the clients' with FRONT is nginx's /account (below).
+ACCOUNT_DIRECT=http://127.0.0.1:8097 ACCOUNT=http://127.0.0.1:8097
 PIDS=()
 # Every background job too, the probe, the soak's loops, the bots and a drain still waiting: a drill ended
 # early left them on, at the next drill's ports (O-80).
@@ -167,7 +174,7 @@ cli() { printf '%s\n' "$@" | $J -jar "$JREDIS_CLI" --raw -p 6390 | sed -E 's/^([
 TLSENV=(); TRUST=()
 API=http://127.0.0.1:8093 LOBBY=ws://127.0.0.1:8094/lobby ARENAENV=() FRONTENV=()
 if [ -n "$FRONT" ]; then
-  FRONTENV=(env NGINX_DIR="$D/nginx" PUBLIC_ADDRESS=127.0.0.1 PLATFORM_PORT=8093 GATEWAY_PORT=8094 ARENA_PORT=9011
+  FRONTENV=(env NGINX_DIR="$D/nginx" PUBLIC_ADDRESS=127.0.0.1 PLATFORM_PORT=8093 GATEWAY_PORT=8094 ACCOUNT_PORT=8097 ARENA_PORT=9011
             ARENA_TLS_NAME=a1.arena.internal NGINX_HTTP_PORT=8095 NGINX_HTTPS_PORT=8096 NGINX_MATCH_PORT=9095
             PLAIN=$([ "$FRONT" = plain ] && echo 1 || echo 0))
   # The arena announces nginx's port; behind the front's TLS, its name too, and it reads nginx's PROXY line (D-105).
@@ -292,7 +299,7 @@ if [ "${WATCH:-0}" = 1 ]; then
              BACKEND_WATCH_MACHINE=drill BACKEND_ALERT_WEBHOOK_URL=http://127.0.0.1:9194/hook)
 fi
 env "${WATCH_ENV[@]}" BACKEND_ADMIN_ADDR=127.0.0.1:9196 BACKEND_ADMIN_TOKEN=drill-admin-secret BACKEND_METRICS_ADDR=127.0.0.1:9195 BACKEND_PAYMENT_PROVIDER=simulated \
-  BACKEND_ACCOUNT_ISSUER=$ACCOUNT BACKEND_ACCOUNT_JWKS_URL=$ACCOUNT/.well-known/jwks.json $J $OPENS -cp "$CONTENT$R/lib/platform/*" com.backend.platform.PlatformMain 127.0.0.1 8093 127.0.0.1 6390 > "$D/platform.log" 2>&1 & PIDS+=($!)
+  BACKEND_ACCOUNT_ISSUER=$ACCOUNT_DIRECT BACKEND_ACCOUNT_JWKS_URL=$ACCOUNT_DIRECT/.well-known/jwks.json $J $OPENS -cp "$CONTENT$R/lib/platform/*" com.backend.platform.PlatformMain 127.0.0.1 8093 127.0.0.1 6390 > "$D/platform.log" 2>&1 & PIDS+=($!)
 BACKEND_METRICS_ADDR=127.0.0.1:9198 $J $OPENS -cp "$R/lib/gateway/*" com.backend.gateway.GatewayMain 127.0.0.1 8094 http://127.0.0.1:8093 127.0.0.1 6390 \
    gateway-drill > "$D/gateway.log" 2>&1 & PIDS+=($!)
 BACKEND_METRICS_ADDR=127.0.0.1:9199 $J $OPENS -cp "$R/lib/worker/*" com.backend.worker.WorkerMain 127.0.0.1 6390 worker-drill > "$D/worker.log" 2>&1 & PIDS+=($!)
@@ -309,13 +316,13 @@ http.server.HTTPServer(("127.0.0.1", 9194), H).serve_forever()' "$D/webhook.log"
 fi
 # The account service (D-117), after the indexed five: its database the development MySQL's account_dev in every mode,
 # its events to this platform.
-ACCOUNT_PORT=8097 ACCOUNT_BIND=127.0.0.1 ACCOUNT_ISSUER=$ACCOUNT ACCOUNT_SIGNING_KEY_FILE="$D/account/signing.key" \
+ACCOUNT_PORT=8097 ACCOUNT_BIND=127.0.0.1 ACCOUNT_ISSUER=$ACCOUNT_DIRECT ACCOUNT_SIGNING_KEY_FILE="$D/account/signing.key" \
   ACCOUNT_DB_URL="jdbc:mysql://127.0.0.1:$DEV_DBPORT/account_dev?useSSL=false&allowPublicKeyRetrieval=true" \
   ACCOUNT_DB_USER=account ACCOUNT_DB_PASSWORD=account-dev-password ACCOUNT_EVENTS_URL=http://127.0.0.1:8093/v1/account-events \
-  $J -cp "$D/account/${ACC_JAR##*/}:$D/account/lib/*" com.backend.account.AccountMain > "$D/account.log" 2>&1 & PIDS+=($!)
+  $J -cp "$D/account/lib/*" com.backend.account.AccountMain > "$D/account.log" 2>&1 & PIDS+=($!)
 for i in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8093/health && break; sleep 1; done
-for i in $(seq 1 60); do [ "$(curl -s -o /dev/null -w '%{http_code}' $ACCOUNT/v1/health)" = 200 ] && break; sleep 1; done
-[ "$(curl -s -o /dev/null -w '%{http_code}' $ACCOUNT/v1/health)" = 200 ] \
+for i in $(seq 1 60); do [ "$(curl -s -o /dev/null -w '%{http_code}' $ACCOUNT_DIRECT/v1/health)" = 200 ] && break; sleep 1; done
+[ "$(curl -s -o /dev/null -w '%{http_code}' $ACCOUNT_DIRECT/v1/health)" = 200 ] \
   || { echo "DRILL FAILED: the account service does not answer after 60 s: $(tail -3 "$D/account.log")"; exit 1; }
 curl -s -o /dev/null http://127.0.0.1:8093/health || { echo "DRILL FAILED: the platform does not answer after 60 s"; exit 1; }
 sleep 3
@@ -324,8 +331,8 @@ for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null || { echo "DRILL FAILED: proc
 if [ -n "$FRONT" ]; then
   NGINX_STARTED=1
   "${FRONTENV[@]}" "$B/dev-nginx.sh" start > "$D/nginx.log" 2>&1 || { cat "$D/nginx.log"; echo "DRILL FAILED: nginx in front"; exit 1; }
-  API=http://127.0.0.1:8095 LOBBY=ws://127.0.0.1:8095/lobby
-  echo "--- through nginx ($FRONT): the API $API, the lobby $LOBBY, matches $([ "$FRONT" = plain ] && echo "127.0.0.1:9095, plain" || echo "through 8095's /match/ by the arena's name")"
+  API=http://127.0.0.1:8095 LOBBY=ws://127.0.0.1:8095/lobby ACCOUNT=http://127.0.0.1:8095/account
+  echo "--- through nginx ($FRONT): the API $API, the account service $ACCOUNT, the lobby $LOBBY, matches $([ "$FRONT" = plain ] && echo "127.0.0.1:9095, plain" || echo "through 8095's /match/ by the arena's name")"
 fi
 if [ "${NEWMAN:-0}" = 1 ]; then
   echo "--- the Postman collection through $API, every HTTP route ($(date +%T))"
@@ -483,7 +490,7 @@ stays() { dbq "$DBPORT" "SELECT COUNT(*), COUNT(DISTINCT mp.player_id) FROM matc
 # A session for a probe: an account signed up at the account service, its access token taken by the platform.
 probe_session() {
   local access
-  access=$(curl -s -X POST -H 'Content-Type: application/json' $ACCOUNT/v1/accounts \
+  access=$(curl -s -X POST -H 'Content-Type: application/json' $ACCOUNT_DIRECT/v1/accounts \
     -d "{\"username\":\"$1\",\"password\":\"hunter2-hunter2\"}" | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
   curl -s -X POST -H 'Content-Type: application/json' http://127.0.0.1:8093/v1/sessions -d "{\"accessToken\":\"$access\"}" \
     | sed -E 's/.*"token":"([^"]+)".*/\1/'
@@ -497,7 +504,7 @@ if [ -n "${BOTS:-}" ]; then
     export BACKEND_BOT_STAYS=${STAYS:-60:300}
     M0=$(dbq "$DBPORT" "SELECT COALESCE(MAX(id), 0) FROM matches")
   fi
-  $J -cp "$TOOLS" com.backend.tools.BotClient "$N" "$SECS" http://127.0.0.1:8093 ws://127.0.0.1:8094/lobby "$ACCOUNT" \
+  $J -cp "$TOOLS" com.backend.tools.BotClient "$N" "$SECS" http://127.0.0.1:8093 ws://127.0.0.1:8094/lobby "$ACCOUNT_DIRECT" \
     > "$D/bots.log" 2>&1 & BOTS_PID=$!
   until grep -q "bots connected" "$D/bots.log" || ! kill -0 $BOTS_PID 2>/dev/null; do sleep 1; done
   # None connected, the run would measure an idle stack and pass (O-80).

@@ -140,6 +140,7 @@ that day:
 | `runtime/` | The Java 21 runtime that every Java process runs on, made by `jlink` from `vendor/jdk-21/jmods` (§4.1) | 63 MB |
 | `lib/{arena,platform,worker,gateway}/` | Each process type's jars, one folder each (24 to 29 jars) | 45 MB |
 | `jredis/` | j-redis's server, client and tools: `bin/` (its launchers, which run on `$JAVA_HOME`), `lib/`, and `conf/j-redis.conf` (the template) | 11 MB |
+| `account/lib/` | the account service's jar and its runtime dependencies (D-117), built from `account-service/` as `jredis/` is from `j-redis-service/`: 14 jars | 17 MB |
 | `mysql/` | `vendor/mysql-8.4/` as committed | 292 MB |
 | `nginx/` | `vendor/nginx-1.30/` as committed: `sbin/nginx`, `conf/mime.types`, `LICENSE`, `BUILD.txt` | 8.5 MB |
 | `systemd/` | the units and timers, from `deploy/systemd/`; they name the paths above | |
@@ -157,8 +158,8 @@ release into a copy of its file (§4.2).
 The scripts in `scripts/` are the ones the backup units, the log rotation and the operators run from
 `/opt/backend/scripts`: `backup-mysql.sh`, `backup-store.sh`, `binlog-stream.sh`, `restore-drill.sh`,
 `store-restore-drill.sh`, `install-certificate.sh`, `promote-store.sh`, `promote-mysql.sh`, `record-backup.sh`,
-`restore-proof.sh`, `backup-offsite.sh`, `fetch-offsite.sh`, `private-ca.sh`, `rotate-nginx-logs.sh` and
-`check-bind.sh`.
+`restore-proof.sh`, `backup-offsite.sh`, `fetch-offsite.sh`, `private-ca.sh`, `rotate-nginx-logs.sh`,
+`check-bind.sh`, and the account service's `account-key.sh`, which makes its signing key (10 §3.4).
 
 The jars go in one folder per process, not one shared folder. The `handoff` module's dependencies are what keep
 the MySQL driver off an arena's classpath, and a shared folder would put it back.
@@ -170,17 +171,17 @@ the MySQL driver off an arena's classpath, and a shared folder would put it back
 | Module | Why it is there |
 |---|---|
 | `java.se` | every `java.*` module except `java.smartcardio` |
-| `jdk.httpserver` | the platform's API and every metrics endpoint |
+| `jdk.httpserver` | the platform's API, the account service's, and every metrics endpoint |
 | `jdk.unsupported` | Netty and JCTools |
 | `jdk.jfr` | flight recordings |
 | `jdk.net` | socket options |
-| `jdk.crypto.ec` | the elliptic curves that TLS negotiates, which no static reading finds |
+| `jdk.crypto.ec` | the elliptic curves that TLS negotiates, and the account service's ES256 signatures and the platform's checks of them (D-117), which no static reading finds |
 | `jdk.jcmd`, `jdk.management`, `jdk.management.agent` | to take a heap dump or a recording from a running process |
 
 **Why named, not computed.** Computing the list was the first design. `jdeps` cannot do it: the libraries are
 explicit modules whose optional requirements are absent (Netty's `codec-marshalling` requires JBoss Marshalling).
-A failure there had left `jdk.httpserver` out, and nobody noticed. So `jdeps` now reads only our own jars, and
-j-redis's. If they use a module outside the list, the release stops with an error. This was mutation-checked:
+A failure there had left `jdk.httpserver` out, and nobody noticed. So `jdeps` now reads only our own jars, j-redis's
+and the account service's. If they use a module outside the list, the release stops with an error. This was mutation-checked:
 without `jdk.httpserver` in the list, the release is refused.
 
 **How it is linked.** `jlink --strip-java-debug-attributes --no-man-pages --no-header-files --compress zip-6`. The

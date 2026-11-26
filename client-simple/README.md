@@ -417,7 +417,7 @@ editor or on a phone. This is what did run:
   alone (D-116): through nginx with nothing encrypted (`FRONT=plain`), and straight to the processes (no `FRONT`).
   Not through nginx as the site runs it (`FRONT=http`): its grants ask for TLS, and this client's TLS is checked
   offline alone.
-  - the account service (reached straight until the site routes it, D-117) and the API over `http://`: health, a sign-up (the same name refused, its `error` read), its
+  - the account service (D-117; behind a `FRONT`, through nginx's `/account`) and the API over `http://`: health, a sign-up (the same name refused, its `error` read), its
     access token taken for a session, a refresh, a token used and refused, a display name changed, a guest, a route
     that does not exist, logged out at both, the refresh token refused after;
   - the lobby: connect, `auth`, `ping`, an error, a seat in the public arena, kept open for 125 s by its heartbeat, a

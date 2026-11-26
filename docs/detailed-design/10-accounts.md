@@ -328,23 +328,78 @@ check takes the account service's address after the API's.
   a 401, and exchanges the access token; `BotClient` takes the account service's address as its fifth argument
   (default `http://127.0.0.1:8083`). Every bot is an account, as a player is, and its Argon2 is the account
   service's.
-- **The drills**: `headless-drill.sh` starts the account service from its build on 8097 (`account_dev`, a key of its
-  own in the drill's directory, the issuer `http://127.0.0.1:8097`, its events to the drill's platform), points the
-  platform at it, and gives its address to the driver, both simple clients' checks, the collection and the bots.
-  Through each `FRONT=` it is reached straight until the site routes it (§6, part (f)); with `MYSQL_FAILOVER`, its
+- **The drills**: `headless-drill.sh` starts the account service from the release's `account/` (§6.1) on 8097
+  (`account_dev`, a key of its own in the drill's directory, the issuer `http://127.0.0.1:8097`, its events to the
+  drill's platform), points the platform at it, and gives its address to the driver, both simple clients' checks,
+  the collection and the bots.
+  Through each `FRONT=` it is reached through nginx's `/account`, as a phone does (§6.2); with `MYSQL_FAILOVER`, its
   database stays on the development MySQL. `dev-backend.sh test` and `bots` sign the bots up at the account service
   run by hand, which `run-local.sh` starts after j-redis and before the backend, and `build-offline.sh` builds.
 
 ## 6. The site
 
-- **nginx**: `location /account/v1/` on 443 and 80, limited as the platform's logins (`backend_auth`), to
-  `upstream backend_account`, each machine's 8070; `/.well-known/jwks.json` is not routed.
-- **The release**: `account/lib/`; `backend-account.service`, user `backend-account`; `account.env.example`;
-  `scripts/account-key.sh`, which makes a signing key with the machine's `openssl` (D-103).
-- **MySQL**: the database `account` and its user; the backups dump and prove both databases, and the runbook's
-  restore makes both.
-- **Ports**: 8070 on the private address (production); 8083 run by hand, its debugger 5010; 8097 in the drills.
-- **Two machines**: the account service is as the platform: on A, and on B for when A is lost, with the same key.
+**Designed for building 2026-11-26, plan item 142 (f)**, built in three commits: the release and nginx; MySQL, its
+backups, the watch and the install guide; and the two machines.
+
+### 6.1 The release
+
+- **`account/lib/`**: the service's jar and its libraries, built by `make-release.sh` from `account-service/` as it
+  builds `j-redis-service/`, offline, before the backend. The runtime's module check (jdeps, 09 §4.1) reads its jar
+  too; it needs nothing beyond the runtime's list.
+- **`backend-account.service`**: user `backend-account`, `EnvironmentFile=/etc/backend/account.env`, the platform's
+  sandbox, restarted on failure but not after exit 2 (a refused setting). Its heap 1 GiB, fixed: the hasher's line
+  at its full eight holds 8 × 19 MiB, about 150 MiB, live; the HTTP server's threads and the pool are small; ZGC
+  wants the heap two to three times what is live.
+- **`account.env.example`**: the settings of §3.1 for machine A, `ACCOUNT_BIND` the private address and
+  `ACCOUNT_PORT` 8070; the issuer the site's, `https://203.0.113.10/account`; the events to every machine's platform,
+  this machine's first; nginx's three addresses trusted; metrics on `127.0.0.1:9104`. Its secrets at its end, the
+  file root's alone (D-102): `ACCOUNT_DB_PASSWORD`, `ACCOUNT_SIGNING_KEY`.
+- **`scripts/account-key.sh`** in the release's `scripts/`: the install writes its line into `account.env`, and the
+  rotation (§3.4) uses it again.
+- **The platform's unit**: its heap note loses Argon2, which is the account service's now.
+- **The drills** run the account service from the release's `account/`, and from its build only for a release made
+  before it.
+
+### 6.2 nginx
+
+- **`upstream backend_account`**: each machine's 8070 on its private address, as `backend_platform`, with its
+  keepalive pool and timeout (the JDK's server, as the platform's).
+- **`location /account/v1/`** on 443 and 80: limited as the logins (`backend_auth`, 2 a second and 30 at once per
+  address), to `backend_account`'s `/v1/`, its read timeout the platform's 15 s (a login may queue for Argon2). Its
+  `/.well-known/jwks.json` is not routed: `location /` answers 404. The account service takes the last
+  `X-Forwarded-For` entry from nginx, by `ACCOUNT_TRUSTED_PROXIES`.
+- **`dev-nginx.sh`** maps `backend_account` to `ACCOUNT_PORT`, and its `test` asks `/account/v1/health` through
+  nginx and finds the key set refused. **The drills** through `FRONT=` reach the account service through nginx's
+  `/account`, as a phone does.
+
+### 6.3 MySQL, the backups and the watch
+
+- **The database `account`** beside `backend` on the same server (and its replica), and the user `account`, with the
+  backend user's grants on its own database alone, over TLS. The install makes both; a password of its own.
+- **The backups**: `backup-mysql.sh` takes the databases as a list (`backend,account`, the default) and dumps each
+  to its own file in one run, recording one outcome, good only if every dump was; `restore-proof.sh` proves each, its
+  own scratch database, and records one outcome the same way. So the alerts stay one series, and a database that
+  failed stops the time they read. Retention keeps each database's own; the binlogs are the server's, both
+  databases' in one series, pruned before the earliest file any kept dump needs.
+- **The runbook's restore** makes both databases, each from its own dump and the binlogs filtered to it.
+- **`promote-mysql.sh`** changes nothing: the account service follows the primary itself, as the backend does
+  (`PrimaryDataSource`).
+- **The watch** scrapes the account service as `account=127.0.0.1:9104`, so `TargetDown` covers it, and
+  `HasherLineFull` reads its `account_hasher_line`.
+
+### 6.4 The two machines
+
+- **On A and on B** (operations/10), as the platform: B's account service connects to A's MySQL, the URL naming
+  both, and follows B's when it is promoted; both have the same signing key, so the platforms take either's tokens,
+  and each machine's platform reads its own machine's key set.
+- **Ports**: 8070 on the private address (production), its metrics 9104 on loopback; 8083 run by hand, its debugger
+  5010; 8097 in the drills.
+
+### 6.5 The checks
+
+`check-release-el9.sh`, `check-units-el9.sh`, `check-certificates.sh` (the key script on OpenSSL 1.1.1 and 3.x),
+`check-ports-el9.sh`, `check-install-guide-el9.sh`, `check-two-machines-el9.sh` and `check-release-guest-el9.sh`
+each install or start the account service with the rest, and each sign-up they make goes through it.
 
 ## 7. Testing
 

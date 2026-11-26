@@ -1,0 +1,58 @@
+# The account service (D-117, docs/detailed-design/10-accounts.md): sign-up, login and the tokens the
+# platforms take. One per machine, as the platform, behind the front's nginx at /account (D-82).
+#
+# Install: see docs/operations/01-deploy.md §7. Settings in /etc/backend/account.env
+# (deploy/env/account.env.example), its secrets with them, the signing key among them, root's alone (D-102).
+# Java is the release's own runtime, /opt/backend/runtime (docs/detailed-design/09 §4.1).
+[Unit]
+Description=backend account service
+# Its database is the release's MySQL, backend-mysql.service, on machine A (and C, its replica);
+# elsewhere an After= on a unit that does not exist orders nothing.
+After=network-online.target backend-mysql.service
+Wants=network-online.target
+
+[Service]
+User=backend-account
+Group=backend-account
+EnvironmentFile=/etc/backend/account.env
+LogsDirectory=backend-account
+# 1 GiB, fixed (10 §6.1): the password hasher's line at its full eight holds 8 x 19 MiB of Argon2's
+# blocks, Java arrays inside the heap; the HTTP server's threads and the pool are small; ZGC wants
+# two to three times what is live.
+# maxIdleConnections sits above nginx's upstream keepalive pool, as the platform's (backend-platform.service).
+ExecStart=/opt/backend/runtime/bin/java -server -Xms1g -Xmx1g \
+    -XX:+UseZGC -XX:+ZGenerational -XX:+AlwaysPreTouch \
+    -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/backend-account \
+    -Xlog:gc*:file=/var/log/backend-account/account-gc.log:time,uptime:filecount=5,filesize=20M \
+    -Dsun.net.httpserver.maxIdleConnections=1000 \
+    -cp /opt/backend/account/lib/* com.backend.account.AccountMain
+Restart=on-failure
+RestartSec=2
+# 2: a setting was refused; restarting cannot fix it (10 §3.1). 143: SIGTERM, clean.
+RestartPreventExitStatus=2
+SuccessExitStatus=143
+LimitNOFILE=65536
+TimeoutStopSec=30
+
+# Sandboxing, as the platform's: nothing here needs more than its log directory and the network.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

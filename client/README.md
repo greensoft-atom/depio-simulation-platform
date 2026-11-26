@@ -169,14 +169,14 @@ its own two ends, at TLS 1.0.
 - The development MySQL (`dev-mysql.sh`, 127.0.0.1:3314). The drill starts it when it is not running, and stops it
   after. The drill uses the databases `backend_dev` and `account_dev`, which a run by hand uses too, so do not run the
   two at once.
-- The account service built (`dev-account.sh build`, D-117): the drill runs it from `account-service/target` on 8097,
-  with a signing key of its own, until the release carries it (plan item 142 (f)).
+- The account service (D-117): the drill runs the release's `account/` on 8097, with a signing key of its own; from a
+  release made before it, its own build (`dev-account.sh build`).
 - With `NEWMAN=1`: `npx`, which runs newman.
 
 **What it runs.** The headless driver, built for the run (`build_headless`, in `unity-env.sh`) and run on Unity's
 Mono with `float32`. It is given the API at `http://127.0.0.1:8093`, `--account http://127.0.0.1:8097` and `--lobby
-ws://127.0.0.1:8094/lobby` (with `FRONT`, nginx's addresses on 8095 for the API and the lobby; the account service is
-reached straight until the site routes it). It also gives the driver the
+ws://127.0.0.1:8094/lobby` (with `FRONT`, nginx's addresses on 8095 for the API, the lobby and the account service, at
+`/account`, as a phone has them). It also gives the driver the
 operator's API and a way to write the drill's fixtures (see [Headless/README.md](Headless/README.md)). With no
 scenario named, it runs `play resume badticket lifecycle`.
 

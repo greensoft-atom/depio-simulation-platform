@@ -37,6 +37,7 @@ The stateful roles come first, because they are the ones that constrain a rollou
 | j-redis `session` primary | A | replica on B |
 | j-redis `events` primary | B | replica on C |
 | nginx, gateway, platform | all three | stateless and interchangeable. nginx is set up on every machine as the front: the one machine the provider forwards the site's public address to ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)) |
+| account service | all three | stateless but for its own database, `account`, on the backend's MySQL; one per machine as the platform, behind the front's nginx at `/account`, the same signing key on each ([D-117](../architecture/03-decision-log.md#d-117--accounts-in-an-account-service-of-their-own-which-issues-signed-tokens-the-backend-takes-once-for-a-session), [10 §6](../detailed-design/10-accounts.md#6-the-site)) |
 | arena | all three | stateful only for the lifetime of a match |
 | worker | C | stateless: what it has in flight stays pending for it in the result stream, and another worker takes it over after a minute |
 | backups: the binlog stream, the dumps, the proofs and their scratch server, the copy off the site | C, the MySQL replica's machine | never on the primary's machine; after a failover they move with the replica ([runbook §2](02-runbook.md#mysql-built-2026-09-29-d-35)) |
@@ -274,15 +275,16 @@ is in the runbook ([02 §2](02-runbook.md#2-stateful-primary-failure)).
 the site has one public address. The provider forwards it to one machine, the front, and that machine's nginx takes
 everything players send:
 
-- **443**, over TLS: the API (`/v1/`) and the lobby (`/lobby`). nginx passes them to the platforms (8080) and
-  gateways (8090) of all three machines, over the private network (`backend-upstreams.conf`). One that fails is
-  passed over.
+- **443**, over TLS: the API (`/v1/`), the account service (`/account/v1/`, D-117) and the lobby (`/lobby`). nginx
+  passes them to the platforms (8080), the account services (8070, their `/v1/`) and the gateways (8090) of all
+  three machines, over the private network (`backend-upstreams.conf`). One that fails is passed over. The account
+  service's key set is not routed: the platforms read it on the private network.
 - **9001**, over TLS: match traffic, by nginx's `stream` module. nginx ends the TLS, and passes the connection in
   plaintext to the arena whose name the TLS handshake gave (the SNI), by the list in `backend-arenas.conf`
   ([05 §3](05-ports-and-firewall.md#3-the-arenas-their-ports-and-their-names)).
 - **80**, in clear, for a client without TLS
   ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)):
-  the same API and lobby as 443, and matches. A match without TLS asks for its arena by name, with
+  the same API, account service and lobby as 443, and matches. A match without TLS asks for its arena by name, with
   `GET /match/<the grant's tlsName>` and an HTTP upgrade. nginx finds the arena in the same `backend-arenas.conf`
   and passes the connection on, as it passes the lobby's WebSocket. What crosses 80 is readable by anyone on the
   way, passwords and tokens included: the owner's choice (Q-64).
@@ -320,8 +322,8 @@ release's nginx on a loopback port, a few seconds), and under systemd's sandbox 
 | File | What it holds |
 |---|---|
 | `nginx.conf` | the main file, which the distribution's package used to bring: the workers, the logs, and the `http` and `stream` blocks |
-| `backend.conf` | the server on 443 (TLS) and on 80 (in clear): the API, the lobby and `/match/`, with `/match/`'s map |
-| `backend-upstreams.conf` | the three machines' platforms and gateways |
+| `backend.conf` | the server on 443 (TLS) and on 80 (in clear): the API, the account service (`/account/v1/`), the lobby and `/match/`, with `/match/`'s map |
+| `backend-upstreams.conf` | the three machines' platforms, account services and gateways |
 | `backend-stream.conf` | match traffic's server on 9001, and its map from the TLS name |
 | `backend-arenas.conf` | the arenas' names and private addresses, the one list both maps include (D-115) |
 | `backend-platform.conf` | the proxy settings that every platform location shares |
@@ -468,18 +470,19 @@ The steps:
    `backend/scripts/check-release-el9.sh` runs a release in RHEL 9's userspace with nothing else installed
    ([09 §7](../detailed-design/09-release-and-packaging.md#7-how-it-is-verified)).
 2. **The users.** `useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin backend`, and the same for
-   `nginx` on every machine, for `jredis` where a store runs, and for `mysql` (with its home
+   `backend-account` (the account service's, D-117) and `nginx` on every machine, for `jredis` where a store runs, and for `mysql` (with its home
    `/var/lib/backend-mysql`) on the database's machines (§9). The backup machine's user, `backend-backup`, is
    §10's.
-3. **Credentials.** `/etc/backend/credentials/`, `root:root 0700`, holding `db-password` and `store-password`, each
-   `0600` (§2, Secrets). These are the values that step 4 writes into the settings files; no process reads this
+3. **Credentials.** `/etc/backend/credentials/`, `root:root 0700`, holding `db-password`, `account-db-password` (the
+   account service's database user's) and `store-password`, each `0600` (§2, Secrets). These are the values that step 4 writes into the settings files; no process reads this
    directory. The install guide also makes MySQL's root password and the backups' there (`mysql-root`,
    `backup-password`, `binlog-password`, `scratch-root`).
-   The processes do read `/etc/backend/tls/`: `platform` and `worker` read the MySQL CA (§9), and the gateway reads
+   The processes do read `/etc/backend/tls/`: `platform`, `worker` and the account service read the MySQL CA (§9), and the gateway reads
    nginx's certificate for its expiry metric (§11). Create it with `install -d -m 0755 /etc/backend/tls`, and keep
    `/etc/backend` traversable by `backend`.
 4. **Settings.** `/etc/backend/<process>.env` from `deploy/env/*.env.example`, every one `root:root 0600`, with the
-   process's secrets at its end (§2, Secrets; D-102).
+   process's secrets at its end (§2, Secrets; D-102). The account service's, `account.env`, ends with its signing key
+   too, the line `scripts/account-key.sh` prints, made once and copied to every machine (10 §6.1).
    - One `arena-<name>.env` per arena instance, each with its own port.
    - One `worker-<id>.env` per worker instance (`worker-instance.env.example`), with its metrics port. It is read
      after `worker.env`, so it wins. A drop-in's `Environment=` would not win, since a file's settings override it
@@ -488,14 +491,15 @@ The steps:
    guide's step 5 does), then run `systemctl daemon-reload` and enable:
    - `backend-store@<name>` where a store runs (§3);
    - `backend-mysql` on A and C (§9);
-   - `backend-platform` and `backend-gateway`;
+   - `backend-account`, `backend-platform` and `backend-gateway`;
    - `backend-worker@<id>` and `backend-arena@<name>`, each id and name unique across the fleet, and stable (§2).
 
    Pin each arena to its own cores with a drop-in (`CPUAffinity=`), since the core ranges belong to the machine.
    The backup machine's units and timers are §10's.
 6. **nginx and the certificate.** Copy the release's `nginx-conf/*.conf` into `/etc/backend/nginx/`, the same on
    every machine. Then set this site's addresses: the site's public address in `backend.conf`'s `server_name`, the
-   three machines' private addresses in `backend-upstreams.conf`, and each arena's name and private address in
+   three machines' private addresses in `backend-upstreams.conf` (the platforms, the account services and the
+   gateways), and each arena's name and private address in
    `backend-arenas.conf` (D-82, D-115, [05 §3](05-ports-and-firewall.md#3-the-arenas-their-ports-and-their-names)).
    Then install the certificate, by §11 and [06](06-certificates.md). Enable `backend-nginx`, and
    `backend-nginx-logs.timer`, which rotates its logs nightly (§4).
@@ -779,6 +783,11 @@ were checked by applying the migrations of the time (V1 to V3) from empty, not y
 CREATE DATABASE backend;
 CREATE USER 'backend'@'10.0.0.%' IDENTIFIED BY '…' REQUIRE SSL;
 GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON backend.* TO 'backend'@'10.0.0.%';
+
+-- the account service's own (D-117, 10 §6.3): the same grants, on its database alone; Flyway runs as it too
+CREATE DATABASE account;
+CREATE USER 'account'@'10.0.0.%' IDENTIFIED BY '…' REQUIRE SSL;
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES ON account.* TO 'account'@'10.0.0.%';
 
 -- both from the backup machine (§10), never from the database's own
 CREATE USER 'backup'@'10.0.0.%' IDENTIFIED BY '…' REQUIRE SSL;

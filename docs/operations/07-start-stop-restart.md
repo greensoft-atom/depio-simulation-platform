@@ -25,6 +25,7 @@ and its arenas are `a1`, `a2` and `a3`.
 | `backend-scratch-mysql` | the backups' scratch MySQL, which the restore proofs use | C | `/etc/backend/scratch-my.cnf` | restart | up to 10 min |
 | `backend-store@session` | j-redis `session` | A (primary), B (replica) | `/etc/backend/store-session.conf`, `.env` | restart | up to 60 s |
 | `backend-store@events` | j-redis `events` | B (primary), C (replica) | `/etc/backend/store-events.conf`, `.env` | restart | up to 60 s |
+| `backend-account` | the account service (D-117): sign-up, login, the tokens | every one | `/etc/backend/account.env` | restart | up to 30 s |
 | `backend-platform` | the API, and the watch ([08](08-monitoring.md)) | every one | `/etc/backend/platform.env` | restart | up to 30 s |
 | `backend-gateway` | the lobby | every one | `/etc/backend/gateway.env` | restart | up to 30 s |
 | `backend-worker@c1`, `@c2` | the workers | C | `/etc/backend/worker.env`, `worker-<id>.env` | restart | up to 30 s |
@@ -180,7 +181,7 @@ Tell the players a few minutes before, with a notice from the admin API
 the units that are running, so a pattern works for stopping:
 
 ```bash
-systemctl stop 'backend-arena@*' backend-gateway backend-platform 'backend-worker@*'
+systemctl stop 'backend-arena@*' backend-gateway backend-platform backend-account 'backend-worker@*'
 systemctl stop 'backend-store@*' backend-mysql backend-nginx
 systemctl stop backend-binlog-stream backend-scratch-mysql          # on C, the backups' machine
 ```
@@ -193,13 +194,13 @@ the examples give each machine ([01 §1](01-deploy.md#1-what-runs-where)):
 ```bash
 # A
 systemctl start backend-mysql backend-store@session
-systemctl start backend-platform backend-gateway backend-arena@a1 backend-arena@a2 backend-nginx
+systemctl start backend-account backend-platform backend-gateway backend-arena@a1 backend-arena@a2 backend-nginx
 # B
 systemctl start backend-store@session backend-store@events
-systemctl start backend-platform backend-gateway backend-arena@b1 backend-arena@b2 backend-arena@b3 backend-nginx
+systemctl start backend-account backend-platform backend-gateway backend-arena@b1 backend-arena@b2 backend-arena@b3 backend-nginx
 # C
 systemctl start backend-mysql backend-store@events backend-scratch-mysql backend-binlog-stream
-systemctl start backend-platform backend-gateway backend-worker@c1 backend-worker@c2 \
+systemctl start backend-account backend-platform backend-gateway backend-worker@c1 backend-worker@c2 \
     backend-arena@c1 backend-arena@c2 backend-nginx
 ```
 
@@ -219,7 +220,7 @@ guide's [§10](03-install-guide.md#10-start-everything). The stop above works as
 
 ```bash
 systemctl start backend-mysql backend-store@session backend-store@events backend-scratch-mysql backend-binlog-stream
-systemctl start backend-platform backend-gateway backend-worker@c1 backend-worker@c2 \
+systemctl start backend-account backend-platform backend-gateway backend-worker@c1 backend-worker@c2 \
     backend-arena@a1 backend-arena@a2 backend-arena@a3 backend-nginx
 ```
 

@@ -2,16 +2,18 @@
 # nginx in front of a run by hand (decision D-92, docs/development/03-build-and-run.md §5): the release's own nginx
 # with the release's own configuration (nginx-conf/) rewritten into work/nginx for this machine, on the site's ports
 # and every address. The player API and the lobby over HTTPS on NGINX_HTTPS_PORT (443) and in clear on
-# NGINX_HTTP_PORT (80), as on the site (D-115), and matches over TLS on NGINX_MATCH_PORT (9001), routed by ARENA_TLS_NAME
-# to the arena on 127.0.0.1:ARENA_PORT (dev-backend.sh), and in clear on 80 by that name, /match/<name>. The certificate names PUBLIC_ADDRESS, 127.0.0.1 and the arena's name, from a
-# root of the backend's own CA (private-ca.sh) made once in work/nginx/ca and kept: clients trust
+# NGINX_HTTP_PORT (80), as on the site (D-115), the account service at /account (ACCOUNT_PORT, D-117), and matches
+# over TLS on NGINX_MATCH_PORT (9001), routed by ARENA_TLS_NAME to the arena on 127.0.0.1:ARENA_PORT (dev-backend.sh),
+# and in clear on 80 by that name, /match/<name>. The certificate names PUBLIC_ADDRESS, 127.0.0.1 and the arena's
+# name, from a root of the backend's own CA (private-ca.sh) made once in work/nginx/ca and kept: clients trust
 # work/nginx/ca/ca.pem, and nothing else. 80 and 443 need root, or a lowered threshold; the workers run as nobody.
 # PLAIN=1 (D-101), for development alone: the same without TLS, the API and the lobby on NGINX_HTTP_PORT, matches on
 # NGINX_MATCH_PORT passed to the arena; no 443, no certificate.
 #
 #   ./dev-nginx.sh start | stop | restart | status
-#   ./dev-nginx.sh test      its configuration, 80 and 443's certificate with the platform behind them, 9001's, and
-#                            the arena behind 80's /match/; plain: its configuration and the platform behind 80
+#   ./dev-nginx.sh test      its configuration, 80 and 443's certificate with the platform behind them, the account
+#                            service behind 80's /account and its key set refused, 9001's, and the arena behind 80's
+#                            /match/; plain: its configuration, the platform and the account service behind 80
 set -euo pipefail
 . "$(dirname "$0")/dev-env.sh"
 # NGINX_DIR: the drill's nginx in front of its own processes (headless-drill.sh FRONT, D-107).
@@ -102,8 +104,8 @@ rewrite() {
               -e "s|^\([[:space:]]*\)worker_connections [0-9]*;|\1worker_connections 1024;|" \
               -e "s|^user nginx;|$user_line|" \
               -e "s|^http {|http {\n    client_body_temp_path $F/temp/client_body;\n    proxy_temp_path $F/temp/proxy;\n    # The workers, nobody, may not reach a checkout under /root: no response is buffered to a file.\n    proxy_max_temp_file_size 0;\n|" "$f" \
-          | awk -v gw="$GATEWAY_PORT" -v pf="$PLATFORM_PORT" -v arena="$ARENA_PORT" -v tls="$ARENA_TLS_NAME" -v file="${f##*/}" '
-              BEGIN { port["backend_gateway"] = gw; port["backend_platform"] = pf }
+          | awk -v gw="$GATEWAY_PORT" -v pf="$PLATFORM_PORT" -v ac="$ACCOUNT_PORT" -v arena="$ARENA_PORT" -v tls="$ARENA_TLS_NAME" -v file="${f##*/}" '
+              BEGIN { port["backend_gateway"] = gw; port["backend_platform"] = pf; port["backend_account"] = ac }
               /^[ \t]*upstream[ \t]+[A-Za-z0-9_]+[ \t]*\{/ { up = $2; first = 1; print; next }
               up != "" && /^[ \t]*}/ { up = ""; print; next }
               up != "" && /^[ \t]*server[ \t]/ {
@@ -243,6 +245,16 @@ test)
         502|504) echo "FAILED  $NGINX_HTTP_PORT: plain, but the platform behind it does not answer ($got): ./dev-backend.sh start"; exit 1 ;;
         *) echo "FAILED  $NGINX_HTTP_PORT: $got, not the platform's 200"; exit 1 ;;
     esac
+    # The account service at /account (D-117, 10 §6.2), its key set not routed.
+    got=$(curl -sS --max-time 10 $(to127 "$NGINX_HTTP_PORT") -o /dev/null -w '%{http_code}' "$http_url/account/v1/health" 2>&1 || true)
+    case $got in
+        200) echo "ok      $NGINX_HTTP_PORT: /account/v1/, the account service answers through it (200)" ;;
+        502|504) echo "FAILED  $NGINX_HTTP_PORT: /account/v1/, but the account service behind it does not answer ($got): ./dev-account.sh start"; exit 1 ;;
+        *) echo "FAILED  $NGINX_HTTP_PORT: /account/v1/health: $got, not the account service's 200"; exit 1 ;;
+    esac
+    got=$(curl -sS --max-time 10 $(to127 "$NGINX_HTTP_PORT") -o /dev/null -w '%{http_code}' "$http_url/account/.well-known/jwks.json" 2>&1 || true)
+    [ "$got" = 404 ] || { echo "FAILED  $NGINX_HTTP_PORT: the account service's key set answered $got, not 404: it is not the internet's"; exit 1; }
+    echo "ok      $NGINX_HTTP_PORT: the account service's key set not routed (404)"
     if [ "$PLAIN" = 1 ]; then
         echo "--      $NGINX_MATCH_PORT: plain, nothing to check without a match: ./dev-backend.sh test plays one through it"
         exit 0
