@@ -3855,3 +3855,79 @@ and the .NET Standard 2.0 level of
   checks; the C# client's TLS against nginx is the editor's and the phone's to show.
 - The TLS 1.2 asked for on .NET Framework itself is not run here: no .NET Framework on Linux.
 - A build here needs Unity's editor in `work/unity` (1.8 GB, fetched once) where it needed .NET 8 in `/opt/dotnet`.
+
+### D-117 — Accounts in an account service of their own, which issues signed tokens the backend takes once for a session
+
+**Decided 2026-11-26** (plan item 142; the owner: user sign-up and login in an account service beside this project,
+issuing JWTs the backend verifies, "similar to OAuth2"; asked, went with Claude's picks: the token taken once in
+exchange for a session, guests kept in the backend, the service in this repository, and no backend passwords kept,
+since nothing has launched). **Supersedes** the backend's own registration, password login and guest upgrade
+([04 §1](../detailed-design/04-platform-services.md#1-auth-and-sessions)), and a registered player's deletion by the
+backend ([D-84](#d-84--a-player-deletes-their-own-account-erased-in-place-what-others-history-needs-kept-under-a-bare-id),
+which still erases the player, in place). **Qualifies**
+[D-4](#d-4--split-by-workload-shape-not-by-business-domain): the backend stays split by workload, four process types;
+the account service is not a fifth, but a system of its own beside it, the identity provider, which the owner wants
+apart. Design: [detailed-design/10](../detailed-design/10-accounts.md).
+
+**Decision.**
+- **The account service** (`account-service/`, `com.backend.account`, Java 21, its own MySQL database `account`)
+  owns identity: a username, an Argon2id password hash (the platform's policy, moved: 04 §1), the login limits, and
+  the tokens. It owns no player: no display name, no ban, no guest.
+- **An access token** is a JWT signed ES256, the profile of RFC 9068: `typ` `at+jwt`, `iss`, `sub` (the account's id,
+  opaque and never reused), `aud`, `client_id`, `iat`, `exp` 15 minutes on, `jti`, `auth_time` and
+  `preferred_username`. **A refresh token** is opaque, 32 random bytes, kept as its SHA-256, rotated at each use; a
+  token used twice, past 30 seconds' overlap, revokes its whole family (RFC 9700 §4.14). The keys are published as a
+  JWK set, each by its RFC 7638 thumbprint.
+- **The backend takes an access token once** (`POST /v1/sessions` `{"accessToken"}`) and answers with today's
+  session: the platform checks the signature by the account service's published keys, the type, the issuer, its own
+  audience and the times, finds the player by the token's subject or makes one, and opens a session in the store.
+  Everything after is as before: the lobby, tickets, bans that end every session at once, the limits.
+- **Guests stay the backend's** (D-46). A guest links an account (`POST /v1/accounts/link` `{"accessToken"}`), and is
+  that account's player from then on; the guest's key stops working.
+- **A deletion and a password change reach the backend as signed events**, Security Event Tokens (RFC 8417, `typ`
+  `secevent+jwt`) pushed to the platform (RFC 8935) from an outbox written in the same transaction as the change, and
+  retried until taken: `deleted` erases the player as D-84 does, out of its team whatever its role, as the worker's
+  retention does (D-87); `sessions-revoked` ends every session made before the event.
+- **One library**, Nimbus JOSE + JWT 10.10, on both sides: it signs, publishes the key set, fetches and caches it,
+  rate-limits its refetch, and checks the type and the claims. It needs no other jar.
+- **The site** routes `/account/v1/…` on 443 and 80 to the account service (`8070`, the private address, as the
+  platform's 8080), limited as the platform's logins are; its key set is not routed, read by the platform alone.
+
+**Why.**
+- The owner's: identity apart from the backend, as an OAuth 2.0 resource server keeps it apart from its
+  authorization server.
+- **Once, not on every request:** the backend's sessions end at once when a player is banned or deletes their
+  account, and a lobby connection lasts hours. A token checked on every request ends only when it expires, and the
+  lobby would need checking again as its token runs out; all three clients would change how they reach every route.
+  Taken once, the backend's own sessions keep what they give, and the token's only use is to prove who logs in.
+- **ES256 and a published key set, not a shared secret (HS256):** the backend can check a token and cannot make one;
+  a key can be rotated with no change to the backend.
+- **Signed events, not a shared secret on the platform's admin API:** the platform already trusts those keys, and a
+  replayed event changes nothing (a deletion is done once; `sessions-revoked` ends only sessions older than itself).
+- **Nimbus, not JJWT, which was first picked:** JJWT's last release is 0.13.0, August 2025; Nimbus's is September
+  2026. JJWT reads a key set but does not fetch, cache or refetch one, which the backend's side needs; Nimbus is the
+  library Spring Security's resource server is built on.
+
+**Not chosen.**
+- **A token on every request**, the backend a pure resource server: above.
+- **OAuth 2.0's authorization code with PKCE through a browser** (RFC 8252), the flow for a native app signing in to
+  someone else's service. The app is the account service's own and has its own login screen; a browser flow adds a
+  login page and the app's redirect handling for nothing the owner asked. The backend checks tokens however they were
+  issued, so it can come later without changing the backend.
+- **OAuth's password grant** (deprecated by RFC 9700) as the login: the login is a first-party API of its own, its
+  answer in RFC 6749's field names.
+- **The account service as a module of the platform**: the owner wants it apart.
+- **The login limits in j-redis**, as the platform's: the account service keeps them in its own MySQL, so it needs no
+  store of the backend's.
+- **The backend asking the account service on each login** (token introspection, RFC 7662): a network hop and a
+  dependency per login, where a signature needs neither.
+
+**Cost.**
+- One more Java process, MySQL database, settings file, systemd unit, user (`backend-account`) and nginx route; the
+  backups, the install guide, the two machines' guide and every check that installs the site carry it.
+- A token stays good for up to 15 minutes after its account is deleted: the backend records a deleted account's
+  subject, so a token exchanged late makes no new player.
+- The backend's sessions outlive a password change by as long as its event takes to arrive, normally a second; while
+  the platform is down, the event waits in the outbox.
+- No email: no verification and no password reset, which need a mail service (the owner's rule: no third-party
+  service). A forgotten password is a new account.

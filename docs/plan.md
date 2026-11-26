@@ -4675,6 +4675,29 @@ times through nginx's 80 (`FRONT=http`), nine seeds, all passed, each bullet rem
 `vs2019-check.sh` builds the solution with the tests' linked file. The probes (`Probe.java`, `Fixed.java`, on the sim's
 classes) were the session's, not kept: what they measured is in T-66.
 
+
+#### 142. Accounts in an account service of their own, and the backend taking its tokens (the owner, 2026-11-26, D-117)
+
+The owner: user sign-up and login in another service, an account service issuing JWTs, and the backend verifying them,
+"similar to OAuth2"; a basic account service with what it needs. Asked, they took Claude's picks: the token taken
+once for a session, guests kept in the backend, the service in this repository as `j-redis-service/` is, and no
+backend passwords kept (nothing has launched). The design is
+[detailed-design/10](detailed-design/10-accounts.md). In parts, each committed, in this order:
+
+- **(a) The design**: D-117, 10-accounts.md, this item.
+- **(b) Nimbus JOSE + JWT 10.10 in the offline bundle**, by the bundle's own method: a probe project that uses it, an
+  empty local repository, the bytecode check.
+- **(c) The account service**: `account-service/`, its routes, passwords, limits, tokens, keys, events and their
+  delivery, its schema; its tests on `account_test`; `dev-account.sh`, the development MySQL's two databases.
+- **(d) The backend's side**: `V3`, `AccountTokens`, the exchange, the link, the events taken, a guest's deletion
+  alone; registration, password login and upgrade gone; the tests, the API's reference and its Postman collection.
+- **(e) The clients**: the core and its tests, the Unity layer, the headless driver and its `account` scenario,
+  both simple clients and their checks, the tools; the drills with the account service, through each `FRONT=`.
+- **(f) The release and the site**: `account/` in the release, the unit, the user, the settings, nginx, the key
+  script; the install guide, the backups of both databases and the runbook's restore; the two machines' guide; every
+  check that installs or starts the site.
+- **(g) The documents and the rule files**: every page that names the processes, the ports or the routes.
+
 ---
 
 ### Completed 2026-09-23

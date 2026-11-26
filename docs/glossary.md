@@ -1,7 +1,7 @@
 # Glossary
 
 Every term this system uses: what it means, and where it appears in the code, the schema or on the wire. It is for
-everyone who reads or writes the documents and the code. Updated 2026-11-25.
+everyone who reads or writes the documents and the code. Updated 2026-11-26.
 
 **Why it exists.** The same idea kept acquiring second names, and two of them had genuinely collided: "session"
 meant both an authenticated lobby session and a player's stay in an arena. That is how someone eventually believes
@@ -94,6 +94,11 @@ keys (§7), words we do not use (§8), and building, checking and running (§9).
 | Term | Meaning | Where |
 |---|---|---|
 | **account** | The login: a username and a password hash. There is one per player. | `account` table, `AccountRepository` |
+| **account service** | The system that signs a person up and in, apart from the backend (D-117; designed 2026-11-26, built in plan item 142): a username, a password, and the tokens it issues. It owns no player. | `account-service/`, `com.backend.account`, the database `account` |
+| **access token** | A JWT the account service signs (ES256, `typ` `at+jwt`), good for 15 minutes, that proves who is logging in. The backend takes it once, for a **session**; it is not a session. | `POST /v1/sessions` `{"accessToken"}`, `AccountTokens` |
+| **refresh token** | An opaque token from the account service that the app keeps, in place of a password, to get a new access token; spent at each use, and a new one given. | `refresh_token` table, `POST /account/v1/sessions/refresh` |
+| **subject** | The account service's id for an account, the tokens' `sub`: what ties an account to its player. Never reused. | `account.subject` (the backend's), `sub` |
+| **account event** | A signed notice from the account service that an account was deleted or its sessions revoked (a Security Event Token, RFC 8417), pushed to the platform until taken. | `event_outbox`, `POST /v1/account-events` |
 | **player** | The person in the domain: their name, level, currency and stats. A player shares its id with its account. | `player` table, `playerId` |
 | **account level** | A player's level across matches, from 1 to 100, from their lifetime experience; what later features unlock by. It never goes down. Not the **tank level** (1 to 45), which lasts one life. | `player.level`, `AccountLevels` |
 | **session** | **The authenticated lobby session, and nothing else.** A token is issued at login, and is valid for about a day. Never use the word for a player's time in an arena: that is a **stay**, recorded as one or more open matches. | `sess:{token}`, `SessionStore` |
