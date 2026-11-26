@@ -2,7 +2,7 @@
 
 What is built, what is next, and in what order. Updated 2026-11-25.
 
-**Where it stands (2026-11-25).** Plan items 1 to 141 are done, but for item 7, which stays open by design: what is
+**Where it stands (2026-11-27).** Plan items 1 to 142 are done, but for item 7, which stays open by design: what is
 left of it waits on Q-3's hardware.
 
 - **The site.** It launches on one machine, every role on it, for up to about 5 000 players (D-93); three machines stay
@@ -10,17 +10,18 @@ left of it waits on Q-3's hardware.
   D-97). It has one public address with three ports (D-82, D-115): nginx ends TLS on 443 (the API and the lobby) and
   on 9001 (matches), and serves all three in clear on 80, a match there by `/match/<the arena's name>`.
 - **The components**, each built and tested: `j-redis-service` 2.2.2 (229 tests); the backend's eleven modules (their
-  sources declare 1 150 tests); the client's engine-free core with its headless driver (196 tests, on .NET Framework 4.5, run on
+  sources declare 1 155 tests); the account service, `account-service/`, beside them (74; D-117); the client's
+  engine-free core with its headless driver (207 tests, on .NET Framework 4.5, run on
   Unity 2019's Mono; D-116). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
   `UnityEngine`; there is no Unity editor here, so it has not been opened in one (Q-54). Beside the full client,
   `client-simple/` and `client-simple-no-tls/` are small clients for the UI team (D-111, D-114).
 - **The release** carries its own Java runtime, MySQL 8.4 and nginx, built for glibc 2.28 and checked on RHEL 8 and 9
   (D-100, D-110). The install guide installs the one machine as written, and its check proves it.
-- **What it does.** A player can register or play as a guest, hold a lobby connection, play the public arena, queue
+- **What it does.** A player can sign up at the account service and log in by its token, or play as a guest, hold a lobby connection, play the public arena, queue
   for any of eight queued modes or open a sandbox, and have the result reach MySQL, the boards and their wallet, told
   back through the gateway. Item 78 drove all of it from one release: 44 live drill scenarios, plaintext and TLS, a
   two-hour soak of 300 bots, and the backup drill; item 79 reviewed all of it, fixed what the review found, and drove
-  every scenario and drill again. The drill has 45 scenarios now.
+  every scenario and drill again. The drill has 46 scenarios now, all of them passed at item 142 (e).
 
 Nothing has run on the production hardware, and nothing has launched.
 
@@ -4676,7 +4677,7 @@ times through nginx's 80 (`FRONT=http`), nine seeds, all passed, each bullet rem
 classes) were the session's, not kept: what they measured is in T-66.
 
 
-#### 142. Accounts in an account service of their own, and the backend taking its tokens (the owner, 2026-11-26, D-117)
+#### 142. ~~Accounts in an account service of their own, and the backend taking its tokens (the owner, 2026-11-26, D-117).~~ — **done 2026-11-27**
 
 The owner: user sign-up and login in another service, an account service issuing JWTs, and the backend verifying them,
 "similar to OAuth2"; a basic account service with what it needs. Asked, they took Claude's picks: the token taken
@@ -4855,6 +4856,23 @@ token taken by the platform, both runs. The first failed one check, nginx's HTTP
 straight after and in the guest on the next run, every other check passing both times: **T-72**, open, its cause not
 known; the check now says what a refusal was. The second passed everything ("ALL PASSED"). `check-promote.sh` and
 `check-release-el9.sh` in UBI 9 pass. Next: the documents and the rule files, (g).
+**(g) done 2026-11-27: the documents and the rule files** (10 §6). Every page that names the processes, the ports or
+the routes, with the account service where it belongs: `CLAUDE.md` and working-here (the owner's decision as a
+standing rule in both, 8083 and its debugger's 5010 by hand, 8097 in the drills, `dev-account.sh`'s commands,
+`run-local.sh`'s five, the `account` scenario, the development MySQL's `account_test` and `account_dev`); the
+repository's README (the account service among the components and the layout, its status and counts) and the
+backend's (the login's cost where it now is, the platform's token check measured, the account service run by hand,
+the bots' path); the scripts' and deploy's READMEs (8070 and 9104 among the production ports, 8083 and 8097 among the
+development ones, `ACCOUNT_PORT`, `DEBUG`'s 5010, `SKIP_TESTS`); 03-build-and-run, 05-vscode and `.vscode/launch.json`
+(an "Attach: account" on 5010), 07's development commands, the glossary's run by hand and development MySQL; the
+topology (how D-117 stands beside D-4, the account service's 1c / 2G a machine and its three cores in the budget,
+each with its reason), the availability model's failure table, and the system's and deployment's diagrams (the
+account service in the context, the containers, the login of the sequence, MySQL's promotion, the one machine, the
+three, nginx's routes, the release). **DOC-60**: five pages still put the password hashing in the platform or left
+the account service out, its metrics listed nowhere: each written as the code is. Measured for it, the platform's
+token check: Nimbus's ES256 verify with the platform's checks, 1.9 to 2.4 ms on one thread and about 3 300 a second on
+eight, on this VM loaded by the two machines' check beside it, so an upper figure. `DocsLinksTest` and
+`ReadmeTestListsTest` pass. Item 142 is done: the plan's list is at its end.
 
 ---
 

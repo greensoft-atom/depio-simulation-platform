@@ -6,7 +6,8 @@ stateful parts fail over. The words are the [glossary](../glossary.md)'s. The re
 [topology](../architecture/01-system-topology.md), the
 [availability model](../architecture/02-availability.md) and the
 [decision log](../architecture/03-decision-log.md). The diagrams follow the code as of 2026-10-04,
-the site's edge as of 2026-10-19 (D-82), and port 80 as of 2026-11-25 (D-115).
+the site's edge as of 2026-10-19 (D-82), port 80 as of 2026-11-25 (D-115), and the account service as of
+2026-11-26 (D-117).
 
 ## 1. System context
 
@@ -31,7 +32,7 @@ simulated, or, for the CA, happen by hand, off the servers, when a certificate i
 flowchart LR
     player["Player<br/>Unity app on Android"]
     operator["Operator<br/>SSH, scripts, admin API"]
-    backend["The backend<br/>arena, gateway, platform, worker<br/>j-redis, MySQL, nginx"]
+    backend["The backend<br/>arena, gateway, platform, worker, the account service<br/>j-redis, MySQL, nginx"]
     provider["Payment provider<br/>simulated, Q-52"]
     offsite["Storage host off the site<br/>not chosen, Q-53"]
     hook["Alerts' webhook<br/>not named, Q-60"]
@@ -52,7 +53,10 @@ Every process and store, what each one speaks, and the ports of the example sett
 - Everything a player sends reaches the front's nginx
   ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)).
   nginx ends TLS on 443 and 9001, and takes the same requests in clear on 80 (D-115).
-- The API goes on to a platform, and the lobby to a gateway.
+- The API goes on to a platform, sign-up and login (`/account/v1/`) to an account service, and the lobby to a
+  gateway. The platform takes the account service's access token once, for a session, checked against the key set
+  it reads from the account service; the account service tells the platforms of a deletion or a password changed
+  (D-117).
 - Match traffic goes to the arena that its name gives: on 9001 the TLS name, on 80 the name in
   `GET /match/<name>`. nginx does not read the frames, and match traffic never passes the gateway
   (D-5).
@@ -72,7 +76,8 @@ flowchart LR
     subgraph edgeTier["The front, one of the three machines"]
         nginx["nginx<br/>443 and 9001, ends TLS<br/>80 in clear"]
     end
-    subgraph procs["Processes: gateway, platform and arenas on each machine, the workers on C"]
+    subgraph procs["Processes: gateway, platform, the account service and arenas on each machine, the workers on C"]
+        account["account service<br/>8070 on the private address"]
         gateway["gateway<br/>8090 on the private address"]
         platform["platform<br/>8080 on the private address<br/>admin API 9120 on loopback"]
         arena["arena<br/>9011 to 9013 on the private address"]
@@ -84,9 +89,14 @@ flowchart LR
         mysql["MySQL primary<br/>3306, TLS"]
     end
     app -->|"HTTPS /v1/, or HTTP on 80"| nginx
+    app -->|"HTTPS /account/v1/, or HTTP on 80"| nginx
     app -->|"WSS /lobby, or WS on 80"| nginx
     app -->|"binary frames, TLS on 9001, or in clear on 80 after GET /match/name"| nginx
     nginx -->|"HTTP"| platform
+    nginx -->|"HTTP, /account/v1/ as /v1/"| account
+    platform -->|"the key set, /.well-known/jwks.json"| account
+    account -->|"events, POST /v1/account-events"| platform
+    account -->|"JDBC, its own database"| mysql
     nginx -->|"WebSocket"| gateway
     nginx -->|"the same frames, by the arena's name"| arena
     gateway -->|"HTTP /v1/match-requests, /v1/queue, /v1/party"| platform
@@ -163,7 +173,8 @@ flowchart BT
 
 The main path, for a queued duel. The classes involved:
 
-- the login: `AuthService` and `SessionStore`;
+- the login: the account service's `AccountService` and `PasswordHasher`, then the platform's `AuthService`,
+  `AccountTokens` and `SessionStore` (D-117; a guest logs in at the platform alone, by its key);
 - the lobby: `LobbyHandler` and `ConnectionRegistry`;
 - the queue, the confirm step and the tickets: `QueueService`, `MatchQueue` and `Matchmaker`;
 - the join: `TicketStore` and `RoomThread`;
@@ -179,6 +190,7 @@ branch.
 ```mermaid
 sequenceDiagram
     participant P as client
+    participant AC as account service
     participant G as gateway
     participant PL as platform
     participant S as session store
@@ -186,8 +198,11 @@ sequenceDiagram
     participant E as events store
     participant W as worker
     participant M as MySQL
-    P->>PL: POST /v1/sessions, through nginx
-    PL->>M: check the Argon2id hash
+    P->>AC: POST /account/v1/sessions, through nginx, username and password
+    AC->>M: check the Argon2id hash, in the account database
+    AC-->>P: an access token, ES256, 15 minutes, and a refresh token
+    P->>PL: POST /v1/sessions with the access token, through nginx
+    PL->>PL: check its signature by the key set read from the account service, then its claims
     PL->>S: write the session, a day
     PL-->>P: the token
     P->>G: WSS /lobby through nginx, auth with the token
@@ -248,7 +263,7 @@ The classes and scripts: `StoreClients` and the j-redis client (the stores), `Pr
 flowchart LR
     subgraph MA["Machine A"]
         sessP["j-redis session primary"]
-        myP["MySQL primary<br/>ha_epoch, ha_heartbeat"]
+        myP["MySQL primary<br/>ha_epoch, ha_heartbeat<br/>account.ha_epoch"]
     end
     subgraph MB["Machine B"]
         evP["j-redis events primary"]
@@ -258,7 +273,7 @@ flowchart LR
         evR["j-redis events replica<br/>read-only"]
         myR["MySQL replica<br/>GTID, read-only"]
     end
-    procs["Every process<br/>both addresses of each store it uses<br/>platform and worker both MySQL hosts<br/>the primary with the highest epoch seen"]
+    procs["Every process<br/>both addresses of each store it uses<br/>platform, worker and the account service both MySQL hosts<br/>the primary with the highest epoch seen"]
     promS["promote-store.sh<br/>on the replica's machine"]
     promM["promote-mysql.sh<br/>on the replica's machine"]
     watch["worker ReplicaWatch<br/>stamps the heartbeat each second<br/>reads each replica's lag"]
@@ -271,7 +286,7 @@ flowchart LR
     procs --> myP
     promS -.->|"refuses an old primary still answering, or one it cannot demote, then promotes and raises the epoch"| sessR
     promS -.-> evR
-    promM -.->|"refuses a stale heartbeat or a live old primary, fences it in a handover, raises ha_epoch"| myR
+    promM -.->|"refuses a stale heartbeat or a live old primary, fences it in a handover, raises both ha_epoch"| myR
     watch --> myP
     watch -.-> myR
     arenaW -.->|"counts the results not confirmed"| evR

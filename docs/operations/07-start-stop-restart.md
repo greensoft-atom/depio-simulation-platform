@@ -237,17 +237,20 @@ Run them from the repository's root. Nothing here is a systemd unit.
 ```bash
 ./dev-mysql.sh  start | stop | restart | status | test    # the development MySQL, 127.0.0.1:3314
 ./dev-jredis.sh start | stop | restart | status | test    # j-redis, 127.0.0.1:6380
+./dev-account.sh start | stop | restart | status | test   # the account service, 127.0.0.1:8083 (D-117)
 ./dev-backend.sh restart platform                         # one alone, the others untouched
 ./dev-backend.sh stop arena                               # one alone
 ./dev-backend.sh restart                                  # all four
 ./dev-backend.sh status
 ./dev-nginx.sh  start | stop | restart | status | test    # the release's nginx, 80, 443, 9001
-./run-local.sh  start | stop | restart | status           # the four in order; stop leaves the MySQL running
+./run-local.sh  start | stop | restart | status           # the five in order; stop leaves the MySQL running
 ```
 
 - **The backend's four processes** are named `platform`, `worker`, `gateway` and `arena`. `./dev-backend.sh` acts
-  on the ones you name, or on all four. `./dev-jredis.sh build` and `./dev-backend.sh build` build them first.
-  `./dev-backend.sh test` sends two bots through nginx: the API, the lobby and a match. `./dev-backend.sh bots`
+  on the ones you name, or on all four. `./dev-jredis.sh build`, `./dev-account.sh build` and `./dev-backend.sh
+  build` build them first. The platform takes the tokens of the account service that `./dev-account.sh` runs, so
+  players and bots sign in there (D-117). `./dev-backend.sh test` sends two bots through nginx: signed in at the
+  account service by nginx's `/account`, the API, the lobby and a match. `./dev-backend.sh bots`
   plays with more bots, their matches through nginx.
 - **What each process needs must be running first.** `./dev-backend.sh start` refuses while j-redis is not running,
   or while the development MySQL is not running (for a platform or a worker). The message names the script that
@@ -256,7 +259,7 @@ Run them from the repository's root. Nothing here is a systemd unit.
   110).
 - **nginx needs root for 80 and 443.** `dev-nginx.sh`, and so `./run-local.sh start`, runs as root, or is given
   ports above 1023 in `NGINX_HTTP_PORT` and `NGINX_HTTPS_PORT` (D-92). As another user, `./run-local.sh start` stops
-  at nginx, with the other three running.
+  at nginx, with the other four running.
 - **`PLAIN=1`**, given to every command, runs nginx and the arena without TLS: the API and the lobby on 80, matches
   on 9001, and no 443
   ([D-101](../architecture/03-decision-log.md#d-101--a-plain-run-by-hand-goes-through-nginx-as-the-site-does-80-and-9001-without-tls)).

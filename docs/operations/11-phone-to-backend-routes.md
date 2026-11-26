@@ -415,7 +415,8 @@ Each process behind nginx knows the phone's address, from nginx alone:
 
 | Process | From | Used for |
 |---|---|---|
-| platform | `X-Forwarded-For`'s last entry, from nginx on loopback or an address in `BACKEND_TRUSTED_PROXIES` | its limits on logins and registrations; its logs |
+| platform | `X-Forwarded-For`'s last entry, from nginx on loopback or an address in `BACKEND_TRUSTED_PROXIES` | its limits on guests, made and logged in by their keys (S-2); its logs |
+| the account service | the same, from nginx on loopback or an address in `ACCOUNT_TRUSTED_PROXIES` (D-117) | its limits on sign-ups and logins; its logs |
 | gateway | the same, on the lobby's upgrade | its logs |
 | arena | the PROXY line, on an arena with a TLS name; for a match in clear, 80's request's `X-Forwarded-For`, which nginx sets to the address it saw, without a port | its logs: every join, and every line that names a connection |
 

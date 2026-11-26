@@ -29,6 +29,7 @@ flowchart LR
         nginx["nginx<br/>443 and 9001, ends TLS<br/>80 in clear<br/>backend-nginx"]
         gw["gateway 127.0.0.1:8090"]
         pf["platform 127.0.0.1:8080"]
+        ac["account service 127.0.0.1:8070<br/>backend-account"]
         ar["arenas a1, a2, a3<br/>127.0.0.1:9011 to 9013"]
         wk["workers c1, c2"]
         ses["j-redis session 127.0.0.1:6379<br/>backend-store@session"]
@@ -39,11 +40,15 @@ flowchart LR
     client -->|"HTTPS, WSS and match TLS, or in clear on 80"| forward
     forward --> nginx
     nginx -->|"/v1/"| pf
+    nginx -->|"/account/v1/"| ac
     nginx -->|"/lobby"| gw
     nginx -->|"9001, or /match/name on 80, by the arena's name"| ar
     gw --> pf
+    pf -->|"the key set"| ac
+    ac -->|"events"| pf
     pf --> ses
     pf --> my
+    ac -->|"its database, account"| my
     ar -->|"results"| ev
     wk -->|"results"| ev
     wk --> my
@@ -60,11 +65,13 @@ What runs where, with the port each listener takes, as
   ([D-82](../architecture/03-decision-log.md#d-82--one-public-address-for-the-site-nginx-in-front-ending-tls-routing-match-traffic-by-name)).
 - Its nginx ends TLS on 443 and 9001, and serves the same routes in clear on 80
   ([D-115](../architecture/03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
-  It passes everything over the private network: the API and the lobby to every machine's platform
-  and gateway, and each match connection to the arena whose name the client gave.
+  It passes everything over the private network: the API, the account service's `/account/v1/` and the lobby to
+  every machine's platform, account service and gateway, and each match connection to the arena whose name the
+  client gave.
 - Every machine runs the same nginx, so any machine can be the front.
-- Every process uses the `session` store's primary. The arenas and the workers also use the
-  `events` store's primary. `platform` and `worker` use the MySQL primary.
+- Every process but the account service uses the `session` store's primary. The arenas and the workers also use
+  the `events` store's primary. `platform` and `worker` use the MySQL primary, and the account service its own
+  database there, `account` (D-117). Each platform reads its own machine's account service's key set.
 - Each process is given both addresses of a store and both MySQL hosts. So the replicas drawn here
   are where a failover moves those lines.
 - nginx, MySQL and the stores are the release's own, not the distribution's. Each is run by its
@@ -78,6 +85,7 @@ flowchart LR
     subgraph MA["Machine A, 10.0.0.1"]
         Agw["gateway 10.0.0.1:8090"]
         Apf["platform 10.0.0.1:8080"]
+        Aac["account service 10.0.0.1:8070"]
         Aar["arenas a1, a2<br/>10.0.0.1:9011, 9012"]
         Amy["MySQL primary 3306<br/>backend-mysql"]
         Ases["j-redis session primary 6379<br/>backend-store@session"]
@@ -85,6 +93,7 @@ flowchart LR
     subgraph MB["Machine B, 10.0.0.2"]
         Bgw["gateway 10.0.0.2:8090"]
         Bpf["platform 10.0.0.2:8080"]
+        Bac["account service 10.0.0.2:8070"]
         Bar["arenas b1, b2, b3<br/>10.0.0.2:9011 to 9013"]
         Bses["j-redis session replica 6379<br/>backend-store@session"]
         Bev["j-redis events primary 6380<br/>backend-store@events"]
@@ -93,6 +102,7 @@ flowchart LR
         Cnginx["nginx<br/>443 and 9001, ends TLS<br/>80 in clear<br/>backend-nginx, on every machine"]
         Cgw["gateway 10.0.0.3:8090"]
         Cpf["platform 10.0.0.3:8080"]
+        Cac["account service 10.0.0.3:8070"]
         Car["arenas c1, c2<br/>10.0.0.3:9011, 9012"]
         Cwk["workers c1, c2"]
         Cmy["MySQL replica 3306<br/>backend-mysql"]
@@ -101,11 +111,14 @@ flowchart LR
     end
     client -->|"HTTPS, WSS and match TLS, or in clear on 80"| forward
     forward --> Cnginx
-    Cnginx -->|"/v1/, /lobby"| Apf
+    Cnginx -->|"/v1/, /account/v1/, /lobby"| Apf
+    Cnginx --> Aac
     Cnginx --> Agw
     Cnginx --> Bpf
+    Cnginx --> Bac
     Cnginx --> Bgw
     Cnginx --> Cpf
+    Cnginx --> Cac
     Cnginx --> Cgw
     Cnginx -->|"9001, or /match/name on 80, by the arena's name"| Aar
     Cnginx --> Bar
@@ -113,6 +126,10 @@ flowchart LR
     Agw --> Apf
     Bgw --> Bpf
     Cgw --> Cpf
+    Apf -->|"the key set"| Aac
+    Bpf --> Bac
+    Cpf --> Cac
+    Aac -->|"its database, account"| Amy
     Amy -->|"replication, GTIDs, TLS"| Cmy
     Ases -->|"replication"| Bses
     Bev -->|"replication"| Cev
@@ -124,16 +141,16 @@ flowchart LR
 
 nginx on the front, the same on every machine:
 
-- **443** for the API and the lobby, over TLS;
+- **443** for the API, the account service and the lobby, over TLS;
 - **9001** for match traffic, over TLS;
-- **80** for clients without TLS: the API, the lobby, and matches, each asking for its arena by
+- **80** for clients without TLS: the API, the account service, the lobby, and matches, each asking for its arena by
   name (D-115).
 
 TLS is ended on 443 and 9001 with the one certificate from the backend's own CA
 ([operations/06](../operations/06-certificates.md)). The routes come from `deploy/nginx/backend.conf`,
 its snippet `backend-platform.conf`, `backend-upstreams.conf`, `backend-stream.conf`, and
 `backend-arenas.conf`, the list of arenas that both maps read. On the launch's one machine the
-upstreams are its one platform and one gateway, on loopback. Every route from the phone is
+upstreams are its one platform, account service and gateway, on loopback. Every route from the phone is
 described file by file in [operations/11](../operations/11-phone-to-backend-routes.md).
 
 ```mermaid
@@ -145,10 +162,12 @@ flowchart LR
     lobby["= /lobby"]
     auth["= /v1/sessions, = /v1/accounts,<br/>= /v1/guests, = /v1/accounts/link<br/>limit_req 2 a second, burst 30"]
     v1["/v1/, the rest"]
-    other["anything else on 443 or 80,<br/>and = /v1/account-events (D-117)<br/>404"]
+    acc["/account/v1/, as /v1/ (D-117)<br/>limit_req 2 a second, burst 30"]
+    other["anything else on 443 or 80, the account service's key set among it,<br/>and = /v1/account-events (D-117)<br/>404"]
     m80["~ ^/match/name<br/>the request passed on, 101 back<br/>answered on 443 too, unused there"]
     gw["the three gateways, :8090<br/>least_conn, WebSocket, 150 s timeouts"]
     pf["the three platforms, :8080<br/>keepalive 32, 15 s read timeout"]
+    ac["the three account services, :8070<br/>keepalive 32, 15 s read timeout"]
     map["backend-arenas.conf: a name<br/>to its machine and port"]
     arena["that arena, plaintext, after a PROXY line (D-105)<br/>or 80's request (D-115), naming the phone's address<br/>a name not in the list: closed, or 404 on 80"]
     dev --> p443
@@ -157,16 +176,19 @@ flowchart LR
     p80 -->|"as 443"| lobby
     p80 -->|"as 443"| auth
     p80 -->|"as 443"| v1
+    p80 -->|"as 443"| acc
     p80 -->|"as 443"| other
     p80 --> m80
     m80 -->|"the name in the path"| map
     p443 --> lobby
     p443 --> auth
     p443 --> v1
+    p443 --> acc
     p443 --> other
     lobby --> gw
     auth --> pf
     v1 --> pf
+    acc --> ac
     gw -->|"PLATFORM_URL, its own machine's"| pf
     p9001 -->|"the handshake's name"| map
     map --> arena
@@ -177,7 +199,7 @@ flowchart LR
 What `scripts/make-release.sh` builds, after j-redis and a clean build, and how it is installed
 ([deploy/README](../../backend/deploy/README.md#the-release)). Each process has a `lib/` of its own,
 so the MySQL driver stays off the arena and the gateway. The release also carries what the
-processes run on: a Java runtime linked from `vendor/jdk-21`, j-redis, and MySQL and nginx from
+processes run on: a Java runtime linked from `vendor/jdk-21`, j-redis, the account service (D-117), and MySQL and nginx from
 `vendor/` as committed ([09 §4](../detailed-design/09-release-and-packaging.md#4-the-release)). The
 release itself holds no symbolic link (D-106). The install makes `/opt/backend` a link to the
 release in use, so that a rollback is the link put back.
@@ -193,13 +215,14 @@ flowchart LR
     lw["worker/"]
     lg["gateway/"]
     jr["jredis/<br/>j-redis 2.2.2: bin/, lib/, conf/j-redis.conf"]
+    acd["account/<br/>lib/: the account service's jar and its libraries"]
     my["mysql/<br/>MySQL 8.4 LTS, vendor/mysql-8.4"]
     ng["nginx/<br/>nginx 1.30, vendor/nginx-1.30"]
     sd["systemd/<br/>units, timers, drop-in examples"]
-    ev["env/<br/>the six env examples"]
+    ev["env/<br/>the seven env examples"]
     mc["mysql-conf/<br/>backend.cnf.example, scratch-my.cnf.example"]
     nc["nginx-conf/<br/>nginx.conf, backend.conf, backend-platform.conf,<br/>backend-upstreams.conf, backend-stream.conf,<br/>backend-arenas.conf"]
-    sc["scripts/<br/>the fifteen operational scripts"]
+    sc["scripts/<br/>the sixteen operational scripts, account-key.sh among them"]
     vs["VERSIONS.md<br/>what is inside, with versions"]
     cm["COMMIT<br/>the git commit"]
     tgz --> root
@@ -210,6 +233,7 @@ flowchart LR
     lib --> lw
     lib --> lg
     root --> jr
+    root --> acd
     root --> my
     root --> ng
     root --> sd

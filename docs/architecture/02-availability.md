@@ -65,6 +65,7 @@ On three machines, one component at a time:
 | One `arena` process | its rooms end: up to 1 800 players as set (12 rooms of 150) | "match ended", and back to the lobby | systemd restarts it in ~5 s; rooms are made again on demand |
 | One `gateway` | its lobby connections drop | they reconnect through the front, whose nginx passes over the lost gateway | on the client's side, in seconds |
 | One `platform` | lobby requests in progress fail | the client retries | it holds no state; restart it |
+| One account service (D-117) | its sign-ups, logins and refreshes in progress fail; its events not yet delivered wait in its outbox, in MySQL | a player with a session plays on, a guest too; a login is retried, nginx passing over the lost one; on one machine, no account can sign up or log in until it is back | systemd restarts it; it holds no state but its database. The platforms keep the key set they last fetched for an hour, so the tokens it issued are still taken ([10 §4.2](../detailed-design/10-accounts.md#42-checking-a-token)) |
 | One `worker` | the results back up | nothing at once | restart it. What it had in progress stays pending for it in the result stream. If it is gone for good, any other worker takes that over once it has been idle a minute ([05](../detailed-design/05-worker-and-events.md#the-move-onto-streams-designed-2026-09-29-plan-item-10)) |
 | j-redis `session` primary | no logins, no new matches, and no request that needs a session | running matches continue; everything else is refused | promote the replica (a script, started by hand) |
 | j-redis `events` primary | results stop draining; arenas spool them to disk | nothing at once | promote the replica |
@@ -87,7 +88,7 @@ small:
 | Tier | Components | If it is down |
 |---|---|---|
 | **Must not break** | MySQL, j-redis `session`, the front's nginx | Nobody can log in or spend anything. Without the front, nobody reaches the site at all. Minutes matter. |
-| **Degrades play** | `arena`, `gateway` | Some matches end, and some players reconnect. Annoying, not an outage. |
+| **Degrades play** | `arena`, `gateway`, the account service | Some matches end, and some players reconnect; without the account service, an account with no session cannot log in until it is back. Annoying, not an outage. |
 | **Invisible for a while** | `worker`, j-redis `events` | Results queue up and drain later. This is tolerable for tens of minutes, because the streams are durable and the arenas spool to their local disk. |
 
 A match already in progress survives the loss of `platform`, `worker`, MySQL and the `events`

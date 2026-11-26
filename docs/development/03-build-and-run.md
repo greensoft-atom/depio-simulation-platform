@@ -63,7 +63,8 @@ build among them, must be given the new one.
 | `m2/` | Maven's local repository, copied from the bundle as the build needs it | Maven |
 | `tmp/` | the temporary files of Maven, the tests and MySQL (`TMPDIR`, `java.io.tmpdir`) | all of them |
 | `mysql/` | the development MySQL's data, socket and logs (§3) | `dev-mysql.sh` |
-| `run/` | a run by hand: each process's log and pid, the store's files, the arena's spool (§5) | `dev-jredis.sh`, `dev-backend.sh` |
+| `run/` | a run by hand: each process's log and pid, the store's files, the arena's spool (§5) | `dev-jredis.sh`, `dev-account.sh`, `dev-backend.sh` |
+| `account/` | the account service's signing key for a run by hand, `signing.key`, made once (§5). Deleted, a new one is made at the next start, and every access token signed with the old one is refused | `dev-account.sh` |
 | `nginx/` | nginx in front of a run by hand: its configuration, rewritten from the release's, its logs and pid, the certificate and its root (§5.0) | `dev-nginx.sh` |
 | `unity/` | Unity 2019.4.28f1's Linux editor, whose compiler and Mono build and run the C# client, and the NuGet packages the client's tests and driver take (§1). Deleted, it is fetched again | `client/unity-env.sh` |
 
@@ -72,7 +73,7 @@ build among them, must be given the new one.
 - Maven to read `work/settings.xml` (`MAVEN_ARGS`), and neither `/etc/mavenrc` nor `~/.mavenrc`
   (`MAVEN_SKIP_RC`), either of which may point Maven at another Java;
 - temporary files in `work/tmp`;
-- the tests' database to the development MySQL (`JDBC_URL`);
+- the tests' database to the development MySQL (`JDBC_URL`, and the account service's `ACCOUNT_JDBC_URL`);
 - a run by hand's ports, address and way (TLS or `PLAIN=1`), the same for every script (§5).
 
 What each line does is in [06 §3](06-questions-and-answers.md#3-what-does-dev-envsh-do-line-by-line). To work by
@@ -307,8 +308,9 @@ after. `run-local.sh` runs them in order.
 A process restarted alone picks up what changed for it: a new release, or settings given to the command. Each
 service on a server, and on this machine, is in [operations/07](../operations/07-start-stop-restart.md).
 
-**The bots play as a client does.** They register, log in, open the lobby, ask for a match, and join the arena they
-are given. With `bots`, the API and the lobby are reached straight on 8080 and 8081, each bot from an address of
+**The bots play as a client does.** They sign up or log in at the account service, take its token for a session,
+open the lobby, ask for a match, and join the arena they are given (D-117). With `bots`, the account service, the API
+and the lobby are reached straight on 8083, 8080 and 8081, each bot from an address of
 its own (sent as `X-Forwarded-For`), and the match goes through nginx on 127.0.0.1:9001 (`BACKEND_BOT_VIA`), with
 the certificate checked for the name the grant gives. So the bots do not show that the announced `<address>` is
 reachable; a client on another machine does. The run ends with `welcomes 20 disconnects 0   kicks 0` and
@@ -559,9 +561,10 @@ DEBUG=1 ./run-local.sh start                  # every Java process; one alone: D
 | gateway | 5007 |
 | arena | 5008 |
 | j-redis, the store | 5009 |
+| the account service | 5010 |
 
 With `DEBUG=1`, the backend's processes run on `vendor/jdk-21`, the same Java version, not on the release's
-runtime (j-redis always runs on `vendor/jdk-21`). The release's runtime leaves out the debugger's agent,
+runtime (j-redis and the account service always run on `vendor/jdk-21`, from their own builds). The release's runtime leaves out the debugger's agent,
 `jdk.jdwp.agent` ([09 §4.1](../detailed-design/09-release-and-packaging.md#41-the-runtime)). Attach VS Code
 ([05 §4](05-vscode.md#4-debugging)), or the JDK's own debugger:
 
@@ -596,8 +599,8 @@ the headless client with its compiler, for .NET Framework 4.5, and runs it on it
   running, and stops after. The machine's own MySQL on 3306 is never touched (O-40).
 - **Do not run a drill and a run by hand at once.** A run by hand uses `backend_dev` too, and a drill's `season`
   scenario ends the current season for both.
-- **Their ports.** They start their own servers on ports 3307 to 3309, 6390 to 6392, 8093 and 8094, 9011, and
-  9193 to 9199; with `FRONT=`, nginx on 8095, 8096 and 9095 too.
+- **Their ports.** They start their own servers on ports 3307 to 3309, 6390 to 6392, 8093 and 8094, 8097 (the
+  account service, D-117), 9011, and 9193 to 9199; with `FRONT=`, nginx on 8095, 8096 and 9095 too.
 - **`backup-drill.sh` seeds from `backend_dev`**, so it needs a drill or a run by hand first to have made the
   schema. It says so if not.
 
@@ -626,7 +629,7 @@ These checks need Docker, and each runs on a release:
 
 | Script (`backend/scripts/`) | Checks |
 |---|---|
-| `check-release-el9.sh` | the release in UBI 9 with nothing installed (`IMAGE=` for another: 9.0 to 9.9 checked, and UBI 8.10): every native file's libraries, every MySQL program and plugin (D-110), MySQL, j-redis, the four processes, nginx |
+| `check-release-el9.sh` | the release in UBI 9 with nothing installed (`IMAGE=` for another: 9.0 to 9.9 checked, and UBI 8.10): every native file's libraries, every MySQL program and plugin (D-110), MySQL, j-redis, the account service signing an account up and the platform taking its token (D-117), the four processes, nginx |
 | `check-units-el9.sh` | the units under RHEL 9's systemd, installed as the deploy document says, with nginx as one machine's front: HTTPS, and a match connection through 9001, with the backend's root trusted alone; and 80's health and its `/match/` for the arena, in clear (D-115) |
 | `check-install-guide-el9.sh` | the [install guide](../operations/03-install-guide.md), every step as written, with no network: the launch's one machine (D-93), each arena by its name through nginx's 9001 and 80; again after a restart; and the runbook's restore on one machine (about twenty-five minutes) |
 | `check-two-machines-el9.sh` | as root: [two machines](../operations/10-two-machines.md) as written (D-96), on two UBI 9 machines joined by a private link of their own. A is installed by the install guide's check, and a probe of the site runs through its nginx throughout. B's own arenas (D-97) play matches by the C# client through A's nginx's 80, in clear, with B frozen. Then A's MySQL is lost and B's promoted; then A is lost, and the runbook's steps for it are run on B. It needs Unity's editor in `work/unity` (§1), which builds the C# client for .NET Framework 4.5 and runs it in the machines on its Mono (D-116). It takes about twenty minutes, twelve from an image. `SAVE_A=` keeps A installed and `A_IMAGE=` reuses it; `STANDBY_ONLY=1` leaves B's arenas out |
@@ -675,7 +678,7 @@ against Mono's 4.5 reference assemblies, and every run is Unity's Mono 5.11 (`cl
 | `127.0.0.1:3314: in use (…)`, then `another port for it: MYSQL_PORT=…` | another server is on the development MySQL's port | `MYSQL_PORT=<a free port>` |
 | `127.0.0.1:8080: in use (…)`, then `another port for it: PLATFORM_PORT, GATEWAY_PORT or ARENA_PORT, …` | another program is on that port | `PLATFORM_PORT=<a free port>`, and the same for every later command |
 | `127.0.0.1:3314: refused (Permission denied)` (or 6380, 8080, 8081, 9021, a drill's port; nginx's 9001 shows as `0.0.0.0:9001`), then `A port above 1023 is any user's on Linux: a refusal is a policy of this machine. Found:` and the policy | Not the user's rank: a policy of this machine keeps the port from users. `check-bind.sh` names the policy it finds: the unprivileged-port threshold raised above the port (`net.ipv4.ip_unprivileged_port_start`), a login that SELinux confines (`user_u`, `staff_u`) with `selinuxuser_tcp_server` off, or WSL's reserved port ranges. Or it says it knows none ([D-88](../architecture/03-decision-log.md#d-88--a-port-the-machine-refuses-is-named-with-its-policy-before-anything-starts)). Reproduced here: the threshold, as a user who is not root; and SELinux, in a Rocky 9 guest with a confined login, where each of the three remedies was seen to work (`backend/scripts/check-selinux-el9.sh`, [D-90](../architecture/03-decision-log.md#d-90--the-port-checks-selinux-branch-is-proven-in-a-rocky-9-guest-and-names-the-exact-grant)). The WSL lines are from the documentation. | Run the command printed under the policy: `sudo sysctl -w net.ipv4.ip_unprivileged_port_start=1024`; or `sudo setsebool -P selinuxuser_tcp_server on`, or the module from the port's own denial, or the login mapped to `unconfined_u`; or ports outside Windows' ranges. Or use other ports: `MYSQL_PORT`, `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT`, `NGINX_MATCH_PORT`. To check by hand: `backend/scripts/check-bind.sh 3314 8080` |
-| `j-redis is not running on 127.0.0.1:6380: ./dev-jredis.sh start first`, or `the development MySQL is not running: ./dev-mysql.sh start first` | `dev-backend.sh start` was run before what it needs | run the script it names, or `./run-local.sh start` for all four in order |
+| `j-redis is not running on 127.0.0.1:6380: ./dev-jredis.sh start first`, or `the development MySQL is not running: ./dev-mysql.sh start first` | `dev-backend.sh start` was run before what it needs | run the script it names, or `./run-local.sh start` for all five in order |
 | `j-redis is not built: …/dev-jredis.sh build first`, or from the backend's build `j-redis is not built, and the backend needs its client, the release its server: ./dev-jredis.sh build first` | `dev-jredis.sh start`, or the backend's build, was run before j-redis's build | `./dev-jredis.sh build` (`SKIP_TESTS=1` for speed) |
 | `FAILED  nginx is not running: ./dev-nginx.sh start` (from `test`), or `nginx is not running, and matches go through it: ./dev-nginx.sh start first` (from `bots`) | `dev-backend.sh test` or `bots` was run with no nginx: matches go through it | `./dev-nginx.sh start` |
 | From `test`: `nginx runs TLS, and this command plain: give both the same PLAIN (…)`; from `start`: `nginx: already running TLS, pid …, and this command plain: give both the same PLAIN, or restart it this way (…)`; or the same the other way round | nginx was started the other way: by `sudo` without `PLAIN=1`, or left from another run | `sudo PLAIN=1 ./dev-nginx.sh restart` for plain, or `sudo ./dev-nginx.sh restart` for TLS |

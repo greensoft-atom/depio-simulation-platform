@@ -1,6 +1,6 @@
 // Debugging the backend from VS Code (docs/development/05-vscode.md, D-80, D-92), two ways:
-//  - "Attach": to a process dev-backend.sh started with DEBUG=1 (DEBUG=1 ./run-local.sh start),
-//    each listening on its own port;
+//  - "Attach": to a process dev-backend.sh or dev-account.sh started with DEBUG=1
+//    (DEBUG=1 ./run-local.sh start), each listening on its own port;
 //  - "Launch": one process from its sources, the rest from the release. Start what it needs
 //    first: ./dev-mysql.sh start, ./dev-jredis.sh start (all four need the store; the platform
 //    and the worker, the MySQL), ./dev-nginx.sh start for matches, and the others with
@@ -15,6 +15,7 @@
         { "type": "java", "request": "attach", "name": "Attach: worker",   "hostName": "127.0.0.1", "port": 5006 },
         { "type": "java", "request": "attach", "name": "Attach: gateway",  "hostName": "127.0.0.1", "port": 5007 },
         { "type": "java", "request": "attach", "name": "Attach: arena",    "hostName": "127.0.0.1", "port": 5008 },
+        { "type": "java", "request": "attach", "name": "Attach: account",  "hostName": "127.0.0.1", "port": 5010 },
         {
             "type": "java", "request": "launch", "name": "Launch: platform",
             "projectName": "platform", "mainClass": "com.backend.platform.PlatformMain",

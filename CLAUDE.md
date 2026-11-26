@@ -183,8 +183,12 @@ for the backend, its docs and its client.
   protocol change is made in all three clients.
 - **A players' build may connect without TLS** (owner, 2026-11-25; Q-64, D-115, superseding D-104): no build refuses
   a way in clear, the full client's included; it connects as its settings say.
+- **Accounts live in the account service** (owner, 2026-11-26; D-117, plan item 142): `account-service/`, its own
+  process (`backend-account`, 8070) and database (`account`); sign-up, login and passwords there alone, its ES256
+  access tokens taken by the platform once for a session (`POST /v1/sessions`), the key set by its `/.well-known/jwks.json`. Guests
+  stay in the backend; the backend keeps no password.
 - **Ports 6381 and 8082 belong to other processes.** Drills use 6390 (j-redis), 6392 (its
-  replica, `FAILOVER=1`), 8093 (platform), 8094 (gateway), 9011 (arena), 9195 (platform's
+  replica, `FAILOVER=1`), 8093 (platform), 8094 (gateway), 9011 (arena), 8097 (the account service), 9195 (platform's
   metrics), 9196 (platform's admin API), 9197, 9198 and 9199 (the arena's, the gateway's and
   the worker's metrics), 9193 and 9194 (a second worker's metrics with `IDLEGUEST=1`, the
   alerts' receiver with `WATCH=1`), 8095, 8096 and 9095 (the release's nginx in 80's, 443's and
@@ -194,8 +198,8 @@ for the backend, its docs and its client.
   (D-80, owner 2026-10-17): the scripts source `dev-env.sh` (`vendor/`'s JDK and Maven, the bundle
   as the only repository, `work/m2`, `work/tmp`), the tests use the development MySQL
   (`dev-mysql.sh`, 3314), a run by hand is a script a service (D-92, owner 2026-11-01: `dev-mysql.sh`,
-  `dev-jredis.sh` 6380, `dev-backend.sh` 8080, 8081, the arena 9021, `dev-nginx.sh` 80, 443, 9001 on every IPv4 address;
-  debugger 5005 to 5009), `run-local.sh` the four in order. Nothing in `/tmp`, `~/.m2` or `/opt` is needed by a clone: the client's builds,
+  `dev-jredis.sh` 6380, `dev-account.sh` 8083, `dev-backend.sh` 8080, 8081, the arena 9021, `dev-nginx.sh` 80, 443, 9001
+  on every IPv4 address; debugger 5005 to 5010), `run-local.sh` the five in order. Nothing in `/tmp`, `~/.m2` or `/opt` is needed by a clone: the client's builds,
   tests and drills take Unity 2019's editor, fetched once into `work/unity` (D-116), where they took .NET in `/opt` (03 §7). The built-in defaults name the development MySQL too
   (O-40): a process with no `BACKEND_DB_URL`, a test with no `JDBC_URL`, and the drills.
 - **Nothing on a development machine needs root but `dev-nginx.sh` on 80 and 443** (D-92: the owner runs it as
@@ -225,9 +229,10 @@ for the backend, its docs and its client.
 (cd backend && scripts/make-release.sh)
 
 # The whole backend from the release, a script a service (D-92); DEBUG=1 for debugger ports
-./run-local.sh start && ./run-local.sh stop         # dev-mysql, dev-jredis, dev-backend, dev-nginx in order; MySQL left running
+./run-local.sh start && ./run-local.sh stop         # dev-mysql, dev-jredis, dev-account, dev-backend, dev-nginx in order; MySQL left running
 ./dev-mysql.sh  start|stop|restart|status|test
 ./dev-jredis.sh build|start|stop|restart|status|test          # j-redis from its own build, 127.0.0.1:6380
+./dev-account.sh build|start|stop|restart|status|test         # the account service from its own build, 127.0.0.1:8083 (D-117)
 ./dev-backend.sh build|start|stop|restart|status|test|bots    # restart platform: one alone; the arena on 9021 announcing nginx's 9001
 ./dev-nginx.sh  start|stop|restart|status|test      # the release's nginx on 80 (the API and the lobby in clear, D-107), 443, 9001, every IPv4 address; root; work/nginx/ca/ca.pem
                                                     # PLAIN=1, to every command: 80 (the API, the lobby) and 9001 without TLS (D-101)
@@ -251,7 +256,7 @@ client/vs2019-check.sh
 client-simple/check.sh
 client-simple-no-tls/check.sh                       # the same check over the no-TLS tree (D-114)
 
-# Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice erase
+# Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice erase account
 TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]
 # The client on Unity 2019's Mono, in clear alone (D-116): TLS=1, FRONT=https and untrusted are refused. Through FRONT's
 # nginx: http (the API, the lobby and matches on 80's place, a match by /match/) or plain (80's and 9001's, D-101)
@@ -301,7 +306,8 @@ java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.RankBenchma
 
 MySQL: the tests, the benchmarks, a run by hand and the drills use the development MySQL
 (`./dev-mysql.sh start`, 127.0.0.1:3314, `vendor/`'s 8.4, its files in `work/mysql`): the tests
-`backend_test`, the rest `backend_dev`, user `backend` / `backend-dev-password`. The drills start it
+`backend_test`, the rest `backend_dev`, user `backend` / `backend-dev-password`; the account service's
+`account_test` and `account_dev`, user `account` / `account-dev-password`. The drills start it
 when it is not running. This VM's own MySQL 8.0 on 3306 is no longer used (O-40).
 
 **Committing.** The word check runs over the staged lines, the staged file names and the

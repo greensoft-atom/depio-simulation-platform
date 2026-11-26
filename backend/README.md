@@ -15,12 +15,13 @@ The one exception is j-redis 2.2.2, the store: it is built from [`../j-redis-ser
 and installed into the local repository first. [`../build-offline.sh`](../build-offline.sh) builds all of it, the
 release included, from the repository alone ([09](../docs/detailed-design/09-release-and-packaging.md)).
 
-**Status (2026-11-25).** Plan items 1 to 137 are done, except item 7, which stays open by design: what is left of it
+**Status (2026-11-27).** Plan items 1 to 142 are done, except item 7, which stays open by design: what is left of it
 waits on Q-3's hardware ([plan](../docs/plan.md)). Phases 1 to 5 of the [plan](../docs/plan.md#3-phases) are built
 and drilled on the development machine:
 
 - the public arena and the timed modes; matchmaking with parties and a confirm step;
-- accounts, guests and sessions; teams, tournaments, friends and the inbox; score and rating boards with seasons;
+- accounts at an account service of their own, whose tokens the platform takes for a session (D-117), guests and
+  sessions; teams, tournaments, friends and the inbox; score and rating boards with seasons;
 - the economy: equipment, item levels, boosts, gems for money through a simulated provider, the season pass and
   skins;
 - replicated stores and MySQL with scripted failover, rehearsed under load; backups proved by restoring them;
@@ -36,7 +37,7 @@ and drilled on the development machine:
 What waits is measurement on the production machines (Q-1, Q-3): the load test to 10 000 (Phase 4), and Phase 6's
 soak at target load and its capacity with a machine lost. Nothing has run on the production hardware yet.
 
-**Tests.** The modules' sources declare 1 150 tests (counted on 2026-11-25; a parameterized test counts once, so
+**Tests.** The modules' sources declare 1 155 tests (counted on 2026-11-26; a parameterized test counts once, so
 Maven's report is higher). Each module's README lists its test classes with their counts, and the build checks those
 lists against the sources (`ReadmeTestListsTest`, DOC-29). The client (the engine-free C# core, its headless driver
 and the Unity scripts) is in [client/](../client/README.md), with its own tests.
@@ -112,7 +113,8 @@ scripts/check-release-el9.sh [release-dir]          # then, in backend/; default
 ```
 
 **The live drill.** It runs the whole stack from a release, on the release's own runtime and j-redis, on ports of its
-own: j-redis 6390, platform 8093, gateway 8094, arena 9011, platform's metrics 9195 and admin API 9196. The client's
+own: j-redis 6390, platform 8093, gateway 8094, arena 9011, the account service 8097, platform's metrics 9195 and
+admin API 9196. The client's
 headless driver drives it through named scenarios. By default it runs `play`, `resume`, `badticket` and `lifecycle`;
 the others, such as `duel`, `party`, `sandbox`, `tournament`, `purchase` and `pass`, by name
 (`client/Headless/Program.cs` has every one). The drill builds the driver for .NET Framework 4.5 with Unity 2019's
@@ -152,27 +154,32 @@ Visual Studio 2019's MSBuild are in [client/](../client/README.md). Running each
 
 ## Login, and what it costs
 
-The whole chain, register, then log in, then get a ticket, then play, runs end to end in `PlatformToArenaTest`. It
-runs against a real MySQL and a real j-redis, with a plain `Socket` that speaks the real wire format. Every part of
-that chain had passing tests before the chain itself had ever run once.
+The whole chain, an access token taken for a session, then a ticket, then play, runs end to end in
+`PlatformToArenaTest`. It runs against a real MySQL and a real j-redis, with a plain `Socket` that speaks the real
+wire format; its tokens are signed as the account service signs them (`TestTokens`). Every part of that chain had
+passing tests before the chain itself had ever run once.
 
-Passwords are hashed with Argon2id, by Bouncy Castle (pure Java, nothing to install). The parameters are OWASP's
-minimum: m=19 MiB, t=2, p=1. **Measured on the development VM: 88 ms per hash.** That number is the tightest CPU
-limit in the system:
+**Passwords are the account service's** since D-117 ([account-service/](../account-service/README.md)): a person
+signs up and logs in there, and the platform takes the access token it issues, once, for a session of its own
+([detailed-design/10](../docs/detailed-design/10-accounts.md)). The account service hashes with Argon2id, by Bouncy
+Castle (pure Java, nothing to install), at OWASP's minimum: m=19 MiB, t=2, p=1. **Measured on the development VM: 88
+ms per hash**, in the platform before the code moved, unchanged. That number is the tightest CPU limit in the system:
 
 | | |
 |---|---|
-| Cost per password login | 88 ms, and 19 MiB held for the duration |
-| Concurrent hashes allowed | 8. Argon2 is memory-hard, so an unbounded burst would be an `OutOfMemoryError`, not a queue. Up to 160 more logins wait their turn |
-| Sustained password logins | **about 90 a second per process**, using 8 cores |
+| Cost per password login, at the account service | 88 ms, and 19 MiB held for the duration |
+| Concurrent hashes allowed | 8. Argon2 is memory-hard, so an unbounded burst would be an `OutOfMemoryError`, not a queue. Up to 160 more logins wait their turn, then 503 `busy` |
+| Sustained password logins | **about 90 a second per account service**, using 8 cores (measured in the platform, the same code) |
+| Cost per token the platform takes | its ES256 signature checked by Nimbus: about 2 ms of a core (1.9 to 2.4 ms on one thread, about 3 300 a second on eight), measured on 2026-11-26 on the loaded development VM with a check running beside it, so an upper figure |
 | Cost per session resume | one `HGET` |
 
-That is fine for normal use, because a session lasts a day and the common path is a resume. It is *not* fine if
-50 000 players log in inside one minute. Two consequences are already in the code:
+That is fine for normal use, because a session lasts a day and the common path is a resume; an app that comes back
+after its session ended refreshes its access token at the account service, which hashes nothing. It is *not* fine
+if 50 000 players log in with their passwords inside one minute. Two consequences are already in the code:
 
 - A session's lifetime has ±10 % jitter, so a launch window does not repeat itself as a login herd one day later.
 - The stored hash carries its own parameters, so the cost can be raised later without invalidating every password at
-  once.
+  once: the account service rehashes at the next login.
 
 ## The join ticket
 
@@ -232,20 +239,29 @@ What those tests actually establish:
 
 ## Running it
 
-Every bot takes the path a client takes: register, log in, open the lobby, ask for a match, then connect to the arena
-it was given. So a run needs the whole chain: [j-redis](../j-redis-service/README.md), [MySQL](#mysql), and one of
-each process. `platform` and `worker` use the development MySQL by default, unless `BACKEND_DB_*` says otherwise.
+Every bot takes the path a client takes: sign up or log in at the account service, take its token for a session,
+open the lobby, ask for a match, then connect to the arena it was given. So a run needs the whole chain:
+[j-redis](../j-redis-service/README.md), [MySQL](#mysql), the [account service](../account-service/README.md), and one
+of each process. `platform` and `worker` use the development MySQL by default, unless `BACKEND_DB_*` says otherwise.
 
 **The scripted way** is a script per service (D-92), run from the repository's root. `./run-local.sh start` starts,
-in this order, `dev-mysql.sh` (3314), `dev-jredis.sh` (6380), `dev-backend.sh` (the platform on 8080, the gateway on
-8081, a worker, and the arena on 9021) and `dev-nginx.sh` (80, 443 and 9001; 80 and 443 need root).
-`./run-local.sh stop` stops nginx, the backend and j-redis, and leaves MySQL running. `DEBUG=1` opens debugger ports
-5005 to 5009. This is [build and run §5](../docs/development/03-build-and-run.md#5-running-it-by-hand).
+in this order, `dev-mysql.sh` (3314), `dev-jredis.sh` (6380), `dev-account.sh` (the account service on 8083),
+`dev-backend.sh` (the platform on 8080, the gateway on 8081, a worker, and the arena on 9021) and `dev-nginx.sh` (80,
+443 and 9001; 80 and 443 need root). `./run-local.sh stop` stops nginx, the backend, the account service and
+j-redis, and leaves MySQL running. `DEBUG=1` opens debugger ports 5005 to 5010. This is [build and run §5](../docs/development/03-build-and-run.md#5-running-it-by-hand).
 
 **By hand**, on one machine, with no nginx in front:
 
 ```bash
 java -jar j-redis-server-2.2.2-all.jar --port 6380
+
+# the account service, on 127.0.0.1:8083 (D-117), on account_dev by default: its settings by environment, its
+# signing key's value in a file, made once by
+#   (umask 077 && <release>/scripts/account-key.sh | sed -n 's/^ACCOUNT_SIGNING_KEY=//p' > signing.key)
+# The platform's defaults name it, its issuer and its key set (O-102)
+ACCOUNT_PORT=8083 ACCOUNT_ISSUER=http://127.0.0.1:8083 ACCOUNT_SIGNING_KEY_FILE=signing.key \
+ACCOUNT_EVENTS_URL=http://127.0.0.1:8080/v1/account-events \
+     java -cp '<release>/account/lib/*' com.backend.account.AccountMain
 
 # platform: bind host, port, store host, store port
 java -cp '<release>/lib/platform/*' com.backend.platform.PlatformMain 127.0.0.1 8080 127.0.0.1 6380
@@ -260,9 +276,9 @@ java -XX:+UseZGC -XX:+ZGenerational --add-opens java.base/java.nio=ALL-UNNAMED \
      -cp '<release>/lib/arena/*' com.backend.arena.ArenaMain \
      9001 5700 150 1500 4 127.0.0.1 6380 arena-1 0 ./spool/arena-1 127.0.0.1 127.0.0.1
 
-# headless load: bots, seconds, platform URL, lobby URL
+# headless load: bots, seconds, platform URL, lobby URL, account service URL
 java -cp tools/target/tools-0.1.0-SNAPSHOT-all.jar com.backend.tools.BotClient \
-     120 15 http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby
+     120 15 http://127.0.0.1:8080 ws://127.0.0.1:8081/lobby http://127.0.0.1:8083
 ```
 
 `<release>` is what `scripts/make-release.sh` builds, `target/release/backend-<version>`. The processes can run on
@@ -372,8 +388,9 @@ A path that no route has gets the API's JSON 404, `no_such_route` (D-107).
 **Why 503 and not 500** for a full system or a store that does not answer: nothing is wrong with the request, so the
 client should come back later rather than report a fault.
 
-**One answer for two failures.** A wrong password and an unknown user return the same 401 with the same code.
-Otherwise the API would tell an attacker which usernames exist.
+**One answer for two failures.** At the account service, a wrong password and an unknown username return the same
+401 `invalid_credentials`, after the same hash (a decoy for an unknown name). Otherwise it would tell an attacker
+which usernames exist.
 
 **Bots and the login limits.** `BotClient` gives each bot its own address from 198.18.0.0/15, the range reserved for
 benchmarking (RFC 2544), and sends it as `X-Forwarded-For`. So a local load run looks like many clients, not one
@@ -584,11 +601,12 @@ inventing them. "Defensible" is not "tuned".
 
 The client is C# ([client/](../client/README.md)), on .NET Framework 4.5. This machine runs no Unity editor (it
 needs a licence); Unity 2019.4.28f1's compiler, assemblies and Mono are in `work/unity`, and every build and run of
-the client here uses them (D-116). The load tools stay Java. `LobbyClient` is the lobby flow (register, log in, hold a
-WebSocket, ask for a match), written with nothing but the JDK's HTTP and WebSocket clients.
+the client here uses them (D-116). The load tools stay Java. `LobbyClient` is the lobby flow (sign in at the account service,
+take its token for a session, hold a WebSocket, ask for a match; D-117), written with nothing but the JDK's HTTP and
+WebSocket clients.
 
-`BotClient` uses it, so **every bot takes the path a real client takes**: register, log in, lobby, match request,
-then the arena that platform named. It used to write tickets straight into the store. That meant a load run never
+`BotClient` uses it, so **every bot takes the path a real client takes**: the account service, a session, lobby,
+match request, then the arena that platform named. It used to write tickets straight into the store. That meant a load run never
 touched `platform` or `gateway` at all, and measured a path no client will ever use.
 
 ```

@@ -38,6 +38,15 @@ tournament, leaderboard, economy, items, social and notify (see
 its own later must be a change to the build files, not a rewrite. Split a module out only when it
 clearly needs its own scaling or its own failure behaviour, not on principle.
 
+**Beside the four, the account service**
+([D-117](03-decision-log.md#d-117--accounts-in-an-account-service-of-their-own-which-issues-signed-tokens-the-backend-takes-once-for-a-session),
+2026-11-26): sign-up, login, the passwords and the tokens, in a system of its own that the owner wants apart, as an
+OAuth 2.0 authorization server is beside the services that trust it. It is not a fifth process type: D-4's split
+stands for the backend, and the account service shares nothing of it but MySQL's server, where its database is its
+own (`account`), and the front's nginx (`/account/v1/`). It runs one a machine, on 8070, stateless but for MySQL, so
+nginx sends to any; one at launch. The platform takes its access token once, for a session, checked against the key
+set it reads from it ([detailed-design/10](../detailed-design/10-accounts.md)).
+
 Several JVMs on one machine are still right, even with ZGC, for **crash isolation**: one fatal
 error takes down one arena's rooms, not all of them (NFR-8).
 
@@ -48,19 +57,19 @@ error takes down one arena's rooms, not all of them (NFR-8).
 an IP address, with no domain. The provider forwards three of its ports, 80, 443 and 9001, to one
 machine, called **the front**. nginx on the front takes every connection a player makes:
 
-- **443**: nginx ends TLS. It sends the API (`/v1/`) to a platform and the lobby (`/lobby`) to a
-  gateway.
+- **443**: nginx ends TLS. It sends the API (`/v1/`) to a platform, sign-up and login
+  (`/account/v1/`) to an account service, and the lobby (`/lobby`) to a gateway.
 - **9001**: nginx ends TLS and passes each match connection to one arena. It picks the arena by the
   name the client sent in the TLS handshake (the arena's **TLS name**, for example
   `a1.arena.internal`). Before the client's bytes, nginx sends the arena one PROXY line with the
   phone's address ([D-105](03-decision-log.md#d-105--an-arena-behind-the-front-knows-the-phones-address-nginxs-proxy-line-read-once)).
-- **80**: the same API and lobby without TLS, and matches without TLS. A client without TLS asks
+- **80**: the same API, account service and lobby without TLS, and matches without TLS. A client without TLS asks
   for its arena by name with `GET /match/<the grant's tlsName>` and an HTTP upgrade
   ([D-115](03-decision-log.md#d-115--a-players-build-may-connect-without-tls-and-the-site-serves-it-on-80-matches-included)).
   What crosses 80 is readable by anyone on the way.
 
-nginx passes everything on over the private network, to a platform, a gateway or an arena on any of
-the three machines. Every machine is set up as a front, so the provider can forward to another one
+nginx passes everything on over the private network, to a platform, an account service, a gateway or
+an arena on any of the three machines. Every machine is set up as a front, so the provider can forward to another one
 if the front is lost. The certificate nginx serves comes from the backend's own certificate
 authority (CA), whose root certificate the app ships and trusts
 ([operations/06](../operations/06-certificates.md)).
@@ -77,14 +86,18 @@ flowchart LR
         p80["80, in clear (D-115)"]
     end
     platform["a platform, 8080"]
+    account["an account service, 8070"]
     gateway["a gateway, 8090"]
     arena["the arena the name gives, 9011 to 9013"]
-    app -->|"HTTPS /v1/, WSS /lobby"| p443
+    app -->|"HTTPS /v1/ and /account/v1/, WSS /lobby"| p443
     app -->|"a match over TLS, sending the TLS name"| p9001
-    app -->|"HTTP /v1/, WS /lobby, GET /match/name"| p80
+    app -->|"HTTP /v1/ and /account/v1/, WS /lobby, GET /match/name"| p80
     p443 -->|"/v1/"| platform
+    p443 -->|"/account/v1/"| account
     p443 -->|"/lobby"| gateway
     p80 -->|"/v1/"| platform
+    p80 -->|"/account/v1/"| account
+    platform -->|"the key set, its own machine's"| account
     p80 -->|"/lobby"| gateway
     gateway -->|"HTTP, its own machine's platform"| platform
     p9001 -->|"by the TLS name, a PROXY line first"| arena
@@ -98,12 +111,13 @@ The three machines of the design, with each role's allocated cores and memory:
 | nginx | 1c / 1G | 1c / 1G | 1c / 1G |
 | gateway | 2c / 4G | 2c / 4G | 2c / 4G |
 | platform | 2c / 4G | 2c / 4G | 2c / 4G |
+| account service | 1c / 2G | 1c / 2G | 1c / 2G |
 | worker | — | — | ×2, 4c / 4G |
 | arena | ×2, 8c / 16G | ×3, 12c / 24G | ×2, 8c / 16G |
 | MySQL | **primary** 6c / 20G | — | replica 3c / 20G |
 | j-redis `session` | **primary** 2c / 8G | replica 1c / 8G | — |
 | j-redis `events` | — | **primary** 2c / 8G | replica 1c / 8G |
-| **allocated** | 21c / 53G | 20c / 49G | 21c / 57G |
+| **allocated** | 22c / 55G | 21c / 51G | 22c / 59G |
 
 j-redis is the backend's own store, compatible with Redis. It runs as two instances of the same
 binary, with different ports and data directories:
@@ -113,6 +127,14 @@ binary, with different ports and data directories:
 
 They are separate so that a backlog of events can never evict a session, and so that the two fail
 independently ([D-7](03-decision-log.md#d-7--two-j-redis-instances-not-one)).
+
+**The account service's row** (added 2026-11-26, D-117): its heap is 1 GiB, fixed, for the hasher's line at its
+full eight, about 150 MiB live ([10 §6.1](../detailed-design/10-accounts.md#61-the-release)); 2G with the JVM's own
+memory. One core is its steady state: a password login is 88 ms of one core (Argon2id), and the common ways back in
+hash nothing, a session lasting a day and an app whose session ended refreshing its access token. 50 000 players
+logging in by password once a day is about 0.6 a second, a twentieth of a core. A login herd is held by the hasher's
+line, eight hashes at once and 160 waiting, then 503 `busy` with `Retry-After`, about 90 logins a second for each
+account service; its bursts borrow the machine's slack, as the platform's Argon2 did before D-117.
 
 The allocations are ceilings, not steady-state use. The arenas' 28 allocated cores carry a load of
 about 25 cores at full occupancy. Each arena is set for 1 800 players in battle (12 rooms of 150).
@@ -125,7 +147,7 @@ machine. That machine is the front, and it holds every role in the table above, 
 names and ports, on loopback:
 
 - nginx;
-- one platform and one gateway;
+- one platform, one account service and one gateway;
 - the arenas `a1` to `a3`, 5 400 places;
 - the workers `c1` and `c2`;
 - the stores `session` and `events`, with no replica;
@@ -173,15 +195,15 @@ downstream traffic. That is why the send *rate* matters more than shaving bytes 
 
 ### Core budget
 
-| | arena | gateway | platform | worker | j-redis | MySQL | nginx | OS | total |
-|---|---|---|---|---|---|---|---|---|---|
-| Cores | 25 | 6 | 6 | 3 | 4 | 6 | 2 | 6 | **58 of 72** |
+| | arena | gateway | platform | account service | worker | j-redis | MySQL | nginx | OS | total |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Cores | 25 | 6 | 6 | 3 | 3 | 4 | 6 | 2 | 6 | **61 of 72** |
 
 An arena's cores go to three things: the simulation, the encoding of snapshots, and the socket
 writes (~750 000 a second at full occupancy). Encoding was measured on the development VM at 2.1 to
 2.2 ms p50 for each round of 150 clients ([tick benchmark](../../backend/README.md#the-tick-benchmark)).
 That is 15 × 2.15 ≈ 32 ms per room per second, or ~10.7 cores across 333 rooms: four times the
-~0.5 ms first estimated. The 14 spare cores are the margin for bursts, garbage collection and
+~0.5 ms first estimated. The 11 spare cores are the margin for bursts, garbage collection and
 measurement error. They are not capacity to sell.
 
 **Socket I/O is the largest part, and it is not in the 25 cores.** It was measured on the

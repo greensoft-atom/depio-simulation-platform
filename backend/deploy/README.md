@@ -311,14 +311,15 @@ an operator sets by hand:
 | `BACKEND_DRILL_SQL`, `BACKEND_ADMIN_URL`, `BACKEND_ADMIN_TOKEN` | the headless client | set by `client/headless-drill.sh` |
 | `TMPDIR`, `SEED_DB`, `SEED_PASSWORD` | `backup-drill.sh` | `/tmp`, `backend_dev`, `backend-dev-password` |
 | `RELEASE` | `backup-drill.sh` | none: the machine's `/usr/sbin/mysqld` and tools; given a release with `mysql/`, its MySQL 8.4 |
-| `SKIP_TESTS` | `dev-jredis.sh build`, `dev-backend.sh build`, and so `build-offline.sh` | 0 (every test runs) |
+| `SKIP_TESTS` | `dev-jredis.sh build`, `dev-account.sh build`, `dev-backend.sh build`, and so `build-offline.sh` | 0 (every test runs) |
 | `WORK` | `dev-env.sh`, so every script that sources it | `work/` in the checkout: Maven's settings and local repository, `TMPDIR`, the development MySQL, a run by hand (D-80) |
 | `MYSQL_PORT` | `dev-env.sh`, so every script that sources it | 3314, the development MySQL's |
 | `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT` | `dev-env.sh`: `dev-jredis.sh`, `dev-backend.sh`, `dev-nginx.sh` | 6380, 8080, 8081, 9021, each on 127.0.0.1 (D-92) |
+| `ACCOUNT_PORT` | `dev-env.sh`: `dev-account.sh`, `dev-backend.sh` (the platform's issuer and key set), `dev-nginx.sh` (`/account`) | 8083, on 127.0.0.1 (D-117) |
 | `NGINX_HTTP_PORT`, `NGINX_HTTPS_PORT`, `NGINX_MATCH_PORT` | `dev-env.sh`: `dev-nginx.sh`, and `dev-backend.sh`, whose arena announces the last | 80 (the player API and the lobby in clear, D-107; matches by name too), 443 (the same over TLS), 9001 (matches over TLS), every IPv4 address; 80 and 443 need root (D-92) |
 | `PLAIN` | `dev-env.sh`: `dev-nginx.sh`, `dev-backend.sh` | 0; `PLAIN=1` runs nginx and the arena without TLS, the API and the lobby on `NGINX_HTTP_PORT`, matches on `NGINX_MATCH_PORT`, for development alone (D-101) |
 | `PUBLIC_ADDRESS`, `ARENA_TLS_NAME` | `dev-env.sh`: `dev-nginx.sh` (the certificate), `dev-backend.sh` (the arena's announcement) | the machine's first IPv4 address (`hostname -I`), else 127.0.0.1; `a1.arena.internal` (D-92) |
-| `DEBUG` | `dev-backend.sh`, `dev-jredis.sh` | unset; `DEBUG=1` opens debugger ports 5005 to 5009 |
+| `DEBUG` | `dev-backend.sh`, `dev-jredis.sh`, `dev-account.sh` | unset; `DEBUG=1` opens debugger ports 5005 to 5010 (the account service's 5010) |
 | `IMAGE` | `check-release-el9.sh`, `check-units-el9.sh`, `check-install-guide-el9.sh`, `check-two-machines-el9.sh`, `check-certificates.sh` | `registry.access.redhat.com/ubi9/ubi-minimal:9.5` for the first; `registry.access.redhat.com/ubi9/ubi-init:9.5` for the next three; none for `check-certificates.sh`, which then runs on this machine |
 | `GUIDE_VALUES` | `check-install-guide-el9.sh` | none: values set after the install guide's own |
 | `SAVE_A`, `A_IMAGE`, `STANDBY_ONLY` | `check-two-machines-el9.sh` | none ([scripts/README](../scripts/README.md#check-two-machines-el9sh)) |
@@ -336,15 +337,17 @@ Who connects to each port, the firewall on each machine, and what must change to
 
 | Port | Listener | Bound to | Where |
 |---|---|---|---|
-| 443 | nginx: HTTPS, the API and the lobby, to all three machines' platforms and gateways | every address, IPv4 and IPv6 | A, B, C; reached on the front alone (D-82) |
+| 443 | nginx: HTTPS, the API, the account service's `/account/v1/` and the lobby, to all three machines' platforms, account services and gateways | every address, IPv4 and IPv6 | A, B, C; reached on the front alone (D-82) |
 | 80 | nginx in clear, for a client without TLS: 443's server with the same locations, and `/match/<name>` to the arena of that name (D-115) | every address, IPv4 and IPv6 | A, B, C; reached on the front alone |
 | 9001 | nginx's `stream`: match traffic's TLS ended, each connection passed to the arena its TLS name gives | every address, IPv4 and IPv6 | A, B, C; reached on the front alone |
 | 8080 | platform (`/v1/` behind nginx; the gateway calls it too) | the machine's private address | A, B, C |
 | 8090 | gateway (`/lobby` behind nginx) | the machine's private address | A, B, C |
+| 8070 | the account service (`/account/v1/` behind nginx, as `/v1/`; the platforms read its key set) (D-117) | the machine's private address | A, B, C |
 | 9011, 9012, 9013 | the arenas, one port each ([05 §3](../../docs/operations/05-ports-and-firewall.md#3-the-arenas-their-ports-and-their-names)), plaintext behind nginx | the machine's private address | A (2), B (3), C (2) |
 | 9120 | platform's admin API, when it is named | loopback, enforced | A, B, C |
 | 9101 | platform's metrics | `127.0.0.1` | A, B, C |
 | 9103 | gateway's metrics | `127.0.0.1` | A, B, C |
+| 9104 | the account service's metrics | `127.0.0.1` | A, B, C |
 | 9110, 9111, 9113 | the arenas' metrics, one each (9112 is skipped: it is a worker's on C) | `127.0.0.1` | A, B, C |
 | 9102, 9112 | workers' metrics (`c1`, `c2`) | `127.0.0.1` | C |
 | 6379 | j-redis `session`: the primary on A, the replica on B | `127.0.0.1` and the machine's private address ([01 §3](../../docs/operations/01-deploy.md#3-j-redis-built-and-tested)) | A, B |
@@ -375,6 +378,7 @@ metrics 9110, 9111 and 9113) and two workers (9102, 9112). Everything but nginx'
 | 8093 | platform | `client/headless-drill.sh` |
 | 8094 | gateway | `client/headless-drill.sh` |
 | 9011 | arena | `client/headless-drill.sh` |
+| 8097 | the account service (D-117) | `client/headless-drill.sh` |
 | 9195, 9196 | platform's metrics, its admin API | `client/headless-drill.sh` |
 | 9197, 9198, 9199 | the arena's, the gateway's and the worker's metrics | `client/headless-drill.sh` |
 | 9193 | a second worker's metrics (`IDLEGUEST=1`) | `client/headless-drill.sh` |
@@ -382,11 +386,12 @@ metrics 9110, 9111 and 9113) and two workers (9102, 9112). Everything but nginx'
 | 8095, 8096, 9095 | the release's nginx in front of the drill (`FRONT=`), in the places of 80, 443 and 9001 | `client/headless-drill.sh` |
 | 3307, 3308 | MySQL primary and replica (`MYSQL_FAILOVER`) | `client/headless-drill.sh` |
 | 3307, 3309 | MySQL primary and scratch server | `backup-drill.sh` (not at the same time as `MYSQL_FAILOVER`) |
-| 3314 | the development MySQL, `vendor/`'s 8.4 (`backend_test`, `backend_dev`) | `dev-mysql.sh`: the tests, the benchmarks, `run-local.sh` and both drills, which start it when it is not running; the processes' and the tests' built-in defaults (D-80, O-40). Nothing here uses a machine's own 3306 |
+| 3314 | the development MySQL, `vendor/`'s 8.4 (`backend_test`, `backend_dev`, and the account service's `account_test`, `account_dev`) | `dev-mysql.sh`: the tests, the benchmarks, `run-local.sh` and both drills, which start it when it is not running; the processes' and the tests' built-in defaults (D-80, O-40). Nothing here uses a machine's own 3306 |
 | 6380, 8080, 8081, 9021 | j-redis, platform, gateway, arena | `dev-jredis.sh`, `dev-backend.sh` (D-92) |
+| 8083 | the account service | `dev-account.sh` (D-117) |
 | 6380, 8080, 8081, 9001 | the same, in the by-hand example of [backend/README](../README.md#running-it), with no nginx | that example |
 | 80, 443, 9001 | the release's nginx in front of a run by hand, on every IPv4 address: the API and the lobby in clear and over TLS, matches | `dev-nginx.sh` (D-92, D-107); with `PLAIN=1`, 80 and 9001 alone, without TLS (D-101) |
-| 5005 to 5009 | the debugger, one port per process | `DEBUG=1 ./run-local.sh start` |
+| 5005 to 5010 | the debugger, one port per process (the account service's 5010) | `DEBUG=1 ./run-local.sh start` |
 | 18080 | the release's nginx, on loopback | `check-nginx-logs.sh` (`PORT`) |
 
 All of these bind `127.0.0.1`, except the nginx of `dev-nginx.sh` and of the drill's `FRONT=`, which bind every IPv4

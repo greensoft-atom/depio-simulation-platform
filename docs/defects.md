@@ -1731,6 +1731,17 @@ its password hashing in (d) (D-117). **Fixed:** its comment says the account ser
 sizing now (`backend-account.service`, 10 §6.1). The heap itself, 3 GiB, stays: the capacity model's, whose other
 parts are unchanged.
 
+**DOC-60, found 2026-11-26, FIXED the same day** (plan item 142 (g), the documents' sweep). Five pages still put the
+password hashing in the platform, or left the account service out, after (d) moved it: 01's metrics table listed
+no metric of the account service's, and under the platform a `hasher_line` and login outcomes it no longer has;
+04's scaling table gave the platform the ~57 password logins a second; the topology had no row for its cores or
+memory, nor said how D-117 stands beside D-4; the availability model's failure table had no row for it; and 11's
+table of who reads the phone's address left it out. **Fixed:** each page as the code is: the account service's five
+series in 01 (`account_requests_total`, `account_hasher_line`, `account_events_pending`,
+`account_events_delivered_total`, `account_event_failures_total`), its row in 04 and the platform's token check,
+measured (about 2 ms of a core, an upper figure on this VM); 1c / 2G a machine in the topology and its three cores
+in the budget, with the reason; its failure; its `ACCOUNT_TRUSTED_PROXIES`.
+
 ## 7. Documentation
 
 The audit found the documents have drifted from the code in ~60 places. The six

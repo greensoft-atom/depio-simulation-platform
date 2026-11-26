@@ -28,7 +28,7 @@ are in the [glossary](../../docs/glossary.md).
 | [`check-install-guide-el9.sh`](#check-install-guide-el9sh) | Release | no | a person, on a machine with Docker: the install guide's blocks as written, in UBI 9 with no network; then the launch's one machine checked (D-93), again after a restart, and the runbook's restore after the database's disk is lost |
 | [`check-two-machines-el9.sh`](#check-two-machines-el9sh) | Release | no | root, on a machine with Docker and Unity's editor in `work/unity`: the two-machine page's steps as written (D-96) on two UBI 9 machines joined by a private link, the site probed throughout; B's own arenas (D-97); then A's MySQL lost, then A lost |
 | [`check-ports-el9.sh`](#check-ports-el9sh) | Release | no | a person, on a machine with Docker and Unity's editor in `work/unity` |
-| [`check-bind.sh`](#check-bindsh) | Ports | yes | `dev-mysql.sh`, `dev-jredis.sh`, `dev-backend.sh`, `dev-nginx.sh` and `client/headless-drill.sh`, before they start anything; a person, on a server whose unit says `Permission denied` on its port |
+| [`check-bind.sh`](#check-bindsh) | Ports | yes | `dev-mysql.sh`, `dev-jredis.sh`, `dev-account.sh`, `dev-backend.sh`, `dev-nginx.sh` and `client/headless-drill.sh`, before they start anything; a person, on a server whose unit says `Permission denied` on its port |
 | [`check-selinux-el9.sh`](#check-selinux-el9sh) | Ports | no | a person, on a machine with QEMU: `check-bind.sh`'s SELinux branch and the three grants, in a Rocky 9 guest with SELinux enforcing (D-90) |
 | [`binlog-stream.sh`](#binlog-streamsh) | Backups | yes | `backend-binlog-stream.service`, always on |
 | [`backup-mysql.sh`](#backup-mysqlsh) | Backups | yes | `backend-mysql-backup.timer`, nightly |
@@ -370,7 +370,7 @@ Why it is needed: on Linux a port above 1023 is any user's, so `Permission denie
 process's own error does not name the policy. A port below 1024 (for example nginx's 80 and 443, for a user who is
 not root) is root's by Linux's own rule, and the script says so, with the ways round it (O-48).
 
-`dev-mysql.sh`, `dev-jredis.sh`, `dev-backend.sh`, `dev-nginx.sh` and `client/headless-drill.sh` run it before they
+`dev-mysql.sh`, `dev-jredis.sh`, `dev-account.sh`, `dev-backend.sh`, `dev-nginx.sh` and `client/headless-drill.sh` run it before they
 start anything; it replaced their old test of a port in use. On a server, run it as the unit's user when the
 unit's journal says `Permission denied` on its port.
 

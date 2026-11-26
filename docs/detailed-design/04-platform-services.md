@@ -29,7 +29,7 @@ flows are drawn in [diagrams/04-platform](../diagrams/04-platform.md).
 ```
 platform
  ├── net          HTTP API behind the front's nginx (D-82); the gateway calls it for match requests (03-gateway.md)
- ├── auth         register, login, sessions, bans
+ ├── auth         the account service's tokens taken for sessions (D-117), guests, sessions, bans
  ├── player       profile, settings, progression, cache-aside
  ├── team         create/invite/apply/roles/kick/transfer/disband
  ├── rooms        arena registry, room registry, allocation, join tickets

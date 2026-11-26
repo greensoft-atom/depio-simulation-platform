@@ -104,15 +104,17 @@ version", and uses its own Java 25.
 [`.vscode/launch.json`](../../.vscode/launch.json) has two kinds of configuration. Pick them in the Run and Debug
 view.
 
-**Attach: platform, worker, gateway, arena.** These attach to a process that `dev-backend.sh` started with a
-debugger port:
+**Attach: platform, worker, gateway, arena, account.** These attach to a process that `dev-backend.sh`, or for the
+account service `dev-account.sh` (D-117), started with a debugger port:
 
 ```bash
 DEBUG=1 ./run-local.sh start          # every process; or one: DEBUG=1 ./dev-backend.sh restart platform
+DEBUG=1 ./dev-account.sh restart      # the account service alone
 ```
 
 Then pick the configuration for the process, and set breakpoints in the sources. The breakpoints match, because
-the release was built from those sources. Rebuild the release after you change the sources.
+the release was built from those sources, and the account service runs from its own build. Rebuild the release after
+you change the backend's sources, and `./dev-account.sh build` after you change the account service's.
 
 | Configuration | Debugger port |
 |---|---|
@@ -120,6 +122,7 @@ the release was built from those sources. Rebuild the release after you change t
 | Attach: worker | 5006 |
 | Attach: gateway | 5007 |
 | Attach: arena | 5008 |
+| Attach: account | 5010 |
 
 **Launch: platform, worker, gateway, arena.** These run one process from its sources, on `vendor/`'s JDK, with
 `dev-backend.sh`'s arguments, ports and database. The arena launched this way announces 127.0.0.1 through nginx's
