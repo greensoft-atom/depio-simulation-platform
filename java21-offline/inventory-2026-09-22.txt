@@ -245,3 +245,5 @@ org.tukaani:xz:1.11:
 org.tukaani:xz:1.12:
 org.vafer:jdependency:2.15:
 org.yaml:snakeyaml:2.5:
+# Added 2026-11-26 (plan item 142 (b)): enforced the same way, in the account service's probe, from an empty local repository.
+com.nimbusds:nimbus-jose-jwt:10.10:

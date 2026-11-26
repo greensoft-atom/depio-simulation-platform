@@ -5,8 +5,8 @@
   "target_jdk": 21,
   "verified_with": "Temurin 21.0.12.1 + Maven 3.9.16 (the inventory's jars); describe.py's class-file read (all)",
   "max_bytecode_major": 65,
-  "jar_count": 300,
-  "lib_count": 74,
+  "jar_count": 301,
+  "lib_count": 75,
   "lib_test_count": 27,
   "artifacts": [
     {
@@ -528,6 +528,19 @@
       "multi_release": true,
       "category": "Compression",
       "enforcer_checked": false
+    },
+    {
+      "group": "com.nimbusds",
+      "artifact": "nimbus-jose-jwt",
+      "version": "10.10",
+      "classifier": "",
+      "file": "nimbus-jose-jwt-10.10.jar",
+      "size_bytes": 843163,
+      "bytecode_major": 52,
+      "java": "8",
+      "multi_release": true,
+      "category": "Crypto",
+      "enforcer_checked": true
     },
     {
       "group": "org.bouncycastle",

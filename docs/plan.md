@@ -58,7 +58,7 @@ and fixed-phrase chat
 | Component | State |
 |---|---|
 | **j-redis-service** | **2.2.2 shipped** (2026-11-25): `HELLO` reports the server's role (D-52, plan item 139). 2.2.1 (2026-10-01): a subscriber follows the primary as every other connection does (plan item 50). 2.2.0 (2026-09-29) added replication, a primary and its replicas with promotion guarded by epochs; 2.1.0 (the same day) streams, on 2.0.0's Java 21 base. 229 tests, crash-tested with and without a replica, offline build, documented. See its [README](../j-redis-service/README.md). |
-| `java21-offline` bundle | Built and verified: 244 jars, 0 above Java 21, offline build proven from an empty repository. It holds 300 jars today: 56 were added on 2026-09-23, after that check, listed since 2026-11-25 and marked `later` ([its README](../java21-offline/README.md), DOC-57). |
+| `java21-offline` bundle | Built and verified: 244 jars, 0 above Java 21, offline build proven from an empty repository. It holds 301 jars today: 56 were added on 2026-09-23, after that check, listed since 2026-11-25 and marked `later` ([its README](../java21-offline/README.md), DOC-57); Nimbus JOSE + JWT 10.10 on 2026-11-26, checked as the inventory's were (D-117). |
 | Requirements | [Written](requirements/01-scope-and-nfrs.md), with 64 questions recorded. Four wait on the owner's machines or players: Q-1 uplink, Q-2 in-battle ratio, Q-3 production measurements, Q-4 how players cluster. Six wait on the owner's choices: Q-52, a real payment provider (the flow is built, its provider simulated); Q-53, where the backups' copies off the site go; Q-58, a day of results past 20 000 players; Q-59, the app's updates; Q-60, where alerts go; Q-62, the launch's machine. The owner held Q-53, Q-58, Q-59, Q-60 and Q-62 on 2026-11-01. The rest are answered, or built on their recommendations unless the owner decides otherwise. |
 | Architecture | [Topology](architecture/01-system-topology.md), [availability](architecture/02-availability.md) and the [decision log](architecture/03-decision-log.md), D-1 to D-116, written. At launch, every role on one machine (D-93, topology §2). |
 | `arena` design | [Current](detailed-design/01-arena.md), with what is not built marked in place: replays, the in-room events beyond the kill feed, and co-op's tiers. The modes, the maze's walls, the whole tank tree and the kill feed are built. |
@@ -4697,6 +4697,14 @@ backend passwords kept (nothing has launched). The design is
   script; the install guide, the backups of both databases and the runbook's restore; the two machines' guide; every
   check that installs or starts the site.
 - **(g) The documents and the rule files**: every page that names the processes, the ports or the routes.
+
+**(a) done 2026-11-26** (7fccfe4): D-117, the design, this item. **(b) done 2026-11-26:** Nimbus JOSE + JWT 10.10 in
+the bundle, by its method: a probe of the account service's whole set of libraries and plugins built online with the
+bundle as its local repository downloaded Nimbus's jar and POM alone; the enforcer's `maxJdkVersion 21` passed; rebuilt
+from an empty local repository, 451 artifacts from the bundle and none from anywhere else; the jar's line in the
+inventory, so not `later`; 301 jars, none above Java 21. The probe was the session's, as the bundle's first ones were
+not kept either; what it showed is in the bundle's README §8. The bundle's 123 `_remote.repositories` files, committed
+before this, are left as they were.
 
 ---
 

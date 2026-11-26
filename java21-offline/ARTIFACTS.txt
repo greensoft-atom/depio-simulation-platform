@@ -3,7 +3,7 @@ class files by describe.py. The jars of the inventory of 2026-09-22 also passed 
 + extra-enforcer-rules during a real build on Temurin 21; the jars added after it, marked
 'later', were checked here alone (inventory-2026-09-22.txt).
 
-300 jars, 56 of them later.  'rt' = also in lib/ (runtime), 'test' = also in lib-test/.
+301 jars, 56 of them later.  'rt' = also in lib/ (runtime), 'test' = also in lib-test/.
 'mr' = multi-release jar (has JDK-specific overlays).
 
 
@@ -55,7 +55,8 @@ class files by describe.py. The jars of the inventory of 2026-09-22 also passed 
   org.tukaani:xz                                           1.12                   Java 8       164 KB  rt mr
   org.tukaani:xz                                           1.9                    Java 7       113 KB  mr later
 
-=== Crypto (7) ===
+=== Crypto (8) ===
+  com.nimbusds:nimbus-jose-jwt                             10.10                  Java 8       823 KB  rt mr
   org.bouncycastle:bcpkix-jdk15on                          1.69                   Java 5       887 KB  mr
   org.bouncycastle:bcpkix-jdk18on                          1.86                   Java 8      1310 KB  rt mr
   org.bouncycastle:bcprov-jdk15on                          1.69                   Java 5      5609 KB  mr

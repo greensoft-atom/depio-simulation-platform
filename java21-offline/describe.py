@@ -33,7 +33,7 @@ CATEGORIES = [
     ("Apache Commons", ("org.apache.commons", "commons-io", "commons-codec", "commons-logging",
                         "commons-beanutils", "commons-collections")),
     ("Compression", ("org.lz4", "org.tukaani", "com.github.luben")),
-    ("Crypto", ("org.bouncycastle",)),
+    ("Crypto", ("org.bouncycastle", "com.nimbusds")),
     ("Metrics", ("io.micrometer", "io.prometheus")),
     ("Testing / benchmarking", ("org.junit", "org.assertj", "org.mockito", "org.awaitility",
                                 "org.openjdk.jmh", "net.bytebuddy", "org.objenesis", "org.opentest4j",
