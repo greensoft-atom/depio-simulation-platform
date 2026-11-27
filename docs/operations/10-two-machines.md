@@ -19,9 +19,9 @@ load past about 4 000 players in battle: three arenas of B's own, behind A's ngi
 1. It installs A by the install guide's own check, in Red Hat's UBI 9.5 with systemd and no network. Then it starts a
    second such machine, B, joined to A by a private link alone.
 2. It runs every `bash` block between this page's markers, in order, each on the machine its first line names.
-   Meanwhile a probe uses the site through A's nginx twice a second, and times every refusal; every tenth second it
-   signs up at the account service and takes the token for a session (D-117). Then it checks that B is the standby
-   (§7).
+   Meanwhile a probe uses the site through A's nginx twice a second, and times every refusal; beside it, in a loop
+   of its own, so that its waits lengthen no gap, it signs up at the account service every ten seconds and takes the
+   token for a session (D-117). Then it checks that B is the standby (§7).
 3. It runs §10's blocks, B's own arenas. It reaches each of them by its name on A's 9001, verified and passed to B;
    it checks that A's watch reads them; and the C# headless client plays matches on them through A's nginx, with A's
    arenas stopped for it.
@@ -38,24 +38,24 @@ load past about 4 000 players in battle: three arenas of B's own, behind A's ngi
 runs.
 
 **What it measured.** It ran on a development VM under other load, so each figure moves by a few seconds between
-runs. The figures are from two runs of the page as written on 2026-11-26, with the account service and §10 (plan item
-142); in brackets, the earlier ones, from the runs of D-96 and D-97 before the account service.
+runs. The figures are from a run of the page as written on 2026-11-27, with the account service and §10, the probe's
+sign-ups in a loop of their own (plan item 143); in brackets, the earlier ones, from the runs of D-96 and D-97 before
+the account service. Two runs of 2026-11-26, whose probe waited for its sign-ups between its requests, read MySQL's
+restart as 23 to 26 s and saw no store's restart: those were the probe's own waits.
 
 | What happened | How long the site refused requests |
 |---|---|
-| MySQL's restart (§3) | 23 to 26 s (15 s) |
-| each store's restart (§3) | none seen by the probe (5 to 10 s) |
-| the platform's restart (§6) | 9 to 10 s (14 to 16 s) |
-| A's MySQL lost | 11 s, from its stop to the next write, on B (11 to 16 s) |
-| A lost, the runbook's steps run at once | until B served, 68 to 69 s after the cut, with B's arenas (74 s; 62 to 67 s without them) |
-| §10: A's platform's restart | 9 to 10 s (10 to 18 s) |
+| MySQL's restart (§3) | 16 s (15 s) |
+| each store's restart (§3) | 10 s (5 to 10 s) |
+| the platform's restart (§6) | 8 s (14 to 16 s) |
+| A's MySQL lost | 16 s, from its stop to the next write, on B (11 to 16 s) |
+| A lost, the runbook's steps run at once | until B served, 68 s after the cut, with B's arenas (74 s; 62 to 67 s without them) |
+| §10: A's platform's restart | 10 s (10 to 18 s) |
 | §10: B frozen | no gap |
 
-Of about 500 requests in each run, 64 and 59 were refused, all of them within those gaps. In the second run the probe
-signed up 25 times: 24 were answered 201, every one of them then in B's `account` database, three of them refused
-their session in a gap (the platform's refusal, the account having been made). The probe's sign-up waits up to 10 s
-for each of its two answers, and the probe sends nothing else meanwhile, so one that falls in a gap lengthens it: the
-longer gap at MySQL's restart may be partly the probe's own.
+Of 503 requests, 63 were refused, all of them within those gaps. The probe signed up 30 times: 26 were answered 201,
+every one of them then in B's `account` database, three of them refused their session in a gap (the platform's
+refusal, the account having been made).
 
 ## 1. What it makes
 

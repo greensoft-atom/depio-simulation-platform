@@ -4924,6 +4924,16 @@ and the scripts, the core's tests on its Mono, both ways), `vs2019-check.sh` and
 this release, `play prediction maze`: the median frame found the own tank within 0.5 units of where it was predicted,
 95 in 100 within 4. Not seen: IL2CPP's C++ on ARM.
 
+**(c) done 2026-11-27: the probe** (**O-105**). The two machines' check's probe signs up in a loop of its own beside the
+requests that time the gaps, and says when both loops have ended, which the check waits for before it reads the log;
+it had waited 2 s, while a sign-up could still be answering. Tried first in a UBI 9 container with a stand-in sign-up
+of 8 s: the old probe's longest gap between two requests 8.6 s, the new one's 0.6 s; told to stop 3 s into a sign-up,
+the new one ended 5.1 s later with it in its log. Then the check as written, 0 failed: MySQL's restart 16 s, where the
+old probe read 23 to 26 s, each store's restart 10 s, which it had not seen, the platform's 8 s, A's MySQL lost 16 s,
+B serving 68 s after A was cut off; of 503 requests 63 refused, all in those gaps; 26 of 30 sign-ups answered 201 and
+all 26 on B, three refused their session. 10's table has this run's figures, the old probe's dropped with the reason.
+`PlatformToArenaTest`'s comment says what the test does since (d).
+
 ---
 
 ### Completed 2026-09-23

@@ -23,22 +23,27 @@ GAP_LIMIT=${GAP_LIMIT:-120}       # the longest the site may refuse a request du
 
 if [ "${1:-}" = --probe ]; then
     # Inside a machine: the site through its nginx, as a device would use it, until told to stop. Every half second
-    # the inventory with a session made before (the session store and MySQL); every tenth second a sign-up at the
-    # account service and its session (a write on each database, D-117), logged 201 when both were made, else both
-    # statuses. Each request is given its seconds and logged with its time and its answer.
+    # the inventory with a session made before (the session store and MySQL), whose answers time the gaps. Beside it,
+    # in a loop of its own, so that its waits of up to 10 s an answer lengthen no gap, every ten seconds a sign-up at
+    # the account service and its session (a write on each database, D-117), logged 201 when both were made, else
+    # both statuses. Each request is given its seconds and logged with its time and its answer; done, both loops
+    # ended, it says so in probe.done, for the log to be read whole.
     tok=$(cat /var/tmp/check-session)
-    n=0
+    (   i=0
+        while [ ! -e /var/tmp/probe.stop ]; do
+            i=$((i + 1))
+            c=$(bash /check-guide.sh --login "probe$i" accounts); [ "$c" = "201 200" ] && c=201 || c=${c/ //}
+            echo "$(date +%s.%N | cut -c1-14) register probe$i $c" >> /var/tmp/probe.log
+            for _ in $(seq 20); do [ -e /var/tmp/probe.stop ] && break; sleep 0.5; done
+        done ) &
     while [ ! -e /var/tmp/probe.stop ]; do
-        n=$((n + 1))
         c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --cacert /etc/backend/tls/ca.pem \
             -H "Authorization: Bearer $tok" https://127.0.0.1/v1/inventory)
         echo "$(date +%s.%N | cut -c1-14) inventory $c" >> /var/tmp/probe.log
-        if [ $((n % 20)) = 0 ]; then
-            c=$(bash /check-guide.sh --login "probe$n" accounts); [ "$c" = "201 200" ] && c=201 || c=${c/ //}
-            echo "$(date +%s.%N | cut -c1-14) register probe$n $c" >> /var/tmp/probe.log
-        fi
         sleep 0.5
     done
+    wait
+    touch /var/tmp/probe.done
     exit 0
 fi
 
@@ -386,7 +391,9 @@ done
 mark "A lost"
 tok=$(on "$A" cat /var/tmp/check-session)
 on "$A" touch /var/tmp/probe.stop
-sleep 2
+# Read once the probe has ended both loops: a sign-up still answering would make an account on B that its log misses.
+on "$A" sh -c 'for i in $(seq 60); do [ -e /var/tmp/probe.done ] && exit 0; sleep 1; done; exit 1' \
+    || fail "the probe did not end within 60 s of being told to: its log read as it is"
 on "$A" cat /var/tmp/probe.log > "$WORK/probe-a.log"
 nsenter -t "$PA" -n ip link set eth1 down && docker pause "$A" > /dev/null && t_cut=$(date +%s)
 n=0

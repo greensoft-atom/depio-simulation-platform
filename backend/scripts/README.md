@@ -275,9 +275,9 @@ veth pair, one end moved into each (A `10.0.0.1`, B `10.0.0.2`), so nothing of t
 changes. In order:
 
 1. A, the launch's machine, is installed by the install guide's own check;
-2. B is made A's standby by the page's steps, the account service's database and user among them, while a probe
-   signs up through A's nginx at the account service and takes the token for a session, timing every request; the
-   promotions raise both epochs;
+2. B is made A's standby by the page's steps, the account service's database and user among them, while a probe uses
+   the site through A's nginx twice a second and times every refusal, and beside it, in a loop of its own, signs up
+   at the account service every ten seconds and takes the token for a session; the promotions raise both epochs;
 3. B's own arenas (D-97, the page's [§10](../../docs/operations/10-two-machines.md#10-arenas-on-b)): matches played
    on them through A's nginx's 80, in clear, by the C# headless client on Unity 2019's Mono (D-116), with A's arenas
    stopped for it; where nginx passed each match is read from `access.log`'s `/match/` lines, answered 101; then B

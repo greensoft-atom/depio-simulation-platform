@@ -32,8 +32,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 /**
- * The whole path, with nothing stubbed: register and log in against MySQL, ask platform for
- * a match, and connect to a real arena over TCP with the ticket it hands back.
+ * The whole path, with nothing stubbed but the account service's signature (TestTokens): an
+ * access token taken for a session against MySQL, ask platform for a match, and connect to a real
+ * arena over TCP with the ticket it hands back.
  *
  * It exists because every part of this chain passed its own tests while the chain itself had
  * never run. The interesting failures live in the joins between components — a ticket

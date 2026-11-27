@@ -1386,6 +1386,18 @@ runs. **Fixed:** the statements on standard input. By the install guide's check,
 anything, and its failure is said as the release's nginx not running on this machine, glibc 2.28 named. Test first,
 with a stub failing as the loader does: the old line, then the new; the check skipped, the old line again.
 
+**O-105 (L), found 2026-11-26, FIXED 2026-11-27** (plan item 142 (f), reading the two machines' check's figures; fixed
+in plan item 143 (c)). The probe that times the site's refusals signed up at the account service in the same loop,
+every twentieth request, and a sign-up waits up to 10 s for each of its two answers: a gap it fell in was lengthened by
+its own wait, and one shorter than the wait could go unseen. Its two runs read MySQL's restart as 23 to 26 s and no
+store's restart at all, which 10's table then printed with a caveat. And told to stop, it was read 2 s later, while a
+sign-up could still be answering: an account made after the read would have been on B and missing from its log.
+**Fixed:** the sign-ups run in a loop of their own beside the requests that time the gaps, and the probe says when
+both have ended, which the check waits for (60 s at most, failing if not) before it reads the log. Tried in a UBI 9
+container with a stand-in sign-up of 8 s: the old probe's longest gap between two requests 8.6 s, the new one's 0.6
+s; told to stop 3 s into a sign-up, the new one ended 5.1 s later with that sign-up in its log. Then the check as
+written: MySQL's restart 16 s, each store's 10 s, as before the account service.
+
 **O-104 (M), found 2026-11-26, FIXED the same day** (plan item 142 (f), the two machines' check run with the account
 service). Operations/10 §10 gave B's watch its targets for after A's loss, B's arenas on B's address, by writing the
 whole line anew, which left out the account service's `account=127.0.0.1:9104` that the install guide gives every
