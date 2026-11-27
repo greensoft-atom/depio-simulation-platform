@@ -107,6 +107,18 @@ are two, `V1__schema.sql` and `V2__seed.sql`: the baseline
 ([06 §8](../detailed-design/06-persistence-mysql.md#8-migrations), D-75). Flyway is the library that applies
 them, in number order, and records each one in the database.
 
+**Until the launch**, the change is written straight into those two files
+([D-120](../architecture/03-decision-log.md#d-120--the-migrations-squashed-again-v3-and-v4-into-the-baseline), the owner, 2026-11-27):
+
+- A table, a column or an index goes in `V1__schema.sql`, in its domain's part, as the table stands now. A row that a
+  first launch needs goes in `V2__seed.sql`. No V3 is written, even while the change is built.
+- The database tests rebuild `backend_test` from empty at every run, so they test the schema as written:
+  `(cd backend && mvn -pl persistence -amd install)`.
+- `backend_dev` holds the old V1, whose checksum Flyway now refuses, and the platform does not start on it. Make it
+  again ([03 §3.1](03-build-and-run.md#31-the-development-mysql-step-by-step)), and the next start migrates it.
+
+**From the launch on**, these steps:
+
 1. **Add a new file with the next number**: `V3__<what it does>.sql`, then `V4__…`. Never edit a migration that
    has been applied, V1 and V2 included. Flyway refuses to start a process when an applied migration's checksum
    has changed.

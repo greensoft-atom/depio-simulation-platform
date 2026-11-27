@@ -248,8 +248,9 @@ An idempotency key makes a second attempt of a write do nothing. Two kinds are u
 
 ## Migrations
 
-From V3 on, migrations follow the rules of
-[06 §8](../../docs/detailed-design/06-persistence-mysql.md#8-migrations):
+Until the launch, a schema change is written into `V1__schema.sql`, and its first rows into `V2__seed.sql`, with no
+V3 ([D-120](../../docs/architecture/03-decision-log.md#d-120--the-migrations-squashed-again-v3-and-v4-into-the-baseline)). From the launch on,
+migrations follow the rules of [06 §8](../../docs/detailed-design/06-persistence-mysql.md#8-migrations):
 
 - **Forward-only.** Nobody edits a migration once it has been applied. The next migration fixes a mistake.
   Flyway refuses a migration whose checksum changed, and the process does not start.

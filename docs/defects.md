@@ -1783,6 +1783,12 @@ argon2id hash", which V3 had dropped, and listed three statuses of four (erased,
 says whose a player is, as V3's did, with the four statuses; V2's says the content is in the platform's jar and the
 code, the shop's offers aside.
 
+**DOC-64, found 2026-11-27, FIXED the same day** (the owner's answer on how a schema change is written before the
+launch, D-120). `backend/README.md` still said the schema was squashed from the 34 migrations alone, and that from V3
+on a schema change is a new migration: D-120's squash of V3 and V4, and its practice until the launch, were not
+there. **Fixed:** it names both squashes, and says that until the launch a change is written into V1 and V2; so do
+06 §8, `persistence/README.md`, development/03 §3.1 and 07 §4, which had told a developer to add a V3.
+
 ## 7. Documentation
 
 The audit found the documents have drifted from the code in ~60 places. The six

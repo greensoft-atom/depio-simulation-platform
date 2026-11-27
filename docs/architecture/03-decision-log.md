@@ -4013,15 +4013,19 @@ forward-only again.
 check of the check, the new V1 without the ledger's purchases index was found different, by that line alone.
 
 **Again, the same day** (plan item 146 (c)): the next V3, `shop_offer`'s `stock` and `sold` (D-121), written as a
-migration while the item was built and tested, then folded into V1 and proved the same in the same way. Until the
-launch, a schema change goes so: a migration while it is built, folded into V1 when it is done.
+migration while the item was built and tested, then folded into V1 and proved the same in the same way.
+
+**From then until the launch** (the owner, asked after item 146): a schema change is written straight into
+`V1__schema.sql`, and its first rows into `V2__seed.sql`, with no V3 even while it is built. The tests make
+`backend_test` from V1 and V2 at every run, so they test the schema as it is written, and no fold is left to prove.
 
 **Why.** The owner wants the schema read in one place. Nothing has launched, so the only databases that hold V1 to V4
 are the development and test ones: the tests' is made again by every test, and the development one is dropped and
 migrated again.
 
 **Cost.** A database that holds the old V1 fails Flyway's validation (its checksum changed) and the platform does not
-start on it until it is made again: `backend_dev` here, and any copy a developer has. A launched site could not be
+start on it until it is made again: `backend_dev` here, and any copy a developer has, after every schema change until
+the launch. A launched site could not be
 squashed this way; after a launch the rule holds without exception.
 
 ### D-121 — A limited offer's stock is held on its row, in the purchase's own transaction

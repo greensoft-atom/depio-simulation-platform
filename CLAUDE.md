@@ -134,11 +134,11 @@ for the backend, its docs and its client.
   section is the only place it is written. The glossary has the substitutes.
 - **Namespace `backend`:** Java `com.backend.*`, installed under `/opt/backend`, OS user
   `backend`; C# `Backend.Client.Core` and `Backend.Client.Unity`.
-- **Never edit an applied Flyway migration**; add the next one. V1 (schema) and V2 (seed) are
-  the baseline the owner had squashed from V1–V34 before launch (2026-10-04, D-75), and again with V3
-  and V4 (2026-11-27, D-120: the schema in one main file). Until the launch, a schema change is a V3 while it is built
-  and tested, folded into V1 (and its first rows into V2) when the item is done, proved the same, `backend_dev` made
-  again; after the launch, forward-only, expand then contract (06 §8).
+- **Until the launch, a schema change is written straight into `V1__schema.sql`** (its first rows into
+  `V2__seed.sql`), with no V3 even while it is built, and `backend_dev` is made again (owner, 2026-11-27; D-120: the
+  schema in one main file). V1 and V2 are the baseline squashed from V1–V34 (2026-10-04, D-75) and from V3 and V4
+  (D-120). **From the launch on, never edit an applied Flyway migration**; add the next one, forward-only, expand
+  then contract (06 §8).
 - **No third-party Redis server, client library or tool**, tests included; the store is
   j-redis.
 - **No third-party service or daemon of any kind beyond MySQL and nginx**, whether installed from the

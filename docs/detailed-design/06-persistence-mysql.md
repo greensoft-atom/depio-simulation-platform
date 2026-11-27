@@ -1329,9 +1329,12 @@ sets applied to empty databases, every table's `SHOW CREATE TABLE` and the seed 
   sections of this page name are those steps', kept as the history of each table. V1 was proved the same as the
   34 steps, table by table, except for two changes made on purpose: V17's board indexes are not made (defect
   D-41), and `season_place.rated` is as wide as the counts it copies (defect D-42).
-- **Forward-only.** An applied migration is never edited, the two squashes before launch aside. From V3 on, a
-  mistake is fixed by a new migration.
-  Flyway's checksum refuses an edit anyway, which is the point.
+- **Until the launch, V1 and V2 are edited in place** (the owner, 2026-11-27, D-120): a schema change is written in
+  `V1__schema.sql`, its first rows in `V2__seed.sql`, with no V3. Flyway then refuses a database migrated before, whose
+  V1 checksum differs, and `backend_dev` is made again
+  ([development/03 §3.1](../development/03-build-and-run.md#31-the-development-mysql-step-by-step)).
+- **Forward-only from the launch on.** An applied migration is never edited; a mistake is fixed by a new migration,
+  V3 the first. Flyway's checksum refuses an edit anyway, which is the point.
 - **Expand and contract** for anything that breaks compatibility: add the new column, backfill it, switch the code,
   and drop the old column in a later release. That is three deployments with no downtime, and every state in
   between is one the running code understands. **V3 was the one exception** (D-117): it dropped `account`'s

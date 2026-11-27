@@ -75,7 +75,7 @@ decision; the last column says where it is recorded.
 | `client-simple-no-tls/` is the simple client without TLS, for a backend run plain (`PLAIN=1`) and for the site's 80 (D-115). Its `ArenaMessages.cs` and `Json.cs` are `client-simple`'s byte for byte, and one check covers both | 2026-11-25 | D-114 |
 | The migrations were squashed before launch, to V1 (the schema) and V2 (the seed). From V3 on they are forward-only | 2026-10-04 | D-75 |
 | Squashed again, V3 and V4 into V1 and V2: the schema's definitions in the one main file. A `backend_dev` migrated before fails Flyway's check and is made again | 2026-11-27 | D-120 |
-| Until the launch, a schema change is a V3 while it is built and tested, then folded into V1 (its first rows into V2) and proved the same, as plan item 146's stock was | 2026-11-27 | D-120 |
+| Until the launch, a schema change is written straight into V1 (its first rows into V2), with no V3 even while it is built, and `backend_dev` is made again. From the launch on, forward-only | 2026-11-27 | D-120 |
 | A result under five seconds counts for nothing but its row and, in a rated match, the rating. A walkover is no win | 2026-10-05 | D-76 |
 | The Unity editor's check and an admin panel are put off: not proposed until the owner brings them back | 2026-10-05 | Q-54, Q-55 |
 | These open questions are held: the copy off the site's host, results past 20 000 players, the app's updates, where alerts go, and the launch's machine. They are recorded, and not raised again until the owner brings them back | 2026-11-01 | Q-53, Q-58, Q-59, Q-60, Q-62 |

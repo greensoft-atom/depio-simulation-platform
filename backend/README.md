@@ -71,9 +71,11 @@ them). So the release's `lib/arena` holds none of MySQL's driver, Flyway, Hikari
 [`V1__schema.sql`](persistence/src/main/resources/db/migration/V1__schema.sql) and
 [`V2__seed.sql`](persistence/src/main/resources/db/migration/V2__seed.sql). They were squashed on 2026-10-04 from the
 34 migrations before them
-([D-75](../docs/architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)).
-From V3 on, a schema change is a new migration, and an applied migration is never edited. Flyway runs at every
-`platform` and `worker` start.
+([D-75](../docs/architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)),
+and on 2026-11-27 from V3 and V4 ([D-120](../docs/architecture/03-decision-log.md#d-120--the-migrations-squashed-again-v3-and-v4-into-the-baseline)).
+Until the launch, a schema change is written into V1, and its first rows into V2, with no V3. From the launch on, a
+schema change is a new migration, and an applied migration is never edited. Flyway runs at every `platform` and
+`worker` start.
 
 ## Commands
 
