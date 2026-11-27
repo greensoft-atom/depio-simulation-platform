@@ -11,8 +11,8 @@ left of it waits on Q-3's hardware.
   on 9001 (matches), and serves all three in clear on 80, a match there by `/match/<the arena's name>`.
 - **The components**, each built and tested: `j-redis-service` 2.2.2 (229 tests); the backend's eleven modules (their
   sources declare 1 155 tests); the account service, `account-service/`, beside them (74; D-117); the client's
-  engine-free core with its headless driver (207 tests, on .NET Framework 4.5, run on
-  Unity 2019's Mono; D-116). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
+  engine-free core with its headless driver (211 tests, on .NET Framework 4.5, run on
+  Unity 2019's Mono with `float32` and without; D-116, D-118). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
   `UnityEngine`; there is no Unity editor here, so it has not been opened in one (Q-54). Beside the full client,
   `client-simple/` and `client-simple-no-tls/` are small clients for the UI team (D-111, D-114).
 - **The release** carries its own Java runtime, MySQL 8.4 and nginx, built for glibc 2.28 and checked on RHEL 8 and 9
@@ -4906,6 +4906,23 @@ refused, nothing changed; taken over, `devtest`'s start up, the root CA's finger
 inverted; the first at first judged by the wrong error (with `work/nginx` the user's and `conf` root's, the old code
 fails at `rm`, not `mkdir`), then by what the fix is for, its way out named. 03's table has the message, and its
 section on nginx as root the taking over.
+
+**(b) done 2026-11-27: P-65** (D-118). `TankMotion` rounds every operation's result by a cast of its own, comparisons'
+operands too, and `core-tests.sh` runs the whole suite twice, with `float32` and without. Test first: without
+`float32`, the three recordings failed as P-65 had them, every other test passing; with the casts, 207 of 207 both
+ways. Ten mutants, each a cast taken out, run without `float32`: four caught by the recordings at once. Of the six
+that survived, three were tests missing: roundings no recording reaches, found by a search over inputs where the
+operation kept in double gives other bits than per-operation float (Python's `struct` rounding to single precision
+as Java does): the map's edge, which rounds up onto where a step lands, so the room does not clamp; a tank exactly its
+radius from a wall, whose square rounds down, so the room does not push; a corner's push out and a slide off it, each
+a product and a sum. The bits each test expects are the server's own, its `Walls.pushOut` run on them, and `Room`'s
+expressions for the edge; all four caught, the edge's once its mutant was the old inline comparison and not a float
+local, which this Mono rounds at a store. Three are equivalent: a sum stored into a field rounds there, a float local
+here too, and a float division of two floats cannot round up to the next whole cell (searched near every boundary of
+cells from 3 to 1 000, none found). 211 tests, both ways. `unity2019-check.sh` (Unity's compiler on the core
+and the scripts, the core's tests on its Mono, both ways), `vs2019-check.sh` and `unity-check.sh` pass; live, from
+this release, `play prediction maze`: the median frame found the own tank within 0.5 units of where it was predicted,
+95 in 100 within 4. Not seen: IL2CPP's C++ on ARM.
 
 ---
 

@@ -293,7 +293,9 @@ Each trap below happened at least once. Each says what went wrong and what to do
   `-f net8.0`** also ran the .NET Framework 4.7.1 build, which off Windows wants a `mono` on the `PATH` (D-109).
   Since D-116 every project has one target, .NET Framework 4.5, and nothing here runs `dotnet test`.
 - **Mono's `float` is a double** unless `--optimize=float32` is given (Unity's own fork turns it on by default). On
-  Unity 2019's standalone `mono`, the own tank's step differed from the server's in its last bits (P-65). And
+  Unity 2019's standalone `mono`, the own tank's step differed from the server's in its last bits (P-65), until each
+  of its operations was rounded by a cast (D-118): only an explicit `(float)` is sure to round, a local or an argument
+  may stay in double. `core-tests.sh` runs the tests both ways. And
   **Mono's `HttpListener` has no WebSocket server** (`AcceptWebSocketAsync` throws `NotImplementedException`), so
   the tests' lobby is a server of their own.
 - **`true || a && b` is `(true || a) && b`** in the shell. A mutant that puts `true ||` before a chain of `&&`

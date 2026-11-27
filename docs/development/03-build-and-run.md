@@ -661,7 +661,7 @@ against Mono's 4.5 reference assemblies, and every run is Unity's Mono 5.11 (`cl
 
 | What | Command | What it does |
 |---|---|---|
-| The engine-free core and its tests | `client/core-tests.sh` | compiles the core and its tests for .NET Framework 4.5, and runs them on Unity's Mono by NUnitLite: 196 tests. Read its `Test Count:` line; it ends `CORE TESTS PASSED` when none failed |
+| The engine-free core and its tests | `client/core-tests.sh` | compiles the core and its tests for .NET Framework 4.5, and runs them on Unity's Mono by NUnitLite, with `float32` and without (D-118): 211 tests each time. Read its two `Test Count:` lines; it ends `CORE TESTS PASSED` when none failed in either |
 | The Unity package, against stubs | `client/unity-package.sh && client/unity-check.sh` | builds the core into the package, then compiles the package's scripts against stubs of the Unity API, each by Unity's compiler |
 | The Unity package, against Unity 2019 | `client/unity2019-check.sh` | Unity 2019.4.28f1's own compiler: the core for .NET Framework 4.5, and the package's scripts against Unity's assemblies at its .NET 4.x API level, with the package's `csc.rsp` as Unity reads it; then the core on Unity's Mono, and `core-tests.sh` (D-108, D-113, D-116). Nothing here runs the editor |
 | The solution, as Visual Studio 2019 builds it | `client/vs2019-check.sh` | VS 2019's MSBuild and Roslyn (16.11 and 16.7, from the .NET 5 and .NET Core 3.1 SDKs' images, as build tools alone) build the core and an app of 4.5, Unity 2019's project as VS 2019 compiles it, and `Backend.Client.sln`. It needs Docker too. Nothing runs on .NET Framework itself |

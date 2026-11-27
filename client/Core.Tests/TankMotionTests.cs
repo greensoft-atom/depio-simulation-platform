@@ -89,6 +89,39 @@ namespace Backend.Client.Core.Tests
                 Assert.Fail($"{name}, step {step}: {what} {actual:R} where the room has {expected:R}");
         }
 
+        // Cases one rounding of the step decides (D-118, P-65), which the recordings above never reach: each found where
+        // that operation kept in double, as a Mono without float32 keeps it, gives other bits than Java's. The bits
+        // expected are the server's own: its Walls.pushOut, and Room's expressions for the map's edge.
+
+        [Test]
+        public void TheMapsEdgeIsComparedAsTheRoomRoundsIt()
+        {
+            // 5700 - r rounds up, in float, to where this step lands: not past the edge, so the room does not clamp.
+            // Compared in double, it is past it, and the tank would bounce back at half its speed.
+            var s = new MotionState { X = F("45b071dd"), Y = 1000f, Vx = 1f, Vy = 0f };
+            TankMotion.Step(ref s, 0, 0.16f, F("42537808"), 5700f, 5700f, null);
+            Same(s.X, F("45b07910"), "the edge", 0, "x");
+            Same(s.Vx, F("3f666666"), "the edge", 0, "vx");
+        }
+
+        [TestCase("at its radius", "4251839c", "431860e7", "42480000", "bfc00000", "3e800000",
+                  "431860e7", "42480000", "bfc00000", "3e800000")]     // r * r rounds down: not touching, left as it is
+        [TestCase("out of a corner", "41f90cf5", "42ce40d4", "42c8d497", "be9060d6", "bfc30126",
+                  "4302dc42", "42d0324f", "3e4693fc", "bfbaea2c")]     // the move out, a product then a sum
+        [TestCase("sliding off a corner", "41a24b86", "42ea6e67", "42dc9a14", "bf987901", "be6af6a9",
+                  "42ead12b", "42dcd52d", "be5a0cd4", "3eb635ca")]     // the velocity into the wall taken off
+        public void AWallPushesAsTheRoomRoundsIt(string what, string r, string x, string y, string vx, string vy,
+                                                  string ex, string ey, string evx, string evy)
+        {
+            var walls = new WallGrid(new[] { new Wall(0f, 0f, 100f, 100f) }, Maze.Cell);
+            var s = new MotionState { X = F(x), Y = F(y), Vx = F(vx), Vy = F(vy) };
+            walls.PushOut(ref s, F(r));
+            Same(s.X, F(ex), what, 0, "x");
+            Same(s.Y, F(ey), what, 0, "y");
+            Same(s.Vx, F(evx), what, 0, "vx");
+            Same(s.Vy, F(evy), what, 0, "vy");
+        }
+
         [Test]
         public void TheMoveBitsAsTheRoomReadsThem()
         {

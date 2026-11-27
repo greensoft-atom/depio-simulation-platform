@@ -12,7 +12,8 @@ and its scenarios.
 
 - Visual Studio 2019 builds it, and a Windows machine runs it.
 - Here the drills build it for each run with Unity 2019.4's compiler (`build_headless`, in `../unity-env.sh`), and run
-  it on Unity's Mono 5.11 with `float32`, as Unity's Mono has it (P-65). Outside the editor, Mono's own TLS stops at
+  it on Unity's Mono 5.11 with `float32`, as Unity's Mono has it; the own tank's step gives the room's bits without
+  it too (D-118). Outside the editor, Mono's own TLS stops at
   1.0, and nginx and an arena's own TLS speak 1.2 and 1.3, so the drills drive it in clear (D-116).
 - The `maze` scenario's shot, `MazeShot.cs`, is the one file of it the core's tests compile in (`MazeShotTests`, T-66).
 

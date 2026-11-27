@@ -237,7 +237,7 @@ for the backend, its docs and its client.
 ./dev-nginx.sh  start|stop|restart|status|test      # the release's nginx on 80 (the API and the lobby in clear, D-107), 443, 9001, every IPv4 address; root; work/nginx/ca/ca.pem
                                                     # PLAIN=1, to every command: 80 (the API, the lobby) and 9001 without TLS (D-101)
 
-# Client core tests: .NET Framework 4.5, Unity 2019.4's compiler, its Mono, no .NET (D-116); look for "Test Count:"
+# Client core tests: .NET Framework 4.5, Unity 2019.4's compiler, its Mono with float32 and without (D-118), no .NET (D-116); look for "Test Count:"
 client/core-tests.sh                                # TESTS="class =~ MatchConnectionTests" for some
 
 # Crypto examples (from backend/, in that shell), then their probe on a release's runtime (docs/development/04 §5)

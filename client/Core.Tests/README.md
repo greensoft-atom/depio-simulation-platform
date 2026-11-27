@@ -5,13 +5,13 @@ These are the tests of the client's core, `Backend.Client.Core`
 before and after every change. This page says how to run them, which files they share with the server's tests, which
 scripted servers they use, and what each test file covers.
 
-**What they are.** NUnit tests in C# 7.3 on .NET Framework 4.5 (D-116), 207 in all: 169 `[Test]` methods, and 38
-runs of 5 parameterised methods.
+**What they are.** NUnit tests in C# 7.3 on .NET Framework 4.5 (D-116), 211 in all: 170 `[Test]` methods, and 41
+runs of 6 parameterised methods.
 
 | Where they run | How |
 |---|---|
 | .NET Framework 4.5 | Visual Studio 2019 builds them and runs them in its Test Explorer |
-| Unity 2019.4's own Mono | this machine: `../core-tests.sh` compiles them for .NET Framework 4.5 with Unity's compiler and runs them there by NUnitLite, with `float32` as Unity's Mono has it (D-109, P-65, D-116). `../unity2019-check.sh` runs it too |
+| Unity 2019.4's own Mono | this machine: `../core-tests.sh` compiles them for .NET Framework 4.5 with Unity's compiler and runs them there by NUnitLite twice: with `float32` as Unity's Mono has it, and without, as a Mono that keeps a float in double between operations; every test passes both times (D-109, D-116, D-118). `../unity2019-check.sh` runs it too |
 
 Nothing here runs them on .NET 8, or any modern .NET (D-116). So two things are not checked here: the name that a TLS
 handshake gives, as a server sees it (only .NET 8's API showed it), and TLS 1.2 on .NET Framework itself. Unity's
@@ -34,8 +34,8 @@ cd client
 TESTS="class =~ MatchConnectionTests" ./core-tests.sh    # some, by an NUnit where-expression
 ```
 
-**Read the count.** `core-tests.sh` prints NUnitLite's summary, `Test Count: 207, Passed: 207, Failed: 0, …`, and
-says `CORE TESTS PASSED` only when none failed. A run that dies part of the way through prints no summary; the
+**Read the count.** `core-tests.sh` prints NUnitLite's summary, `Test Count: 211, Passed: 211, Failed: 0, …`, for
+each of its two runs, and says `CORE TESTS PASSED` only when none failed in either. A run that dies part of the way through prints no summary; the
 script then says so, and fails.
 
 ## The contract files, linked
@@ -81,7 +81,7 @@ add, remove or rename a test, update this table in the same change.
 | `MessageTests.cs` | 6 | | `Join` with the version first; `Input`'s acknowledgement and little-endian aim; the ping's clock big-endian; the server's messages read; frames split however the bytes arrive; a broken stream refused |
 | `MazeTests.cs` | 3 | | the same walls as the server's for the same seed; a seed of the arena's size; a circle within its radius of a wall |
 | `MazeShotTests.cs` | 5 | | the headless driver's maze shot, its file compiled in (T-66): the trigger held, every input carrying fire; the aim taken again from where the tank is made again, as a made match's start places every tank anew; a wall too near, behind another or beyond a bullet's reach no target; the first of the tanks with a wall in reach fires; a bullet ending at a wall seen in any frame of a poll, in the shooter's world alone |
-| `TankMotionTests.cs` | 2 | 1, three rows | the vector's three cases; every step the same as the room's, bit for bit; the move bits as the room reads them |
+| `TankMotionTests.cs` | 3 | 2, six rows | the vector's three cases; every step the same as the room's, bit for bit; the map's edge, and a wall's push in three cases, each a rounding that a Mono keeping floats in double would change, the server's own bits expected (D-118); the move bits as the room reads them |
 | `OwnTankTests.cs` | 10 | | stepping at the room's rate by the clock; a frame matched to its step, and the steps after it replayed; a correction halving every 50 ms; a jump taken at once; nothing replayed without the echoed steps; an echo of no ticks; a send stamping its steps; no prediction while dead or without a rule; a respawn starting afresh; a stall stepping no more than it keeps |
 | `SceneTests.cs` | 7 | | a tank between its last two samples, never beyond; a tank at its class's size, 30 times its `bodySize` (P-67); the shorter way round; each kind by its own rule; the own tank where it is predicted; the list reused; the render tick two frames behind, never ahead, never back |
 | `TouchSticksTests.cs` | 3 | | eight directions past the dead zone; aim, and fire past half the reach; keys and a mouse |

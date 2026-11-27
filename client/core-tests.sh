@@ -29,13 +29,18 @@ compile "the core's tests, .NET Framework 4.5" -target:exe -out:"$T/tests.exe" $
 cp "$C"/Core.Tests/Pki/*.pem "$C"/Core.Tests/Pki/*.p12 "$T/Pki/"
 cp "$B/protocol-spike/vectors/vectors.txt" "$B/backend/sim/src/test/resources/maze-2026.txt" \
    "$B/backend/arena/src/test/resources/motion-2026.txt" "$C/Core.Tests/README.md" "$T/"
-# float32, as Unity's own Mono has it (its fork's "[jit] Enable float32 by default"): without it a float is computed
-# in double, and the own tank's step then differs from the server's in its last bits (P-65).
-(cd "$T" && MONO_ENV_OPTIONS=--optimize=float32 MONO_PATH=$MONO_LIB timeout 900 "$MONO" tests.exe --noresult --noheader \
-    ${TESTS:+"--where=$TESTS"} > "$T/run.txt" 2>&1) || true
-sed -n '/^Errors, Failures/,/^Test Run Summary/p' "$T/run.txt" | grep -E '^[0-9]+\) |^  [A-Z]' | head -40 || true
-summary=$(grep -m1 'Test Count' "$T/run.txt" | sed 's/^ *//' || true)
-[ -n "$summary" ] || { tail -20 "$T/run.txt"; echo "CORE TESTS FAILED: no summary from NUnitLite"; exit 1; }
-echo "  $summary"
-[[ $summary == *"Failed: 0,"* ]] || { echo "CORE TESTS FAILED"; exit 1; }
-echo "CORE TESTS PASSED (.NET Framework 4.5, compiled by Unity 2019.4's compiler, run on its Mono)"
+# Twice: with float32, as Unity's own Mono has it (its fork's "[jit] Enable float32 by default"), and without, as a
+# Mono that keeps a float in double between operations. The own tank's step rounds every operation by a cast, so its
+# bits are the server's either way (D-118, P-65); every test must pass both times.
+run() {   # MONO_ENV_OPTIONS, what it stands for
+    (cd "$T" && MONO_ENV_OPTIONS=$1 MONO_PATH=$MONO_LIB timeout 900 "$MONO" tests.exe --noresult --noheader \
+        ${TESTS:+"--where=$TESTS"} > "$T/run.txt" 2>&1) || true
+    sed -n '/^Errors, Failures/,/^Test Run Summary/p' "$T/run.txt" | grep -E '^[0-9]+\) |^  [A-Z]' | head -40 || true
+    summary=$(grep -m1 'Test Count' "$T/run.txt" | sed 's/^ *//' || true)
+    [ -n "$summary" ] || { tail -20 "$T/run.txt"; echo "CORE TESTS FAILED: no summary from NUnitLite, $2"; exit 1; }
+    echo "  $2: $summary"
+    [[ $summary == *"Failed: 0,"* ]] || { echo "CORE TESTS FAILED, $2"; exit 1; }
+}
+run --optimize=float32 "float32, as Unity's Mono"
+run "" "without float32, floats kept in double"
+echo "CORE TESTS PASSED (.NET Framework 4.5, compiled by Unity 2019.4's compiler, run on its Mono, with and without float32)"
