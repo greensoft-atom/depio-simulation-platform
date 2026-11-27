@@ -711,11 +711,14 @@ namespace Backend.Client.Core
                 token, j => new ItemLevel { ItemId = j["itemId"].AsString, Level = j["level"].AsInt, Coins = j["coins"].AsLong });
 
         /// <summary>
-        /// One tap of Buy. <paramref name="key"/> is made when the tap happens and sent unchanged
-        /// with every retry of it, so the tap is charged once (04 §8); <see cref="NewPurchaseKey"/>.
+        /// One tap of Buy on <paramref name="offer"/> as <see cref="Shop"/> listed it: its item, price and currency go
+        /// with it, and an offer changed since is 409 offer_changed, nothing charged: list the shop again (D-119).
+        /// <paramref name="key"/> is made when the tap happens and sent unchanged with every retry of it, so the tap is
+        /// charged once (04 §8); <see cref="NewPurchaseKey"/>. 409 already_owned for equipment or a skin held (D-53).
         /// </summary>
-        public Task<ApiResult<Receipt>> Purchase(string token, string sku, string key) =>
-            Call(HttpMethod.Post, "/v1/purchases", JsonValue.NewObject().Set("sku", sku).Set("key", key), token, j => new Receipt
+        public Task<ApiResult<Receipt>> Purchase(string token, Offer offer, string key) =>
+            Call(HttpMethod.Post, "/v1/purchases", JsonValue.NewObject().Set("sku", offer.Sku).Set("itemId", offer.ItemId)
+                .Set("price", offer.Price).Set("currency", offer.Currency).Set("key", key), token, j => new Receipt
             {
                 Result = j["result"].AsString, ItemId = j["itemId"].AsString, Coins = j["coins"].AsLong, Held = j["held"].AsInt,
                 Gems = j["gems"].AsLong,

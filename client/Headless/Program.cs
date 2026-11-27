@@ -301,9 +301,18 @@ namespace Backend.Client.Headless
             return sorted[Math.Max(0, Math.Min(sorted.Count - 1, rank))];
         }
 
+        /// <summary>The offer as the shop lists it now, which a purchase sends (D-119).</summary>
+        private static Offer Listed(string sku)
+        {
+            ApiResult<List<Offer>> shop = Api.Shop().Result;
+            Offer offer = shop.Ok ? shop.Value.Find(o => o.Sku == sku) : null;
+            Check(offer != null, $"the shop lists {sku} ({shop})");
+            return offer ?? new Offer { Sku = sku, ItemId = sku, Currency = "coins" };   // refused by the server, said by the check after
+        }
+
         /// <summary>
         /// Earn, buy, wear, play (04 §8, D-37): the barrel worn makes the tank's bullets faster, and the
-        /// protocol carries a bullet's speed exactly. Needs the drill's shop and items, a barrel giving
+        /// protocol carries a bullet's speed exactly. Needs the drill's offers and items, a barrel giving
         /// 25 % bullet speed for 1 coin: headless-drill.sh adds them when this scenario is asked for.
         /// </summary>
         private static void Equip()
@@ -311,7 +320,7 @@ namespace Backend.Client.Headless
             var (session, _) = NewSession();
             Check(PaidStay(session) > 0, "paid for a stay first: nobody starts with coins");
 
-            ApiResult<Receipt> bought = Api.Purchase(session.Token, "drill_barrel", ApiClient.NewPurchaseKey()).Result;
+            ApiResult<Receipt> bought = Api.Purchase(session.Token, Listed("drill_barrel"), ApiClient.NewPurchaseKey()).Result;
             Check(bought.Ok && bought.Value.Result == "bought", $"bought the barrel ({bought})");
             ApiResult<Loadout> worn = Api.Wear(session.Token, "barrel", "drill_barrel").Result;
             Check(worn.Ok && worn.Value.Slots["barrel"] == "drill_barrel", $"wore it ({worn})");
@@ -340,7 +349,7 @@ namespace Backend.Client.Headless
 
         /// <summary>
         /// Earn, buy a coins boost, activate it, earn again (04 §8, D-38): the second stay pays double.
-        /// Needs the drill's shop and items: headless-drill.sh adds them when this scenario is asked for.
+        /// Needs the drill's offers and items: headless-drill.sh adds them when this scenario is asked for.
         /// </summary>
         private static void Boost()
         {
@@ -349,7 +358,7 @@ namespace Backend.Client.Headless
             Console.WriteLine($"    a stay unboosted paid {unboosted}");
             Check(unboosted >= 10, "paid for a stay, unboosted");
 
-            Check(Api.Purchase(session.Token, "drill_boost", ApiClient.NewPurchaseKey()).Result.Ok, "bought a coins boost");
+            Check(Api.Purchase(session.Token, Listed("drill_boost"), ApiClient.NewPurchaseKey()).Result.Ok, "bought a coins boost");
             string key = ApiClient.NewPurchaseKey();
             ApiResult<BoostsAnswer> on = Api.ActivateBoost(session.Token, "drill_boost", key).Result;
             Check(on.Ok && on.Value.Result == "activated" && on.Value.Boosts.Count == 1
@@ -442,9 +451,9 @@ namespace Backend.Client.Headless
             ApiResult<List<Offer>> shop = Api.Shop().Result;
             Check(shop.Ok && shop.Value.Exists(o => o.Sku == "boost_xp_hour" && o.Currency == "gems" && o.Price == 20),
                 "the release's shop sells the hour's boost for 20 gems");
-            ApiResult<Receipt> bought = Api.Purchase(session.Token, "boost_xp_hour", ApiClient.NewPurchaseKey()).Result;
+            ApiResult<Receipt> bought = Api.Purchase(session.Token, Listed("boost_xp_hour"), ApiClient.NewPurchaseKey()).Result;
             Check(bought.Ok && bought.Value.Gems == 5 && bought.Value.Held == 1, $"bought with gems ({bought})");
-            ApiResult<Receipt> again = Api.Purchase(session.Token, "boost_xp_hour", ApiClient.NewPurchaseKey()).Result;
+            ApiResult<Receipt> again = Api.Purchase(session.Token, Listed("boost_xp_hour"), ApiClient.NewPurchaseKey()).Result;
             Check(!again.Ok && again.Code == "insufficient_funds", $"the next refused, 5 gems short ({again})");
         }
 
@@ -481,8 +490,8 @@ namespace Backend.Client.Headless
             ApiResult<PaymentResult> no = Api.SimulatePayment(session.Token, declined, false).Result;
             Check(no.Ok && no.Value.Order.State == "declined" && no.Value.Gems == 160, $"an order declined: nothing ({no})");
 
-            Check(Api.Purchase(session.Token, "boost_xp_hour", ApiClient.NewPurchaseKey()).Result.Ok
-                  && Api.Purchase(session.Token, "boost_xp_hour", ApiClient.NewPurchaseKey()).Result.Ok, "40 of them spent on boosts");
+            Check(Api.Purchase(session.Token, Listed("boost_xp_hour"), ApiClient.NewPurchaseKey()).Result.Ok
+                  && Api.Purchase(session.Token, Listed("boost_xp_hour"), ApiClient.NewPurchaseKey()).Result.Ok, "40 of them spent on boosts");
             var refunded = Admin("POST", $"/admin/payments/{id}/refund", "{\"reason\":\"drill: a chargeback\"}");
             JsonValue r = JsonValue.Parse(refunded.Content.ReadAsStringAsync().Result);
             Check((int)refunded.StatusCode == 200 && r["taken"].AsInt == 120 && r["debt"].AsInt == 40,
@@ -510,8 +519,10 @@ namespace Backend.Client.Headless
             Check(table.Ok && table.Value.ItemIds.Count == 5 && table.Value.ItemIdOf(1) == "skin_crimson",
                 $"the release's five skins, crimson the first ({table})");
             Check(Granted(session.PlayerId, 150, "gems", 1), "given 150 gems, as a fixture, through the ledger");
-            ApiResult<Receipt> bought = Api.Purchase(session.Token, "skin_crimson", ApiClient.NewPurchaseKey()).Result;
+            ApiResult<Receipt> bought = Api.Purchase(session.Token, Listed("skin_crimson"), ApiClient.NewPurchaseKey()).Result;
             Check(bought.Ok && bought.Value.Gems == 0, $"bought the crimson skin for 150 gems ({bought})");
+            ApiResult<Receipt> twice = Api.Purchase(session.Token, Listed("skin_crimson"), ApiClient.NewPurchaseKey()).Result;
+            Check(!twice.Ok && twice.Status == 409 && twice.Code == "already_owned", $"a second refused, held once (D-53) ({twice})");
             ApiResult<Loadout> worn = Api.Wear(session.Token, "skin", "skin_crimson").Result;
             Check(worn.Ok && worn.Value.Slots["skin"] == "skin_crimson" && worn.Value.Bonus.Count == 0,
                 $"worn in its own slot, giving nothing ({worn})");
@@ -792,7 +803,7 @@ namespace Backend.Client.Headless
         {
             var (session, _) = NewSession();
             Check(Granted(session.PlayerId, 600), "given 600 coins, as a fixture, through the ledger");
-            ApiResult<Receipt> bought = Api.Purchase(session.Token, "drill_barrel", ApiClient.NewPurchaseKey()).Result;
+            ApiResult<Receipt> bought = Api.Purchase(session.Token, Listed("drill_barrel"), ApiClient.NewPurchaseKey()).Result;
             Check(bought.Ok && bought.Value.Coins == 599, $"bought the drill's barrel for a coin ({bought})");
             ApiResult<ItemLevel> raised = Api.RaiseItemLevel(session.Token, "drill_barrel", "level-raise-0001").Result;
             Check(raised.Ok && raised.Value.Level == 2 && raised.Value.Coins == 99, $"raised to level 2 for 500 ({raised})");

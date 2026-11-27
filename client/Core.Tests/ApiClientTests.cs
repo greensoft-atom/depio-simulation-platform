@@ -135,12 +135,12 @@ namespace Backend.Client.Core.Tests
             var api = new ApiClient(Three, hosts);
             List<Offer> offers = api.Shop().Result.Value;
             Assert.That((offers[0].Currency, offers[1].Currency), Is.EqualTo(("gems", "coins")), "coins from a server before gems");
-            Receipt bought = api.Purchase("tok", "boost", ApiClient.NewPurchaseKey()).Result.Value;
+            Receipt bought = api.Purchase("tok", offers[0], ApiClient.NewPurchaseKey()).Result.Value;
             Assert.That((bought.Coins, bought.Gems), Is.EqualTo((7L, 5L)));
         }
 
         [Test]
-        public void APurchaseSendsItsKeyAndABearerAndReadsTheReceipt()
+        public void APurchaseSendsTheOfferAsListedItsKeyAndABearerAndReadsTheReceipt()
         {
             string sent = null, auth = null;
             var hosts = new Hosts
@@ -154,8 +154,12 @@ namespace Backend.Client.Core.Tests
             };
             string key = ApiClient.NewPurchaseKey();
             Assert.That(key, Does.Match("^[a-z0-9-]{36}$"), "a lowercase UUID, as the API requires");
-            ApiResult<Receipt> r = new ApiClient(Three, hosts).Purchase("tok", "hat", key).Result;
-            Assert.That(JsonValue.Parse(sent)["key"].AsString, Is.EqualTo(key));
+            var listed = new Offer { Sku = "hat", ItemId = "barrel_steel", Price = 100, Currency = "coins", RequiresLevel = 1 };
+            ApiResult<Receipt> r = new ApiClient(Three, hosts).Purchase("tok", listed, key).Result;
+            JsonValue body = JsonValue.Parse(sent);
+            Assert.That(body["key"].AsString, Is.EqualTo(key));
+            Assert.That((body["sku"].AsString, body["itemId"].AsString, body["price"].AsLong, body["currency"].AsString),
+                Is.EqualTo(("hat", "barrel_steel", 100L, "coins")), "what the shop showed, which the offer must still be (D-119)");
             Assert.That(auth, Is.EqualTo("Bearer tok"));
             Assert.That((r.Value.Result, r.Value.ItemId, r.Value.Coins, r.Value.Held), Is.EqualTo(("already_bought", "cosmetic_hat", 50L, 2)));
         }

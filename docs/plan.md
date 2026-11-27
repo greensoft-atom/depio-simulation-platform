@@ -5013,6 +5013,12 @@ twice without the index and twice with it, alternately, on the development VM): 
 and 148, 310 and 199 a second; with, 67 and 58, 129 and 82, 234 and 172, 299 and 312; mysqld's CPU a result 5.4 to 8.7
 ms without and 5.3 to 8.5 with. Two runs of one build differed more than the builds: no cost this loaded VM can show.
 
+**(d) done 2026-11-27.** The core's `Purchase` takes the offer as listed and sends its item, price and currency; the
+drill makes its two offers by the admin API and removes them at its end, and its skin scenario is refused a second
+copy. The client's 211 tests pass with `float32` and without. Drilled from the release
+(`NEWMAN=1 headless-drill.sh play equip boost levels skin gems purchase`): 67 checks and the collection's 153
+requests, 171 assertions, none failed.
+
 ---
 
 ### Completed 2026-09-23

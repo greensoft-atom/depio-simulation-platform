@@ -145,10 +145,15 @@ PIDS=()
 # Every background job too, the probe, the soak's loops, the bots and a drain still waiting: a drill ended
 # early left them on, at the next drill's ports (O-80).
 cleanup() { touch "$D/soak.stop" 2>/dev/null; local jobs; jobs=$(jobs -p)
+           [ -n "${CONTENT:-}" ] && drill_offers DELETE '{"reason":"the drill ends"}' > /dev/null    # backend_dev keeps the rest
            for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-} $jobs; do kill "$p" 2>/dev/null; done; sleep 2; for p in "${PIDS[@]:-}" ${REPLICA_PID:-} ${MYSQL_PIDS[@]:-} $jobs; do kill -9 "$p" 2>/dev/null; done
            [ "${NGINX_STARTED:-0}" = 1 ] && "${FRONTENV[@]}" "$B/dev-nginx.sh" stop > /dev/null 2>&1
            [ "${DEV_MYSQL_STARTED:-0}" = 1 ] && "$B/dev-mysql.sh" stop > /dev/null 2>&1; }
 trap cleanup EXIT
+# The drill's two offers made (PUT, its body naming the item by %s) or removed (DELETE) by the admin API: the codes.
+drill_offers() { local sku; for sku in drill_barrel drill_boost; do
+                   curl -s -o /dev/null -m 10 -w '%{http_code} ' -X "$1" -H "Authorization: Bearer drill-admin-secret" \
+                     -d "$(printf "$2" "$sku")" "http://127.0.0.1:9196/admin/shop/offers/$sku"; done | sed 's/ $//'; }
 # NFR-2's p50 and p95 per profile from a scrape of the arena: a histogram's buckets come in its
 # labels' string order, so they are sorted by their bound first (02 §13).
 nfr2_quantiles() {
@@ -271,18 +276,17 @@ BACKEND_METRICS_ADDR=127.0.0.1:9197 \
 "${TLSENV[@]}" "${ARENAENV[@]}" $J $OPENS ${ARENA_OPTS:-} -cp "$R/lib/arena/*" com.backend.arena.ArenaMain 9011 5700 150 $SHAPES $ROOMS 127.0.0.1 6390 \
    arena-drill 0 "$D/spool" 127.0.0.1 127.0.0.1 > "$D/arena.log" 2>&1 & PIDS+=($!)
 # The equip, boost and levels scenarios want items whose effect a stay measures exactly: a barrel giving 25 %
-# bullet speed and a coins boost, for 1 coin each. They are added to the release's shop and item table, read from
-# its platform jar, and the result put ahead of them on the classpath, for those scenarios alone; the release's
-# offers stay on sale beside them, for gems and the rest of the run (T-41).
+# bullet speed and a coins boost, for 1 coin each. They are added to the release's item table, read from its platform
+# jar, and the result put ahead of it on the classpath, for those scenarios alone; their offers are made by the admin
+# API once the platform answers, beside the release's, which stay on sale for gems and the rest of the run (T-41,
+# D-119), and removed when the drill ends.
 CONTENT=""
 if [[ " $* " == *" equip "* || " $* " == *" boost "* || " $* " == *" levels "* ]]; then
   mkdir -p "$D/content"
   python3 - "$(ls "$R"/lib/platform/platform-*.jar)" "$D/content" <<'EOF' || { echo "the drill's content: not written"; exit 2; }
 import json, sys, zipfile
 jar, out = sys.argv[1], sys.argv[2]
-drill = {"shop.json": [{"sku": "drill_barrel", "itemId": "drill_barrel", "price": 1},
-                       {"sku": "drill_boost", "itemId": "drill_boost", "price": 1}],
-         "items.json": [{"id": "drill_barrel", "type": "EQUIPMENT", "slot": "barrel",
+drill = {"items.json": [{"id": "drill_barrel", "type": "EQUIPMENT", "slot": "barrel",
                          "modifiers": [{"stat": "bullet_speed", "percent": 25}]},
                         {"id": "drill_boost", "type": "BOOST", "kind": "coins", "percent": 100, "minutes": 60}]}
 with zipfile.ZipFile(jar) as z:
@@ -328,6 +332,10 @@ curl -s -o /dev/null http://127.0.0.1:8093/health || { echo "DRILL FAILED: the p
 sleep 3
 # A process that ended here fails the drill: the scenarios that do not need it passed without it (O-80).
 for p in "${PIDS[@]}"; do kill -0 "$p" 2>/dev/null || { echo "DRILL FAILED: process $p died during start-up"; exit 1; }; done
+if [ -n "$CONTENT" ]; then
+  codes=$(drill_offers PUT '{"itemId":"%s","price":1,"reason":"the drill'"'"'s offer"}')
+  [[ "$codes" =~ ^(200|201)\ (200|201)$ ]] || { echo "DRILL FAILED: the drill's offers, by the admin API: $codes"; exit 1; }
+fi
 if [ -n "$FRONT" ]; then
   NGINX_STARTED=1
   "${FRONTENV[@]}" "$B/dev-nginx.sh" start > "$D/nginx.log" 2>&1 || { cat "$D/nginx.log"; echo "DRILL FAILED: nginx in front"; exit 1; }

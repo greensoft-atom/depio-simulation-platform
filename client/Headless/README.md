@@ -79,7 +79,7 @@ The scenarios, in the driver's order. The **Needs** column uses these letters:
 | L | the lobby (`--lobby`) |
 | A | the operator's API (`BACKEND_ADMIN_URL`, `BACKEND_ADMIN_TOKEN`) |
 | S | the drill's SQL (`BACKEND_DRILL_SQL`) |
-| C | the drill's own shop items: when one of these scenarios is asked for, `headless-drill.sh` adds a barrel giving 25 % bullet speed and a coins boost, for 1 coin each |
+| C | the drill's own shop items: when one of these scenarios is asked for, `headless-drill.sh` adds a barrel giving 25 % bullet speed and a coins boost to the item table, and their offers, 1 coin each, by the admin API (D-119); it removes the offers when it ends |
 | T | TLS |
 | U | an account at the account service (`--account`) |
 
@@ -102,7 +102,7 @@ The times are a run's own, roughly.
 | `gems` | 25 gems as a fixture; the release's hour boost bought for 20; the next refused, 5 gems short | S | seconds |
 | `purchase` | Gems for money, with the payment provider simulated: an order whose key, sent again, is the same order; paid, with the first purchase's bonus; a second confirm final; one declined; a refund by the operator and its debt; no order while gems are owed; the debt cleared; the next paid without a bonus | A | seconds |
 | `pass` | The season pass: 245 points as a fixture; one stay reaches the first tier, and 150 coins are told by `evt.rewards`. Premium, bought for 500 gems, pays 15 at once; a second tap is answered as the first | L S | seconds |
-| `skin` | The skin table; 150 gems as a fixture buy the crimson skin, worn in its own slot. The own tank is told it (skin 1) with its create; another player, wearing none, is told none | S | seconds |
+| `skin` | The skin table; 150 gems as a fixture buy the crimson skin, and a second purchase of it is refused, `already_owned` (D-53); it is worn in its own slot. The own tank is told it (skin 1) with its create; another player, wearing none, is told none | S | seconds |
 | `milestone` | 50 000 experience as a fixture; a stay writes level 6, past milestone 5, which pays 20 gems, told by `evt.rewards` | L S | seconds |
 | `season` | Two players and a team at the top of their boards, as fixtures. An operator ends the season; the worker places them, pays them in gems with an inbox item and a push, and resets every rating | L A S | a minute or two |
 | `achievements` | 49 stays as a fixture; the fiftieth reaches an achievement: 10 gems, told by `evt.rewards` with its id, and listed as reached | L S | seconds |
