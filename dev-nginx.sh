@@ -168,6 +168,17 @@ start)
         echo "nginx: already running, pid $(cat "$F/nginx.pid"), for $(cat "$F/address" 2> /dev/null), $(way); $0 restart to change it"
         exit 0
     fi
+    # A start as another user, root most often (D-98), leaves work/nginx theirs, which this one cannot write: said, with
+    # both ways on, before anything is written (O-92). Taken over, the root CA stays, and the clients given it trust on.
+    theirs=$(find "$F" ! -writable -print 2> /dev/null | head -3 || true)
+    if [ -n "$theirs" ]; then
+        owner=$(stat -c %U "$(head -1 <<< "$theirs")")
+        echo "work/nginx holds $owner's files, from a start as $owner, which $(id -un) cannot write:" \
+            "$(tr '\n' ' ' <<< "$theirs")" >&2
+        echo "  start nginx as before: sudo $0 start (sudo drops the settings: give them on its line);" >&2
+        echo "  or take work/nginx over, its root CA kept for the clients that have it: sudo chown -R $(id -un): $F" >&2
+        exit 1
+    fi
     # In use, or refused by a policy of the machine: named before anything starts (D-88)
     BIND=0.0.0.0 "$B/backend/scripts/check-bind.sh" "${open[@]}" || {
         echo "another port for it: NGINX_HTTP_PORT, NGINX_HTTPS_PORT or NGINX_MATCH_PORT, the same for every later command" >&2

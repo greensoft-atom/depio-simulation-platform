@@ -5,7 +5,7 @@ after it is fixed as the record of what was wrong and what closed it. The
 register was the input to [plan.md](plan.md)'s ordering — the roadmap was
 re-ordered around it rather than the other way round. **Open as of 2026-11-27:**
 P-65 (Unity's float mode in the editor and a player, for the team to see); T-72 (a check's failure in the emulated
-guest, seen once, its cause not known); O-92 (`dev-nginx.sh` started as a user after root, its way out written); O-37
+guest, seen once, its cause not known); O-37
 is fixed by configuration, its choice past 20 000 players the owner's (Q-58).
 Every other entry is fixed,
 closed as not a defect with its reason, or left as it is by a stated choice (O-5).
@@ -1510,11 +1510,19 @@ and ended 0, so `run-local.sh start` passed with an nginx no match could cross, 
 the likely case (a user cannot stop it, D-98). Now `status` names the ports of nginx's way and `start` refuses,
 naming `sudo PLAIN=… ./dev-nginx.sh restart`. Test first, both failing; each fix's mutant caught.
 
-**O-92 (L), found 2026-11-02, OPEN** (plan item 119's run). `dev-nginx.sh start` as a user after a start by root, the
-way D-98 leaves open: `work/nginx` holds root's configuration and logs, and the user's start ends at `mkdir:
-cannot create directory '…/work/nginx/conf.new': Permission denied`, the cause plain but not its way out. Start nginx
-always the same way, by `sudo` or as the user; to change, `sudo rm -rf work/nginx/conf work/nginx/logs work/nginx/temp`
-first (the root CA and the certificate may stay).
+**O-92 (L), found 2026-11-02, FIXED 2026-11-27** (plan item 119's run; fixed in plan item 143 (a)). `dev-nginx.sh
+start` as a user after a start by root, the way D-98 leaves open: `work/nginx` holds root's configuration and logs,
+and the user's start ended at `mkdir: cannot create directory '…/work/nginx/conf.new': Permission denied` (or, when
+`work/nginx` itself was the user's, at `rm: cannot remove '…/conf/…'`), the cause plain but not its way out. The way
+out written here was wrong too: with `conf`, `logs` and `temp` removed the start still failed, since root's first start
+makes `work/nginx` itself root's. **Fixed:** `start` looks, before it writes or checks anything, for what in
+`work/nginx` this user cannot write, and refuses, naming whose files they are and up to three of them, with both ways
+on: start it as before by `sudo`, or take `work/nginx` over by `sudo chown -R <user>: work/nginx`, which keeps the
+root CA, so the clients given its `ca.pem` go on trusting it. Test first as `devtest` in its namespace (working-here
+§3), on moved ports: root's start, then the user's, failing as found; then refused with its way out, nothing changed;
+taken over, the user's start up with the root CA's fingerprint the same; root's start after the user's up as before,
+and the user's after it refused again. Two mutants caught: the refusal gone (the old errors back) and its test
+inverted (the user's own files refused).
 
 **O-91 (M), found 2026-11-02, FIXED the same day** (plan item 117, run as the owner's machine is: Rocky 9, a home of
 0700, nginx by `sudo` on 80 and 443 and the rest as the user, D-92). Beside root's nginx the user could not read

@@ -3945,3 +3945,30 @@ apart. Design: [detailed-design/10](../detailed-design/10-accounts.md).
   service's Argon2 and the exchange, the path a new player takes; not guests, which skip both.
 - **The gateway closes a lobby on a revocation only when its own session has ended** (T-71), where it closed on any:
   a password change ends older sessions alone, and the device that made it may be connected again on a newer one.
+
+### D-118 — The own tank's step rounds every operation to a float by a cast of its own
+
+**Decided 2026-11-27** (plan item 143 (b), P-65). **Refines**
+[D-62](#d-62--the-own-tank-is-predicted-by-the-servers-movement-rule-from-what-two-events-carry), whose port of the
+room's movement rule `TankMotion` makes "in its order and in single precision".
+
+**Decision.** `TankMotion`, the room's step of a driven tank in C# that the own tank's prediction replays, rounds the
+result of every arithmetic operation to a float by an explicit `(float)` cast, comparisons' operands included: the
+push and the friction, the move, the map's edge, and a maze's walls (their cells too). `core-tests.sh` runs the whole
+suite twice, with Mono's `--optimize=float32`, as Unity's Mono runs by default, and without it, as a Mono that keeps
+a float in double between operations; both must pass.
+
+**Why.** The server's Java rounds every float operation (JLS §15.4, strict since Java 17). C# lets a runtime keep a
+float's intermediate values in higher precision, locals and arguments among them; only an explicit conversion to
+`float` is sure to round (ECMA-335, Partition I §12.1.3 and III `conv.r4`). Mono without `float32` does keep them in
+double, and its step then differed from the room's in the last bits (P-65), so the prediction corrected what it need
+not have. With each operation rounded, double rounding gives each result exactly, since a double holds more than
+twice a float's bits plus two (for `+`, `-`, `*`, `/` and the square root): the step's bits are then the room's on
+either runtime, and no longer rest on how Unity's editor and player set Mono up. Holding it to Unity's setting alone
+was the other way, which the team would have had to confirm in the editor and in a player; this one needs neither.
+
+**Cost.** The step reads less plainly, each operation in a cast, which a comment there explains. The tests take about
+half a minute longer. IL2CPP's C++ on ARM is still not seen here: a C++ compiler that fused a multiply and an add
+into one would round once where Java rounds twice; IL2CPP writes each IL operation as its own statement, which a
+contraction within one expression does not reach, but that is read from how it works, not seen.
+

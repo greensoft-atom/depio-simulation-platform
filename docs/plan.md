@@ -4874,6 +4874,39 @@ token check: Nimbus's ES256 verify with the platform's checks, 1.9 to 2.4 ms on 
 eight, on this VM loaded by the two machines' check beside it, so an upper figure. `DocsLinksTest` and
 `ReadmeTestListsTest` pass. Item 142 is done: the plan's list is at its end.
 
+#### 143. The open defects: O-92, P-65, T-72, and the two machines' probe (the owner, 2026-11-27)
+
+The owner, after item 142: O-92 and the other open items and fixes. Open in the register: P-65, T-72 and O-92; and two
+of item 142's own, the two machines' probe lengthening the gaps it times (10's table says so), and a test's comment
+left saying "register and log in". In parts, each committed, in this order:
+
+- **(a) O-92**: a start of `dev-nginx.sh` after one by another user, root most often, refused before it writes
+  anything, naming whose files they are and both ways on: start it as before (`sudo`), or take `work/nginx` over
+  (`sudo chown -R <user>: work/nginx`), which keeps its root CA, so the clients given its `ca.pem` go on trusting it.
+  Found reproducing it: the register's way out, `conf`, `logs` and `temp` removed, does not work, since `work/nginx`
+  itself is root's after root's first start. Test first, as `devtest` in its namespace, as working-here §3 has it.
+- **(b) P-65**: the core's step of the own tank rounds every operation to single precision by a cast of its own, so
+  its bits are the server's whether the runtime keeps a float in double between operations or not
+  ([D-118](architecture/03-decision-log.md#d-118--the-own-tanks-step-rounds-every-operation-to-a-float-by-a-cast-of-its-own));
+  `core-tests.sh` runs the suite both ways, `float32` as Unity's Mono has it and without, as a Mono computing in
+  double. Test first: without `float32`, the three recordings of `TankMotionTests` fail.
+- **(c) The probe**: the two machines' check signs up in a loop of its own, so the probe it times sends nothing but
+  its requests; then the check again, for figures the probe does not lengthen; and the test's comment.
+- **(d) T-72**: the guest's check run again, its HTTPS refusal now saying what it was; if it does not come back, it
+  stays open as it is, what is known written down.
+
+**(a) done 2026-11-27: O-92.** `dev-nginx.sh start` looks, before it writes or checks anything, for what in
+`work/nginx` this user cannot write, and refuses, naming whose files they are and up to three, with both ways on:
+`sudo` as before, or `sudo chown -R <user>: work/nginx`, the root CA kept. Test first as `devtest` in its namespace on
+moved ports, its clone brought to `main` (its own leftover copies of item 110's scripts, each an older version of one
+committed, discarded) and given this release: root's start, then `devtest`'s, failing at `conf.new` as found; the
+register's way out, `conf`, `logs` and `temp` removed, failing too, `work/nginx` itself being root's; with the fix,
+refused, nothing changed; taken over, `devtest`'s start up, the root CA's fingerprint unchanged; root's start after
+`devtest`'s up as before, and `devtest`'s after it refused again. Two mutants caught, the refusal gone and its test
+inverted; the first at first judged by the wrong error (with `work/nginx` the user's and `conf` root's, the old code
+fails at `rm`, not `mkdir`), then by what the fix is for, its way out named. 03's table has the message, and its
+section on nginx as root the taking over.
+
 ---
 
 ### Completed 2026-09-23
