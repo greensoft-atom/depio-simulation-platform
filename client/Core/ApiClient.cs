@@ -190,6 +190,9 @@ namespace Backend.Client.Core
         public int RequiresLevel;
         /// <summary>"coins", or "gems" (04 §8, plan item 68).</summary>
         public string Currency;
+        /// <summary>A limited offer, and what it has left: 0 left is sold out, still listed (D-121). 0 when not limited.</summary>
+        public bool Limited;
+        public int StockLeft;
     }
 
     public sealed class Holding
@@ -218,6 +221,28 @@ namespace Backend.Client.Core
         public string Result, ItemId;
         public long Coins, Gems;
         public int Held;
+    }
+
+    /// <summary>One thing the player bought (GET /v1/purchases, plan item 145): a shop item, or a season's premium pass.</summary>
+    public sealed class PurchaseRow
+    {
+        /// <summary>The purchase's row in the ledger: the last one's is the next page's <c>before</c>.</summary>
+        public long Id;
+        /// <summary>"item", with its <see cref="ItemId"/>; or "pass", with its <see cref="Season"/>.</summary>
+        public string Kind, ItemId;
+        public int Season;
+        /// <summary>What it cost, in <see cref="Currency"/>, "coins" or "gems".</summary>
+        public long Price;
+        public string Currency;
+        /// <summary>When, an ISO-8601 instant in UTC.</summary>
+        public string At;
+    }
+
+    /// <summary>A page of what the player bought, newest first; <see cref="Next"/> null on the last.</summary>
+    public sealed class PurchasePage
+    {
+        public readonly List<PurchaseRow> Rows = new List<PurchaseRow>();
+        public long? Next;
     }
 
     /// <summary>A pack of gems sold for money (04 §8, revenue): its price in cents of <see cref="Currency"/>, US dollars.</summary>
@@ -687,9 +712,32 @@ namespace Backend.Client.Core
                         Sku = o["sku"].AsString, ItemId = o["itemId"].AsString, Price = o["price"].AsLong,
                         RequiresLevel = o["requiresLevel"].AsInt, AvailableTo = o["availableTo"].AsString,
                         Currency = o["currency"].IsNull ? "coins" : o["currency"].AsString,
+                        Limited = o["limited"].AsBool, StockLeft = o["stockLeft"].IsNull ? 0 : o["stockLeft"].AsInt,
                     });
                 }
                 return offers;
+            });
+
+        /// <summary>
+        /// What the player bought, newest first, 50 a page (plan item 145): the first page with no <paramref name="before"/>,
+        /// the next with the last page's <see cref="PurchasePage.Next"/>. 400 invalid_query, 401.
+        /// </summary>
+        public Task<ApiResult<PurchasePage>> Purchases(string token, long? before = null) =>
+            Call(HttpMethod.Get, before == null ? "/v1/purchases" : "/v1/purchases?before=" + before.Value, null, token, j =>
+            {
+                var page = new PurchasePage { Next = j["next"].IsNull ? (long?)null : j["next"].AsLong };
+                JsonValue rows = j["purchases"];
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    JsonValue r = rows[i];
+                    page.Rows.Add(new PurchaseRow
+                    {
+                        Id = r["id"].AsLong, Kind = r["kind"].AsString, ItemId = r["itemId"].AsString,
+                        Season = r["season"].IsNull ? 0 : r["season"].AsInt, Price = r["price"].AsLong,
+                        Currency = r["currency"].AsString, At = r["at"].AsString,
+                    });
+                }
+                return page;
             });
 
         public Task<ApiResult<Holdings>> Inventory(string token) =>

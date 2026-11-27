@@ -150,6 +150,11 @@ Each process listened on a port of its own.
   (409 `offer_changed`), lists what player A bought, and, in folder 09, lists the offers, makes one, is refused one of
   no item, removes it, and lists A's purchases for support. The new routes' examples in 01 and 03 are from a run by hand
   the same day, the guest's gems and coins given by SQL as a fixture.
+- **With limited stock, on 2026-11-27** (D-121, plan item 146). The collection on the drill's stack again: 153 requests,
+  172 assertions, none failed, the shop's request now checking every offer's `limited` and `stockLeft`. A first run
+  failed two, the premium pass and the season's end, refused 409 while the worker closed a season an earlier run's
+  collection had ended (T-73); the drill now waits for that close first. The stock examples in 01 and 03 are from a
+  run by hand the same day.
 - **Not checked here**: nginx's limits (its own 413 and 429 answers are described from its configuration), and the
   match protocol, which has its own drills.
 

@@ -104,6 +104,7 @@ namespace Backend.Client.Headless
                         case "purchase": PurchaseGems(); break;
                         case "pass": PassPlay(); break;
                         case "skin": SkinPlay(); break;
+                        case "stock": Stock(); break;
                         case "milestone": Milestone(); break;
                         case "season": Season(); break;
                         case "achievements": AchievementsPlay(); break;
@@ -455,6 +456,45 @@ namespace Backend.Client.Headless
             Check(bought.Ok && bought.Value.Gems == 5 && bought.Value.Held == 1, $"bought with gems ({bought})");
             ApiResult<Receipt> again = Api.Purchase(session.Token, Listed("boost_xp_hour"), ApiClient.NewPurchaseKey()).Result;
             Check(!again.Ok && again.Code == "insufficient_funds", $"the next refused, 5 gems short ({again})");
+        }
+
+        /// <summary>
+        /// Limited stock (04 §8, D-121) and what was bought (plan item 145): an offer of one blue skin made by the admin API,
+        /// listed limited with one left; a player buys it and a second is refused sold_out, the offer still listed with none
+        /// left; the first player's purchases read through the core, the skin the newest, the second's none; the offer removed.
+        /// </summary>
+        private static void Stock()
+        {
+            if (Environment.GetEnvironmentVariable("BACKEND_ADMIN_URL") == null)
+            {
+                Fail("stock needs BACKEND_ADMIN_URL and BACKEND_ADMIN_TOKEN");
+                return;
+            }
+            const string path = "/admin/shop/offers/drill_stock_one";
+            Admin("DELETE", path, "{\"reason\":\"drill: a run before left it\"}");     // its count afresh
+            var made = Admin("PUT", path, "{\"itemId\":\"skin_azure\",\"price\":150,\"currency\":\"gems\",\"stock\":1,"
+                + "\"reason\":\"drill: an offer of one\"}");
+            Check((int)made.StatusCode == 201, $"the operator made an offer of one ({(int)made.StatusCode})");
+            var (first, _) = NewSession();
+            var (second, _) = NewSession();
+            Check(Granted(first.PlayerId, 150, "gems", 1) && Granted(second.PlayerId, 150, "gems", 1),
+                "given 150 gems each, as a fixture, through the ledger");
+            Offer listed = Listed("drill_stock_one");
+            Check(listed.Limited && listed.StockLeft == 1, $"listed limited, one left ({listed.Limited}, {listed.StockLeft})");
+            ApiResult<Receipt> bought = Api.Purchase(first.Token, listed, ApiClient.NewPurchaseKey()).Result;
+            Check(bought.Ok && bought.Value.Result == "bought" && bought.Value.Gems == 0, $"the first bought it ({bought})");
+            ApiResult<Receipt> late = Api.Purchase(second.Token, listed, ApiClient.NewPurchaseKey()).Result;
+            Check(!late.Ok && late.Status == 409 && late.Code == "sold_out", $"the second refused, none left ({late})");
+            Check(Listed("drill_stock_one").StockLeft == 0, "still listed, none left");
+
+            ApiResult<PurchasePage> page = Api.Purchases(first.Token).Result;
+            PurchaseRow newest = page.Ok && page.Value.Rows.Count > 0 ? page.Value.Rows[0] : null;
+            Check(newest != null && newest.Kind == "item" && newest.ItemId == "skin_azure" && newest.Price == 150
+                  && newest.Currency == "gems" && page.Value.Next == null, $"the first's purchases: the skin, the newest ({page})");
+            ApiResult<PurchasePage> none = Api.Purchases(second.Token).Result;
+            Check(none.Ok && none.Value.Rows.Count == 0, $"the second's: none, nothing taken ({none})");
+            var removed = Admin("DELETE", path, "{\"reason\":\"drill: done\"}");
+            Check((int)removed.StatusCode == 200, $"the offer removed ({(int)removed.StatusCode})");
         }
 
         /// <summary>

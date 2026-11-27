@@ -343,6 +343,17 @@ if [ -n "$FRONT" ]; then
   echo "--- through nginx ($FRONT): the API $API, the account service $ACCOUNT, the lobby $LOBBY, matches $([ "$FRONT" = plain ] && echo "127.0.0.1:9095, plain" || echo "through 8095's /match/ by the arena's name")"
 fi
 if [ "${NEWMAN:-0}" = 1 ]; then
+  # A season an earlier run's collection ended (folder 12) and no worker has closed yet, its stack stopped within the
+  # minute the season job first waits: this worker closes it in its first minute, and the collection met the close in
+  # progress, its pass and its season's end refused 409 (T-73). Wait for it first.
+  port=$DBPORT; [ "$MYSQL_FAILOVER" != 0 ] && [ "$port" = "$DEV_DBPORT" ] && port=3307
+  for i in $(seq 1 120); do
+    open=$(mysql -h127.0.0.1 -P"$port" --protocol=TCP -ubackend -p"${BACKEND_DB_PASSWORD:-backend-dev-password}" backend_dev -N -B \
+      -e "SELECT COUNT(*) FROM season WHERE ends_at <= UTC_TIMESTAMP(3) AND reset_at IS NULL" 2> /dev/null)
+    [ "$open" = 0 ] && break
+    [ "$i" = 1 ] && echo "--- a season ended by an earlier run is still to be closed: the worker closes it within its first minute (T-73)"
+    sleep 1
+  done
   echo "--- the Postman collection through $API, every HTTP route ($(date +%T))"
   NEWMAN_CA=()
   npx --yes newman run "$B/docs/api/backend.postman_collection.json" --env-var baseUrl="$API" --env-var accountUrl="$ACCOUNT" \

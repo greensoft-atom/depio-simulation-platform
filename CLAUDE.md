@@ -260,7 +260,7 @@ client/vs2019-check.sh
 client-simple/check.sh
 client-simple-no-tls/check.sh                       # the same check over the no-TLS tree (D-114)
 
-# Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice erase account
+# Live drill; scenarios: play resume coldresume badticket lifecycle lobby replaced badsession duel walkover decline party rffa coop banned removed phrase equip boost team tournament teammatch teamcup roundrobin social rename apply levels gems purchase pass skin milestone season achievements goals prediction guest stats domination tag maze sandbox notice erase account stock
 TMPDIR=<scratchpad> client/headless-drill.sh [scenario ...]
 # The client on Unity 2019's Mono, in clear alone (D-116): TLS=1, FRONT=https and untrusted are refused. Through FRONT's
 # nginx: http (the API, the lobby and matches on 80's place, a match by /match/) or plain (80's and 9001's, D-101)

@@ -140,6 +140,51 @@ namespace Backend.Client.Core.Tests
         }
 
         [Test]
+        public void TheShopSaysALimitedOffersStockAndAnOlderServerNone()
+        {
+            var hosts = new Hosts
+            {
+                Answer = r => Json(HttpStatusCode.OK, "{\"offers\":["
+                    + "{\"sku\":\"few\",\"itemId\":\"skin_jade\",\"price\":120,\"requiresLevel\":1,\"availableTo\":null,\"currency\":\"gems\",\"limited\":true,\"stockLeft\":3},"
+                    + "{\"sku\":\"many\",\"itemId\":\"skin_gold\",\"price\":400,\"requiresLevel\":1,\"availableTo\":null,\"currency\":\"gems\",\"limited\":false,\"stockLeft\":0},"
+                    + "{\"sku\":\"old\",\"itemId\":\"x\",\"price\":5,\"requiresLevel\":1,\"availableTo\":null}]}"),
+            };
+            List<Offer> offers = new ApiClient(Three, hosts).Shop().Result.Value;
+            Assert.That((offers[0].Limited, offers[0].StockLeft), Is.EqualTo((true, 3)));
+            Assert.That((offers[1].Limited, offers[1].StockLeft), Is.EqualTo((false, 0)));
+            Assert.That((offers[2].Limited, offers[2].StockLeft), Is.EqualTo((false, 0)), "a server before D-121: unlimited");
+        }
+
+        [Test]
+        public void PurchasesReadsAPageAndAsksForTheNextByItsBefore()
+        {
+            var asked = new List<(string PathAndQuery, string Auth)>();
+            var hosts = new Hosts
+            {
+                Answer = q =>
+                {
+                    asked.Add((q.RequestUri.PathAndQuery, q.Headers.Authorization?.ToString()));
+                    return q.RequestUri.Query == ""
+                        ? Json(HttpStatusCode.OK, "{\"purchases\":["
+                            + "{\"id\":300,\"kind\":\"item\",\"itemId\":\"treads_light\",\"price\":1200,\"currency\":\"coins\",\"at\":\"2026-11-27T09:47:44.188Z\"},"
+                            + "{\"id\":299,\"kind\":\"pass\",\"season\":3,\"price\":500,\"currency\":\"gems\",\"at\":\"2026-11-27T09:47:44.047Z\"}],\"next\":299}")
+                        : Json(HttpStatusCode.OK, "{\"purchases\":[],\"next\":null}");
+                },
+            };
+            var api = new ApiClient(Three, hosts);
+            PurchasePage first = api.Purchases("tok").Result.Value;
+            Assert.That(first.Rows.Count, Is.EqualTo(2));
+            PurchaseRow item = first.Rows[0], pass = first.Rows[1];
+            Assert.That((item.Id, item.Kind, item.ItemId, item.Price, item.Currency, item.At),
+                Is.EqualTo((300L, "item", "treads_light", 1200L, "coins", "2026-11-27T09:47:44.188Z")));
+            Assert.That((pass.Kind, pass.Season, pass.ItemId, pass.Price), Is.EqualTo(("pass", 3, (string)null, 500L)));
+            Assert.That(first.Next, Is.EqualTo(299L));
+            PurchasePage last = api.Purchases("tok", first.Next).Result.Value;
+            Assert.That((last.Rows.Count, last.Next), Is.EqualTo((0, (long?)null)), "the last page: none, and no next");
+            Assert.That(asked, Is.EqualTo(new[] { ("/v1/purchases", "Bearer tok"), ("/v1/purchases?before=299", "Bearer tok") }));
+        }
+
+        [Test]
         public void APurchaseSendsTheOfferAsListedItsKeyAndABearerAndReadsTheReceipt()
         {
             string sent = null, auth = null;

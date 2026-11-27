@@ -49,7 +49,8 @@ namespace Backend.Client.Simple.Examples
                 return;
             }
             foreach (Offer offer in JsonUtility.FromJson<Shop>(answer.Body).offers)
-                Debug.Log("On sale: " + offer.itemId + " for " + offer.price + " " + offer.currency);
+                Debug.Log("On sale: " + offer.itemId + " for " + offer.price + " " + offer.currency
+                          + (offer.limited ? ", " + offer.stockLeft + " left" : ""));
 
             answer = await _http.GetAsync("/v1/inventory");
             if (answer.Error == "invalid_session")

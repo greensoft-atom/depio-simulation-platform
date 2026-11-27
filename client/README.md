@@ -114,7 +114,7 @@ cd client
 ```
 
 **Check the count, not only the verdict.** `core-tests.sh` prints NUnitLite's summary for each of its two runs, with
-`float32` and without, `Test Count: 211, Passed: 211, Failed: 0, …`, and says `CORE TESTS PASSED` only when none failed
+`float32` and without, `Test Count: 213, Passed: 213, Failed: 0, …`, and says `CORE TESTS PASSED` only when none failed
 in either. A run that dies part of the way through prints no
 summary; the script then says so, and fails.
 
@@ -182,7 +182,7 @@ operator's API and a way to write the drill's fixtures (see [Headless/README.md]
 scenario named, it runs `play resume badticket lifecycle`.
 
 **The scenarios**, in the driver's order: `play prediction equip boost team tournament teammatch teamcup rename apply
-roundrobin levels gems purchase pass skin milestone season achievements goals social guest stats domination tag maze
+roundrobin levels gems purchase pass skin stock milestone season achievements goals social guest stats domination tag maze
 sandbox resume coldresume badticket lifecycle untrusted lobby replaced badsession duel walkover party decline rffa
 coop banned notice erase account removed phrase`. `untrusted` needs a match over TLS and a second root, which the drill
 cannot give the client on Unity's Mono: it refuses that scenario (D-116). What each scenario checks, and what it

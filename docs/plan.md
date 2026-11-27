@@ -11,7 +11,7 @@ left of it waits on Q-3's hardware.
   on 9001 (matches), and serves all three in clear on 80, a match there by `/match/<the arena's name>`.
 - **The components**, each built and tested: `j-redis-service` 2.2.2 (229 tests); the backend's eleven modules (their
   sources declare 1 170 tests); the account service, `account-service/`, beside them (75; D-117); the client's
-  engine-free core with its headless driver (211 tests, on .NET Framework 4.5, run on
+  engine-free core with its headless driver (213 tests, on .NET Framework 4.5, run on
   Unity 2019's Mono with `float32` and without; D-116, D-118). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
   `UnityEngine`; there is no Unity editor here, so it has not been opened in one (Q-54). Beside the full client,
   `client-simple/` and `client-simple-no-tls/` are small clients for the UI team (D-111, D-114).
@@ -21,7 +21,7 @@ left of it waits on Q-3's hardware.
   for any of eight queued modes or open a sandbox, and have the result reach MySQL, the boards and their wallet, told
   back through the gateway. Item 78 drove all of it from one release: 44 live drill scenarios, plaintext and TLS, a
   two-hour soak of 300 bots, and the backup drill; item 79 reviewed all of it, fixed what the review found, and drove
-  every scenario and drill again. The drill has 46 scenarios now, all of them passed at item 142 (e). The shop's
+  every scenario and drill again. The drill has 47 scenarios now: 46 passed at item 142 (e), and item 146 added `stock`. The shop's
   offers are the database's since item 145, edited by the admin API, and a player and support read what was bought.
 
 Nothing has run on the production hardware, and nothing has launched.
@@ -5052,6 +5052,13 @@ eighteen caught, and two that survived each gained the test it lacked, a limit b
 whose limit was just removed, and were then caught. An early "none left" check in `ShopService` was removed rather
 than tested: the transaction refuses the same, so no test could tell it was there. Every backend test passes; the
 release, made in the copy, drilled with `stock` and the collection.
+
+**(b) done 2026-11-27.** The core's `ApiClient.Purchases` pages what was bought, and its `Offer` reads `Limited` and
+`StockLeft`, an older server's offer unlimited; two tests (213 in the core, with `float32` and without), three mutants
+caught. `client-simple` and `client-simple-no-tls` read the two fields, and both checks pass. The drill's new `stock`
+scenario: an offer of one by the admin API, one bought and a second `sold_out`, the shop still listing it with none
+left, the first player's purchases read through the core. Drilled from the release: `play stock skin gems purchase
+equip boost levels`, every check passed, and the collection's 153 requests and 172 assertions, after T-73 was fixed.
 ---
 
 ### Completed 2026-09-23

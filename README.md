@@ -70,9 +70,9 @@ open by design: what is left of it waits on Q-3's hardware.
 
 - **Tests.** j-redis 2.2.2 passes its 229 tests (2026-11-25). The backend's sources declare 1 170 tests and the
   account service's 75 (2026-11-27, a parameterized test counted once, as `ReadmeTestListsTest` counts them); every one passed in the whole build of plan
-  item 142 (d). Each module's README holds its own count. The client core's 211 tests pass for .NET Framework 4.5 on
+  item 142 (d). Each module's README holds its own count. The client core's 213 tests pass for .NET Framework 4.5 on
   Unity 2019's Mono, with `float32` and without (`client/core-tests.sh`, plan item 143 (b), D-118). Nothing here runs .NET 8 since D-116.
-- **Live.** The live drill has 46 scenarios, the account service's `account` among them, all in clear since D-116: Unity's Mono, which runs the client here,
+- **Live.** The live drill has 47 scenarios, the account service's `account` and the shop's `stock` among them, all in clear since D-116: Unity's Mono, which runs the client here,
   speaks TLS 1.0 alone, so `untrusted`, `TLS=1` and `FRONT=https` are refused. At plan item 78, all 44 scenarios
   of then passed against one release, in clear and over TLS (the TLS ones over TLS), and a two-hour soak of 300 bots
   held flat. At plan item 142 (e), all 46 passed against one release, the account service beside it, with both simple

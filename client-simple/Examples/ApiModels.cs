@@ -46,7 +46,8 @@ namespace Backend.Client.Simple.Examples
 
     /// <summary>GET /v1/shop.</summary>
     [Serializable] public class Shop { public Offer[] offers; }
-    [Serializable] public class Offer { public string sku; public string itemId; public int price; public int requiresLevel; public string currency; }
+    /// <summary>One offer. A limited one says so, and what it has left: 0 is sold out, still listed; 0 when not limited (D-121).</summary>
+    [Serializable] public class Offer { public string sku; public string itemId; public int price; public int requiresLevel; public string currency; public bool limited; public int stockLeft; }
 
     // ---- The lobby's d
 
