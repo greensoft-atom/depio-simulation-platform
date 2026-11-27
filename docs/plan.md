@@ -5059,6 +5059,10 @@ caught. `client-simple` and `client-simple-no-tls` read the two fields, and both
 scenario: an offer of one by the admin API, one bought and a second `sold_out`, the shop still listing it with none
 left, the first player's purchases read through the core. Drilled from the release: `play stock skin gems purchase
 equip boost levels`, every check passed, and the collection's 153 requests and 172 assertions, after T-73 was fixed.
+
+**(c) done 2026-11-27.** V3's two columns folded into `V1__schema.sql`, V3 deleted, and proved as D-120's squash was:
+the old three and the new two applied to empty databases, 38 tables each, every `SHOW CREATE TABLE` and the seed
+rows the same. `backend_dev` made again.
 ---
 
 ### Completed 2026-09-23

@@ -76,14 +76,13 @@ All classes are in the package `com.backend.persistence`.
 |---|---|
 | `V1__schema.sql` | Every table, grouped by domain and commented: 38 of them, each `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci` |
 | `V2__seed.sql` | The rows a first launch needs: `ha_epoch` (1, 0), `ha_heartbeat` (1, now), season 1, from now to 00:00 UTC on the first of the next odd month, and the shop's twelve offers (D-119) |
-| `V3__shop_stock.sql` | `shop_offer`'s `stock` and `sold`, a limited offer's (D-121, plan item 146); to be folded into V1 at the item's end (D-120) |
 
 The two files replaced V1 to V34, the steps by which the schema grew, and on 2026-11-27 V3 and V4 too
 ([D-120](../../docs/architecture/03-decision-log.md#d-120--the-migrations-squashed-again-v3-and-v4-into-the-baseline)):
 V3 had given `account` the account service's subject and made `erased_subject` (D-117), and V4 `shop_offer` and the
 ledger's index for purchases (D-119). V1 to V34 are in git up to commit ce30aa7 of the previous repository, V3 and V4
 up to the commit before D-120's. The second squash was found the same as V1 to V4, table by table and in the seed
-rows. The first was compared with V1 to V34 table by table and found the same, with two differences on purpose:
+rows; so was the third, the same day, of a V3 that gave `shop_offer` its `stock` and `sold` (D-121, plan item 146). The first was compared with V1 to V34 table by table and found the same, with two differences on purpose:
 
 - V17's three board indexes are not made
   ([defect D-41](../../docs/defects.md#3-data-and-the-result-pipeline)).

@@ -5,7 +5,8 @@
 -- made (D-41), and season_place.rated as wide as the counts it copies (D-42). V2__seed.sql writes the rows a
 -- first launch needs.
 -- Squashed again on 2026-11-27 with V3 (accounts by the account service's subject, D-117) and V4 (the shop's
--- offers and the ledger's purchases index, D-119), and proved the same table by table (D-120).
+-- offers and the ledger's purchases index, D-119), and proved the same table by table (D-120); and the same day
+-- with the next V3 (a limited offer's stock, D-121), the schema kept in one file before the launch.
 -- From V3 on, migrations are forward-only again: an applied one is never edited (06 §8).
 --
 -- Conventions (06 §2): times are DATETIME(3), always UTC; money is BIGINT, never a float; every table
@@ -218,6 +219,8 @@ CREATE TABLE shop_offer (
   requires_level TINYINT UNSIGNED NOT NULL DEFAULT 1,
   available_from DATETIME(3) NULL,
   available_to   DATETIME(3) NULL,
+  stock          INT UNSIGNED NULL,                              -- how many may be sold in all, null for no limit (D-121)
+  sold           INT UNSIGNED NOT NULL DEFAULT 0,                -- the purchases counted while it has one, never by the admin API
   updated_at     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
   UNIQUE KEY uq_shop_offer_sku (sku)

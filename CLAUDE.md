@@ -136,8 +136,9 @@ for the backend, its docs and its client.
   `backend`; C# `Backend.Client.Core` and `Backend.Client.Unity`.
 - **Never edit an applied Flyway migration**; add the next one. V1 (schema) and V2 (seed) are
   the baseline the owner had squashed from V1–V34 before launch (2026-10-04, D-75), and again with V3
-  and V4 (2026-11-27, D-120: the schema in one main file); from V3 on schema changes are forward-only,
-  expand then contract (06 §8).
+  and V4 (2026-11-27, D-120: the schema in one main file). Until the launch, a schema change is a V3 while it is built
+  and tested, folded into V1 (and its first rows into V2) when the item is done, proved the same, `backend_dev` made
+  again; after the launch, forward-only, expand then contract (06 §8).
 - **No third-party Redis server, client library or tool**, tests included; the store is
   j-redis.
 - **No third-party service or daemon of any kind beyond MySQL and nginx**, whether installed from the

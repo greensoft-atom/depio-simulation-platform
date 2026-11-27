@@ -1317,7 +1317,8 @@ waiting. Now:
 `V1__schema.sql` and `V2__seed.sql`. V3 (accounts by subject, D-117) and V4 (the shop's offers and the ledger's
 purchases index, D-119) were squashed into them on 2026-11-27, at the owner's wish to read the schema in one file
 ([D-120](../architecture/03-decision-log.md#d-120--the-migrations-squashed-again-v3-and-v4-into-the-baseline)): both
-sets applied to empty databases, every table's `SHOW CREATE TABLE` and the seed rows compared, the same.
+sets applied to empty databases, every table's `SHOW CREATE TABLE` and the seed rows compared, the same. The next V3,
+`shop_offer`'s `stock` and `sold` (D-121), was folded in the same way the same day, at the end of plan item 146.
 
 - **The baseline** (squashed 2026-10-04,
   [D-75](../architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)).

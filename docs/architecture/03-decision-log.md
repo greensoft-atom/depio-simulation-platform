@@ -4012,6 +4012,10 @@ forward-only again.
 (the `AUTO_INCREMENT` counters aside), and the seed rows (the epoch, season 1's id, the twelve offers) the same. As a
 check of the check, the new V1 without the ledger's purchases index was found different, by that line alone.
 
+**Again, the same day** (plan item 146 (c)): the next V3, `shop_offer`'s `stock` and `sold` (D-121), written as a
+migration while the item was built and tested, then folded into V1 and proved the same in the same way. Until the
+launch, a schema change goes so: a migration while it is built, folded into V1 when it is done.
+
 **Why.** The owner wants the schema read in one place. Nothing has launched, so the only databases that hold V1 to V4
 are the development and test ones: the tests' is made again by every test, and the development one is dropped and
 migrated again.
