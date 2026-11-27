@@ -43,7 +43,7 @@ public final class ShopService {
 
     public enum Result {
         BOUGHT, ALREADY_BOUGHT, NO_SESSION, INVALID_KEY, UNKNOWN_SKU, NOT_AVAILABLE,
-        LEVEL_REQUIRED, INSUFFICIENT_FUNDS, ALREADY_OWNED, OFFER_CHANGED
+        LEVEL_REQUIRED, INSUFFICIENT_FUNDS, ALREADY_OWNED, OFFER_CHANGED, SOLD_OUT
     }
 
     /**
@@ -85,6 +85,11 @@ public final class ShopService {
     /** The offers on sale now, in their order. */
     public List<Offer> onSale() throws SQLException {
         return Catalogue.onSale(offers.offers(), items, clock.instant());
+    }
+
+    /** @return the offer with that sku as stored, or null */
+    public Offer offer(String sku) throws SQLException {
+        return offers.offer(sku);
     }
 
     /** Every offer, on sale or not, for the admin API. */
@@ -154,8 +159,10 @@ public final class ShopService {
         if (accounts.level(playerId) < offer.requiresLevel()) {
             return new Receipt(Result.LEVEL_REQUIRED, null, 0, 0, offer.requiresLevel(), 0);
         }
+        // A limited offer's stock is held in the purchase's own transaction, on the offer's row (D-121).
+        boolean limited = offer.stock() != null;
         Outcome outcome = economy.purchase(playerId, offer.itemId(), offer.price(), key, offer.currency(),
-                heldOnce(offer.itemId()));
+                heldOnce(offer.itemId()), limited ? offer.sku() : null);
         return switch (outcome) {
             case APPLIED -> receipt(Result.BOUGHT, playerId, offer.itemId());
             // The same key, in flight at the same time as this one, got there first.
@@ -163,6 +170,7 @@ public final class ShopService {
                     economy.findPurchase(playerId, key).itemId());
             case INSUFFICIENT_FUNDS -> Receipt.of(Result.INSUFFICIENT_FUNDS);
             case ALREADY_OWNED -> Receipt.of(Result.ALREADY_OWNED);
+            case SOLD_OUT -> Receipt.of(Result.SOLD_OUT);
         };
     }
 

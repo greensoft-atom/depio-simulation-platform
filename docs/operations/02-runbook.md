@@ -318,8 +318,8 @@ Run these on the machine that runs `platform`, as root, with the secret read fro
 | `POST /admin/payments/{orderId}/refund` | `{"reason"}` | A paid order refunded, once: its gems taken back as far as the balance allows, the rest the player's debt; 404 `no_such_order`, 409 `not_paid` |
 | `POST /admin/notice` | `{"text", "reason"}` | Pushed as `evt.notice` to every player in the lobby, on every gateway: 202 with how many gateways heard. 1 to 200 characters, none a control or direction character |
 | `POST /admin/tournaments` | `{"reason", "name", "maxEntries", "registrationEnds", "startsAt", "roundMinutes", "prizes", "mode", "format"}` | A tournament (04 §6): a name of 1 to 64 characters, 2 to 32 entries (2 to 8 for a round robin), registration ending ahead and the start no earlier, rounds of 1 to 60 minutes, three whole prizes in coins; `mode` `duel` (default) or `teams`, `format` `elimination` (default) or `round_robin`. Answers its `id`; 400 `invalid_tournament` says which rule failed |
-| `GET /admin/shop/offers` | | Every offer, on sale or not, each with `onSale` and `itemKnown` (04 §8, D-119) |
-| `PUT /admin/shop/offers/{sku}` | `{"itemId", "price", "currency", "requiresLevel", "availableFrom", "availableTo", "reason"}` | The offer made (201) or replaced whole (200), on sale at every platform at once; a field left out takes its default (coins, level 1, no dates). 400 `invalid_offer` names the rule broken |
+| `GET /admin/shop/offers` | | Every offer, on sale or not, each with `onSale` and `itemKnown`, and a limited one's `stock` and `sold` (04 §8, D-119, D-121) |
+| `PUT /admin/shop/offers/{sku}` | `{"itemId", "price", "currency", "requiresLevel", "availableFrom", "availableTo", "stock", "reason"}` | The offer made (201) or replaced whole (200), on sale at every platform at once; a field left out takes its default (coins, level 1, no dates, no limit). `stock`, 1 to 1 000 000, is how many may be sold in all; a replace keeps what was sold. 400 `invalid_offer` names the rule broken |
 | `DELETE /admin/shop/offers/{sku}` | `{"reason"}` | The offer removed; what was bought from it stays in the ledger. 404 `no_such_offer` |
 | `GET /admin/players/{id}/purchases?before={id}` | | What the player bought, newest first, 50 a page: for a player asking where their gems went |
 | `GET /admin/seasons` | | Every season, newest first, and how far its close has gone |
@@ -370,6 +370,11 @@ saw, and is answered 409 `offer_changed`, so the app lists the shop again. To en
 platform's start logs `shop: offer ... sells ...`: remove it, or put it again with an item the release has. During a
 rolling upgrade from a release before plan item 145, edit nothing until every platform runs the new one: the old
 ones sell from their own `shop.json`.
+
+**A limited offer** (D-121) has a `stock`: how many may be sold in all. Each sale is counted in `sold` in the
+purchase's own transaction, and none left is answered 409 `sold_out`; the shop still lists it, with `stockLeft` 0. To
+sell more, put the offer again with a higher `stock`: what was sold is kept, so `stock` is always the total. To start
+the count again, remove the offer and make it anew. A limit set below what was sold leaves none.
 
 **A ban or a suspension** ends every session the player has, closes their lobby connection, and takes them out of
 any match, at once. **Closing a room and kicking a player** are told to the arenas, and answered 202 with how many

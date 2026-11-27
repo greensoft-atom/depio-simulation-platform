@@ -19,7 +19,7 @@ import com.fasterxml.jackson.databind.JsonNode;
  * ({@link com.backend.persistence.ShopRepository}); {@code shop.json} held them until plan item 145.
  *
  * Checked strictly. An unknown field is refused, so that a misspelt {@code requireLevel} is not silently no
- * requirement, and so is {@code stock}, which the design has and this does not build.
+ * requirement. {@code stock}, how many may be sold in all, is held on the offer's row (D-121).
  */
 public final class Catalogue {
 
@@ -29,6 +29,8 @@ public final class Catalogue {
     /** {@code inventory_item.item_id} is 40 characters. */
     static final int MAX_ITEM_ID = 40;
     static final int MAX_SKU = 64;
+    /** The largest limit an offer may have (D-121). */
+    static final int MAX_STOCK = 1_000_000;
 
     /**
      * Lower case only: item ids are keys in columns that compare without regard to case, where
@@ -38,7 +40,7 @@ public final class Catalogue {
 
     /** An offer's fields, and the admin call's reason beside them. */
     private static final Set<String> FIELDS = Set.of("sku", "itemId", "price", "requiresLevel", "availableFrom",
-            "availableTo", "currency", "reason");
+            "availableTo", "currency", "stock", "reason");
 
     /** An offer that breaks a rule, the rule its message. */
     public static final class Invalid extends IllegalArgumentException {
@@ -69,9 +71,6 @@ public final class Catalogue {
         }
         for (Iterator<String> names = node.fieldNames(); names.hasNext(); ) {
             String name = names.next();
-            if ("stock".equals(name)) {
-                throw new Invalid("stock: limited stock is not built (04 §8); nothing would hold the limit");
-            }
             if (!FIELDS.contains(name)) {
                 throw new Invalid("an unknown field, " + name);
             }
@@ -101,7 +100,9 @@ public final class Catalogue {
         if (paid < 0) {
             throw new Invalid("currency must be coins or gems");
         }
-        return new Offer(sku, itemId, price, paid, requiresLevel, from, to);
+        JsonNode limit = node.get("stock");                    // none, or 1 to a million, held on the row (D-121)
+        Integer stock = limit == null || limit.isNull() ? null : (int) whole(node, "stock", 1, MAX_STOCK, -1);
+        return new Offer(sku, itemId, price, paid, requiresLevel, from, to, stock, 0);
     }
 
     /** {@code coins} or {@code gems} as the ledger's currency; -1 for anything else. */

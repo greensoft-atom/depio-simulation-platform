@@ -153,13 +153,15 @@ The 100 newest seasons, each with when it was placed, paid and reset (`null` unt
 ### `GET /admin/shop/offers`: what the shop sells
 
 Every offer, on sale or not, in the order they were added (D-119). `onSale` says whether the shop lists it now: in its
-dates, and selling an item of the release's `items.json`; `itemKnown` whether that table has its item. From a run by
-hand on 2026-11-27, the release's twelve, the first two shown:
+dates, and selling an item of the release's `items.json`; `itemKnown` whether that table has its item. `stock` is a
+limited offer's limit, `null` for none, and `sold` the sales it has counted (D-121). From a run by
+hand on 2026-11-27, the release's twelve, the first two shown (with `stock` and `sold`, as a second run that day gave
+them, D-121):
 
 ```json
 200 {"offers":[
-  {"sku":"treads_light","itemId":"treads_light","price":1200,"currency":"coins","requiresLevel":1,"availableFrom":null,"availableTo":null,"onSale":true,"itemKnown":true},
-  {"sku":"barrel_steel","itemId":"barrel_steel","price":1500,"currency":"coins","requiresLevel":1,"availableFrom":null,"availableTo":null,"onSale":true,"itemKnown":true},
+  {"sku":"treads_light","itemId":"treads_light","price":1200,"currency":"coins","requiresLevel":1,"availableFrom":null,"availableTo":null,"stock":null,"sold":0,"onSale":true,"itemKnown":true},
+  {"sku":"barrel_steel","itemId":"barrel_steel","price":1500,"currency":"coins","requiresLevel":1,"availableFrom":null,"availableTo":null,"stock":null,"sold":0,"onSale":true,"itemKnown":true},
   ...]}
 ```
 
@@ -348,16 +350,20 @@ refunded already).
 
 ### `PUT /admin/shop/offers/{sku}`, `DELETE /admin/shop/offers/{sku}`: the shop's offers
 
-**Body** for a `PUT`: the offer, `{"itemId", "price", "currency", "requiresLevel", "availableFrom", "availableTo"}`,
-and `"reason"`; for a `DELETE`, `{"reason"}`. **Answer**: 201 for an offer made, 200 for one replaced or removed.
+**Body** for a `PUT`: the offer, `{"itemId", "price", "currency", "requiresLevel", "availableFrom", "availableTo",
+"stock"}`, and `"reason"`; for a `DELETE`, `{"reason"}`. **Answer**: 201 for an offer made, 200 for one replaced or removed.
 
 An offer is checked by every rule before it is written (D-119): `itemId` an item of the release's `items.json`,
 `price` 1 to 1 000 000 000, `currency` `coins` (the default) or `gems`, `requiresLevel` 1 to 100 (1 by default),
-`availableFrom` before `availableTo`, both optional instants, and no field but these and `reason`; a `sku` in the body
-must be the path's. A `PUT` replaces the offer whole: a field left out takes its default. Every platform lists and
+`availableFrom` before `availableTo`, both optional instants, `stock` 1 to 1 000 000 or none for no limit (D-121),
+and no field but these and `reason`; a `sku` in the body must be the path's. A `PUT` replaces the offer whole: a field
+left out takes its default. It keeps `sold`, the sales a limited offer has counted, so `stock` is always the total:
+to sell more, put a higher one; to count afresh, remove the offer and make it again. The answer is the offer as stored,
+`sold` with it. Every platform lists and
 sells the change at once, and a player who bought from the old offer's listing is answered 409 `offer_changed`, not
 charged a price they did not see. The change and its audit row are written in one transaction. From a run by hand on
-2026-11-27: a December sale made, then made cheaper and from now, then removed.
+2026-11-27: a December sale made, then made cheaper and from now, then removed. That run was before plan item 146: an
+answer now also carries `"stock"` and `"sold"`, as the limited offer's below.
 
 ```http
 PUT /admin/shop/offers/skin_gold_december
@@ -379,6 +385,17 @@ DELETE /admin/shop/offers/skin_gold_december
 ```
 ```json
 200 {"sku":"skin_gold_december","removed":true}
+```
+
+A limited offer, from that second run: two carbon skins made, both bought, and the limit raised to five, the two
+sold kept.
+
+```http
+PUT /admin/shop/offers/skin_carbon_launch
+{"itemId": "skin_carbon", "price": 300, "currency": "gems", "stock": 5, "reason": "three more"}
+```
+```json
+200 {"offer":{"sku":"skin_carbon_launch","itemId":"skin_carbon","price":300,"currency":"gems","requiresLevel":1,"availableFrom":null,"availableTo":null,"stock":5,"sold":2,"onSale":true,"itemKnown":true},"created":false}
 ```
 
 | Status | code | When |

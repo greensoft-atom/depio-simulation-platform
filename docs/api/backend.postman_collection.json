@@ -1284,6 +1284,9 @@
                   "});",
                   "let body = null;",
                   "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.test(\"every offer says whether it is limited, and what it has left, a number either way (D-121)\", function () {",
+                  "    pm.expect(body.offers.every(o => typeof o.limited === \"boolean\" && typeof o.stockLeft === \"number\")).to.be.true;",
+                  "});",
                   ""
                 ]
               }

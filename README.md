@@ -68,7 +68,7 @@ are drawn in [docs/diagrams/01-system.md](docs/diagrams/01-system.md).
 As of 2026-11-27, [plan](docs/plan.md) items 1 to 144 are done: the account service (D-117), the open defects, and the documents read again. Item 7 stays
 open by design: what is left of it waits on Q-3's hardware.
 
-- **Tests.** j-redis 2.2.2 passes its 229 tests (2026-11-25). The backend's sources declare 1 165 tests and the
+- **Tests.** j-redis 2.2.2 passes its 229 tests (2026-11-25). The backend's sources declare 1 170 tests and the
   account service's 75 (2026-11-27, a parameterized test counted once, as `ReadmeTestListsTest` counts them); every one passed in the whole build of plan
   item 142 (d). Each module's README holds its own count. The client core's 211 tests pass for .NET Framework 4.5 on
   Unity 2019's Mono, with `float32` and without (`client/core-tests.sh`, plan item 143 (b), D-118). Nothing here runs .NET 8 since D-116.

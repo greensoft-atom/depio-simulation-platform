@@ -10,7 +10,7 @@ left of it waits on Q-3's hardware.
   D-97). It has one public address with three ports (D-82, D-115): nginx ends TLS on 443 (the API and the lobby) and
   on 9001 (matches), and serves all three in clear on 80, a match there by `/match/<the arena's name>`.
 - **The components**, each built and tested: `j-redis-service` 2.2.2 (229 tests); the backend's eleven modules (their
-  sources declare 1 165 tests); the account service, `account-service/`, beside them (75; D-117); the client's
+  sources declare 1 170 tests); the account service, `account-service/`, beside them (75; D-117); the client's
   engine-free core with its headless driver (211 tests, on .NET Framework 4.5, run on
   Unity 2019's Mono with `float32` and without; D-116, D-118). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
   `UnityEngine`; there is no Unity editor here, so it has not been opened in one (Q-54). Beside the full client,
@@ -5030,6 +5030,28 @@ test passed on the two files (`dev-backend.sh build`'s install); its release ste
 tests against classes the editor had written into `target/` after Maven's `clean` (working-here §4), so the release
 was made in a copy outside the workspace and drilled: `play skin gems purchase equip` and the collection's 153
 requests, none failed, `backend_dev` migrated afresh to versions 1 and 2, 39 tables with Flyway's own.
+
+#### 146. Limited stock, and what was bought in the client (the owner, 2026-11-27)
+
+The owner asked for the two things item 145 left. Designed in
+[04 §8](detailed-design/04-platform-services.md#limited-stock-and-what-was-bought-in-the-client-designed-2026-11-27-plan-item-146)
+and [D-121](architecture/03-decision-log.md#d-121--a-limited-offers-stock-is-held-on-its-row-in-the-purchases-own-transaction):
+
+- **(a)** An offer's `stock` and `sold` on its row, held in the purchase's own transaction: 409 `sold_out`; the shop
+  lists `limited` and `stockLeft`, the admin API `stock` and `sold`.
+- **(b)** The core's `ApiClient.Purchases`; the offers' new fields in all three clients; a drill scenario, `stock`.
+- **(c)** The two columns folded into `V1__schema.sql` (D-120), `backend_dev` made again.
+
+**(a) done 2026-11-27.** `shop_offer` gains `stock` and `sold` (V3 while it was built); the admin API's `PUT` takes a
+`stock` of 1 to 1 000 000 and keeps `sold`, and answers with the offer as stored; a limited offer's row is locked in the
+purchase's transaction after the player's, none left is 409 `sold_out`, and the sale is counted with the price. The
+shop lists `limited` and `stockLeft`, a number either way for `JsonUtility`. Tests first, each failing on the stock not
+stored or not held: three in `ShopRepositoryTest` (eight buyers at once for three), one each in `PlatformHttpServerTest`
+and `AdminServerTest`, and `CatalogueTest`'s rules; 1 170 declared. Twenty mutants in a copy outside the workspace:
+eighteen caught, and two that survived each gained the test it lacked, a limit below two sales and a sale of an offer
+whose limit was just removed, and were then caught. An early "none left" check in `ShopService` was removed rather
+than tested: the transaction refuses the same, so no test could tell it was there. Every backend test passes; the
+release, made in the copy, drilled with `stock` and the collection.
 ---
 
 ### Completed 2026-09-23

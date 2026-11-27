@@ -129,7 +129,9 @@ public final class EconomyRepository {
         ALREADY_APPLIED,
         INSUFFICIENT_FUNDS,
         /** A purchase of an item held once that the player holds already (D-53): nothing moved. */
-        ALREADY_OWNED
+        ALREADY_OWNED,
+        /** A purchase of a limited offer with none left (D-121): nothing moved. */
+        SOLD_OUT
     }
 
     private final Tx tx;
@@ -164,6 +166,16 @@ public final class EconomyRepository {
      */
     public Outcome purchase(long playerId, String itemId, long price, String idemKey, int currency, boolean oneEach)
             throws SQLException {
+        return purchase(playerId, itemId, price, idemKey, currency, oneEach, null);
+    }
+
+    /**
+     * As above, and with {@code stockSku}, the sku of a limited offer, its stock held in this transaction (D-121): after
+     * the player's lock, the key and the one-of-each rule, the offer's row is locked, none left is
+     * {@link Outcome#SOLD_OUT}, and the sale is counted once the price is taken. Null for an offer with no limit.
+     */
+    public Outcome purchase(long playerId, String itemId, long price, String idemKey, int currency, boolean oneEach,
+                            String stockSku) throws SQLException {
         if (price < 0) {
             throw new IllegalArgumentException("negative price: " + price);
         }
@@ -173,17 +185,24 @@ public final class EconomyRepository {
         }
         String key = purchaseKey(playerId, idemKey);
         return tx.execute(c -> {
-            if (oneEach) {
+            if (oneEach || stockSku != null) {
                 lockAndRead(c, playerId, currency);
                 if (keyUsed(c, key)) {
                     return Outcome.ALREADY_APPLIED;
                 }
-                if (held(c, playerId, itemId)) {
+                if (oneEach && held(c, playerId, itemId)) {
                     return Outcome.ALREADY_OWNED;
+                }
+                // The offer's row after the player's, the order every purchase takes; held to the commit (D-121).
+                if (stockSku != null && !ShopRepository.inStock(c, stockSku)) {
+                    return Outcome.SOLD_OUT;
                 }
             }
             Outcome moved = move(c, playerId, currency, -price, REASON_PURCHASE, itemId, key);
             if (moved == Outcome.APPLIED) {
+                if (stockSku != null) {
+                    ShopRepository.sell(c, stockSku);
+                }
                 grantItem(c, playerId, itemId, 1);
             }
             return moved;

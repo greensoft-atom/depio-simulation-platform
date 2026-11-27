@@ -465,15 +465,23 @@ edit is listed at once (D-119).
 
 ```json
 200 {"offers":[
-  {"sku":"treads_light","itemId":"treads_light","price":1200,"requiresLevel":1,"availableTo":null,"currency":"coins"},
-  {"sku":"barrel_steel","itemId":"barrel_steel","price":1500,"requiresLevel":1,"availableTo":null,"currency":"coins"},
-  {"sku":"armor_plate","itemId":"armor_plate","price":1500,"requiresLevel":1,"availableTo":null,"currency":"coins"},
-  {"sku":"barrel_rifled","itemId":"barrel_rifled","price":2000,"requiresLevel":5,"availableTo":null,"currency":"coins"},
-  {"sku":"core_capacitor","itemId":"core_capacitor","price":2000,"requiresLevel":5,"availableTo":null,"currency":"coins"},
-  {"sku":"boost_xp_hour","itemId":"boost_xp_hour","price":20,"requiresLevel":1,"availableTo":null,"currency":"gems"},
-  {"sku":"boost_coins_hour","itemId":"boost_coins_hour","price":20,"requiresLevel":1,"availableTo":null,"currency":"gems"},
-  {"sku":"skin_crimson","itemId":"skin_crimson","price":150,"requiresLevel":1,"availableTo":null,"currency":"gems"},
+  {"sku":"treads_light","itemId":"treads_light","price":1200,"requiresLevel":1,"availableTo":null,"currency":"coins","limited":false,"stockLeft":0},
+  {"sku":"barrel_steel","itemId":"barrel_steel","price":1500,"requiresLevel":1,"availableTo":null,"currency":"coins","limited":false,"stockLeft":0},
+  {"sku":"armor_plate","itemId":"armor_plate","price":1500,"requiresLevel":1,"availableTo":null,"currency":"coins","limited":false,"stockLeft":0},
+  {"sku":"barrel_rifled","itemId":"barrel_rifled","price":2000,"requiresLevel":5,"availableTo":null,"currency":"coins","limited":false,"stockLeft":0},
+  {"sku":"core_capacitor","itemId":"core_capacitor","price":2000,"requiresLevel":5,"availableTo":null,"currency":"coins","limited":false,"stockLeft":0},
+  {"sku":"boost_xp_hour","itemId":"boost_xp_hour","price":20,"requiresLevel":1,"availableTo":null,"currency":"gems","limited":false,"stockLeft":0},
+  {"sku":"boost_coins_hour","itemId":"boost_coins_hour","price":20,"requiresLevel":1,"availableTo":null,"currency":"gems","limited":false,"stockLeft":0},
+  {"sku":"skin_crimson","itemId":"skin_crimson","price":150,"requiresLevel":1,"availableTo":null,"currency":"gems","limited":false,"stockLeft":0},
   ... skin_azure, skin_jade 150; skin_gold, skin_carbon 400 gems]}
+```
+
+A limited offer, from a run by hand on 2026-11-27, the operator having made one of two carbon skins (D-121); after
+two players had bought them, its `stockLeft` was 0, and a third player's purchase was refused:
+
+```json
+{"sku":"skin_carbon_launch","itemId":"skin_carbon","price":300,"requiresLevel":1,"availableTo":null,"currency":"gems","limited":true,"stockLeft":2}
+409 {"code":"sold_out","message":"none left: the offer's stock is sold (D-121)"}
 ```
 
 | Field | Meaning |
@@ -482,8 +490,10 @@ edit is listed at once (D-119).
 | `itemId` | the item it gives |
 | `price` | in the offer's `currency` |
 | `requiresLevel` | the player's level needed to buy it |
-| `availableTo` | the end of a limited offer, or `null` |
+| `availableTo` | the end of an offer on sale for a time, or `null` |
 | `currency` | `coins` or `gems` |
+| `limited` | whether the offer has a stock: how many may be sold in all (D-121) |
+| `stockLeft` | what a limited offer has left; 0 is sold out, still listed so a client can say so. 0 when not limited, a number either way |
 
 There are three kinds of item. **Equipment** is worn in a slot (`barrel`, `armor`, `core`, `treads`). **Skins** are
 worn in the slot `skin`. **Boosts** give an hour of double experience (XP) or double coins.
@@ -539,6 +549,7 @@ A coin offer, from a player who had coins (given in the test database, as no rou
 | 409 | `insufficient_funds` | `not enough of the offer's currency, coins or gems` |
 | 409 | `already_owned` | the player holds the item already: equipment and skins are held once, boosts as many as bought (D-53) |
 | 409 | `offer_changed` | the offer's item, price or currency is not what the body names: it was edited since it was listed. List the shop again; nothing was taken (D-119) |
+| 409 | `sold_out` | a limited offer with none left; nothing was taken (D-121) |
 
 Two refusals from a run by hand on 2026-11-27, a guest given 600 gems as a fixture: the gold skin bought, then bought
 again with a new key; and the hour's boost sent at a price it no longer has.

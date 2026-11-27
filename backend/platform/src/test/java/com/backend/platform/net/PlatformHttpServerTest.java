@@ -2022,6 +2022,36 @@ class PlatformHttpServerTest {
 
     @Test
     @Timeout(60)
+    @DisplayName("a limited offer is listed with what is left; the last one bought, the next is 409 sold_out and moves nothing (D-121)")
+    void aLimitedOffer() throws Exception {
+        com.backend.common.Metrics metrics = new com.backend.common.Metrics();
+        server.registerMetrics(metrics);
+        sqlUpdate("UPDATE shop_offer SET stock = 1 WHERE sku = 'gem_boost'");
+        JsonNode offers = body(get("/v1/shop", null)).get("offers");
+        JsonNode boost = null;
+        for (JsonNode o : offers) {
+            boost = o.get("sku").asText().equals("gem_boost") ? o : boost;
+        }
+        assertThat(List.of(boost.get("limited").asBoolean(), boost.get("stockLeft").asInt())).containsExactly(true, 1);
+        assertThat(List.of(offers.get(0).get("limited").asBoolean(), offers.get(0).get("stockLeft").asInt()))
+                .as("unlimited: a number still, for JsonUtility").containsExactly(false, 0);
+
+        String ada = register("stock-ada");
+        String bob = register("stock-bob");
+        giveGems(auth.playerIdOf(ada), 40);
+        giveGems(auth.playerIdOf(bob), 40);
+        assertThat(body(buy(ada, "gem_boost", KEY_1)).get("result").asText()).isEqualTo("bought");
+        assertThat(body(get("/v1/shop", null)).get("offers")).filteredOn(o -> o.get("sku").asText().equals("gem_boost"))
+                .extracting(o -> o.get("stockLeft").asInt()).as("still listed, none left").containsExactly(0);
+        expectError(buy(bob, "gem_boost", KEY_2), 409, "sold_out");
+        assertThat(body(get("/v1/inventory", bob)).get("gems").asLong()).as("nothing moved").isEqualTo(40);
+        assertThat(body(buy(ada, "gem_boost", KEY_1)).get("result").asText()).as("a retry of the last one, by its key")
+                .isEqualTo("already_bought");
+        assertThat(metrics.render()).contains("backend_platform_purchases_total{outcome=\"sold_out\"} 1");
+    }
+
+    @Test
+    @Timeout(60)
     @DisplayName("the shop lists the database's offers as they are now: an edit at once, and not one whose item the release does not have (D-119)")
     void theShopReadsTheDatabase() throws Exception {
         sqlUpdate("UPDATE shop_offer SET price = 120 WHERE sku = 'hat'");

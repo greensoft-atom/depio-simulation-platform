@@ -904,8 +904,10 @@ public final class AdminServer implements AutoCloseable {
         boolean created = admin.putOffer(offer, body) == com.backend.persistence.ShopRepository.Saved.CREATED;
         log.info("admin {} the shop's offer {}: {} {} {}", created ? "made" : "replaced", sku, offer.itemId(),
                 offer.price(), com.backend.platform.Catalogue.currencyName(offer.currency()));
+        // As stored: a replace keeps what was sold (D-121), which the body does not say.
+        com.backend.persistence.ShopRepository.Offer stored = shop.offer(sku);
         ObjectNode out = JSON.createObjectNode();
-        out.set("offer", offerJson(offer));
+        out.set("offer", offerJson(stored == null ? offer : stored));
         out.put("created", created);
         answer(ex, created ? 201 : 200, out);
     }
@@ -916,6 +918,12 @@ public final class AdminServer implements AutoCloseable {
                 .put("requiresLevel", o.requiresLevel());
         n.put("availableFrom", o.availableFrom() == null ? null : o.availableFrom().toString());
         n.put("availableTo", o.availableTo() == null ? null : o.availableTo().toString());
+        if (o.stock() == null) {
+            n.putNull("stock");
+        } else {
+            n.put("stock", o.stock());
+        }
+        n.put("sold", o.sold());
         return n.put("onSale", shop.onSale(o)).put("itemKnown", shop.itemKnown(o.itemId()));
     }
 

@@ -39,6 +39,9 @@ class CatalogueTest {
                 + "\"requiresLevel\":10,\"availableFrom\":\"2026-10-01T00:00:00Z\",\"availableTo\":\"2026-11-01T00:00:00Z\"}");
         assertThat(dated).isEqualTo(new Offer("dated", "skin_gold", 500, GEMS, 10,
                 Instant.parse("2026-10-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z")));
+        assertThat(offer("few", "{\"itemId\":\"skin_gold\",\"price\":500,\"stock\":1000000}").stock())
+                .as("a limit, up to a million (D-121)").isEqualTo(1_000_000);
+        assertThat(offer("few", "{\"itemId\":\"skin_gold\",\"price\":500,\"stock\":null}").stock()).isNull();
         Offer gone = new Offer("gone", "dropped_item", 5, COINS, 1, null, null);
         List<Offer> all = List.of(offer("plain", "{\"itemId\":\"barrel_steel\",\"price\":100}"), dated, gone);
         assertThat(Catalogue.onSale(all, ITEMS, Instant.parse("2026-09-30T23:59:59Z"))).extracting(Offer::sku)
@@ -52,8 +55,10 @@ class CatalogueTest {
     @Test
     @DisplayName("an offer that breaks a rule is refused, naming what is wrong")
     void refusesWhatItCannotHonour() {
-        // Limited stock is designed and not built: configured, nothing would hold the limit.
-        refused("a", "{\"itemId\":\"barrel_steel\",\"price\":1,\"stock\":10}", "limited stock is not built");
+        // A limit is 1 to 1 000 000, a whole number (D-121).
+        refused("a", "{\"itemId\":\"barrel_steel\",\"price\":1,\"stock\":0}", "stock");
+        refused("a", "{\"itemId\":\"barrel_steel\",\"price\":1,\"stock\":1000001}", "stock");
+        refused("a", "{\"itemId\":\"barrel_steel\",\"price\":1,\"stock\":\"10\"}", "stock");
         // A misspelling is not silently "no requirement".
         refused("a", "{\"itemId\":\"barrel_steel\",\"price\":1,\"requireLevel\":5}", "requireLevel");
         // Free is a reward, not a purchase, and a free offer is claimable once per key.

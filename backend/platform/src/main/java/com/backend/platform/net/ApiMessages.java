@@ -50,7 +50,9 @@ final class ApiMessages {
                           java.util.List<LeaderboardEntry> entries) { }
 
     /** One offer on sale. {@code availableTo} is when it stops, or null if it does not. */
-    record OfferView(String sku, String itemId, long price, int requiresLevel, String availableTo, String currency) { }
+    /** An offer as the shop lists it; {@code stockLeft} what a limited one has left, 0 when not limited (D-121). */
+    record OfferView(String sku, String itemId, long price, int requiresLevel, String availableTo, String currency,
+                     boolean limited, int stockLeft) { }
 
     record ShopResponse(java.util.List<OfferView> offers) { }
 

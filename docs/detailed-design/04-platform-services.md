@@ -1955,7 +1955,8 @@ Every number here is a first cut of the balance the owner left to Claude (Q-48),
 - **Shop catalogue** in `shop.json`: `{ sku, itemId, price, stock, availableFrom/To, requiresLevel }`. Purchases are
   idempotent on the client's transaction id. Limited stock would use `DECR stock:{sku}` in j-redis before the
   transaction, and `INCR` back on failure: a hot counter belongs in the store, and its consequence in the database.
-  **Limited stock is not built** (below). Since plan item 145 the offers are rows of `shop_offer`, edited by the admin
+  **As built** (plan item 146, D-121), limited stock is held on the offer's row in the purchase's own transaction, not
+  by a counter in the store ([below](#limited-stock-and-what-was-bought-in-the-client-designed-2026-11-27-plan-item-146)). Since plan item 145 the offers are rows of `shop_offer`, edited by the admin
   API ([below](#one-of-each-the-catalogue-in-the-database-and-what-was-bought-designed-2026-11-27-plan-item-145)).
 - **Items** in `items.json`, referenced by key. The database stores what is owned; the content tables define what it
   does. The first sketch of the items:
@@ -2007,7 +2008,7 @@ that breaks a rule is refused (400 `invalid_offer`):
 | `price` | 1 to 1 000 000 000, in coins unless the offer says `"currency": "gems"` (plan item 68, below). When the shop was built gems had no source, and nothing was sold for them. A free offer is refused: free things are rewards, and a free offer could be taken once per key, which is without limit |
 | `requiresLevel` | the account level, 1 to 100; defaults to 1 |
 | `availableFrom`, `availableTo` | optional instants; the first must be before the second |
-| `stock` | **not built: limited stock.** A catalogue that sets `stock` is refused, so nobody configures a limit believing that it holds. What stands between the design and building it: after a loss of the store, the counter must be rebuilt from the ledger, or the limit starts again from the top |
+| `stock` | refused while limited stock was not built, so nobody configured a limit believing it held. **Since plan item 146** (D-121): 1 to 1 000 000, how many may be sold in all, held on the offer's row ([below](#limited-stock-and-what-was-bought-in-the-client-designed-2026-11-27-plan-item-146)) |
 
 **The release shipped an empty catalogue** while items did nothing, since selling one would have taken coins for
 nothing. It sells twelve offers now: each of the five pieces of equipment for coins, and the two boosts and five skins
@@ -2018,12 +2019,12 @@ delegated (Q-48).
 
 | | |
 |---|---|
-| `GET /v1/shop` | the offers on sale now → 200. No session needed |
+| `GET /v1/shop` | the offers on sale now → 200. No session needed. Since plan item 146 each has `limited` and `stockLeft` (D-121) |
 | `GET /v1/content/classes` | the class table a client draws by, `{"version","classes"}`. Its version is its `ETag` and the arena's `Welcome.contentVersion`; 304 to an `If-None-Match` that names it. No session needed ([D-24](../architecture/03-decision-log.md#d-24--the-class-table-reaches-the-device-from-platform-versioned-by-its-content)) |
 | `GET /v1/content/phrases` | the phrase list, `{"version","phrases"}`, each with `id`, `key` and English `text`. Its version is its `ETag` and the arena's `Welcome.phraseListVersion`; 304 as above. No session needed. **Built 2026-09-29** ([01 §9](01-arena.md#phrases-designed-2026-09-29-plan-item-8)) |
 | `GET /v1/inventory` | coins, gems and the items held → 200, 401 |
 | `GET /v1/purchases?before={id}` | since plan item 145: what the player bought, newest first, 50 a page ([below](#one-of-each-the-catalogue-in-the-database-and-what-was-bought-designed-2026-11-27-plan-item-145)) → 200, 400 `invalid_query`, 401 |
-| `POST /v1/purchases` `{"sku","key"}`, and since plan item 145 `"itemId","price","currency"` as listed | 200 `bought` or `already_bought`, with the item, the coin balance (and, since plan item 68, the gems), and how many of the item the player now holds; 400 `invalid_body` or `invalid_key`, 401, 403 `level_required`, 404 `unknown_sku`, 409 `not_available` or `insufficient_funds`; since plan item 145, 409 `already_owned` for equipment or a skin held already (D-53), and 409 `offer_changed` for an offer edited since it was listed (D-119, below) |
+| `POST /v1/purchases` `{"sku","key"}`, and since plan item 145 `"itemId","price","currency"` as listed | 200 `bought` or `already_bought`, with the item, the coin balance (and, since plan item 68, the gems), and how many of the item the player now holds; 400 `invalid_body` or `invalid_key`, 401, 403 `level_required`, 404 `unknown_sku`, 409 `not_available` or `insufficient_funds`; since plan item 145, 409 `already_owned` for equipment or a skin held already (D-53), and 409 `offer_changed` for an offer edited since it was listed (D-119, below); since plan item 146, 409 `sold_out` for a limited offer with none left (D-121) |
 
 **The key** is the client's transaction id. The client makes one per tap of Buy, and sends it again, unchanged, with
 every retry of that tap.
@@ -2463,8 +2464,8 @@ seeds it with the release's twelve offers, and `shop.json` leaves the release.
 - **Read at each listing and each purchase, by every platform**, with no cache: an edit is on sale everywhere once it
   commits. It is a dozen rows, read by key. `GET /v1/shop` needs no session, and reads the database as
   `GET /v1/seasons` does.
-- **The rules** are those of the table above, checked when the admin writes, not at start: a `stock` is refused, as
-  before, and so is an item that `items.json` does not have.
+- **The rules** are those of the table above, checked when the admin writes, not at start: an item that
+  `items.json` does not have is refused, and, until plan item 146, a `stock`.
 - **An offer whose item has gone** (a release that dropped it from `items.json`) is not on sale, and the start logs
   it. Refusing to start would also shut out the admin API that removes it.
 - **The admin API**, each call with a `reason` and audited in the change's own transaction (D-30):
@@ -2481,8 +2482,8 @@ seeds it with the release's twelve offers, and `shop.json` leaves the release.
   purchase without them. The key is still looked up first, so a retry of a purchase made is answered as it was.
 - **During an upgrade**, a platform still on the old release sells from its own `shop.json`, the same twelve offers:
   edit the catalogue once every platform runs the new one.
-- **Limited stock** stays unbuilt and refused. With the offers in MySQL, it could now be held in the purchase's own
-  transaction rather than by a counter in the store; that is for a later item, if the owner wants it.
+- **Limited stock** stayed unbuilt and refused here. With the offers in MySQL, it could be held in the purchase's own
+  transaction rather than by a counter in the store, and plan item 146 built it so ([below](#limited-stock-and-what-was-bought-in-the-client-designed-2026-11-27-plan-item-146)).
 
 **(c) What was bought.** `GET /v1/purchases?before={id}`: the player's purchases, newest first, 50 a page, from the
 ledger's purchase rows (reason 1). Each has its `id`, `itemId`, `price`, `currency` and `at`; `next` is the `id` to pass
@@ -2504,6 +2505,45 @@ as before: both sets applied to two empty databases, every table's `SHOW CREATE 
 database migrated before, `backend_dev` here, is made again; nothing has launched.
 
 **Built in this order**: (a); (b) and (c) together, since V4 holds both; (d); then (e). A commit each.
+
+### Limited stock, and what was bought in the client (designed 2026-11-27, plan item 146)
+
+The owner, 2026-11-27: build the two things item 145 left, limited stock and the client's call for what was bought.
+
+**(a) Limited stock
+([D-121](../architecture/03-decision-log.md#d-121--a-limited-offers-stock-is-held-on-its-row-in-the-purchases-own-transaction)).**
+An offer may say how many may be sold in all: `"stock"`, 1 to 1 000 000, in the admin API's `PUT`. Without it, an
+offer is unlimited, as every offer was.
+
+- **Held on the offer's row**, in two columns of `shop_offer`: `stock`, the limit (null for none), and `sold`, the
+  purchases counted while the offer has a limit. What is left is `stock - sold`, never below 0.
+- **In the purchase's own transaction**, after the player's lock, the key, and the one-of-each rule: the offer's row
+  is locked (`FOR UPDATE`) and read; none left is 409 `sold_out`, and nothing moves. When the ledger takes the price,
+  `sold` rises by one in the same transaction, so a refusal for want of funds takes no stock, and a sale and its count
+  commit together or not at all. A retry of a purchase made is still answered by its key, even after the last one has
+  gone.
+- **Only a limited offer's row is locked**, so the purchases of an unlimited one never wait on each other. Those of a
+  limited one wait their turn on its row, each for its transaction's few milliseconds: some hundred a second on one
+  offer, ample for a launch of 5 000 players. The old design's counter in the store, for a hotter offer at 50 000,
+  would have to be rebuilt from the ledger after a loss of the store; this needs nothing rebuilt.
+- **A `PUT` keeps `sold`**: an offer replaced whole, a price changed or its limit raised, keeps the sales it has
+  counted, and a limit set below them leaves none. Removing the offer and making it again starts the count afresh.
+  A limit set while a purchase is in flight counts from the next purchase.
+- **What the shop shows**: `GET /v1/shop` gives each offer `"limited"` (true or false) and `"stockLeft"` (what is left,
+  0 when not limited); an offer sold out is still listed, with 0 left, so a client can say so. A number in both cases,
+  not a null, because Unity's `JsonUtility`, which the UI team reads with, cannot be shown here to read a null number
+  as anything but 0 (D-111). The admin API's listing gives `stock` and `sold`.
+
+**(b) What was bought, in the clients.** The core's `ApiClient.Purchases(token, before)` reads `GET /v1/purchases` into
+a page of rows and its `next`; its `Offer` gains `Limited` and `StockLeft`. `client-simple` and `client-simple-no-tls`,
+which list the shop, gain the two fields in their `Offer`. A new drill scenario, `stock`, makes a limited offer of one
+by the admin API, has a player buy it and a second refused `sold_out`, reads the first's purchases through the core,
+and removes the offer.
+
+**(c) The schema in one file** (the owner's wish of item 145, D-120): the two columns are written by a V3 while the
+item is built, then folded into `V1__schema.sql`, proved the same as before, and `backend_dev` made again.
+
+**Built in this order**: (a), (b), (c), a commit each.
 
 ## 9. Notifications
 

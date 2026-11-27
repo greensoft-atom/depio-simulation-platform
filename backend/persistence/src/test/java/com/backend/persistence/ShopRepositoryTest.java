@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.backend.persistence.EconomyRepository.Outcome;
 import com.backend.persistence.ShopRepository.Offer;
 
 import org.junit.jupiter.api.AfterAll;
@@ -63,6 +64,101 @@ class ShopRepositoryTest {
             }
         }
         return rows;
+    }
+
+    /** A player of the account service's with {@code coins}, as a reward would give them. */
+    private static long buyer(String name, long coins) throws SQLException {
+        long id = accounts.createForSubject(name, name);
+        economy.credit(id, coins, EconomyRepository.REASON_MATCH_REWARD, "test", "test:" + name);
+        return id;
+    }
+
+    @Test
+    @DisplayName("an offer's limit is written and read; a replace keeps what was sold, and what is left is never below 0 (D-121)")
+    void anOffersLimit() throws Exception {
+        Offer limited = new Offer("jade_three", "skin_jade", 100, COINS, 1, null, null, 3, 0);
+        admin.putOffer(limited, "r1");
+        assertThat(shop.offer("jade_three")).isEqualTo(limited);
+        assertThat(shop.offer("jade_three").left()).isEqualTo(3);
+        long ada = buyer("ada", 1_000);
+        assertThat(economy.purchase(ada, "skin_jade", 100, "k1", COINS, true, "jade_three")).isEqualTo(Outcome.APPLIED);
+        assertThat(shop.offer("jade_three").sold()).as("counted in the purchase").isEqualTo(1);
+        long bob = buyer("bob", 1_000);
+        assertThat(economy.purchase(bob, "skin_jade", 100, "k2", COINS, true, "jade_three")).isEqualTo(Outcome.APPLIED);
+
+        admin.putOffer(new Offer("jade_three", "skin_jade", 80, COINS, 1, null, null, 5, 0), "r2");
+        assertThat(shop.offer("jade_three")).as("replaced whole, its sales kept")
+                .isEqualTo(new Offer("jade_three", "skin_jade", 80, COINS, 1, null, null, 5, 2));
+        admin.putOffer(new Offer("jade_three", "skin_jade", 80, COINS, 1, null, null, 1, 0), "r3");
+        assertThat(shop.offer("jade_three").left()).as("a limit below what was sold, 2 of 1, leaves none").isZero();
+        admin.putOffer(new Offer("jade_three", "skin_jade", 80, COINS, 1, null, null), "r4");
+        assertThat(List.of(shop.offer("jade_three").stock() == null, shop.offer("jade_three").sold(), shop.offer("jade_three").left()))
+                .as("no limit: its count kept, nothing to hold").containsExactly(true, 2, -1);
+        assertThat(shop.offers().get(0).stock()).as("the release's, unlimited").isNull();
+    }
+
+    @Test
+    @DisplayName("a limited offer sells what it has and no more: eight buyers at once for three (D-121)")
+    void eightBuyersForThree() throws Exception {
+        admin.putOffer(new Offer("boost_three", "boost_xp_hour", 10, COINS, 1, null, null, 3, 0), "r");
+        long[] buyers = new long[8];
+        for (int i = 0; i < buyers.length; i++) {
+            buyers[i] = buyer("b" + i, 100);
+        }
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<Outcome>> all = new ArrayList<>();
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(buyers.length)) {
+            for (long b : buyers) {
+                all.add(pool.submit(() -> {
+                    go.await();
+                    return economy.purchase(b, "boost_xp_hour", 10, "tap-" + b, COINS, false, "boost_three");
+                }));
+            }
+            go.countDown();
+            List<Outcome> outcomes = new ArrayList<>();
+            for (var f : all) {
+                outcomes.add(f.get(60, java.util.concurrent.TimeUnit.SECONDS));
+            }
+            assertThat(outcomes).filteredOn(o -> o == Outcome.APPLIED).hasSize(3);
+            assertThat(outcomes).filteredOn(o -> o == Outcome.SOLD_OUT).hasSize(5);
+        }
+        assertThat(shop.offer("boost_three").sold()).isEqualTo(3);
+        long charged = 0;
+        for (long b : buyers) {
+            charged += 100 - economy.coins(b);
+        }
+        assertThat(charged).as("three charged, ten each").isEqualTo(30);
+    }
+
+    @Test
+    @DisplayName("a refusal takes no stock, for want of funds or an item held; a retry of the last one sold is still applied (D-121)")
+    void refusalsTakeNoStock() throws Exception {
+        admin.putOffer(new Offer("jade_two", "skin_jade", 100, COINS, 1, null, null, 2, 0), "r");
+        long poor = buyer("poor", 50);
+        long ada = buyer("ada", 1_000);
+        long bob = buyer("bob", 1_000);
+        long cy = buyer("cy", 1_000);
+        assertThat(economy.purchase(poor, "skin_jade", 100, "p1", COINS, true, "jade_two")).isEqualTo(Outcome.INSUFFICIENT_FUNDS);
+        assertThat(economy.purchase(ada, "skin_jade", 100, "a1", COINS, true, "jade_two")).isEqualTo(Outcome.APPLIED);
+        assertThat(economy.purchase(ada, "skin_jade", 100, "a2", COINS, true, "jade_two")).isEqualTo(Outcome.ALREADY_OWNED);
+        assertThat(shop.offer("jade_two").sold()).as("one sold; neither refusal took one").isEqualTo(1);
+        assertThat(economy.purchase(bob, "skin_jade", 100, "b1", COINS, true, "jade_two")).isEqualTo(Outcome.APPLIED);
+        assertThat(economy.purchase(bob, "skin_jade", 100, "b1", COINS, true, "jade_two")).as("the key before the stock")
+                .isEqualTo(Outcome.ALREADY_APPLIED);
+        assertThat(economy.purchase(cy, "skin_jade", 100, "c1", COINS, true, "jade_two")).isEqualTo(Outcome.SOLD_OUT);
+        assertThat(List.of(economy.coins(cy), (long) shop.offer("jade_two").sold())).as("nothing moved for the last")
+                .containsExactly(1_000L, 2L);
+
+        admin.putOffer(new Offer("boost_two", "boost_xp_hour", 10, COINS, 1, null, null, 2, 0), "r");
+        assertThat(List.of(economy.purchase(cy, "boost_xp_hour", 10, "c2", COINS, false, "boost_two"),
+                economy.purchase(cy, "boost_xp_hour", 10, "c3", COINS, false, "boost_two")))
+                .as("a boost, not held once: one player may take both").containsExactly(Outcome.APPLIED, Outcome.APPLIED);
+
+        // Its limit removed by the operator while a purchase was between its read and its transaction: sold, not counted.
+        admin.putOffer(new Offer("boost_two", "boost_xp_hour", 10, COINS, 1, null, null), "r");
+        long sold = shop.offer("boost_two").sold();
+        assertThat(economy.purchase(cy, "boost_xp_hour", 10, "c4", COINS, false, "boost_two")).isEqualTo(Outcome.APPLIED);
+        assertThat(shop.offer("boost_two").sold()).as("counted only while limited").isEqualTo(sold);
     }
 
     @Test

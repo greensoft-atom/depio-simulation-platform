@@ -470,8 +470,9 @@ flowchart TD
         B6a -->|no| B6b["409 offer_changed, list the shop again"]
         B6a -->|yes| B8{"account level high enough"}
         B8 -->|no| B9["403 level_required"]
-        B8 -->|yes| B10{"one transaction, the player locked, the key again; equipment or a skin held once"}
+        B8 -->|yes| B10{"one transaction, the player locked, the key again; equipment or a skin held once; a limited offer's row locked, its sale counted"}
         B10 -->|held| B10a["409 already_owned"]
+        B10 -->|a limited offer, none left| B10b["409 sold_out"]
         B10 -->|short| B11["409 insufficient_funds"]
         B10 -->|done| B12["200 bought, the balance and how many held"]
     end

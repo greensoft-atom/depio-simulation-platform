@@ -50,7 +50,7 @@ All classes are in the package `com.backend.persistence`.
 | | `StatsRepository` | The statistics for operators: activity by day and who came back, the same by feature, the funnel, the guests; the purge of `player_day` |
 | | `TableSizes` | InnoDB's row estimates for `ledger`, `match_player`, `matches`, `player_day`, `inbox` and `player` |
 | Economy | `EconomyRepository` | `move` (the one path), purchases in coins or gems, an item held once refused a second time (D-53), raising an item's level, credits, the wallet and the inventory, a player's purchases newest first, and the ledger's reconciliation |
-| | `ShopRepository` | The shop's offers, `shop_offer`: every one in the order added, or one by its sku; made, replaced and removed only through `AdminRepository`, with the call's audit row (D-119) |
+| | `ShopRepository` | The shop's offers, `shop_offer`: every one in the order added, or one by its sku; made, replaced and removed only through `AdminRepository`, with the call's audit row (D-119). A limited offer's stock, locked and counted inside a purchase's transaction (`inStock`, `sell`, D-121) |
 | | `BoostRepository` | Activates a boost once per key; lists the boosts running; gives each player's boost percents at the moment a match ended; purges old boosts and keys |
 | | `EquipmentRepository` | What a player wears, one item a slot. An item can be worn only while the player holds it. `takeOff` empties a slot |
 | | `PaymentRepository` | Orders for gems: placed, then confirmed as paid or declined, refunded, or expired; a player's refund debt |
@@ -76,6 +76,7 @@ All classes are in the package `com.backend.persistence`.
 |---|---|
 | `V1__schema.sql` | Every table, grouped by domain and commented: 38 of them, each `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci` |
 | `V2__seed.sql` | The rows a first launch needs: `ha_epoch` (1, 0), `ha_heartbeat` (1, now), season 1, from now to 00:00 UTC on the first of the next odd month, and the shop's twelve offers (D-119) |
+| `V3__shop_stock.sql` | `shop_offer`'s `stock` and `sold`, a limited offer's (D-121, plan item 146); to be folded into V1 at the item's end (D-120) |
 
 The two files replaced V1 to V34, the steps by which the schema grew, and on 2026-11-27 V3 and V4 too
 ([D-120](../../docs/architecture/03-decision-log.md#d-120--the-migrations-squashed-again-v3-and-v4-into-the-baseline)):
@@ -136,7 +137,7 @@ The schema has thirty-seven tables, listed here by domain. "Kept" says how long 
 | `player_day` | A player active on a UTC day | `MatchResultRepository` | 90 days; each player's first day stays on `player.first_played_on` |
 | `ledger` | Every move of a balance, with its reason and key | `EconomyRepository.move` only | for good |
 | `inventory_item` | What a player holds, and an equipment's level | `EconomyRepository`, `SeasonPassRepository`, `BoostRepository` | for good |
-| `shop_offer` | What the shop sells: an offer's sku, item, price and currency, level and dates (D-119) | `ShopRepository`, `AdminRepository` | until the admin API removes it |
+| `shop_offer` | What the shop sells: an offer's sku, item, price and currency, level and dates (D-119); a limit and its sales (D-121) | `ShopRepository`, `AdminRepository`, `EconomyRepository.purchase` (its `sold`) | until the admin API removes it |
 | `equipment` | What a player wears, a slot each | `EquipmentRepository` | for good |
 | `boost` | A boost's run | `BoostRepository` | 31 days after its end |
 | `boost_activation` | A key used to activate a boost | `BoostRepository` | 30 days |
@@ -317,7 +318,7 @@ the processes and of the drills.
 | `AccountRepositoryTest` | A player made for a subject in one transaction, one a subject, subjects compared exactly, two first logins at once (D-117); guests, and a guest linked once; renaming; the login's lookup by subject; an account erased, its subject gone, a guest's too, and no status set on an erased one (D-84); the idle guests listed (D-87) |
 | `BackupRunRepositoryTest`, `TableSizesTest` | The backups' latest outcomes and their purge; the tables' row estimates |
 | `BoostRepositoryTest`, `EquipmentRepositoryTest`, `PaymentRepositoryTest`, `SeasonPassRepositoryTest` | Each economy repository: once per key, and under concurrency where it matters; a refund written with its `admin_audit` row |
-| `ShopRepositoryTest` | The release's offers as V4 seeds them; an offer made, replaced whole in its place and removed, each audited; a player's purchases newest first, a page at a time, from their own index (D-119) |
+| `ShopRepositoryTest` | The release's offers as V2 seeds them; an offer made, replaced whole in its place and removed, each audited; a player's purchases newest first, a page at a time, from their own index (D-119); an offer's limit, its sales kept by a replace; eight buyers at once for three; refusals that take no stock, a retry of the last one, a limited boost bought twice by one player (D-121) |
 | `SeasonRepositoryTest`, `RatingBoardsTest`, `TeamBoardsTest` | Season ends, places, gems, resets; the boards' order and a place read by key |
 | `TeamRepositoryTest`, `FriendRepositoryTest`, `InboxRepositoryTest`, `TournamentRepositoryTest`, `StatsRepositoryTest` | The rest of the repositories, each with its purge; an erased player taken out of their team, and a leader's team handed over (D-87) |
 | `PrimaryDataSourceTest`, `DatabaseLimitsTest`, `StoredTimesTest` | The choice of the primary, and the heartbeat; the time limits (a slow migration from `src/test/resources/db/slow` is not cut off), and a start that waits for a first connection slower than the login's limit and gives up at the end of its wait (D-94); times stored as UTC whatever the process's zone |

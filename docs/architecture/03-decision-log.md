@@ -4019,3 +4019,23 @@ migrated again.
 **Cost.** A database that holds the old V1 fails Flyway's validation (its checksum changed) and the platform does not
 start on it until it is made again: `backend_dev` here, and any copy a developer has. A launched site could not be
 squashed this way; after a launch the rule holds without exception.
+
+### D-121 — A limited offer's stock is held on its row, in the purchase's own transaction
+
+**Decided 2026-11-27** (plan item 146 (a), the owner asking for limited stock). **Supersedes** the first design's
+counter in the store, `DECR stock:{sku}` before the purchase's transaction and `INCR` back on a failure
+([04 §8](../detailed-design/04-platform-services.md#8-economy-shop-inventory-and-equipment)).
+
+**Decision.** `shop_offer` holds an offer's limit, `stock` (null for none), and `sold`, the purchases counted while it
+has one. A purchase of a limited offer locks the offer's row in its own transaction, after the player's row, refuses
+when none is left (409 `sold_out`), and counts the sale in the same transaction once the ledger has taken the price.
+The admin API's `PUT` sets the limit and keeps `sold`.
+
+**Why.** With the offers in MySQL since D-119, the limit and the sale can commit together: no sale without its count,
+no count without its sale, and nothing to rebuild after a loss of the store, which the counter in the store would
+have needed, from the ledger. The lock order, the player's row and then the offer's, is the one every purchase takes,
+and the admin API's writes lock the offer alone, so no two transactions wait on each other in a circle.
+
+**Cost.** The purchases of one limited offer are made one after another on its row, a few milliseconds each: some
+hundred a second, which a launch of 5 000 players does not reach, and a sale that drew tens of thousands at once
+would. Unlimited offers lock nothing more than before. A limit set while a purchase is in flight counts from the next.

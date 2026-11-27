@@ -409,11 +409,16 @@ CREATE TABLE shop_offer (
   requires_level TINYINT UNSIGNED NOT NULL DEFAULT 1,
   available_from DATETIME(3) NULL,
   available_to   DATETIME(3) NULL,
+  stock          INT UNSIGNED NULL,                              -- how many may be sold in all, null for no limit (D-121)
+  sold           INT UNSIGNED NOT NULL DEFAULT 0,                -- the purchases counted while it has one
   updated_at     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
   UNIQUE KEY uq_shop_offer_sku (sku)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
+
+`stock` and `sold` came with plan item 146 (D-121). The admin API writes `stock`; only a purchase writes `sold`, so an
+offer replaced whole keeps the sales it has counted.
 
 The offers were `shop.json` on the platform's classpath until plan item 145; V4 made the table and wrote the release's
 twelve, and since D-120 V1 makes it and V2 writes them. An offer is written only by the admin API, made or replaced whole in its place and removed, each with its
@@ -1119,12 +1124,17 @@ SELECT coins FROM player WHERE id = ? FOR UPDATE;         -- lock first, read af
 SELECT 1 FROM ledger WHERE idem_key = ?;                  -- used already -> already bought
 SELECT 1 FROM inventory_item                              -- equipment or a skin, held once:
  WHERE player_id = ? AND item_id = ? AND qty > 0;         --   held already -> already owned (D-53)
+SELECT stock, sold FROM shop_offer                        -- a limited offer only: its row locked,
+ WHERE sku = ? FOR UPDATE;                                --   none left -> sold out (D-121)
 -- only then: verify balance, in code; the offer was read and compared before the transaction
 
 INSERT INTO ledger (player_id, currency, delta, balance_after, reason, ref, idem_key)
 VALUES (?, 0, -?, ?, 1, ?, ?);                            -- 1062 -> already bought
 
 UPDATE player SET coins = coins - ? WHERE id = ?;
+
+UPDATE shop_offer SET sold = sold + 1                     -- a limited offer only, with the price taken
+ WHERE sku = ? AND stock IS NOT NULL;
 
 INSERT INTO inventory_item (player_id, item_id, qty) VALUES (?,?,?)
 ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty);
@@ -1161,11 +1171,12 @@ that a milestone, an achievement, a goal, a pass tier, a season's place, a tourn
 brings. Until defect D-13 was fixed, the match path had its own copy, and reconciliation held only because the two
 copies happened to agree.
 
-**Not built: limited stock.** The design takes a `DECR stock:{sku}` in j-redis before this transaction, and
-`INCR`s it back if the transaction fails: the store is the right place for a hot counter, and the database for the
-consequence. As built, an offer that sets `stock` is refused (`platform/Catalogue`, 04 §8: at start while the offers
-were `shop.json`, by the admin API since D-119), because after a store loss the counter would have to be rebuilt from
-the ledger. With the offers in MySQL, a limit could now be held in this transaction instead; not built.
+**Limited stock, built in this transaction** (plan item 146, D-121). The first design took a `DECR stock:{sku}` in
+j-redis before it and an `INCR` back on a failure, which a loss of the store would have had to rebuild from the
+ledger, so an offer that set `stock` was refused until the offers were in MySQL. Now the offer's row holds the limit:
+it is locked after the player's row, the order every purchase takes, and the sale is counted in the transaction that
+takes the price. A refusal, for want of funds or an item held, takes nothing. The purchases of one limited offer wait
+their turn on its row, a few milliseconds each; an unlimited offer's row is not locked at all.
 
 ### Granting a reward
 

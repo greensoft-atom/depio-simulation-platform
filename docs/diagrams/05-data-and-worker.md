@@ -133,6 +133,8 @@ erDiagram
         tinyint requires_level
         datetime available_from
         datetime available_to
+        int stock "how many in all, null for no limit (D-121)"
+        int sold "counted in a purchase's transaction"
     }
     account ||--|| player : "plays as"
     erased_subject {

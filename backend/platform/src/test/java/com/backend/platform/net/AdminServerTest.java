@@ -109,6 +109,16 @@ class AdminServerTest {
         return new AccountRepository(db.dataSource()).createForSubject(name, name);
     }
 
+    /** An offer's sales set as purchases would have counted them. */
+    private static void sqlSold(String sku, int sold) throws Exception {
+        try (Connection c = db.dataSource().getConnection();
+             PreparedStatement ps = c.prepareStatement("UPDATE shop_offer SET sold = ? WHERE sku = ?")) {
+            ps.setInt(1, sold);
+            ps.setString(2, sku);
+            ps.executeUpdate();
+        }
+    }
+
     /** The audit's rows for a target, oldest first: action and outcome. */
     private static List<String> audited(String target) throws Exception {
         List<String> rows = new ArrayList<>();
@@ -888,7 +898,7 @@ class AdminServerTest {
                 {"skin_gold_sale", "{\"itemId\":\"skin_gold\",\"price\":250}", "no_reason"},
                 {"skin_gold_sale", "{\"itemId\":\"ghost\",\"price\":250,\"reason\":\"r\"}", "invalid_offer"},
                 {"skin_gold_sale", "{\"itemId\":\"skin_gold\",\"price\":0,\"reason\":\"r\"}", "invalid_offer"},
-                {"skin_gold_sale", "{\"itemId\":\"skin_gold\",\"price\":9,\"stock\":5,\"reason\":\"r\"}", "invalid_offer"},
+                {"skin_gold_sale", "{\"itemId\":\"skin_gold\",\"price\":9,\"stock\":0,\"reason\":\"r\"}", "invalid_offer"},
                 {"skin_gold_sale", "{\"itemId\":\"skin_gold\",\"price\":9,\"currency\":\"dollars\",\"reason\":\"r\"}", "invalid_offer"},
                 {"skin_gold_sale", "{\"sku\":\"other\",\"itemId\":\"skin_gold\",\"price\":9,\"reason\":\"r\"}", "invalid_offer"},
                 {"Skin_Gold", "{\"itemId\":\"skin_gold\",\"price\":9,\"reason\":\"r\"}", "invalid_offer"}}) {
@@ -921,6 +931,34 @@ class AdminServerTest {
                 "shop-offer refused_invalid", "shop-offer refused_invalid", "shop-offer refused_invalid",
                 "shop-offer refused_invalid", "shop-offer-remove refused_no_reason", "shop-offer-remove removed",
                 "shop-offer-remove no_such_offer");
+    }
+
+    @Test
+    @DisplayName("an offer's limit set by the admin API and listed with what was sold; a limit out of range refused (D-121)")
+    void anOffersStock() throws Exception {
+        HttpResponse<String> made = call("PUT", "/admin/shop/offers/jade_hundred",
+                "{\"itemId\":\"skin_jade\",\"price\":120,\"currency\":\"gems\",\"stock\":100,\"reason\":\"a hundred\"}", SECRET);
+        assertThat(made.statusCode()).as(made.body()).isEqualTo(201);
+        JsonNode offer = JSON.readTree(made.body()).get("offer");
+        assertThat(List.of(offer.get("stock").asInt(), offer.get("sold").asInt())).containsExactly(100, 0);
+        sqlSold("jade_hundred", 7);
+        HttpResponse<String> raised = call("PUT", "/admin/shop/offers/jade_hundred",
+                "{\"itemId\":\"skin_jade\",\"price\":120,\"currency\":\"gems\",\"stock\":150,\"reason\":\"fifty more\"}", SECRET);
+        offer = JSON.readTree(raised.body()).get("offer");
+        assertThat(List.of(offer.get("stock").asInt(), offer.get("sold").asInt())).as("as stored: its sales kept")
+                .containsExactly(150, 7);
+        for (String bad : new String[] {"0", "1000001", "\"100\"", "1.5"}) {
+            HttpResponse<String> refused = call("PUT", "/admin/shop/offers/jade_hundred",
+                    "{\"itemId\":\"skin_jade\",\"price\":120,\"stock\":" + bad + ",\"reason\":\"r\"}", SECRET);
+            assertThat(refused.statusCode()).as(bad).isEqualTo(400);
+            assertThat(JSON.readTree(refused.body()).get("message").asText()).as(bad).contains("stock");
+        }
+        JsonNode listed = JSON.readTree(call("GET", "/admin/shop/offers", null, SECRET).body()).get("offers");
+        assertThat(listed).filteredOn(o -> o.get("sku").asText().equals("jade_hundred"))
+                .extracting(o -> o.get("stock").asInt() + " " + o.get("sold").asInt()).containsExactly("150 7");
+        assertThat(listed).filteredOn(o -> o.get("sku").asText().equals("skin_gold"))
+                .extracting(o -> o.get("stock").isNull()).as("the release's, unlimited").containsExactly(true);
+        call("DELETE", "/admin/shop/offers/jade_hundred", "{\"reason\":\"the test's\"}", SECRET);
     }
 
     @Test

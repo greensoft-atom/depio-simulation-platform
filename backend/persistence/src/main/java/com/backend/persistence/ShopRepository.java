@@ -22,9 +22,22 @@ public final class ShopRepository {
     /**
      * One thing on sale, its {@code currency} as the ledger's ({@link EconomyRepository#CURRENCY_COINS} or
      * {@link EconomyRepository#CURRENCY_GEMS}); {@code availableFrom} and {@code availableTo} may be null, open ended.
+     * {@code stock} is how many may be sold in all, null for no limit, and {@code sold} the purchases counted while it
+     * has one (D-121).
      */
     public record Offer(String sku, String itemId, long price, int currency, int requiresLevel,
-                        Instant availableFrom, Instant availableTo) {
+                        Instant availableFrom, Instant availableTo, Integer stock, int sold) {
+
+        /** An offer with no limit. */
+        public Offer(String sku, String itemId, long price, int currency, int requiresLevel,
+                     Instant availableFrom, Instant availableTo) {
+            this(sku, itemId, price, currency, requiresLevel, availableFrom, availableTo, null, 0);
+        }
+
+        /** What is left of a limited offer, never below 0; -1 for one with no limit. */
+        public int left() {
+            return stock == null ? -1 : Math.max(0, stock - sold);
+        }
 
         /** On sale at {@code now}: from its start, inclusive, to its end, exclusive. */
         public boolean onSaleAt(Instant now) {
@@ -36,7 +49,7 @@ public final class ShopRepository {
     public enum Saved { CREATED, REPLACED }
 
     private static final String COLUMNS =
-            "sku, item_id, price, currency, requires_level, available_from, available_to";
+            "sku, item_id, price, currency, requires_level, available_from, available_to, stock, sold";
 
     private final Tx tx;
 
@@ -79,10 +92,12 @@ public final class ShopRepository {
                 existed = rs.next();
             }
         }
-        try (PreparedStatement ps = c.prepareStatement("INSERT INTO shop_offer (" + COLUMNS
-                + ") VALUES (?, ?, ?, ?, ?, ?, ?) AS n ON DUPLICATE KEY UPDATE item_id = n.item_id, price = n.price,"
+        // sold is not written: a replace keeps the sales counted (D-121).
+        try (PreparedStatement ps = c.prepareStatement("INSERT INTO shop_offer (sku, item_id, price, currency,"
+                + " requires_level, available_from, available_to, stock"
+                + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?) AS n ON DUPLICATE KEY UPDATE item_id = n.item_id, price = n.price,"
                 + " currency = n.currency, requires_level = n.requires_level, available_from = n.available_from,"
-                + " available_to = n.available_to")) {
+                + " available_to = n.available_to, stock = n.stock")) {
             ps.setString(1, o.sku());
             ps.setString(2, o.itemId());
             ps.setLong(3, o.price());
@@ -90,6 +105,11 @@ public final class ShopRepository {
             ps.setInt(5, o.requiresLevel());
             instant(ps, 6, o.availableFrom());
             instant(ps, 7, o.availableTo());
+            if (o.stock() == null) {
+                ps.setNull(8, Types.INTEGER);
+            } else {
+                ps.setInt(8, o.stock());
+            }
             ps.executeUpdate();
         }
         return existed ? Saved.REPLACED : Saved.CREATED;
@@ -103,11 +123,39 @@ public final class ShopRepository {
         }
     }
 
+    /**
+     * Whether a limited offer has one left, its row locked for the rest of the caller's transaction (D-121); false for
+     * an offer gone since it was read.
+     */
+    static boolean inStock(Connection c, String sku) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("SELECT stock, sold FROM shop_offer WHERE sku = ? FOR UPDATE")) {
+            ps.setString(1, sku);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return false;
+                }
+                int stock = rs.getInt(1);
+                return rs.wasNull() || rs.getInt(2) < stock;
+            }
+        }
+    }
+
+    /** A sale of a limited offer counted, inside the transaction that took its price; its row locked by inStock. */
+    static void sell(Connection c, String sku) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "UPDATE shop_offer SET sold = sold + 1 WHERE sku = ? AND stock IS NOT NULL")) {
+            ps.setString(1, sku);
+            ps.executeUpdate();
+        }
+    }
+
     private static Offer offer(ResultSet rs) throws SQLException {
         Timestamp from = rs.getTimestamp(6);
         Timestamp to = rs.getTimestamp(7);
+        int stock = rs.getInt(8);
+        Integer limit = rs.wasNull() ? null : stock;
         return new Offer(rs.getString(1), rs.getString(2), rs.getLong(3), rs.getInt(4), rs.getInt(5),
-                from == null ? null : from.toInstant(), to == null ? null : to.toInstant());
+                from == null ? null : from.toInstant(), to == null ? null : to.toInstant(), limit, rs.getInt(9));
     }
 
     private static void instant(PreparedStatement ps, int index, Instant at) throws SQLException {

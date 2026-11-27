@@ -736,7 +736,8 @@ public final class PlatformHttpServer implements AutoCloseable {
         List<OfferView> offers = new ArrayList<>();
         for (com.backend.persistence.ShopRepository.Offer o : shop.onSale()) {
             offers.add(new OfferView(o.sku(), o.itemId(), o.price(), o.requiresLevel(),
-                    o.availableTo() == null ? null : o.availableTo().toString(), Catalogue.currencyName(o.currency())));
+                    o.availableTo() == null ? null : o.availableTo().toString(), Catalogue.currencyName(o.currency()),
+                    o.stock() != null, Math.max(0, o.left())));
         }
         respond(exchange, 200, Json.MAPPER.writeValueAsString(new ShopResponse(offers)));
     }
@@ -965,6 +966,7 @@ public final class PlatformHttpServer implements AutoCloseable {
                     "held already: equipment and skins are held once (D-53)");
             case OFFER_CHANGED -> error(exchange, 409, "offer_changed",
                     "the offer has changed since it was listed: list the shop again");
+            case SOLD_OUT -> error(exchange, 409, "sold_out", "none left: the offer's stock is sold (D-121)");
         }
     }
 
