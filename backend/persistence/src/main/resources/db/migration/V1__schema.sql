@@ -4,6 +4,8 @@
 -- ce30aa7), and proved the same table by table but for two changes made on purpose: V17's board indexes not
 -- made (D-41), and season_place.rated as wide as the counts it copies (D-42). V2__seed.sql writes the rows a
 -- first launch needs.
+-- Squashed again on 2026-11-27 with V3 (accounts by the account service's subject, D-117) and V4 (the shop's
+-- offers and the ledger's purchases index, D-119), and proved the same table by table (D-120).
 -- From V3 on, migrations are forward-only again: an applied one is never edited (06 §8).
 --
 -- Conventions (06 §2): times are DATETIME(3), always UTC; money is BIGINT, never a float; every table
@@ -12,8 +14,8 @@
 -- Each column keeps its place from the steps, so a dump from before the squash restores as it was.
 --
 -- Tables, by domain:
---   identity and profile   account, player, player_stat, player_day
---   economy                ledger, inventory_item, equipment, boost, boost_activation, payment_order
+--   identity and profile   account, erased_subject, player, player_stat, player_day
+--   economy                ledger, inventory_item, equipment, boost, boost_activation, payment_order, shop_offer
 --   match history          matches, match_player, match_team
 --   seasons and boards     season, season_place, season_team_place, season_team_payee, season_pass
 --   daily goals            daily_goal
@@ -28,20 +30,28 @@
 -- Identity and profile
 -- ============================================================================================
 
--- A login: a name and a password's argon2id hash, or a guest's device key. One account, one player.
+-- Whose a player is (D-117, docs/detailed-design/10-accounts.md §4.4): a registered player is the account service's
+-- account, found by its subject, the tokens' `sub`; a guest is an account with a key and no subject (D-46); a linked
+-- guest has a subject and no key; an erased one neither (D-84). The account service keeps the username and the
+-- password; the backend keeps no password. One account, one player.
 CREATE TABLE account (
   id             BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
-  username       VARCHAR(32)    NOT NULL,
-  username_key   VARCHAR(32) AS (LOWER(username)) STORED,     -- unique whatever the case
-  password_hash  VARBINARY(255) NOT NULL,
-  status         TINYINT UNSIGNED NOT NULL DEFAULT 0,         -- 0 active, 1 suspended, 2 banned
+  subject        VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  status         TINYINT UNSIGNED NOT NULL DEFAULT 0,         -- 0 active, 1 suspended, 2 banned, 3 erased (AccountRepository.Status)
   banned_until   DATETIME(3) NULL,                            -- a suspension's end
   created_at     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   last_login_at  DATETIME(3) NULL,
-  guest_key_hash BINARY(32) NULL,                             -- SHA-256 of a guest's device key; NULL once upgraded (D-46)
-  UNIQUE KEY uq_account_username (username_key),
+  guest_key_hash BINARY(32) NULL,                             -- SHA-256 of a guest's device key; NULL once linked (D-46)
   UNIQUE KEY uq_account_guest (guest_key_hash),
-  KEY ix_account_created (created_at)                         -- the funnel's cohorts (05 §11)
+  KEY ix_account_created (created_at),                        -- the funnel's cohorts (05 §11)
+  UNIQUE KEY uq_account_subject (subject)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- The subjects whose accounts were deleted at the account service, told by its event: an access token of one,
+-- exchanged in the minutes it is still good, makes no new player (D-117).
+CREATE TABLE erased_subject (
+  subject   VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
+  erased_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- The player an account plays as: profile, progress, balances and ratings. Its id is the account's.
@@ -124,6 +134,8 @@ CREATE TABLE ledger (
   -- The idempotency mechanism for currency: a retry violates this and is caught.
   UNIQUE KEY uq_ledger_idem (idem_key),
   KEY ix_ledger_player (player_id, created_at),
+  -- What a player bought, newest first, read from the index alone (GET /v1/purchases, D-119).
+  KEY ix_ledger_player_reason (player_id, reason, id),
   CONSTRAINT fk_ledger_player FOREIGN KEY (player_id) REFERENCES player (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -193,6 +205,23 @@ CREATE TABLE payment_order (
   CONSTRAINT fk_order_player FOREIGN KEY (player_id) REFERENCES player (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+
+-- What the shop sells, edited by the admin API (04 §8, D-119): every platform reads the offers at each listing and
+-- each purchase. Their rules are the admin API's, checked when it writes (Catalogue); a sku and an item id are
+-- lowercase letters, digits and _, so the sku is compared as bytes. V2__seed.sql writes the release's twelve.
+CREATE TABLE shop_offer (
+  id             INT UNSIGNED NOT NULL AUTO_INCREMENT,           -- the order the shop lists them in: the order added
+  sku            VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  item_id        VARCHAR(40) NOT NULL,
+  price          INT UNSIGNED NOT NULL,
+  currency       TINYINT UNSIGNED NOT NULL,                      -- 0 coins, 1 gems, as the ledger's
+  requires_level TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  available_from DATETIME(3) NULL,
+  available_to   DATETIME(3) NULL,
+  updated_at     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shop_offer_sku (sku)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ============================================================================================
 -- Match history

@@ -74,14 +74,15 @@ All classes are in the package `com.backend.persistence`.
 
 | File | What it makes |
 |---|---|
-| `V1__schema.sql` | Every table, grouped by domain and commented: 36 of them, each `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci` |
-| `V2__seed.sql` | The rows a first launch needs: `ha_epoch` (1, 0), `ha_heartbeat` (1, now) and season 1, from now to 00:00 UTC on the first of the next odd month |
-| `V3__accounts_by_subject.sql` | The account service's subject on `account`, and `username`, its key and `password_hash` dropped; `erased_subject` (D-117). It drops in one step, not by expand and contract: nothing has launched, so no process runs that reads the old columns |
-| `V4__shop_offers.sql` | `shop_offer`, the shop's offers, seeded with the release's twelve, which `shop.json` held until then; and `ledger`'s index `ix_ledger_player_reason (player_id, reason, id)`, for a player's purchases (04 §8, D-119, plan item 145) |
+| `V1__schema.sql` | Every table, grouped by domain and commented: 38 of them, each `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci` |
+| `V2__seed.sql` | The rows a first launch needs: `ha_epoch` (1, 0), `ha_heartbeat` (1, now), season 1, from now to 00:00 UTC on the first of the next odd month, and the shop's twelve offers (D-119) |
 
-The first two files replaced V1 to V34, the steps by which the schema grew. Those steps are in git up to commit
-ce30aa7. The baseline was compared with them table by table and found the same, with two differences on
-purpose:
+The two files replaced V1 to V34, the steps by which the schema grew, and on 2026-11-27 V3 and V4 too
+([D-120](../../docs/architecture/03-decision-log.md#d-120--the-migrations-squashed-again-v3-and-v4-into-the-baseline)):
+V3 had given `account` the account service's subject and made `erased_subject` (D-117), and V4 `shop_offer` and the
+ledger's index for purchases (D-119). V1 to V34 are in git up to commit ce30aa7 of the previous repository, V3 and V4
+up to the commit before D-120's. The second squash was found the same as V1 to V4, table by table and in the seed
+rows. The first was compared with V1 to V34 table by table and found the same, with two differences on purpose:
 
 - V17's three board indexes are not made
   ([defect D-41](../../docs/defects.md#3-data-and-the-result-pipeline)).

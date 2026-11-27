@@ -2,7 +2,7 @@
 
 What is built, what is next, and in what order. Updated 2026-11-25.
 
-**Where it stands (2026-11-27).** Plan items 1 to 144 are done, but for item 7, which stays open by design: what is
+**Where it stands (2026-11-27).** Plan items 1 to 145 are done, but for item 7, which stays open by design: what is
 left of it waits on Q-3's hardware.
 
 - **The site.** It launches on one machine, every role on it, for up to about 5 000 players (D-93); three machines stay
@@ -21,7 +21,8 @@ left of it waits on Q-3's hardware.
   for any of eight queued modes or open a sandbox, and have the result reach MySQL, the boards and their wallet, told
   back through the gateway. Item 78 drove all of it from one release: 44 live drill scenarios, plaintext and TLS, a
   two-hour soak of 300 bots, and the backup drill; item 79 reviewed all of it, fixed what the review found, and drove
-  every scenario and drill again. The drill has 46 scenarios now, all of them passed at item 142 (e).
+  every scenario and drill again. The drill has 46 scenarios now, all of them passed at item 142 (e). The shop's
+  offers are the database's since item 145, edited by the admin API, and a player and support read what was bought.
 
 Nothing has run on the production hardware, and nothing has launched.
 
@@ -5019,6 +5020,16 @@ copy. The client's 211 tests pass with `float32` and without. Drilled from the r
 (`NEWMAN=1 headless-drill.sh play equip boost levels skin gems purchase`): 67 checks and the collection's 153
 requests, 171 assertions, none failed.
 
+
+**(e) done 2026-11-27.** V3 and V4 squashed into V1 and V2 (D-120): V1 makes all 38 tables, V2 writes the first
+rows, the twelve offers among them. Proved as D-75's was: both sets applied to empty databases, every
+`SHOW CREATE TABLE` and the seed rows the same, and the proof found a dropped index when one was dropped on purpose.
+Two comments the migrations could not have fixed are right now (DOC-63). `backend_dev` made again here
+([build and run §3.1](development/03-build-and-run.md#31-the-development-mysql-step-by-step) says how). Every backend
+test passed on the two files (`dev-backend.sh build`'s install); its release step then failed to compile the arena's
+tests against classes the editor had written into `target/` after Maven's `clean` (working-here §4), so the release
+was made in a copy outside the workspace and drilled: `play skin gems purchase equip` and the collection's 153
+requests, none failed, `backend_dev` migrated afresh to versions 1 and 2, 39 tables with Flyway's own.
 ---
 
 ### Completed 2026-09-23

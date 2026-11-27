@@ -73,7 +73,8 @@ decision; the last column says where it is recorded.
 | A simple client for the UI team, `client-simple/`, beside the full one: the API, the lobby and a match in small files to read and paste. It uses C# 7.3 on .NET Framework 4.5 alone, with no API above it (their Unity is 2019, at its .NET 4.x level), and no `UnityEngine` in its `Runtime/`. `client-simple-no-tls/` is the same. A protocol change is made in both clients (since D-114, in all three). Checked by `client-simple/check.sh` (Unity 2019.4's compiler, and its Mono for the offline checks) and by `headless-drill.sh` with `SIMPLE=1`, live in clear alone | 2026-11-24; 4.5 alone since 2026-11-25 | D-111, D-116 |
 | `client-simple`'s API runs over `HttpClient`, each call awaited. The app's certificate check is the backend's root, set through `ServicePointManager` (the only check that Unity 2019's `HttpClient` calls). A `csc.rsp` gives Unity's .NET 4.x level what it needs | 2026-11-25 | D-112 |
 | `client-simple-no-tls/` is the simple client without TLS, for a backend run plain (`PLAIN=1`) and for the site's 80 (D-115). Its `ArenaMessages.cs` and `Json.cs` are `client-simple`'s byte for byte, and one check covers both | 2026-11-25 | D-114 |
-| The migrations were squashed once, before launch, to V1 (the schema) and V2 (the seed). From V3 on they are forward-only | 2026-10-04 | D-75 |
+| The migrations were squashed before launch, to V1 (the schema) and V2 (the seed). From V3 on they are forward-only | 2026-10-04 | D-75 |
+| Squashed again, V3 and V4 into V1 and V2: the schema's definitions in the one main file. A `backend_dev` migrated before fails Flyway's check and is made again | 2026-11-27 | D-120 |
 | A result under five seconds counts for nothing but its row and, in a rated match, the rating. A walkover is no win | 2026-10-05 | D-76 |
 | The Unity editor's check and an admin panel are put off: not proposed until the owner brings them back | 2026-10-05 | Q-54, Q-55 |
 | These open questions are held: the copy off the site's host, results past 20 000 players, the app's updates, where alerts go, and the launch's machine. They are recorded, and not raised again until the owner brings them back | 2026-11-01 | Q-53, Q-58, Q-59, Q-60, Q-62 |
@@ -251,9 +252,12 @@ Each trap below happened at least once. Each says what went wrong and what to do
 - **The editor builds what is saved into Maven's `target/`.** VS Code's Java extension (`redhat.java`) compiles a
   saved source into its module's `target/classes` within a second, and copies or removes its resources there too. A
   `mvn test` that had compiled before the edit then loaded the new class: `NoSuchMethodError` on a constructor
-  changed mid-run, and `shop.json` gone from the classpath, none of them the code's (plan item 145, 2026-11-27). Edit
-  nothing in a module while its suite runs, or run the suite on a copy outside the workspace (`git archive HEAD
-  backend docs`, the staged diff applied), with `dev-env.sh` sourced from the checkout.
+  changed mid-run, and `shop.json` gone from the classpath, none of them the code's (plan item 145, 2026-11-27). A
+  `clean` sets it off too: it rebuilds what Maven deleted, while Maven compiles, and a release's `clean install` then
+  failed on a class of 378 bytes the editor had just written. Edit nothing in a module while its suite runs, and build
+  what must be built clean (a release, a mutation run) on a copy outside the workspace: `rsync` the tree without
+  `.git`, `work` and `target`, `vendor/` as a link, and `WORK=<the checkout's work>` for its Maven repository and its
+  MySQL.
 - **A mutation check leaves the mutant compiled.** The source put back is older than the mutant's class in
   `target/`, so Maven's incremental build keeps the mutant's class. Build `clean` after a mutation run, before any
   test, release or drill (2026-10-06).

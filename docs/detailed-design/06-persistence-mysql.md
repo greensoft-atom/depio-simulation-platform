@@ -416,7 +416,7 @@ CREATE TABLE shop_offer (
 ```
 
 The offers were `shop.json` on the platform's classpath until plan item 145; V4 made the table and wrote the release's
-twelve. An offer is written only by the admin API, made or replaced whole in its place and removed, each with its
+twelve, and since D-120 V1 makes it and V2 writes them. An offer is written only by the admin API, made or replaced whole in its place and removed, each with its
 `admin_audit` row in one transaction (D-30). A purchase names its item by `item_id` in the ledger's `ref`, not by the
 offer, so removing an offer leaves what was bought from it as it was. No foreign key to an item table: the item table
 is the release's `items.json`, and an offer whose item a release dropped is not on sale.
@@ -1302,9 +1302,11 @@ waiting. Now:
 
 ## 8. Migrations
 
-**Flyway runs versioned SQL files** from `persistence/src/main/resources/db/migration`. Today there are four:
-`V1__schema.sql`, `V2__seed.sql`, `V3__accounts_by_subject.sql` and `V4__shop_offers.sql` (the shop's offers and the
-ledger's purchases index, D-119).
+**Flyway runs versioned SQL files** from `persistence/src/main/resources/db/migration`. Today there are two:
+`V1__schema.sql` and `V2__seed.sql`. V3 (accounts by subject, D-117) and V4 (the shop's offers and the ledger's
+purchases index, D-119) were squashed into them on 2026-11-27, at the owner's wish to read the schema in one file
+([D-120](../architecture/03-decision-log.md#d-120--the-migrations-squashed-again-v3-and-v4-into-the-baseline)): both
+sets applied to empty databases, every table's `SHOW CREATE TABLE` and the seed rows compared, the same.
 
 - **The baseline** (squashed 2026-10-04,
   [D-75](../architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)).
@@ -1315,13 +1317,15 @@ ledger's purchases index, D-119).
   sections of this page name are those steps', kept as the history of each table. V1 was proved the same as the
   34 steps, table by table, except for two changes made on purpose: V17's board indexes are not made (defect
   D-41), and `season_place.rated` is as wide as the counts it copies (defect D-42).
-- **Forward-only.** An applied migration is never edited. From V3 on, a mistake is fixed by a new migration.
+- **Forward-only.** An applied migration is never edited, the two squashes before launch aside. From V3 on, a
+  mistake is fixed by a new migration.
   Flyway's checksum refuses an edit anyway, which is the point.
 - **Expand and contract** for anything that breaks compatibility: add the new column, backfill it, switch the code,
   and drop the old column in a later release. That is three deployments with no downtime, and every state in
-  between is one the running code understands. **V3 is the one exception** (D-117): it drops `account`'s username
-  and password hash in the release that stops reading them, because nothing has launched, so no database that
-  matters holds them and no older process runs beside the new one. From the launch on, the rule has no exception.
+  between is one the running code understands. **V3 was the one exception** (D-117): it dropped `account`'s
+  username and password hash in the release that stopped reading them, because nothing had launched, so no database
+  that matters held them and no older process ran beside the new one; it is part of V1 since D-120. From the launch
+  on, the rule has no exception.
 - **A backfill is never one statement over a populated table** (designed 2026-10-02, plan item 60 (c),
   defect [D-39](../defects.md#3-data-and-the-result-pipeline)). V16 filled `player_day` with one `INSERT … SELECT`
   over every match a player played, and one `UPDATE … JOIN` over all of them. Under REPEATABLE READ, an

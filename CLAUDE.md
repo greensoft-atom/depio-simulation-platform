@@ -135,8 +135,9 @@ for the backend, its docs and its client.
 - **Namespace `backend`:** Java `com.backend.*`, installed under `/opt/backend`, OS user
   `backend`; C# `Backend.Client.Core` and `Backend.Client.Unity`.
 - **Never edit an applied Flyway migration**; add the next one. V1 (schema) and V2 (seed) are
-  the baseline the owner had squashed from V1–V34 before launch (2026-10-04, D-75); from V3 on
-  schema changes are forward-only, expand then contract (06 §8).
+  the baseline the owner had squashed from V1–V34 before launch (2026-10-04, D-75), and again with V3
+  and V4 (2026-11-27, D-120: the schema in one main file); from V3 on schema changes are forward-only,
+  expand then contract (06 §8).
 - **No third-party Redis server, client library or tool**, tests included; the store is
   j-redis.
 - **No third-party service or daemon of any kind beyond MySQL and nginx**, whether installed from the
@@ -210,8 +211,8 @@ for the backend, its docs and its client.
   seen in a Rocky 9 guest alone (`check-selinux-el9.sh`, D-90): a confined login refuses every port above 1023 while
   `selinuxuser_tcp_server` is off, and the grant is the login's, the boolean, a module or the mapping, never the binary's.
 - **The editor's Java extension builds a saved source into `target/` at once** (working-here §4): a suite that is
-  running sees an edit made under it. Edit nothing in a module while its suite runs, or run it on a copy outside the
-  workspace.
+  running sees an edit made under it, and a `clean` sets it off too. Edit nothing in a module while its suite runs, and
+  build a release or run mutants on a copy outside the workspace (`vendor/` linked, `WORK=` the checkout's).
 - **A race the owner's machine shows and this VM's cores hide is not waited for**: a test that fails in the
   owner's build and never here is read for its window in the code, and a test written that puts the request
   in that window by construction (T-63; working-here §4). Pinning to one CPU reproduced nothing.

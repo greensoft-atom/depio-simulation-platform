@@ -4008,6 +4008,10 @@ V4 are deleted. They are proved the same as V1 to V4 as D-75 proved its squash: 
 private MySQL server, and every table's `SHOW CREATE TABLE` and the seed rows compared. From V3 on, migrations are
 forward-only again.
 
+**Proved** on the development MySQL, in two empty databases: 38 tables each, every `SHOW CREATE TABLE` the same
+(the `AUTO_INCREMENT` counters aside), and the seed rows (the epoch, season 1's id, the twelve offers) the same. As a
+check of the check, the new V1 without the ledger's purchases index was found different, by that line alone.
+
 **Why.** The owner wants the schema read in one place. Nothing has launched, so the only databases that hold V1 to V4
 are the development and test ones: the tests' is made again by every test, and the development one is dropped and
 migrated again.

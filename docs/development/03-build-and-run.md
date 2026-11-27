@@ -187,6 +187,10 @@ the development MySQL is not running
 - `./run-local.sh start` starts it first, before j-redis, the account service, the backend and nginx. `./run-local.sh stop` leaves it
   running: stop it with `./dev-mysql.sh stop`.
 - It does not start with the machine. After a reboot, run `./dev-mysql.sh start`.
+- **A `backend_dev` migrated before 2026-11-27** holds V3 and V4, which D-120 squashed into V1 and V2: Flyway refuses
+  its changed V1, and the platform does not start on it. Make it again, as root, and the next start migrates it:
+  `DROP DATABASE backend_dev; CREATE DATABASE backend_dev;` (the user's grant stays). `backend_test` is made again by
+  every test.
 
 **Connecting to it**, with `vendor/`'s client:
 

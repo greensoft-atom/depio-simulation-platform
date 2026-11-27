@@ -1775,6 +1775,13 @@ counts (196 for 211; 1 155 and 74 for 1 156 and 75, a grep that missed annotatio
 thirty-seven: V3's `erased_subject` had made thirty-seven, drawn on the page but not counted. **Fixed:** thirty-eight
 on both, `shop_offer` with them.
 
+**DOC-63, found 2026-11-27, FIXED the same day** (plan item 145 (e), the migrations read as they were squashed).
+Two comments in applied migrations, which could not be edited: V1's `account` was "a login: a name and a password's
+argon2id hash", which V3 had dropped, and listed three statuses of four (erased, 3, missing); V2 said the content was
+"the release's files under content/", a directory no release has. **Fixed** by the squash (D-120): `account`'s comment
+says whose a player is, as V3's did, with the four statuses; V2's says the content is in the platform's jar and the
+code, the shop's offers aside.
+
 ## 7. Documentation
 
 The audit found the documents have drifted from the code in ~60 places. The six
