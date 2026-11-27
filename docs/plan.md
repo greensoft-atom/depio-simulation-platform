@@ -2,7 +2,7 @@
 
 What is built, what is next, and in what order. Updated 2026-11-25.
 
-**Where it stands (2026-11-27).** Plan items 1 to 142 are done, but for item 7, which stays open by design: what is
+**Where it stands (2026-11-27).** Plan items 1 to 143 are done, but for item 7, which stays open by design: what is
 left of it waits on Q-3's hardware.
 
 - **The site.** It launches on one machine, every role on it, for up to about 5 000 players (D-93); three machines stay
@@ -4874,7 +4874,7 @@ token check: Nimbus's ES256 verify with the platform's checks, 1.9 to 2.4 ms on 
 eight, on this VM loaded by the two machines' check beside it, so an upper figure. `DocsLinksTest` and
 `ReadmeTestListsTest` pass. Item 142 is done: the plan's list is at its end.
 
-#### 143. The open defects: O-92, P-65, T-72, and the two machines' probe (the owner, 2026-11-27)
+#### 143. ~~The open defects: O-92, P-65, T-72, and the two machines' probe (the owner, 2026-11-27).~~ — **done 2026-11-27**
 
 The owner, after item 142: O-92 and the other open items and fixes. Open in the register: P-65, T-72 and O-92; and two
 of item 142's own, the two machines' probe lengthening the gaps it times (10's table says so), and a test's comment
@@ -4933,6 +4933,17 @@ old probe read 23 to 26 s, each store's restart 10 s, which it had not seen, the
 B serving 68 s after A was cut off; of 503 requests 63 refused, all in those gaps; 26 of 30 sign-ups answered 201 and
 all 26 on B, three refused their session. 10's table has this run's figures, the old probe's dropped with the reason.
 `PlatformToArenaTest`'s comment says what the test does since (d).
+
+**(d) done 2026-11-27: T-72, closed as the emulator's.** The guest's check run five times more after its first fault,
+its refusals saying what they were: two more faults, each of another kind and each in a process whose files were
+intact, a JVM's jump to where no code is (its fatal error taken from the guest before it was gone) and a class not
+found in a jar the same bytes as the host's, every entry's CRC good; each run after a fault passed, and on the real
+CPU, in UBI 9's container, the same release never failed. Tried, the guest's CPU as Nehalem, RHEL 9's floor, in place
+of `max`: 2 of 3 runs passed where `max` had passed 1 of 3, so not the cause, and taken back out. Not tried,
+single-threaded TCG: hours a run, against a fault in about half of them. Not proven: no fault had at will. Done: the
+scripts' README says how to read the emulated guest, a pass as it is, a failure first against the containers' check
+on the real CPU and then the guest again; `check-release-el9.sh` prints a failed sign-up's answer and the account
+service's fatal error, as its HTTPS refusal now does. Item 143 is done: the register has no open defect.
 
 ---
 

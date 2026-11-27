@@ -184,6 +184,14 @@ on a layer of its disk that is thrown away afterwards. In the guest it:
 3. runs `check-release-el9.sh`'s own checks as root in the guest: every native file, program and plugin, and every
    process, the account service's among them with a signing key made on the host by the release's `account-key.sh`.
 
+**Without KVM the guest is emulated, and not wholly reliable** (T-72): in six runs (2026-11-26 and 27), three each had a
+process misbehave as no real CPU has it, its files intact: a JVM jumping where no code is, a class not found in a
+jar that holds it, nginx's HTTPS once not answered; each run after passed. Read a pass as it is. Read a failure
+first against `check-release-el9.sh` on this machine's own CPU, which the same release passed every time, then run
+the guest again; a failure that comes back is the release's. The check says what each failure was: the answer, and a
+process's own last words if it died. The guest is for RHEL 9's kernel and SELinux; the containers run the release on
+the real CPU.
+
 ```
 backend/scripts/check-release-guest-el9.sh [release-dir]    from the checkout; the release's .tar.gz beside it
 EL9_SSH_PORT=<port> backend/scripts/check-release-guest-el9.sh   another host port for the guest's ssh (default 2224)

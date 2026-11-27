@@ -15,7 +15,7 @@ The one exception is j-redis 2.2.2, the store: it is built from [`../j-redis-ser
 and installed into the local repository first. [`../build-offline.sh`](../build-offline.sh) builds all of it, the
 release included, from the repository alone ([09](../docs/detailed-design/09-release-and-packaging.md)).
 
-**Status (2026-11-27).** Plan items 1 to 142 are done, except item 7, which stays open by design: what is left of it
+**Status (2026-11-27).** Plan items 1 to 143 are done, except item 7, which stays open by design: what is left of it
 waits on Q-3's hardware ([plan](../docs/plan.md)). Phases 1 to 5 of the [plan](../docs/plan.md#3-phases) are built
 and drilled on the development machine:
 

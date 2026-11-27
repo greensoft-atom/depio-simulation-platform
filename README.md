@@ -65,7 +65,7 @@ are drawn in [docs/diagrams/01-system.md](docs/diagrams/01-system.md).
 
 ## Status
 
-As of 2026-11-27, [plan](docs/plan.md) items 1 to 142 are done, the last the account service (D-117). Item 7 stays
+As of 2026-11-27, [plan](docs/plan.md) items 1 to 143 are done: the account service (D-117), then the open defects. Item 7 stays
 open by design: what is left of it waits on Q-3's hardware.
 
 - **Tests.** j-redis 2.2.2 passes its 229 tests (2026-11-25). The backend's sources declare 1 155 tests and the

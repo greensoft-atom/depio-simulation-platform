@@ -106,7 +106,9 @@ curl -s -o /dev/null http://127.0.0.1:8070/v1/health && ok "serving, on the rele
     FROM account_dev.flyway_schema_history" 2> /dev/null | sed 's/^/  ok   /'
 code=$(curl -s -o /tmp/signup.json -w "%{http_code}" -X POST -H 'Content-Type: application/json' \
     -d '{"username":"ubinine","password":"hunter2-hunter2"}' http://127.0.0.1:8070/v1/accounts)
-[ "$code" = 201 ] && ok "a sign-up: 201, its tokens" || bad "a sign-up: $code $(cat /tmp/signup.json)"
+# A refusal says what it was: the answer, and the service's own last words if it died (its JVM's fatal error).
+[ "$code" = 201 ] && ok "a sign-up: 201, its tokens" \
+    || { bad "a sign-up: $code $(cat /tmp/signup.json 2> /dev/null)"; grep -A12 -m1 'fatal error' /tmp/account.log | sed 's/^/      /'; }
 ACCESS=$(sed -E 's/.*"access_token":"([^"]+)".*/\1/' /tmp/signup.json)
 
 export BACKEND_DB_URL="jdbc:mysql://127.0.0.1:3306/backend_dev?useSSL=false&allowPublicKeyRetrieval=true"
