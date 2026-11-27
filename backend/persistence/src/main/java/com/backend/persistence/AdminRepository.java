@@ -72,6 +72,27 @@ public final class AdminRepository {
         });
     }
 
+    /**
+     * An offer made or replaced whole, and the call audited, in one transaction (04 §8, D-119): {@code created} or
+     * {@code replaced}. Its rules are checked before, by the platform's {@code Catalogue}.
+     */
+    public ShopRepository.Saved putOffer(ShopRepository.Offer offer, String request) throws SQLException {
+        return tx.execute(c -> {
+            ShopRepository.Saved saved = ShopRepository.put(c, offer);
+            insert(c, "shop-offer", offer.sku(), request, saved == ShopRepository.Saved.CREATED ? "created" : "replaced");
+            return saved;
+        });
+    }
+
+    /** An offer removed, and the call audited, in one transaction (D-119): {@code removed}, or {@code no_such_offer}. */
+    public boolean removeOffer(String sku, String request) throws SQLException {
+        return tx.execute(c -> {
+            boolean removed = ShopRepository.remove(c, sku);
+            insert(c, "shop-offer-remove", sku, request, removed ? "removed" : "no_such_offer");
+            return removed;
+        });
+    }
+
     /** A call that changed nothing here: a listing, or a refusal. */
     public void audit(String action, String target, String request, String outcome) throws SQLException {
         tx.execute(c -> {

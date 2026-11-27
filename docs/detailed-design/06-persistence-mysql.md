@@ -91,12 +91,12 @@ They are history: a database made today runs V1 and V2 only.
 The [persistence README](../../backend/persistence/README.md) lists which class writes and reads each table, and
 [diagrams/05](../diagrams/05-data-and-worker.md) draws them.
 
-Thirty-seven tables, by domain:
+Thirty-eight tables, by domain:
 
 | Domain | Tables |
 |---|---|
 | Identity and profile | `account`, `erased_subject`, `player`, `player_stat`, `player_day` |
-| Economy | `ledger`, `inventory_item`, `equipment`, `boost`, `boost_activation`, `payment_order` |
+| Economy | `ledger`, `inventory_item`, `equipment`, `boost`, `boost_activation`, `payment_order`, `shop_offer` |
 | Matches | `matches`, `match_player` |
 | Teams and tournaments | `team`, `team_member`, `team_invite`, `team_application`, `match_team`, `tournament`, `tournament_entry`, `tournament_match`, `tournament_team_entry`, `tournament_roster` |
 | Seasons and boards | `season`, `season_place`, `season_team_place`, `season_team_payee`, `season_pass` |
@@ -262,6 +262,8 @@ CREATE TABLE ledger (
   -- The idempotency mechanism for currency: a retry violates this and is caught.
   UNIQUE KEY uq_ledger_idem (idem_key),
   KEY ix_ledger_player (player_id, created_at),
+  -- What a player bought, newest first, read from the index alone (GET /v1/purchases, V4, D-119).
+  KEY ix_ledger_player_reason (player_id, reason, id),
   CONSTRAINT fk_ledger_player FOREIGN KEY (player_id) REFERENCES player (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
@@ -347,9 +349,10 @@ How the boost rows behave:
 - **Retention:** an ended row is kept 31 days, a day longer than a result may be late. A key is kept 30 days,
   although a retry comes within seconds. Each is deleted by its index (V22; §9, plan item 60 (b)).
 
-**Items are referenced by their content key**, not by a foreign key to an item table, because the catalogue is
+**Items are referenced by their content key**, not by a foreign key to an item table, because the item table is
 JSON loaded at boot ([01-arena](01-arena.md)). The database stores what a player owns; the content tables define
-what it does.
+what it does. The shop's offers are rows of `shop_offer` since plan item 145, edited by the admin API, and name their
+item by the same key; an offer whose item a release dropped is not on sale (04 §8, D-119).
 
 ### Payments (V30, designed 2026-10-04, plan item 75 (a))
 
@@ -391,6 +394,32 @@ The order's gems are granted through the ledger, keyed `payment:{orderId}`, and 
 debt, are each written with their `admin_audit` row in one transaction (D-30). A player's debt is the sum of their
 orders' `debt`, read by the first column of the unique key. Payments are simulated: there is no third-party
 provider until the owner chooses one (Q-52).
+
+### The shop's offers (V4, designed 2026-11-27, plan item 145)
+
+```sql
+-- What the shop sells, edited by the admin API (04 §8, D-119): every platform reads the offers at each listing and
+-- each purchase. Their rules are the admin API's, checked when it writes (Catalogue).
+CREATE TABLE shop_offer (
+  id             INT UNSIGNED NOT NULL AUTO_INCREMENT,           -- the order the shop lists them in: the order added
+  sku            VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  item_id        VARCHAR(40) NOT NULL,
+  price          INT UNSIGNED NOT NULL,
+  currency       TINYINT UNSIGNED NOT NULL,                      -- 0 coins, 1 gems, as the ledger's
+  requires_level TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  available_from DATETIME(3) NULL,
+  available_to   DATETIME(3) NULL,
+  updated_at     DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_shop_offer_sku (sku)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+```
+
+The offers were `shop.json` on the platform's classpath until plan item 145; V4 made the table and wrote the release's
+twelve. An offer is written only by the admin API, made or replaced whole in its place and removed, each with its
+`admin_audit` row in one transaction (D-30). A purchase names its item by `item_id` in the ledger's `ref`, not by the
+offer, so removing an offer leaves what was bought from it as it was. No foreign key to an item table: the item table
+is the release's `items.json`, and an offer whose item a release dropped is not on sale.
 
 ### Matches
 
@@ -1088,7 +1117,9 @@ START TRANSACTION;
 
 SELECT coins FROM player WHERE id = ? FOR UPDATE;         -- lock first, read after
 SELECT 1 FROM ledger WHERE idem_key = ?;                  -- used already -> already bought
--- only then: verify balance and that the sku is purchasable, in code
+SELECT 1 FROM inventory_item                              -- equipment or a skin, held once:
+ WHERE player_id = ? AND item_id = ? AND qty > 0;         --   held already -> already owned (D-53)
+-- only then: verify balance, in code; the offer was read and compared before the transaction
 
 INSERT INTO ledger (player_id, currency, delta, balance_after, reason, ref, idem_key)
 VALUES (?, 0, -?, ?, 1, ?, ?);                            -- 1062 -> already bought
@@ -1118,6 +1149,12 @@ path, not an error: catch it, and report the original purchase as successful. Th
 - **Only error 1062 means "used already".** `SQLIntegrityConstraintViolationException` also covers a foreign-key
   failure, which is an error, not a duplicate.
 
+Since plan item 145, two more rules, both after the lock and the key (D-53, D-119). **An item held once**, equipment or
+a skin, is not bought a second time: the held count is read after the player's lock, so two keys at once are judged
+one after the other, and a retry of the purchase that bought it is still answered by its key. **The offer is the one
+the player saw**: the purchase names the offer's item, price and currency as listed, and the platform compares them
+with the row it reads before the transaction. An offer edited since is refused, nothing moved.
+
 **This is `EconomyRepository.move`, and it is the only code that moves a balance**, in either currency (`moveCoins`
 is the same, in coins). A match's reward is paid through it too, inside the result transaction. So is every gem
 that a milestone, an achievement, a goal, a pass tier, a season's place, a tournament's place or a paid order
@@ -1126,8 +1163,9 @@ copies happened to agree.
 
 **Not built: limited stock.** The design takes a `DECR stock:{sku}` in j-redis before this transaction, and
 `INCR`s it back if the transaction fails: the store is the right place for a hot counter, and the database for the
-consequence. As built, a catalogue that sets `stock` is refused at start (`platform/Catalogue`, 04 §8), because
-after a store loss the counter would have to be rebuilt from the ledger.
+consequence. As built, an offer that sets `stock` is refused (`platform/Catalogue`, 04 §8: at start while the offers
+were `shop.json`, by the admin API since D-119), because after a store loss the counter would have to be rebuilt from
+the ledger. With the offers in MySQL, a limit could now be held in this transaction instead; not built.
 
 ### Granting a reward
 
@@ -1264,8 +1302,9 @@ waiting. Now:
 
 ## 8. Migrations
 
-**Flyway runs versioned SQL files** from `persistence/src/main/resources/db/migration`. Today there are three:
-`V1__schema.sql`, `V2__seed.sql` and `V3__accounts_by_subject.sql`.
+**Flyway runs versioned SQL files** from `persistence/src/main/resources/db/migration`. Today there are four:
+`V1__schema.sql`, `V2__seed.sql`, `V3__accounts_by_subject.sql` and `V4__shop_offers.sql` (the shop's offers and the
+ledger's purchases index, D-119).
 
 - **The baseline** (squashed 2026-10-04,
   [D-75](../architecture/03-decision-log.md#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)).

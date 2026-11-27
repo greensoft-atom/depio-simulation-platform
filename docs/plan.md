@@ -10,7 +10,7 @@ left of it waits on Q-3's hardware.
   D-97). It has one public address with three ports (D-82, D-115): nginx ends TLS on 443 (the API and the lobby) and
   on 9001 (matches), and serves all three in clear on 80, a match there by `/match/<the arena's name>`.
 - **The components**, each built and tested: `j-redis-service` 2.2.2 (229 tests); the backend's eleven modules (their
-  sources declare 1 159 tests); the account service, `account-service/`, beside them (75; D-117); the client's
+  sources declare 1 165 tests); the account service, `account-service/`, beside them (75; D-117); the client's
   engine-free core with its headless driver (211 tests, on .NET Framework 4.5, run on
   Unity 2019's Mono with `float32` and without; D-116, D-118). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
   `UnityEngine`; there is no Unity editor here, so it has not been opened in one (Q-54). Beside the full client,
@@ -141,7 +141,7 @@ and fixed-phrase chat
 | ✅ | **Matchmaking, first slice: the ranked duel** (2026-09-27, [04 §4](detailed-design/04-platform-services.md#the-first-slice-a-ranked-duel-end-to-end-designed-2026-09-27-plan-item-6)): `/v1/queue` and the lobby's `queue.join`; a matcher under a lease pairing by rating with a widening window; tickets naming the match, whose room the arena makes from the first of them ([D-20](architecture/03-decision-log.md#d-20--a-matchs-room-is-made-by-its-first-ticket-not-by-a-command)); `evt.match.found`; the duel's rules and walkover; Elo applied by `worker` under the lock (V4) |
 | ✅ | **Parties and team-vs-team** (2026-09-29, [04 §4](detailed-design/04-platform-services.md#the-second-slice-parties-and-team-vs-team-designed-2026-09-28-plan-item-6)): parties of up to three in the store, queued whole by their leader; a matcher that fills two teams for any queued mode; three against three with team rules; a team Elo on the teams' means (V5) |
 | ✅ | **A confirm step, ranked free-for-all and co-op** (2026-09-29, [04 §4](detailed-design/04-platform-services.md#the-third-slice-a-confirm-step-designed-2026-09-29-plan-item-6)): every match found asked of its players first ([D-27](architecture/03-decision-log.md#d-27--a-match-found-asks-every-player-before-it-is-made)); eight each for themselves, rated pairwise ([D-28](architecture/03-decision-log.md#d-28--a-free-for-all-is-rated-pairwise-each-player-against-each-other)); three against the arena's waves. Built on recommendations open with the user as Q-5 to Q-7 |
-| ✅ | **Shop** — catalogue, inventory and purchases over the API, charged once per client key however often it is retried, a retry answered as its first attempt was ([04 §8](detailed-design/04-platform-services.md#8-economy-shop-inventory-and-equipment)). Built ahead of Phase 5 at the owner's request, 2026-09-26. The release's catalogue sells equipment for coins, and boosts and skins for gems (items 68 and 75); an offer may be priced in coins or gems (item 68 (b)). Limited stock is not built |
+| ✅ | **Shop** — catalogue, inventory and purchases over the API, charged once per client key however often it is retried, a retry answered as its first attempt was ([04 §8](detailed-design/04-platform-services.md#8-economy-shop-inventory-and-equipment)). Built ahead of Phase 5 at the owner's request, 2026-09-26. The release's catalogue sells equipment for coins, and boosts and skins for gems (items 68 and 75); an offer may be priced in coins or gems (item 68 (b)). Since item 145, equipment and skins are held once (D-53), the offers are rows of `shop_offer` edited by the admin API, a purchase names the offer as it was listed (D-119), and a player and support read what was bought. Limited stock is not built |
 | ✅ | Tournaments, team matches, friends, presence, notifications, each in a first slice (items 17–21, Q-12's order). **Teams' first slice built 2026-09-30** (item 17): created, joined by invitation, ranked, handed over, disbanded. **Equipment built 2026-09-30** (item 15): items, wearing, the bonus in the ticket and on the tank. **Boosts built 2026-09-30** (item 16): activated once per key, raising a match's experience or coins. **Tournaments' first slice built 2026-09-30** (item 18): an operator's duel tournaments, registered for, seeded, run round by round and paid by `worker`, drilled to the end. **Team matches built 2026-09-30** (item 19): two teams, three a side, the team rated. **Teams' tournaments built 2026-09-30** (item 20): a roster of three a team, drilled to a finish. **Friends, presence and the inbox built 2026-09-30** (item 21): requests, blocks, presence from the lobby connection, an inbox of references |
 | ✅ | **Guest accounts and upgrading one** (2026-09-30, item 22, [04 §1](detailed-design/04-platform-services.md#1-auth-and-sessions)): made with nothing asked, in again by a key the device keeps, upgraded to a username and password as the same player |
 
@@ -4990,10 +4990,28 @@ and [D-119](architecture/03-decision-log.md#d-119--the-shops-offers-in-the-datab
   purchase names the `itemId`, `price` and `currency` it agreed to, 409 `offer_changed` otherwise.
 - **(c)** `GET /v1/purchases` and `GET /admin/players/{id}/purchases`, from the ledger, on an index of their own.
 - **(d)** The core's `Purchase` sends what the shop showed; the drill makes its offers by the admin API.
+- **(e)** The owner, as (a) to (d) were built: the schema's definitions in the one main file, V3 and V4 squashed into
+  V1 and V2 as D-75 squashed V1 to V34
+  ([D-120](architecture/03-decision-log.md#d-120--the-migrations-squashed-again-v3-and-v4-into-the-baseline)).
 
 **(a) done 2026-11-27.** An item held once, any but a boost, is 409 `already_owned`, judged in the purchase's
 transaction after the player's lock and the key (D-53). Three tests first, each failing on a second copy charged; six
 mutants caught. The persistence and platform suites pass.
+
+**(b) and (c) done 2026-11-27**, one commit for their one migration, V4. The offers are rows of `shop_offer`, seeded with
+the release's twelve, `shop.json` gone; every platform reads them at each listing and purchase. The admin API lists,
+makes, replaces and removes them, each with a reason and audited in its transaction; an offer that breaks a rule is
+400 `invalid_offer` naming it, and one whose item the release lacks is not on sale and logged at start. A purchase
+names the offer's item, price and currency as listed, 409 `offer_changed` otherwise. `GET /v1/purchases` and
+`GET /admin/players/{id}/purchases` page what was bought, newest first, on the ledger's new index
+`(player_id, reason, id)`, a season pass's premium among them. Tests: `ShopRepositoryTest` (3), `CatalogueTest`
+rewritten (3, for `shop.json`'s 6), three in `PlatformHttpServerTest` and three in `AdminServerTest`; 1 165 declared.
+Twenty-eight mutants, every one caught, run on a copy outside the workspace (the editor builds into `target/` in it,
+and a first run there was noise: working-here §4). The backend's whole build passes (`dev-backend.sh build`).
+**Measured**, the index's cost to the rate of results applied (`ApplyBenchmark`, 400 results at 1, 2, 4 and 8 threads,
+twice without the index and twice with it, alternately, on the development VM): without, 56 and 69, 104 and 123, 148
+and 148, 310 and 199 a second; with, 67 and 58, 129 and 82, 234 and 172, 299 and 312; mysqld's CPU a result 5.4 to 8.7
+ms without and 5.3 to 8.5 with. Two runs of one build differed more than the builds: no cost this loaded VM can show.
 
 ---
 

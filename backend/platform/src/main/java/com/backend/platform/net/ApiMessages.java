@@ -55,7 +55,8 @@ final class ApiMessages {
     record ShopResponse(java.util.List<OfferView> offers) { }
 
     /** {@code key}: the client's transaction id, the same for every retry of one tap of Buy. */
-    record PurchaseRequest(String sku, String key) { }
+    /** A purchase, and the offer as the shop listed it (D-119); a raise's body is its {@code key} alone. */
+    record PurchaseRequest(String sku, String key, String itemId, Long price, String currency) { }
 
     /**
      * {@code result} is {@code bought} or {@code already_bought}: the second when the key had

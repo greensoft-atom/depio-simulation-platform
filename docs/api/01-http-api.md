@@ -460,7 +460,8 @@ A new account has neither.
 
 ### `GET /v1/shop`
 
-**Auth**: public. **Answer**: 200 with the offers on sale now.
+**Auth**: public. **Answer**: 200 with the offers on sale now, as the database holds them this moment: an operator's
+edit is listed at once (D-119).
 
 ```json
 200 {"offers":[
@@ -497,13 +498,13 @@ worn in the slot `skin`. **Boosts** give an hour of double experience (XP) or do
 
 ### `POST /v1/purchases`: buy an offer
 
-**Auth**: Bearer. **Body**: `{"sku", "key"}`. Use the same `key` for every retry of this purchase. **Answer**: 200
-with the result.
+**Auth**: Bearer. **Body**: `{"sku", "itemId", "price", "currency", "key"}`: the offer as `GET /v1/shop` listed it,
+and the tap's key. Use the same `key` for every retry of this purchase. **Answer**: 200 with the result.
 
 ```http
 POST /v1/purchases
 Authorization: Bearer 1eOf0B5d...
-{"sku": "skin_crimson", "key": "cc7adaf3-712f-4845-8aa9-70185189e8bc"}
+{"sku": "skin_crimson", "itemId": "skin_crimson", "price": 150, "currency": "gems", "key": "cc7adaf3-712f-4845-8aa9-70185189e8bc"}
 ```
 ```json
 200 {"result":"bought","itemId":"skin_crimson","coins":0,"held":1,"gems":850}
@@ -529,7 +530,7 @@ A coin offer, from a player who had coins (given in the test database, as no rou
 
 | Status | code | When |
 |---|---|---|
-| 400 | `invalid_body` | `sku and key are required` |
+| 400 | `invalid_body` | the `sku`, the `key`, and the offer's `itemId`, `price` and `currency` (`coins` or `gems`) are required |
 | 400 | `invalid_key` | the key is not 16 to 48 characters of `a-z 0-9 -` |
 | 401 | `no_token`, `invalid_session` | no live session |
 | 403 | `level_required` | `reach level <N>` |
@@ -537,6 +538,42 @@ A coin offer, from a player who had coins (given in the test database, as no rou
 | 409 | `not_available` | not on sale now |
 | 409 | `insufficient_funds` | `not enough of the offer's currency, coins or gems` |
 | 409 | `already_owned` | the player holds the item already: equipment and skins are held once, boosts as many as bought (D-53) |
+| 409 | `offer_changed` | the offer's item, price or currency is not what the body names: it was edited since it was listed. List the shop again; nothing was taken (D-119) |
+
+Two refusals from a run by hand on 2026-11-27, a guest given 600 gems as a fixture: the gold skin bought, then bought
+again with a new key; and the hour's boost sent at a price it no longer has.
+
+```json
+409 {"code":"already_owned","message":"held already: equipment and skins are held once (D-53)"}
+409 {"code":"offer_changed","message":"the offer has changed since it was listed: list the shop again"}
+```
+
+### `GET /v1/purchases`: what the player bought
+
+**Auth**: Bearer. **Query**: `before`, optional: the `next` of the page before. **Answer**: 200 with the player's
+purchases, newest first, 50 a page (plan item 145). The same run, after the skin, the boost at its price, and the light
+treads for coins:
+
+```json
+200 {"purchases":[
+  {"id":300,"kind":"item","itemId":"treads_light","price":1200,"currency":"coins","at":"2026-11-27T09:47:44.188Z"},
+  {"id":299,"kind":"item","itemId":"boost_xp_hour","price":20,"currency":"gems","at":"2026-11-27T09:47:44.047Z"},
+  {"id":298,"kind":"item","itemId":"skin_gold","price":400,"currency":"gems","at":"2026-11-27T09:47:43.753Z"}],
+  "next":null}
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | the purchase's row in the ledger; pass the last one's as `before` for the page after |
+| `kind` | `item`, a shop purchase, with its `itemId`; or `pass`, a season's premium pass, with its `season` |
+| `price`, `currency` | what it cost, in `coins` or `gems` |
+| `at` | when it was bought, UTC |
+| `next` | the `before` of the next page, or `null` on the last |
+
+| Status | code | When |
+|---|---|---|
+| 400 | `invalid_query` | `before is a purchase's id, from a page's next` |
+| 401 | `no_token`, `invalid_session` | no live session |
 
 ### `POST /v1/inventory/{itemId}/level`: raise an item a level
 

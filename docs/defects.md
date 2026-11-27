@@ -1770,6 +1770,11 @@ current; `run-local.sh`'s order, 03's `test` table and 06's `dev-env.sh` table w
 counts (196 for 211; 1 155 and 74 for 1 156 and 75, a grep that missed annotations written with their packages); O-92's
 "before it checks anything"; D-118's half a minute, 15 s measured. **Fixed:** each as the code is (plan item 144).
 
+**DOC-62, found 2026-11-27, FIXED the same day** (plan item 145 (b), the pages that name the schema's tables read as
+`shop_offer` was added). [diagrams/05](diagrams/05-data-and-worker.md) counted thirty-six tables and its index
+thirty-seven: V3's `erased_subject` had made thirty-seven, drawn on the page but not counted. **Fixed:** thirty-eight
+on both, `shop_offer` with them.
+
 ## 7. Documentation
 
 The audit found the documents have drifted from the code in ~60 places. The six

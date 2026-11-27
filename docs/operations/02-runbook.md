@@ -318,6 +318,10 @@ Run these on the machine that runs `platform`, as root, with the secret read fro
 | `POST /admin/payments/{orderId}/refund` | `{"reason"}` | A paid order refunded, once: its gems taken back as far as the balance allows, the rest the player's debt; 404 `no_such_order`, 409 `not_paid` |
 | `POST /admin/notice` | `{"text", "reason"}` | Pushed as `evt.notice` to every player in the lobby, on every gateway: 202 with how many gateways heard. 1 to 200 characters, none a control or direction character |
 | `POST /admin/tournaments` | `{"reason", "name", "maxEntries", "registrationEnds", "startsAt", "roundMinutes", "prizes", "mode", "format"}` | A tournament (04 §6): a name of 1 to 64 characters, 2 to 32 entries (2 to 8 for a round robin), registration ending ahead and the start no earlier, rounds of 1 to 60 minutes, three whole prizes in coins; `mode` `duel` (default) or `teams`, `format` `elimination` (default) or `round_robin`. Answers its `id`; 400 `invalid_tournament` says which rule failed |
+| `GET /admin/shop/offers` | | Every offer, on sale or not, each with `onSale` and `itemKnown` (04 §8, D-119) |
+| `PUT /admin/shop/offers/{sku}` | `{"itemId", "price", "currency", "requiresLevel", "availableFrom", "availableTo", "reason"}` | The offer made (201) or replaced whole (200), on sale at every platform at once; a field left out takes its default (coins, level 1, no dates). 400 `invalid_offer` names the rule broken |
+| `DELETE /admin/shop/offers/{sku}` | `{"reason"}` | The offer removed; what was bought from it stays in the ledger. 404 `no_such_offer` |
+| `GET /admin/players/{id}/purchases?before={id}` | | What the player bought, newest first, 50 a page: for a player asking where their gems went |
 | `GET /admin/seasons` | | Every season, newest first, and how far its close has gone |
 | `POST /admin/seasons/end` | `{"reason"}` | The current season ends now; 409 `already_ended` while the worker closes it |
 | `GET /admin/stats?days=N` | | Whether players come back, by day (05 §11); `N` 1 to 60, default 14 |
@@ -340,6 +344,11 @@ curl -s -H "$T" -d '{"reason":"stuck"}' $A/admin/rooms/<arena>/<room>/close
 curl -s -H "$T" -d '{"reason":"afk"}' $A/admin/players/<id>/kick     # out of any match; may come back
 curl -s -H "$T" -d '{"reason":"chargeback"}' $A/admin/payments/<orderId>/refund
 curl -s -H "$T" -d '{"reason":"settled by support"}' $A/admin/players/<id>/refund-debt
+curl -s -H "$T" $A/admin/players/<id>/purchases                   # what the player bought, newest first
+curl -s -H "$T" $A/admin/shop/offers                              # every offer, on sale or not
+curl -s -H "$T" -X PUT -d '{"itemId":"skin_gold","price":300,"currency":"gems","availableTo":"2027-01-01T00:00:00Z","reason":"december sale"}' \
+     $A/admin/shop/offers/skin_gold_sale                          # made, or replaced whole
+curl -s -H "$T" -X DELETE -d '{"reason":"the sale is over"}' $A/admin/shop/offers/skin_gold_sale
 curl -s -H "$T" -d '{"text":"Restarting in 5 minutes","reason":"weekly restart"}' $A/admin/notice
 curl -s -H "$T" $A/admin/seasons                                  # each season, and how far its close has gone
 curl -s -H "$T" -d '{"reason":"align the calendar"}' $A/admin/seasons/end   # the current season ends now
@@ -352,6 +361,15 @@ worker's season job is failing: its log says why (`season job failed`). The next
 stopped, paying nobody twice and halving nobody twice. End a season early only for a drill, or to bring a season
 onto the calendar. The next season then runs to the next boundary (the first of an odd month, 00:00 UTC), however
 near it is.
+
+**The shop's offers** (D-119) are rows of `shop_offer`, and every platform reads them at each listing and each
+purchase: an edit is on sale everywhere once the call answers. A `PUT` replaces the offer whole, so send every field
+it should keep. A price changed while a player looks at the shop is not charged: their purchase names the price they
+saw, and is answered 409 `offer_changed`, so the app lists the shop again. To end an offer at a time, set its
+`availableTo`, or remove it. An offer whose item a release dropped from `items.json` is not on sale, and the
+platform's start logs `shop: offer ... sells ...`: remove it, or put it again with an item the release has. During a
+rolling upgrade from a release before plan item 145, edit nothing until every platform runs the new one: the old
+ones sell from their own `shop.json`.
 
 **A ban or a suspension** ends every session the player has, closes their lobby connection, and takes them out of
 any match, at once. **Closing a room and kicking a player** are told to the arenas, and answered 202 with how many

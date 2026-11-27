@@ -152,8 +152,9 @@ that reads them. A bad table fails at start-up, never during a match.
 - The simulation's tables are code in `sim`: `Content` (`StatTable`, `LevelTable`, `ShapeTable`, recovery and
   spawning) and `ClassTable`, where each class is a row of barrels, reload, view and body. They are built once, and
   tests hold their invariants (the level table's anchors, and D-22's limit on what a class keeps alive).
-- `platform`'s tables are JSON files read at start (`Items`, `Catalogue`, `Packs`). Every field is checked, and a
-  table that breaks a rule stops `platform` with exit code 2.
+- `platform`'s tables are JSON files read at start (`Items`, `Packs`). Every field is checked, and a
+  table that breaks a rule stops `platform` with exit code 2. The shop's offers are the database's (D-119):
+  `Catalogue` holds their rules, which the admin API checks before it writes one.
 - The first design's `TankTable`, `TankDef` and `ConfigValidator` do not exist.
 
 ### 2.4 Strategy for match modes

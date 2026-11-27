@@ -142,17 +142,16 @@ class ItemsTest {
     }
 
     @Test
-    @DisplayName("a shop offer for an item the table lacks stops the start; the release's pass")
+    @DisplayName("a shop offer for an item the table lacks is refused, and is not on sale (D-119)")
     void offersNameItems() throws Exception {
         Items items = read(item(""));
-        Catalogue ghost = Catalogue.read(new ByteArrayInputStream(
-                "[{\"sku\":\"g\",\"itemId\":\"ghost\",\"price\":1}]".getBytes(StandardCharsets.UTF_8)));
-        assertThatThrownBy(() -> ghost.checkItems(items)).isInstanceOf(RefusedConfiguration.class)
-                .hasMessageContaining("ghost");
-        Catalogue real = Catalogue.read(new ByteArrayInputStream(
-                "[{\"sku\":\"g\",\"itemId\":\"a\",\"price\":1}]".getBytes(StandardCharsets.UTF_8)));
-        real.checkItems(items);
-        Catalogue.fromClasspath().checkItems(Items.fromClasspath());
+        com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertThatThrownBy(() -> Catalogue.offer("g", json.readTree("{\"itemId\":\"ghost\",\"price\":1}"), items))
+                .isInstanceOf(Catalogue.Invalid.class).hasMessageContaining("ghost");
+        var real = Catalogue.offer("g", json.readTree("{\"itemId\":\"a\",\"price\":1}"), items);
+        var ghost = new com.backend.persistence.ShopRepository.Offer("h", "ghost", 1, 0, 1, null, null);
+        assertThat(Catalogue.onSale(java.util.List.of(real, ghost), items, java.time.Instant.now()))
+                .containsExactly(real);
     }
 
     private static void refused(String json, String naming) {

@@ -94,7 +94,7 @@ All classes are in `com.backend.platform`.
 | social | `InboxService` | The inbox, and marking it read |
 | boards | `RatingLeaderboards` | The rating boards, the board of teams and past seasons; each top is kept 30 s |
 | progress | `AchievementService`, `GoalService` | Achievements and their progress; today's three goals |
-| economy | `ShopService`, `Catalogue` | Purchases and item levels; `shop.json` |
+| economy | `ShopService`, `Catalogue` | Purchases and item levels, what a player bought; the offers, rows of `shop_offer`, and their rules (D-119) |
 | economy | `Items`, `EquipmentService`, `Loadouts` | `items.json`; what a player wears; the bonus and skin a ticket carries |
 | economy | `BoostService` | Activating a boost |
 | revenue | `PaymentService`, `Packs` | Orders for packs of gems, through the simulated provider; `packs.json` |
@@ -125,8 +125,9 @@ The platform starts in this order:
 5. It opens the database pool, and Flyway migrates the schema (`Database.migrate`). The pool waits up
    to a minute for its first connection, with a warning for each failed attempt (D-94). After that
    minute the start fails with exit code 1.
-6. It reads and checks `items.json`, `shop.json` and `packs.json`. Every offer, and every item that
-   the season pass pays, must be in `items.json`. It reads `BACKEND_PAYMENT_PROVIDER`.
+6. It reads and checks `items.json` and `packs.json`. Every item that the season pass pays must be in
+   `items.json`; a shop offer whose item is not is logged, and not on sale (D-119). It reads
+   `BACKEND_PAYMENT_PROVIDER`.
 7. It builds the services: a team holds 30 players, and a player may have 100 friends and 100 blocked.
 8. It reads the watch's settings (`WatchSettings`).
 9. It starts the metrics listener if `BACKEND_METRICS_ADDR` names an address, then the admin listener
@@ -214,8 +215,13 @@ an id that appears twice stops the start.
 | File | Holds | Rules |
 |---|---|---|
 | `items.json` | 5 equipment items, 2 boosts, 5 skins | `id` 1 to 40 of `[a-z0-9_]`; `type` `EQUIPMENT` (a `slot` of barrel, armor, core or treads, and 1 to 3 `modifiers`, each a `stat` and a `percent` 1 to 25), `BOOST` (`kind` xp or coins, `percent` 1 to 100, `minutes` 1 to 1 440) or `SKIN` (`skin` 1 to 255, each number once) |
-| `shop.json` | 12 offers: 5 equipment items for coins, 2 boosts and 5 skins for gems | `sku` 1 to 64 and `itemId` 1 to 40 of `[a-z0-9_]`; `price` 1 to 1 000 000 000; `requiresLevel` 1 to 100, default 1; `availableFrom` and `availableTo` optional instants; `currency` coins (the default) or gems; `stock` is refused (limited stock is not built); every item must be in `items.json` |
 | `packs.json` | 5 packs: `gems_80` $0.99, `gems_500` $4.99, `gems_1100` $9.99, `gems_2400` $19.99, `gems_6500` $49.99 | `productId` 1 to 64 of `[a-z0-9_]`; `gems` and `priceCents` 1 to 100 000; priced in USD |
+
+The shop's offers were `shop.json` until plan item 145. They are rows of `shop_offer` now, seeded with the same twelve
+by V4, read at each listing and purchase, and edited by the admin API under the same rules: `sku` 1 to 64 and `itemId`
+1 to 40 of `[a-z0-9_]`, the item one of `items.json`'s; `price` 1 to 1 000 000 000; `requiresLevel` 1 to 100, default 1;
+`availableFrom` and `availableTo` optional instants; `currency` coins (the default) or gems; `stock` refused (limited
+stock is not built) (D-119).
 
 Other tables are code, not files: the class and phrase tables (`sim/ClassTable`, `PhraseTable`), the
 modes (`handoff/MatchMode`), and the season pass, achievements, daily goals and item level costs
@@ -372,7 +378,8 @@ with the caller's party as it is now (below). The gateway forwards the lobby's `
 |---|---|---|---|---|---|
 | GET | `/v1/shop` | none | none | 200 `{offers: [{sku, itemId, price, requiresLevel, availableTo, currency}]}`, the offers on sale now | — |
 | GET | `/v1/inventory` | session | none | 200 `{coins, gems, items: [{itemId, qty, level}]}` | 401 |
-| POST | `/v1/purchases` | session | `{sku, key}` | 200 `{result: "bought" or "already_bought", itemId, coins, held, gems}` | 400 `invalid_body`, `invalid_key`; 401; 403 `level_required`; 404 `unknown_sku`; 409 `not_available`, `insufficient_funds` |
+| POST | `/v1/purchases` | session | `{sku, itemId, price, currency, key}`, the offer as `GET /v1/shop` listed it | 200 `{result: "bought" or "already_bought", itemId, coins, held, gems}` | 400 `invalid_body`, `invalid_key`; 401; 403 `level_required`; 404 `unknown_sku`; 409 `not_available`, `insufficient_funds`, `already_owned` (equipment or a skin held, D-53), `offer_changed` (the offer edited since, D-119) |
+| GET | `/v1/purchases?before={id}` | session | none | 200 `{purchases: [{id, kind: "item" with itemId, or "pass" with season, price, currency, at}], next}`, newest first, 50 a page; `next` is the next page's `before`, or null | 400 `invalid_query`; 401; 405 |
 | POST | `/v1/inventory/{itemId}/level` | session | `{key}` | 200 `{itemId, level, coins}` | 400 `invalid_key`, `not_equipment`; 401; 404 `not_held`, `no_such_route`; 409 `max_level` (5), `insufficient_funds` |
 | GET | `/v1/equipment` | session | none | 200 the loadout | 401 |
 | PUT | `/v1/equipment/{slot}` | session | `{itemId}` | 200 the loadout | 400 `invalid_body`, `invalid_slot`; 401; 404 `unknown_item`; 409 `wrong_slot`, `not_owned` |
@@ -557,6 +564,10 @@ Every call needs `Authorization: Bearer <secret>`. A call without it, or with an
 | POST | `/admin/tournaments` | `{reason, name, maxEntries, registrationEnds, startsAt, roundMinutes, prizes: [three], mode?, format?}` | 200 `{id}` | 400 `no_reason`, `invalid_tournament` (the message names the field); 405 |
 | GET | `/admin/seasons` | none | 200 `{seasons: [{id, startsAt, endsAt, placedAt, paidAt, resetAt}]}`, the 100 newest | 405 |
 | POST | `/admin/seasons/end` | `{reason}` | 200 `{season, endsAt}`: the current season ends now | 400 `no_reason`; 405; 409 `already_ended` |
+| GET | `/admin/shop/offers` | none | 200 `{offers: [{sku, itemId, price, currency, requiresLevel, availableFrom, availableTo, onSale, itemKnown}]}`, every offer in its order (D-119) | 405 |
+| PUT | `/admin/shop/offers/{sku}` | `{itemId, price, currency?, requiresLevel?, availableFrom?, availableTo?, reason}` | 201 `{offer, created: true}` made, 200 `{offer, created: false}` replaced whole | 400 `no_reason`, `invalid_offer` (the message names the rule); 405 |
+| DELETE | `/admin/shop/offers/{sku}` | `{reason}` | 200 `{sku, removed: true}` | 400 `no_reason`; 404 `no_such_offer`; 405 |
+| GET | `/admin/players/{id}/purchases?before={id}` | none | 200 as `GET /v1/purchases`, for support (plan item 145) | 400 `invalid_query`; 405 |
 | POST | `/admin/payments/{orderId}/refund` | `{reason}` | 200 `{orderId, playerId, taken, debt}` | 400 `no_reason`; 404 `no_such_order`, `not_found`; 405; 409 `not_paid` |
 | GET | `/admin/alerts` | none | 200 `{alerts: [{name, labels, summary, runbook, since, silenced}]}`: every machine's firing alerts, from the store (04 §12) | 405 |
 | GET | `/admin/watch` | none | 200 `{machines: [{machine, at, roundSeconds, targets: [{job, instance, up}], peers: [{peer, up}], disks: [{mount, freeBytes, sizeBytes}], memory: {freeBytes, sizeBytes}, load1m, cores, alertsFiring}]}`: what each machine's watch last saw, newest first | 405 |
@@ -652,7 +663,7 @@ The metrics listener serves these at `GET /metrics` on `BACKEND_METRICS_ADDR`:
 | `backend_platform_responses_total` | `status` | Every API response but those of `/health` |
 | `backend_platform_request_seconds` | `route` (the route's own prefix, such as `/v1/party`, never the path the client sent) | A histogram of the time to answer, 5 ms to 2.5 s |
 | `backend_platform_logins_total` | `outcome`: ok, invalid_token (an access token not taken), invalid_credentials (a guest's key), banned, throttled | Logins, by what became of them |
-| `backend_platform_purchases_total` | `outcome`: bought, already_bought and each refusal (insufficient_funds, not_available, level_required, unknown_sku, invalid_key, no_session) | Purchases, by what became of them |
+| `backend_platform_purchases_total` | `outcome`: bought, already_bought and each refusal (insufficient_funds, not_available, level_required, unknown_sku, invalid_key, no_session, already_owned, offer_changed) | Purchases, by what became of them |
 | `backend_platform_open_tickets_issued_total` | | Tickets issued for the public arena |
 | `backend_platform_matches_made_total` | `mode` | Matches the matcher made |
 | `backend_platform_match_tickets_issued_total` | `mode` | Tickets issued for made matches |
@@ -685,9 +696,9 @@ this module through the real stack.
 
 | Test class | Tests | What it covers |
 |---|---|---|
-| `net/PlatformHttpServerTest` | 89 | Every route over HTTP, against a real MySQL and j-redis: answers, codes, the body limit; exact paths (a route answers its own path alone, and a path no route has gets a JSON 404, D-107), the routes that went with D-117 among them; the API's health under `/v1/`; addresses behind nginx, and the forwarded addresses believed from the front's nginx (D-82); a grant's TLS name; the store failing; an access token taken for a session, a first login's name, a guest linked; the account service's events: an account deleted there, out of the queue and the party too, a password changed there, its new session made before the event or after, to the millisecond, an event refused (D-117, S-28); a guest deleted, one finished after a store failure, an account's player sent to the account service (D-84) |
+| `net/PlatformHttpServerTest` | 92 | Every route over HTTP, against a real MySQL and j-redis: answers, codes, the body limit; exact paths (a route answers its own path alone, and a path no route has gets a JSON 404, D-107), the routes that went with D-117 among them; the API's health under `/v1/`; addresses behind nginx, and the forwarded addresses believed from the front's nginx (D-82); a grant's TLS name; the store failing; an access token taken for a session, a first login's name, a guest linked; the account service's events: an account deleted there, out of the queue and the party too, a password changed there, its new session made before the event or after, to the millisecond, an event refused (D-117, S-28); a guest deleted, one finished after a store failure, an account's player sent to the account service (D-84) |
 | `MatchmakerTest` | 43 | Lining up every mode's sides, every path of the confirm step, races between matchers (T-16, T-32 to T-34), tournament calls, the lease, the metrics; a made match's grant and push carrying the arena's TLS name (D-82) |
-| `net/AdminServerTest` | 24 | Every admin call, its audit and its refusals; the listener starts only when named, with a secret, on loopback; alerts listed from the store with their silences; a silence made, listed and lifted, each audited, and its refusals (04 §12); what each machine's watch last saw, listed (item 102); an address whose port is not one is refused (O-101) |
+| `net/AdminServerTest` | 27 | Every admin call, its audit and its refusals; the listener starts only when named, with a secret, on loopback; alerts listed from the store with their silences; a silence made, listed and lifted, each audited, and its refusals (04 §12); what each machine's watch last saw, listed (item 102); an address whose port is not one is refused (O-101) |
 | `watch/RulesTest` | 15 | The runbook's §5 as rules: each fires at its threshold and after its wait, fed rounds 15 s apart, and not before; resolution; every rule named and documented |
 | `watch/WatchTest` | 7 | The watch against scripted targets and a real j-redis: a round read, a rule fired with its labels, the alert stored, sent and resolved; a target down and a peer unreachable, raised by two machines and sent once; silences and the repeat; a dead webhook tried again; no webhook, and the machine's own samples; each machine's view written for a minute and listed newest first; four slow targets read in parallel (item 102) |
 | `watch/WatchSettingsTest` | 4 | Every setting read, the defaults, the webhook from a file, and each refusal |
@@ -697,7 +708,7 @@ this module through the real stack.
 | `AccountTokensTest` | 10 | Every rule of 10 §4.2 broken on purpose: no signature, an HMAC with the public key as its secret, RS256, another `typ`, issuer, audience, times, claims; an event's type and kind; a revocation's moment to the millisecond, and one without it refused (S-28); the key set fetched, kept, fetched again for a rotated key, and not to be had; the settings and their refusals (D-117) |
 | `PlatformToArenaTest` | 7 | Log in by an access token, get a ticket and play against a real arena; a seat promised with its ticket and dropped once counted (D-79); a burst spread over the arenas (T-59); a ticket used once; no session; no arena; an arena that stops announcing |
 | `ItemsTest` | 7 | `items.json`'s rules and the release's items |
-| `CatalogueTest` | 6 | `shop.json`'s rules and the release's offers |
+| `CatalogueTest` | 3 | An offer's rules as the admin API checks them, each refused by name; what is on sale; the release's offers as V4 seeds them, against `items.json` (D-119) |
 | `LoginThrottleTest` | 4 | The address's limit, IPv6 per /64, keys that expire, the store failing (the attempt is refused) |
 | `PacksTest` | 4 | `packs.json`'s rules and the release's packs |
 | `AskThrottleTest`, `PassServiceTest`, `PaymentServiceTest` | 2, 1, 1 | The hourly limits (twenty asks an hour for each kind, sixty party invitations); every item the pass names exists; the provider's setting |

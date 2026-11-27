@@ -144,6 +144,12 @@ Each process listened on a port of its own.
   session here through its event, B's access token then refused. A password changed by `curl` ended the two sessions
   made in its second, and the new password's session worked (S-28). The new routes' examples in 01 §2 are this run's.
   Not through nginx yet: that, and the C# client, wait for plan item 142 (e).
+- **With the shop's offers in the database, on 2026-11-27** (D-53, D-119, plan item 145). The collection ran on the
+  live drill's own stack (`headless-drill.sh NEWMAN=1`), from that day's release: 153 requests, 171 assertions, none
+  failed, in 27 s. It now buys a skin a second time (409 `already_owned`), sends an offer at a price it does not have
+  (409 `offer_changed`), lists what player A bought, and, in folder 09, lists the offers, makes one, is refused one of
+  no item, removes it, and lists A's purchases for support. The new routes' examples in 01 and 03 are from a run by hand
+  the same day, the guest's gems and coins given by SQL as a fixture.
 - **Not checked here**: nginx's limits (its own 413 and 429 answers are described from its configuration), and the
   match protocol, which has its own drills.
 

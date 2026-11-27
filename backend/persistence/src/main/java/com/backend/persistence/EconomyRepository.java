@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -213,6 +214,37 @@ public final class EconomyRepository {
                 try (ResultSet rs = ps.executeQuery()) {
                     return rs.next() ? new Purchase(rs.getString(1), rs.getLong(2)) : null;
                 }
+            }
+        });
+    }
+
+    /**
+     * A row of what a player bought (04 §8, plan item 145 (c)): {@code ref} is the item's id for the shop's, or
+     * {@code pass:{season}} for a season's premium pass; {@code price} what it cost, in {@code currency}.
+     */
+    public record Bought(long id, String ref, long price, int currency, Instant at) { }
+
+    /**
+     * The player's purchases, newest first: at most {@code limit}, those before the ledger row {@code before}
+     * ({@link Long#MAX_VALUE} for the newest). Read from {@code ix_ledger_player_reason}, however many other rows the
+     * player has.
+     */
+    public List<Bought> purchases(long playerId, long before, int limit) throws SQLException {
+        return tx.execute(c -> {
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT id, ref, -delta, currency, created_at FROM ledger"
+                            + " WHERE player_id = ? AND reason = " + REASON_PURCHASE + " AND id < ? ORDER BY id DESC LIMIT ?")) {
+                ps.setLong(1, playerId);
+                ps.setLong(2, before);
+                ps.setInt(3, limit);
+                List<Bought> out = new ArrayList<>();
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        out.add(new Bought(rs.getLong(1), rs.getString(2), rs.getLong(3), rs.getInt(4),
+                                rs.getTimestamp(5).toInstant()));
+                    }
+                }
+                return List.copyOf(out);
             }
         });
     }

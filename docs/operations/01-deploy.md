@@ -388,7 +388,9 @@ The order follows from the availability tiers in
 2. the account service (`backend-account`), one instance at a time, before the platforms: sign-ups and logins in
    flight fail, and the app retries them, through nginx to another machine's; the platforms keep the key set they
    last read, so the tokens it issued are taken while it restarts (D-117).
-3. `platform`, one instance at a time: requests in flight fail, and the app retries them.
+3. `platform`, one instance at a time: requests in flight fail, and the app retries them. From a release before plan
+   item 145, change no shop offer until the last one has restarted: one still on the old release sells from its own
+   `shop.json`, not the database (D-119).
 4. `gateway`, one at a time: clients reconnect to another endpoint.
 5. `arena`, one at a time, **drained**: it stops accepting joins, lets matches with an end finish, then stops. This
    is the slow step, and the reason `TimeoutStopSec` is generous: twelve minutes, for eleven of drain

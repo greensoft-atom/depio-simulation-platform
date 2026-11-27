@@ -37,7 +37,8 @@ import org.slf4j.LoggerFactory;
  * The admin API (docs detailed-design/04-platform-services.md §10, backend/platform/README.md): the arenas and
  * their rooms, a room closed, a player kicked, banned, suspended or lifted, a refund's debt cleared; the
  * players' figures by day; a notice to every lobby; a tournament made; the seasons listed and one ended; a
- * payment refunded. For an operator, over SSH. The arenas are told on their channels.
+ * payment refunded; the shop's offers listed, made, replaced and removed, and a player's purchases (D-119). For an
+ * operator, over SSH. The arenas are told on their channels.
  *
  * <ul>
  * <li>Its own listener, {@code BACKEND_ADMIN_ADDR}, and only when named; a loopback address, or
@@ -66,6 +67,7 @@ public final class AdminServer implements AutoCloseable {
     private final com.backend.persistence.SeasonRepository seasons;
     private final Clock clock;
     private final com.backend.platform.watch.AlertStore alerts;
+    private final com.backend.platform.ShopService shop;
     /** The watch's rules by name: what a silence may name (04 §12). */
     private static final java.util.Set<String> RULE_NAMES = com.backend.platform.watch.Rules.all().stream()
             .map(com.backend.platform.watch.Rule::name).collect(java.util.stream.Collectors.toUnmodifiableSet());
@@ -73,7 +75,7 @@ public final class AdminServer implements AutoCloseable {
     private AdminServer(HttpServer server, byte[] secret, ArenaDirectory arenas, AdminRepository admin,
                         SessionStore sessions, LobbyPush push, TournamentRepository tournaments,
                         com.backend.persistence.StatsRepository stats, com.backend.persistence.SeasonRepository seasons,
-                        com.backend.platform.watch.AlertStore alerts, Clock clock) {
+                        com.backend.platform.watch.AlertStore alerts, Clock clock, com.backend.platform.ShopService shop) {
         this.server = server;
         this.secret = secret;
         this.arenas = arenas;
@@ -85,6 +87,7 @@ public final class AdminServer implements AutoCloseable {
         this.seasons = seasons;
         this.alerts = alerts;
         this.clock = clock;
+        this.shop = shop;
     }
 
     /** Started when {@code BACKEND_ADMIN_ADDR} names an address; null when it does not. */
@@ -92,7 +95,8 @@ public final class AdminServer implements AutoCloseable {
                                                 AdminRepository admin, SessionStore sessions, LobbyPush push,
                                                 TournamentRepository tournaments,
                                                 com.backend.persistence.StatsRepository stats,
-                                                com.backend.persistence.SeasonRepository seasons, com.backend.platform.watch.AlertStore alerts, Clock clock) {
+                                                com.backend.persistence.SeasonRepository seasons, com.backend.platform.watch.AlertStore alerts, Clock clock,
+                                                com.backend.platform.ShopService shop) {
         String addr = env.get("BACKEND_ADMIN_ADDR");
         if (addr == null || addr.isBlank()) {
             return null;
@@ -122,7 +126,7 @@ public final class AdminServer implements AutoCloseable {
             HttpServer server = HttpServer.create(new InetSocketAddress(host, port), 16);
             server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
             AdminServer started = new AdminServer(server, token.value().getBytes(StandardCharsets.UTF_8),
-                    arenas, admin, sessions, push, tournaments, stats, seasons, alerts, clock);
+                    arenas, admin, sessions, push, tournaments, stats, seasons, alerts, clock, shop);
             server.createContext("/admin/", started::handle);
             server.start();
             log.info("admin API on {}", server.getAddress());
@@ -181,6 +185,10 @@ public final class AdminServer implements AutoCloseable {
                 unsilence(ex, path.substring("/admin/silences/".length()));
             } else if (path.startsWith("/admin/payments/")) {
                 refund(ex, path.substring("/admin/payments/".length()).split("/"));
+            } else if (path.equals("/admin/shop/offers")) {
+                listOffers(ex);
+            } else if (path.startsWith("/admin/shop/offers/")) {
+                offer(ex, path.substring("/admin/shop/offers/".length()));
             } else {
                 answer(ex, 404, error("not_found", "no such call"));
             }
@@ -618,6 +626,10 @@ public final class AdminServer implements AutoCloseable {
             id = -1;
         }
         String action = parts.length == 2 ? parts[1] : "";
+        if (id > 0 && action.equals("purchases")) {
+            purchasesOf(ex, id);
+            return;
+        }
         if (id <= 0 || !(action.equals("ban") || action.equals("unban") || action.equals("kick")
                 || action.equals("refund-debt"))) {
             answer(ex, 404, error("not_found", "no such call"));
@@ -817,6 +829,94 @@ public final class AdminServer implements AutoCloseable {
             admin.audit("unsilence", name, null, "refused_no_such_silence");
             answer(ex, 404, error("no_such_silence", "no silence for " + name));
         }
+    }
+
+    // ---- the shop (04 §8, D-119, plan item 145) -------------------------------------------------
+
+    /** {@code GET /admin/players/{id}/purchases?before={id}}: what a player bought, for support (plan item 145 (c)). */
+    private void purchasesOf(HttpExchange ex, long id) throws IOException, SQLException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            ex.getResponseHeaders().set("Allow", "GET");
+            answer(ex, 405, error("method_not_allowed", "use GET"));
+            return;
+        }
+        long before = PlatformHttpServer.before(ex);
+        if (before <= 0) {
+            admin.audit("purchases", Long.toString(id), ex.getRequestURI().getRawQuery(), "refused_invalid");
+            answer(ex, 400, error("invalid_query", "before is a purchase's id, from a page's next"));
+            return;
+        }
+        com.backend.platform.ShopService.Bought page = shop.purchasesOf(id, before);
+        admin.audit("purchases", Long.toString(id), null, "ok");
+        answer(ex, 200, PlatformHttpServer.purchasesJson(page));
+    }
+
+    /** {@code GET /admin/shop/offers}: every offer, on sale or not, as the database holds them (D-119). */
+    private void listOffers(HttpExchange ex) throws IOException, SQLException {
+        if (!"GET".equals(ex.getRequestMethod())) {
+            ex.getResponseHeaders().set("Allow", "GET");
+            answer(ex, 405, error("method_not_allowed", "use GET, or PUT and DELETE on /admin/shop/offers/{sku}"));
+            return;
+        }
+        ArrayNode out = JSON.createArrayNode();
+        for (com.backend.persistence.ShopRepository.Offer o : shop.all()) {
+            out.add(offerJson(o));
+        }
+        admin.audit("shop-offers", null, null, "ok");
+        ObjectNode body = JSON.createObjectNode();
+        body.set("offers", out);
+        answer(ex, 200, body);
+    }
+
+    /**
+     * {@code PUT /admin/shop/offers/{sku}}, the offer made or replaced whole, and {@code DELETE}, removed; each with a
+     * reason, and audited in the change's own transaction (D-30, D-119). An offer is checked by every rule first.
+     */
+    private void offer(HttpExchange ex, String sku) throws IOException, SQLException {
+        String method = ex.getRequestMethod();
+        if (!"PUT".equals(method) && !"DELETE".equals(method)) {
+            ex.getResponseHeaders().set("Allow", "PUT, DELETE");
+            answer(ex, 405, error("method_not_allowed", "use PUT or DELETE"));
+            return;
+        }
+        String body = read(ex);
+        String action = "PUT".equals(method) ? "shop-offer" : "shop-offer-remove";
+        if (!hasReason(ex, action, sku, body)) {
+            return;
+        }
+        if ("DELETE".equals(method)) {
+            if (!admin.removeOffer(sku, body)) {
+                answer(ex, 404, error("no_such_offer", "no offer " + sku));
+                return;
+            }
+            log.info("admin removed the shop's offer {}", sku);
+            answer(ex, 200, JSON.createObjectNode().put("sku", sku).put("removed", true));
+            return;
+        }
+        com.backend.persistence.ShopRepository.Offer offer;
+        try {
+            offer = com.backend.platform.Catalogue.offer(sku, parse(body), shop.items());
+        } catch (com.backend.platform.Catalogue.Invalid e) {
+            admin.audit(action, sku, body, "refused_invalid");
+            answer(ex, 400, error("invalid_offer", e.getMessage()));
+            return;
+        }
+        boolean created = admin.putOffer(offer, body) == com.backend.persistence.ShopRepository.Saved.CREATED;
+        log.info("admin {} the shop's offer {}: {} {} {}", created ? "made" : "replaced", sku, offer.itemId(),
+                offer.price(), com.backend.platform.Catalogue.currencyName(offer.currency()));
+        ObjectNode out = JSON.createObjectNode();
+        out.set("offer", offerJson(offer));
+        out.put("created", created);
+        answer(ex, created ? 201 : 200, out);
+    }
+
+    private ObjectNode offerJson(com.backend.persistence.ShopRepository.Offer o) {
+        ObjectNode n = JSON.createObjectNode().put("sku", o.sku()).put("itemId", o.itemId()).put("price", o.price())
+                .put("currency", com.backend.platform.Catalogue.currencyName(o.currency()))
+                .put("requiresLevel", o.requiresLevel());
+        n.put("availableFrom", o.availableFrom() == null ? null : o.availableFrom().toString());
+        n.put("availableTo", o.availableTo() == null ? null : o.availableTo().toString());
+        return n.put("onSale", shop.onSale(o)).put("itemKnown", shop.itemKnown(o.itemId()));
     }
 
     private static String read(HttpExchange ex) throws IOException {

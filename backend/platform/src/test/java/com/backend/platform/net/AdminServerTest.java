@@ -27,6 +27,7 @@ import com.backend.persistence.AccountRepository;
 import com.backend.persistence.AdminRepository;
 import com.backend.persistence.Database;
 import com.backend.persistence.DatabaseSettings;
+import com.backend.persistence.EconomyRepository;
 import com.backend.platform.AuthService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -56,6 +57,7 @@ class AdminServerTest {
     private static AuthService auth;
     private static SessionStore sessions;
     private static AdminServer admin;
+    private static com.backend.platform.ShopService shop;
     private static String base;
     private static final HttpClient HTTP = HttpClient.newHttpClient();
 
@@ -70,13 +72,16 @@ class AdminServerTest {
         jredis = store.newClient();
         sessions = new SessionStore(jredis);
         auth = new AuthService(new AccountRepository(db.dataSource()), sessions, com.backend.platform.TestTokens.tokens());
+        shop = new com.backend.platform.ShopService(auth, new AccountRepository(db.dataSource()),
+                new EconomyRepository(db.dataSource()), new com.backend.persistence.ShopRepository(db.dataSource()),
+                com.backend.platform.Items.fromClasspath(), java.time.Clock.systemUTC());
         Path secret = Files.writeString(dir.resolve("admin-token"), SECRET + "\n");
         admin = AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", "127.0.0.1:0",
                         "BACKEND_ADMIN_TOKEN_FILE", secret.toString()),
                 new ArenaDirectory(jredis), new AdminRepository(db.dataSource()), sessions, new LobbyPush(jredis),
                 new com.backend.persistence.TournamentRepository(db.dataSource()),
                 new com.backend.persistence.StatsRepository(db.dataSource()),
-                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC());
+                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC(), shop);
         base = "http://127.0.0.1:" + admin.port();
     }
 
@@ -171,7 +176,7 @@ class AdminServerTest {
                 new ArenaDirectory(dead), new AdminRepository(db.dataSource()), new SessionStore(dead), new LobbyPush(dead),
                 new com.backend.persistence.TournamentRepository(db.dataSource()),
                 new com.backend.persistence.StatsRepository(db.dataSource()),
-                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC())) {
+                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC(), shop)) {
             HttpResponse<String> answer = HTTP.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + down.port()
                             + "/admin/players/" + id + "/ban")).header("Authorization", "Bearer " + SECRET)
                     .POST(HttpRequest.BodyPublishers.ofString("{\"reason\":\"cheating\"}")).build(),
@@ -192,7 +197,7 @@ class AdminServerTest {
                 new ArenaDirectory(dead), new AdminRepository(db.dataSource()), sessionStore, new LobbyPush(dead),
                 new com.backend.persistence.TournamentRepository(db.dataSource()),
                 new com.backend.persistence.StatsRepository(db.dataSource()),
-                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC());
+                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC(), shop);
     }
 
     private static HttpResponse<String> callOn(AdminServer server, String method, String path, String body) throws Exception {
@@ -648,18 +653,18 @@ class AdminServerTest {
     @Test
     @DisplayName("started only when named; named, it needs its secret and a loopback address")
     void configuration() {
-        assertThat(AdminServer.startIfConfigured(Map.of(), null, null, null, null, null, null, null, null, null)).isNull();
+        assertThat(AdminServer.startIfConfigured(Map.of(), null, null, null, null, null, null, null, null, null, null)).isNull();
         assertThatThrownBy(() -> AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", "127.0.0.1:0"),
-                null, null, null, null, null, null, null, null, null)).isInstanceOf(RefusedConfiguration.class).hasMessageContaining("BACKEND_ADMIN_TOKEN");
+                null, null, null, null, null, null, null, null, null, null)).isInstanceOf(RefusedConfiguration.class).hasMessageContaining("BACKEND_ADMIN_TOKEN");
         assertThatThrownBy(() -> AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", "0.0.0.0:0",
-                "BACKEND_ADMIN_TOKEN", SECRET), null, null, null, null, null, null, null, null, null))
+                "BACKEND_ADMIN_TOKEN", SECRET), null, null, null, null, null, null, null, null, null, null))
                 .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("loopback");
         assertThatThrownBy(() -> AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", "127.0.0.1:0"),
-                null, null, null, null, null, null, null, null, null))
+                null, null, null, null, null, null, null, null, null, null))
                 .as("its secret's two forms named").hasMessageContaining("BACKEND_ADMIN_TOKEN or BACKEND_ADMIN_TOKEN_FILE");
         for (String bad : new String[] {"127.0.0.1:65536", "127.0.0.1:70000", "127.0.0.1:-1"}) {
             assertThatThrownBy(() -> AdminServer.startIfConfigured(Map.of("BACKEND_ADMIN_ADDR", bad,
-                    "BACKEND_ADMIN_TOKEN", SECRET), null, null, null, null, null, null, null, null, null))
+                    "BACKEND_ADMIN_TOKEN", SECRET), null, null, null, null, null, null, null, null, null, null))
                     .as(bad + ": a port that is not one, refused, not a stack trace (O-101)")
                     .isInstanceOf(RefusedConfiguration.class).hasMessageContaining("BACKEND_ADMIN_ADDR");
         }
@@ -703,7 +708,7 @@ class AdminServerTest {
                 new ArenaDirectory(jredis), new AdminRepository(gone), sessions, new LobbyPush(jredis),
                 new com.backend.persistence.TournamentRepository(db.dataSource()),
                 new com.backend.persistence.StatsRepository(db.dataSource()),
-                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC());
+                new com.backend.persistence.SeasonRepository(db.dataSource()), new com.backend.platform.watch.AlertStore(jredis), java.time.Clock.systemUTC(), shop);
         java.util.concurrent.LinkedBlockingQueue<String> heard = new java.util.concurrent.LinkedBlockingQueue<>();
         JRedisClient gateway = store.newClient();
         try {
@@ -847,5 +852,114 @@ class AdminServerTest {
         assertThat(wrong.statusCode()).isEqualTo(405);
         assertThat(wrong.headers().firstValue("Allow")).hasValue("GET");
         assertThat(audited("watch")).contains("watch ok");
+    }
+
+    @Test
+    @DisplayName("the shop's offers listed, made, replaced whole and removed, each with a reason and audited; an offer that breaks a rule refused with the rule (D-119)")
+    void shopOffers() throws Exception {
+        HttpResponse<String> listed = call("GET", "/admin/shop/offers", null, SECRET);
+        assertThat(listed.statusCode()).as(listed.body()).isEqualTo(200);
+        JsonNode offers = JSON.readTree(listed.body()).get("offers");
+        assertThat(offers).extracting(o -> o.get("sku").asText()).contains("treads_light", "skin_carbon");
+        JsonNode gold = null;
+        for (JsonNode o : offers) {
+            gold = o.get("sku").asText().equals("skin_gold") ? o : gold;
+        }
+        assertThat(List.of(gold.get("itemId").asText(), gold.get("price").asLong(), gold.get("currency").asText(),
+                gold.get("requiresLevel").asInt(), gold.get("onSale").asBoolean(), gold.get("itemKnown").asBoolean()))
+                .containsExactly("skin_gold", 400L, "gems", 1, true, true);
+        assertThat(gold.get("availableFrom").isNull()).isTrue();
+
+        String sale = "{\"itemId\":\"skin_gold\",\"price\":300,\"currency\":\"gems\",\"availableFrom\":\"2026-12-01T00:00:00Z\","
+                + "\"availableTo\":\"2027-01-01T00:00:00Z\",\"reason\":\"december's sale\"}";
+        HttpResponse<String> made = call("PUT", "/admin/shop/offers/skin_gold_sale", sale, SECRET);
+        assertThat(made.statusCode()).as(made.body()).isEqualTo(201);
+        JsonNode offer = JSON.readTree(made.body()).get("offer");
+        assertThat(List.of(offer.get("sku").asText(), offer.get("price").asLong(), offer.get("availableTo").asText(),
+                offer.get("onSale").asBoolean())).containsExactly("skin_gold_sale", 300L, "2027-01-01T00:00:00Z", false);
+        HttpResponse<String> replaced = call("PUT", "/admin/shop/offers/skin_gold_sale",
+                "{\"sku\":\"skin_gold_sale\",\"itemId\":\"skin_gold\",\"price\":250,\"currency\":\"gems\",\"reason\":\"cheaper, from now\"}", SECRET);
+        assertThat(replaced.statusCode()).as(replaced.body()).isEqualTo(200);
+        offer = JSON.readTree(replaced.body()).get("offer");
+        assertThat(List.of(offer.get("price").asLong(), offer.get("availableTo").isNull(), offer.get("onSale").asBoolean()))
+                .as("replaced whole").containsExactly(250L, true, true);
+
+        for (String[] bad : new String[][] {
+                {"skin_gold_sale", "{\"itemId\":\"skin_gold\",\"price\":250}", "no_reason"},
+                {"skin_gold_sale", "{\"itemId\":\"ghost\",\"price\":250,\"reason\":\"r\"}", "invalid_offer"},
+                {"skin_gold_sale", "{\"itemId\":\"skin_gold\",\"price\":0,\"reason\":\"r\"}", "invalid_offer"},
+                {"skin_gold_sale", "{\"itemId\":\"skin_gold\",\"price\":9,\"stock\":5,\"reason\":\"r\"}", "invalid_offer"},
+                {"skin_gold_sale", "{\"itemId\":\"skin_gold\",\"price\":9,\"currency\":\"dollars\",\"reason\":\"r\"}", "invalid_offer"},
+                {"skin_gold_sale", "{\"sku\":\"other\",\"itemId\":\"skin_gold\",\"price\":9,\"reason\":\"r\"}", "invalid_offer"},
+                {"Skin_Gold", "{\"itemId\":\"skin_gold\",\"price\":9,\"reason\":\"r\"}", "invalid_offer"}}) {
+            HttpResponse<String> refused = call("PUT", "/admin/shop/offers/" + bad[0], bad[1], SECRET);
+            assertThat(refused.statusCode()).as(bad[1]).isEqualTo(400);
+            assertThat(JSON.readTree(refused.body()).get("code").asText()).as(bad[1]).isEqualTo(bad[2]);
+        }
+        HttpResponse<String> ghost = call("PUT", "/admin/shop/offers/skin_gold_sale",
+                "{\"itemId\":\"ghost\",\"price\":250,\"reason\":\"r\"}", SECRET);
+        assertThat(JSON.readTree(ghost.body()).get("message").asText()).contains("items.json");
+        assertThat(JSON.readTree(call("GET", "/admin/shop/offers", null, SECRET).body()).get("offers"))
+                .filteredOn(o -> o.get("sku").asText().equals("skin_gold_sale"))
+                .extracting(o -> o.get("price").asLong()).as("a refusal changes nothing").containsExactly(250L);
+
+        assertThat(call("DELETE", "/admin/shop/offers/skin_gold_sale", "{}", SECRET).statusCode()).isEqualTo(400);
+        HttpResponse<String> removed = call("DELETE", "/admin/shop/offers/skin_gold_sale", "{\"reason\":\"over\"}", SECRET);
+        assertThat(removed.statusCode()).as(removed.body()).isEqualTo(200);
+        HttpResponse<String> gone = call("DELETE", "/admin/shop/offers/skin_gold_sale", "{\"reason\":\"over\"}", SECRET);
+        assertThat(gone.statusCode()).isEqualTo(404);
+        assertThat(JSON.readTree(gone.body()).get("code").asText()).isEqualTo("no_such_offer");
+
+        HttpResponse<String> post = call("POST", "/admin/shop/offers/skin_gold", "{}", SECRET);
+        assertThat(List.of(post.statusCode(), post.headers().firstValue("Allow").orElse(""))).containsExactly(405, "PUT, DELETE");
+        HttpResponse<String> putAll = call("PUT", "/admin/shop/offers", "{}", SECRET);
+        assertThat(List.of(putAll.statusCode(), putAll.headers().firstValue("Allow").orElse(""))).containsExactly(405, "GET");
+        assertThat(call("GET", "/admin/shop/offers", null, "wrong").statusCode()).isEqualTo(401);
+
+        assertThat(audited("skin_gold_sale")).containsExactly("shop-offer created", "shop-offer replaced",
+                "shop-offer refused_no_reason", "shop-offer refused_invalid", "shop-offer refused_invalid",
+                "shop-offer refused_invalid", "shop-offer refused_invalid", "shop-offer refused_invalid",
+                "shop-offer refused_invalid", "shop-offer-remove refused_no_reason", "shop-offer-remove removed",
+                "shop-offer-remove no_such_offer");
+    }
+
+    @Test
+    @DisplayName("an offer whose item the release does not have is listed not on sale, its item unknown (D-119)")
+    void anOfferOfAnItemGone() throws Exception {
+        try (Connection c = db.dataSource().getConnection();
+             PreparedStatement ps = c.prepareStatement(
+                     "INSERT INTO shop_offer (sku, item_id, price, currency) VALUES ('dropped', 'dropped_item', 5, 0)")) {
+            ps.executeUpdate();
+        }
+        try {
+            JsonNode offers = JSON.readTree(call("GET", "/admin/shop/offers", null, SECRET).body()).get("offers");
+            assertThat(offers).filteredOn(o -> o.get("sku").asText().equals("dropped"))
+                    .extracting(o -> o.get("onSale").asBoolean() + " " + o.get("itemKnown").asBoolean())
+                    .containsExactly("false false");
+        } finally {
+            call("DELETE", "/admin/shop/offers/dropped", "{\"reason\":\"the test's\"}", SECRET);
+        }
+    }
+
+    @Test
+    @DisplayName("a player's purchases for support, newest first a page at a time, audited (plan item 145 (c))")
+    void aPlayersPurchases() throws Exception {
+        long id = register("adm-buyer");
+        EconomyRepository economy = new EconomyRepository(db.dataSource());
+        economy.credit(id, 5_000, EconomyRepository.REASON_MATCH_REWARD, "test", "test:" + id);
+        economy.purchase(id, "barrel_steel", 1_500, "adm-buy-0000000001", EconomyRepository.CURRENCY_COINS, true);
+        economy.purchase(id, "armor_plate", 1_500, "adm-buy-0000000002", EconomyRepository.CURRENCY_COINS, true);
+        HttpResponse<String> got = call("GET", "/admin/players/" + id + "/purchases", null, SECRET);
+        assertThat(got.statusCode()).as(got.body()).isEqualTo(200);
+        JsonNode page = JSON.readTree(got.body());
+        assertThat(page.get("purchases")).extracting(p -> p.get("itemId").asText()).containsExactly("armor_plate", "barrel_steel");
+        assertThat(page.get("next").isNull()).isTrue();
+        long newest = page.get("purchases").get(0).get("id").asLong();
+        assertThat(JSON.readTree(call("GET", "/admin/players/" + id + "/purchases?before=" + newest, null, SECRET).body())
+                .get("purchases")).extracting(p -> p.get("itemId").asText()).containsExactly("barrel_steel");
+        assertThat(call("GET", "/admin/players/" + id + "/purchases?before=x", null, SECRET).statusCode()).isEqualTo(400);
+        HttpResponse<String> post = call("POST", "/admin/players/" + id + "/purchases", "{}", SECRET);
+        assertThat(List.of(post.statusCode(), post.headers().firstValue("Allow").orElse(""))).containsExactly(405, "GET");
+        assertThat(audited(Long.toString(id))).containsExactly("purchases ok", "purchases ok", "purchases refused_invalid");
     }
 }

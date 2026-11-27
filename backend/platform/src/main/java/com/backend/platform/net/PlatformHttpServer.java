@@ -255,7 +255,7 @@ public final class PlatformHttpServer implements AutoCloseable {
         server.createContext("/v1/goals", exchange -> exact(exchange, "GET", "/v1/goals", this::goals));
         server.createContext("/v1/shop", exchange -> exact(exchange, "GET", "/v1/shop", this::shop));
         server.createContext("/v1/inventory", this::inventoryRoutes);
-        server.createContext("/v1/purchases", exchange -> exact(exchange, "POST", "/v1/purchases", this::purchase));
+        server.createContext("/v1/purchases", this::purchaseRoutes);
         server.createContext("/v1/payments", exchange -> guard(exchange, this::payments));
         server.createContext("/v1/pass", exchange -> guard(exchange, this::pass));
         server.createContext("/v1/equipment", exchange -> guard(exchange, this::equipment));
@@ -728,13 +728,15 @@ public final class PlatformHttpServer implements AutoCloseable {
      */
     // ---- the shop (04 §8, "The shop, as built") --------------------------------------------
 
-    /** {@code GET /v1/shop}: what is on sale now. The same for everyone, so no session. */
-    private void shop(HttpExchange exchange) throws IOException {
+    /**
+     * {@code GET /v1/shop}: what is on sale now, read from the database each time, so an edit is on sale at once
+     * (D-119). The same for everyone, so no session.
+     */
+    private void shop(HttpExchange exchange) throws IOException, SQLException {
         List<OfferView> offers = new ArrayList<>();
-        for (Catalogue.Offer o : shop.onSale()) {
+        for (com.backend.persistence.ShopRepository.Offer o : shop.onSale()) {
             offers.add(new OfferView(o.sku(), o.itemId(), o.price(), o.requiresLevel(),
-                    o.availableTo() == null ? null : o.availableTo().toString(),
-                    o.currency() == Catalogue.GEMS ? "gems" : "coins"));
+                    o.availableTo() == null ? null : o.availableTo().toString(), Catalogue.currencyName(o.currency())));
         }
         respond(exchange, 200, Json.MAPPER.writeValueAsString(new ShopResponse(offers)));
     }
@@ -852,7 +854,82 @@ public final class PlatformHttpServer implements AutoCloseable {
                 new InventoryResponse(held.coins(), held.gems(), items)));
     }
 
-    /** {@code POST /v1/purchases}: buys one offer, once per key however often it is sent. */
+    /** {@code GET /v1/purchases}, what was bought, and {@code POST /v1/purchases}, a purchase (04 §8, plan item 145). */
+    private void purchaseRoutes(HttpExchange exchange) throws IOException {
+        guard(exchange, ex -> {
+            if (!ex.getRequestURI().getPath().equals("/v1/purchases")) {
+                error(ex, 404, "no_such_route", "use /v1/purchases");
+            } else if ("GET".equals(ex.getRequestMethod())) {
+                purchases(ex);
+            } else if ("POST".equals(ex.getRequestMethod())) {
+                purchase(ex);
+            } else {
+                methodNotAllowed(ex, "GET, POST");
+            }
+        });
+    }
+
+    /** {@code GET /v1/purchases?before={id}}: what the player bought, newest first, a page at a time (plan item 145 (c)). */
+    private void purchases(HttpExchange exchange) throws IOException, SQLException {
+        String token = bearerToken(exchange);
+        if (token == null) {
+            error(exchange, 401, "no_token", "send Authorization: Bearer <token>");
+            return;
+        }
+        long before = before(exchange);
+        if (before <= 0) {
+            error(exchange, 400, "invalid_query", "before is a purchase's id, from a page's next");
+            return;
+        }
+        ShopService.Bought page = shop.purchases(token, before);
+        if (page == null) {
+            error(exchange, 401, "invalid_session", "log in again");
+            return;
+        }
+        respond(exchange, 200, purchasesJson(page).toString());
+    }
+
+    /** The {@code before} a page of purchases was asked from: the newest when none; 0 for one that is not an id. */
+    static long before(HttpExchange exchange) {
+        String before = queryParam(exchange, "before");
+        if (before == null) {
+            return Long.MAX_VALUE;
+        }
+        try {
+            return Long.parseLong(before);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * A page of purchases as the player's route and the admin's answer it: each an {@code item} with its
+     * {@code itemId}, or a season's premium {@code pass} with its {@code season}.
+     */
+    static com.fasterxml.jackson.databind.node.ObjectNode purchasesJson(ShopService.Bought page) {
+        var json = Json.MAPPER.createObjectNode();
+        var rows = json.putArray("purchases");
+        for (com.backend.persistence.EconomyRepository.Bought b : page.rows()) {
+            var row = rows.addObject().put("id", b.id());
+            if (b.ref().startsWith("pass:")) {
+                row.put("kind", "pass").put("season", Long.parseLong(b.ref().substring("pass:".length())));
+            } else {
+                row.put("kind", "item").put("itemId", b.ref());
+            }
+            row.put("price", b.price()).put("currency", Catalogue.currencyName(b.currency())).put("at", b.at().toString());
+        }
+        if (page.next() == null) {
+            json.putNull("next");
+        } else {
+            json.put("next", page.next());
+        }
+        return json;
+    }
+
+    /**
+     * {@code POST /v1/purchases}: buys one offer, once per key however often it is sent, as the shop listed it: its
+     * item, price and currency, which the offer must still have (D-119).
+     */
     private void purchase(HttpExchange exchange) throws IOException, SQLException {
         String token = bearerToken(exchange);
         if (token == null) {
@@ -860,11 +937,15 @@ public final class PlatformHttpServer implements AutoCloseable {
             return;
         }
         PurchaseRequest request = read(exchange, PurchaseRequest.class);
-        if (request == null || request.sku() == null || request.key() == null) {
-            error(exchange, 400, "invalid_body", "sku and key are required");
+        int currency = request == null || request.currency() == null ? -1 : Catalogue.currency(request.currency());
+        if (request == null || request.sku() == null || request.key() == null || request.itemId() == null
+                || request.price() == null || currency < 0) {
+            error(exchange, 400, "invalid_body", "sku, key, and the offer's itemId, price and currency (coins or gems)"
+                    + " as the shop listed them, are required");
             return;
         }
-        ShopService.Receipt receipt = shop.buy(token, request.sku(), request.key());
+        ShopService.Receipt receipt = shop.buy(token, request.sku(),
+                new ShopService.Shown(request.itemId(), request.price(), currency), request.key());
         purchases.increment(receipt.result().name().toLowerCase(java.util.Locale.ROOT));
         switch (receipt.result()) {
             case BOUGHT, ALREADY_BOUGHT -> respond(exchange, 200, Json.MAPPER.writeValueAsString(
@@ -882,6 +963,8 @@ public final class PlatformHttpServer implements AutoCloseable {
                     "not enough of the offer's currency, coins or gems");
             case ALREADY_OWNED -> error(exchange, 409, "already_owned",
                     "held already: equipment and skins are held once (D-53)");
+            case OFFER_CHANGED -> error(exchange, 409, "offer_changed",
+                    "the offer has changed since it was listed: list the shop again");
         }
     }
 
@@ -1951,7 +2034,7 @@ public final class PlatformHttpServer implements AutoCloseable {
         }
     }
 
-    private static String queryParam(HttpExchange exchange, String name) {
+    static String queryParam(HttpExchange exchange, String name) {
         String query = exchange.getRequestURI().getRawQuery();
         if (query == null) {
             return null;

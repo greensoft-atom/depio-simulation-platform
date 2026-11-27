@@ -3995,3 +3995,23 @@ repeat. A bad offer does not stop the start, since the admin API that would fix 
 **Cost.** Each `GET /v1/shop` reads the database where it read memory. A platform on the old release still sells from
 its `shop.json` during an upgrade, so edits wait until every platform runs the new one. The purchase's body grows by
 three required fields, and the core's `Purchase` takes the offer listed rather than its sku.
+
+### D-120 — The migrations squashed again: V3 and V4 into the baseline
+
+**Decided 2026-11-27** by the owner (plan item 145 (e)): the schema's definitions written in the one main file.
+**Sets aside once more** the rule that an applied migration is never edited
+([D-75](#d-75--the-migrations-are-squashed-into-one-baseline-before-the-first-launch)), as D-75 did for V1 to V34.
+
+**Decision.** `V1__schema.sql` holds every table as it stands, V3's account columns and `erased_subject` and V4's
+`shop_offer` and ledger index among them; `V2__seed.sql` holds every first row, V4's twelve offers among them. V3 and
+V4 are deleted. They are proved the same as V1 to V4 as D-75 proved its squash: both applied to empty databases on a
+private MySQL server, and every table's `SHOW CREATE TABLE` and the seed rows compared. From V3 on, migrations are
+forward-only again.
+
+**Why.** The owner wants the schema read in one place. Nothing has launched, so the only databases that hold V1 to V4
+are the development and test ones: the tests' is made again by every test, and the development one is dropped and
+migrated again.
+
+**Cost.** A database that holds the old V1 fails Flyway's validation (its checksum changed) and the platform does not
+start on it until it is made again: `backend_dev` here, and any copy a developer has. A launched site could not be
+squashed this way; after a launch the rule holds without exception.

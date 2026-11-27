@@ -98,11 +98,14 @@ public final class PlatformMain {
         JoinService joins = new JoinService(auth, accounts, new ArenaDirectory(store),
                 new TicketStore(store), equipment);
 
-        // Read before binding: a catalogue that breaks a rule stops the start (exit 2).
-        Catalogue catalogue = Catalogue.fromClasspath();
-        catalogue.checkItems(items);                   // an offer for no item stops the start (04 §8)
+        // The offers are the database's, edited by the admin API (D-119). One whose item this release's table has not
+        // is not on sale, and said: refusing the start would shut out the admin API that removes it.
         ShopService shop = new ShopService(auth, accounts, new EconomyRepository(db.dataSource()),
-                catalogue, items, java.time.Clock.systemUTC());
+                new com.backend.persistence.ShopRepository(db.dataSource()), items, java.time.Clock.systemUTC());
+        for (com.backend.persistence.ShopRepository.Offer o : shop.withoutItem()) {
+            log.warn("shop: offer {} sells {}, which this release's items.json does not have: not on sale; remove it,"
+                    + " or put it again with an item the release has (PUT /admin/shop/offers/{})", o.sku(), o.itemId(), o.sku());
+        }
         log.info("shop: {} offers on sale now", shop.onSale().size());
         // Gems for money (D-68): the packs read before binding, as the catalogue; the provider named, or none.
         com.backend.persistence.PaymentRepository orders = new com.backend.persistence.PaymentRepository(db.dataSource());
@@ -164,7 +167,7 @@ public final class PlatformMain {
                 new com.backend.persistence.TournamentRepository(db.dataSource()),
                 new com.backend.persistence.StatsRepository(db.dataSource()),
                 new com.backend.persistence.SeasonRepository(db.dataSource()),
-                new com.backend.platform.watch.AlertStore(store), java.time.Clock.systemUTC());
+                new com.backend.platform.watch.AlertStore(store), java.time.Clock.systemUTC(), shop);
         int bound = server.start();
 
         // Every platform runs one; whichever holds the lease matches (04 §4).

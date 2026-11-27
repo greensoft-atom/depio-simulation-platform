@@ -1640,7 +1640,7 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sku\": \"skin_crimson\",\n  \"key\": \"{{purchaseKey}}\"\n}",
+              "raw": "{\n  \"sku\": \"skin_crimson\",\n  \"itemId\": \"skin_crimson\",\n  \"price\": 150,\n  \"currency\": \"gems\",\n  \"key\": \"{{purchaseKey}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1692,7 +1692,131 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sku\": \"skin_crimson\",\n  \"key\": \"{{purchaseKey}}\"\n}",
+              "raw": "{\n  \"sku\": \"skin_crimson\",\n  \"itemId\": \"skin_crimson\",\n  \"price\": 150,\n  \"currency\": \"gems\",\n  \"key\": \"{{purchaseKey}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "The same skin again, a new key: held once (409 already_owned)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('secondSkinKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/purchases answers 409\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([409]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.test(\"already_owned\", function () { pm.expect(body.code).to.eql(\"already_owned\"); });",
+                  ""
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/purchases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "purchases"
+              ]
+            },
+            "description": "Equipment and skins are held once (D-53): a second purchase is refused, nothing taken.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"skin_crimson\",\n  \"itemId\": \"skin_crimson\",\n  \"price\": 150,\n  \"currency\": \"gems\",\n  \"key\": \"{{secondSkinKey}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "A price that is not the offer's now (409 offer_changed)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('changedKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"POST /v1/purchases answers 409\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([409]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.test(\"offer_changed\", function () { pm.expect(body.code).to.eql(\"offer_changed\"); });",
+                  ""
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/purchases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "purchases"
+              ]
+            },
+            "description": "A purchase names the offer as the shop listed it; one that differs from the offer now is refused, nothing taken (D-119).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"boost_xp_hour\",\n  \"itemId\": \"boost_xp_hour\",\n  \"price\": 19,\n  \"currency\": \"gems\",\n  \"key\": \"{{changedKey}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1753,7 +1877,7 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sku\": \"boost_xp_hour\",\n  \"key\": \"{{boostPurchaseKey}}\"\n}",
+              "raw": "{\n  \"sku\": \"boost_xp_hour\",\n  \"itemId\": \"boost_xp_hour\",\n  \"price\": 20,\n  \"currency\": \"gems\",\n  \"key\": \"{{boostPurchaseKey}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1814,13 +1938,60 @@
             "description": "",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sku\": \"treads_light\",\n  \"key\": \"{{coinPurchaseKey}}\"\n}",
+              "raw": "{\n  \"sku\": \"treads_light\",\n  \"itemId\": \"treads_light\",\n  \"price\": 1200,\n  \"currency\": \"coins\",\n  \"key\": \"{{coinPurchaseKey}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
             }
+          }
+        },
+        {
+          "name": "What A bought, newest first",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GET /v1/purchases answers 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.test(\"the skin and the boost, items\", function () {",
+                  "    pm.expect(body.purchases.map(p => p.itemId)).to.include.members([\"skin_crimson\", \"boost_xp_hour\"]);",
+                  "    pm.expect(body.purchases.every(p => p.kind === \"item\" || p.kind === \"pass\")).to.be.true;",
+                  "});",
+                  ""
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/purchases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "purchases"
+              ]
+            },
+            "description": "Fifty a page; `next` is the `before` of the page after, null on the last (plan item 145)."
           }
         },
         {
@@ -6010,6 +6181,260 @@
                 }
               }
             }
+          }
+        },
+        {
+          "name": "The shop's offers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GET /admin/shop/offers answers 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  "pm.test(\"the release's, on sale\", function () {",
+                  "    pm.expect(body.offers.find(o => o.sku === \"skin_gold\").onSale).to.be.true;",
+                  "});",
+                  ""
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{adminUrl}}/admin/shop/offers",
+              "host": [
+                "{{adminUrl}}"
+              ],
+              "path": [
+                "admin",
+                "shop",
+                "offers"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Make an offer: the jade skin cheaper for a week",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PUT /admin/shop/offers/skin_jade_week answers 201 or 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201, 200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  ""
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{adminUrl}}/admin/shop/offers/skin_jade_week",
+              "host": [
+                "{{adminUrl}}"
+              ],
+              "path": [
+                "admin",
+                "shop",
+                "offers",
+                "skin_jade_week"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itemId\": \"skin_jade\",\n  \"price\": 120,\n  \"currency\": \"gems\",\n  \"reason\": \"a week's sale, the collection's\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "An offer of no item (400 invalid_offer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"PUT /admin/shop/offers/skin_jade_week answers 400\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  ""
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{adminUrl}}/admin/shop/offers/skin_jade_week",
+              "host": [
+                "{{adminUrl}}"
+              ],
+              "path": [
+                "admin",
+                "shop",
+                "offers",
+                "skin_jade_week"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itemId\": \"skin_none\",\n  \"price\": 120,\n  \"reason\": \"a test of the rules\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remove the offer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"DELETE /admin/shop/offers/skin_jade_week answers 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  ""
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{adminUrl}}/admin/shop/offers/skin_jade_week",
+              "host": [
+                "{{adminUrl}}"
+              ],
+              "path": [
+                "admin",
+                "shop",
+                "offers",
+                "skin_jade_week"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"the week is over\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "What A bought, for support",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GET /admin/players/{{playerIdA}}/purchases answers 200\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});",
+                  "let body = null;",
+                  "try { body = pm.response.json(); } catch (e) { }",
+                  ""
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{adminUrl}}/admin/players/{{playerIdA}}/purchases",
+              "host": [
+                "{{adminUrl}}"
+              ],
+              "path": [
+                "admin",
+                "players",
+                "{{playerIdA}}",
+                "purchases"
+              ]
+            },
+            "description": ""
           }
         },
         {

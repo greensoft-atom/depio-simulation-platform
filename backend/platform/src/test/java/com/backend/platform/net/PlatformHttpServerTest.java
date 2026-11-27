@@ -149,9 +149,8 @@ class PlatformHttpServerTest {
 
         leaderboards = new LeaderboardStore(jredis);
         economy = new EconomyRepository(db.dataSource());
-        shop = new ShopService(auth, accounts, economy, Catalogue.read(
-                new java.io.ByteArrayInputStream(CATALOGUE.getBytes(StandardCharsets.UTF_8))), Items.read(
-                new java.io.ByteArrayInputStream(ITEMS.getBytes(StandardCharsets.UTF_8))), clock);
+        shop = new ShopService(auth, accounts, economy, new com.backend.persistence.ShopRepository(db.dataSource()),
+                Items.read(new java.io.ByteArrayInputStream(ITEMS.getBytes(StandardCharsets.UTF_8))), clock);
         boosts = new BoostService(auth, new BoostRepository(db.dataSource()), Items.read(
                 new java.io.ByteArrayInputStream(ITEMS.getBytes(StandardCharsets.UTF_8))), clock);
         teams = new TeamService(auth, new TeamRepository(db.dataSource(), 30), new com.backend.handoff.LobbyPush(jredis), clock,
@@ -205,10 +204,20 @@ class PlatformHttpServerTest {
     }
 
     @BeforeEach
-    void fresh() {
+    void fresh() throws Exception {
         db.resetForTests();
         jredis.sync().send("FLUSHALL");
         clock.now = Instant.parse("2026-10-15T12:00:00Z");
+        // The tests' offers in place of the release's, the twelve V4 seeds (D-119).
+        sqlUpdate("DELETE FROM shop_offer");
+        Items items = Items.read(new java.io.ByteArrayInputStream(ITEMS.getBytes(StandardCharsets.UTF_8)));
+        for (JsonNode o : Json.MAPPER.readTree(CATALOGUE)) {
+            var offer = Catalogue.offer(o.get("sku").asText(), o, items);
+            sqlUpdate("INSERT INTO shop_offer (sku, item_id, price, currency, requires_level, available_from, available_to)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?)", offer.sku(), offer.itemId(), offer.price(), offer.currency(),
+                    offer.requiresLevel(), offer.availableFrom() == null ? null : java.sql.Timestamp.from(offer.availableFrom()),
+                    offer.availableTo() == null ? null : java.sql.Timestamp.from(offer.availableTo()));
+        }
     }
 
     @Test
@@ -1790,8 +1799,21 @@ class PlatformHttpServerTest {
         return token;
     }
 
+    /** A tap of Buy on {@code sku} as the tests' catalogue lists it: its item, price and currency (D-119). */
     private static HttpResponse<String> buy(String token, String sku, String key) throws Exception {
-        return post("/v1/purchases", "{\"sku\":\"%s\",\"key\":\"%s\"}".formatted(sku, key), token);
+        return post("/v1/purchases", purchaseBody(sku, key), token);
+    }
+
+    private static String purchaseBody(String sku, String key) throws Exception {
+        JsonNode listed = null;
+        for (JsonNode o : Json.MAPPER.readTree(CATALOGUE)) {
+            listed = o.get("sku").asText().equals(sku) ? o : listed;
+        }
+        return Json.MAPPER.createObjectNode().put("sku", sku).put("key", key)
+                .put("itemId", listed == null ? sku : listed.get("itemId").asText())
+                .put("price", listed == null ? 1 : listed.get("price").asLong())
+                .put("currency", listed == null || !listed.has("currency") ? "coins" : listed.get("currency").asText())
+                .toString();
     }
 
     private static final String KEY_1 = "3f2c9a1e-7b4d-4c61-9e0a-5d8b2f6c1a90";
@@ -1919,6 +1941,12 @@ class PlatformHttpServerTest {
         expectError(buy(token, "hat", KEY_1.toUpperCase(java.util.Locale.ROOT)), 400, "invalid_key");
         expectError(buy(token, "hat", "tap-1"), 400, "invalid_key");
         expectError(post("/v1/purchases", "{\"key\":\"" + KEY_1 + "\"}", token), 400, "invalid_body");
+        // The offer as listed is required (D-119), its currency by name.
+        expectError(post("/v1/purchases", "{\"sku\":\"hat\",\"key\":\"" + KEY_1 + "\"}", token), 400, "invalid_body");
+        expectError(post("/v1/purchases", purchaseBody("hat", KEY_1).replace("\"coins\"", "\"dollars\""), token),
+                400, "invalid_body");
+        expectError(post("/v1/purchases", purchaseBody("hat", KEY_1).replace("\"price\":100", "\"price\":\"cheap\""), token),
+                400, "invalid_body");
         expectError(buy(null, "hat", KEY_1), 401, "no_token");
         expectError(buy("not-a-token", "hat", KEY_1), 401, "invalid_session");
         expectError(get("/v1/inventory", "not-a-token"), 401, "invalid_session");
@@ -1955,8 +1983,7 @@ class PlatformHttpServerTest {
             all.add(http.sendAsync(HttpRequest.newBuilder(URI.create(base + "/v1/purchases"))
                     .header("Content-Type", "application/json")
                     .header("Authorization", "Bearer " + token)
-                    .POST(HttpRequest.BodyPublishers.ofString(
-                            "{\"sku\":\"hat\",\"key\":\"" + KEY_1 + "\"}"))
+                    .POST(HttpRequest.BodyPublishers.ofString(purchaseBody("hat", KEY_1)))
                     .build(), HttpResponse.BodyHandlers.ofString()));
         }
         int bought = 0;
@@ -1967,6 +1994,95 @@ class PlatformHttpServerTest {
         }
         assertThat(bought).isEqualTo(1);
         assertThat(body(get("/v1/inventory", token)).get("coins").asLong()).isEqualTo(400);
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("a purchase names the offer as the shop listed it: one edited since is 409 offer_changed and moves nothing; a purchase made is still answered by its key (D-119)")
+    void anOfferChangedSinceListed() throws Exception {
+        String token = buyer("ada", 1_000);
+        long ada = auth.playerIdOf(token);
+        assertThat(body(buy(token, "hat", KEY_1)).get("result").asText()).isEqualTo("bought");
+        sqlUpdate("UPDATE shop_offer SET price = 150 WHERE sku = 'hat'");
+        assertThat(body(buy(token, "hat", KEY_1)).get("result").asText()).as("its retry, after the edit")
+                .isEqualTo("already_bought");
+
+        sqlUpdate("UPDATE player SET level = 5 WHERE id = ?", ada);
+        sqlUpdate("UPDATE shop_offer SET price = 350 WHERE sku = 'crown'");
+        expectError(buy(token, "crown", KEY_2), 409, "offer_changed");
+        sqlUpdate("UPDATE shop_offer SET price = 300, item_id = 'barrel_big' WHERE sku = 'crown'");
+        expectError(buy(token, "crown", KEY_2), 409, "offer_changed");
+        sqlUpdate("UPDATE shop_offer SET item_id = 'core_hot', currency = 1 WHERE sku = 'crown'");
+        expectError(buy(token, "crown", KEY_2), 409, "offer_changed");
+        assertThat(body(get("/v1/inventory", token)).get("coins").asLong()).as("nothing moved").isEqualTo(900);
+
+        sqlUpdate("UPDATE shop_offer SET currency = 0 WHERE sku = 'crown'");
+        assertThat(body(buy(token, "crown", KEY_2)).get("coins").asLong()).isEqualTo(600);
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("the shop lists the database's offers as they are now: an edit at once, and not one whose item the release does not have (D-119)")
+    void theShopReadsTheDatabase() throws Exception {
+        sqlUpdate("UPDATE shop_offer SET price = 120 WHERE sku = 'hat'");
+        sqlUpdate("INSERT INTO shop_offer (sku, item_id, price, currency) VALUES ('ghost', 'ghost_item', 5, 0)");
+        JsonNode offers = body(get("/v1/shop", null)).get("offers");
+        assertThat(offers.get(0).get("price").asLong()).isEqualTo(120);
+        assertThat(offers).extracting(o -> o.get("sku").asText()).doesNotContain("ghost");
+
+        String token = buyer("ada", 100);
+        HttpResponse<String> ghost = post("/v1/purchases", """
+                {"sku":"ghost","itemId":"ghost_item","price":5,"currency":"coins","key":"%s"}""".formatted(KEY_1), token);
+        expectError(ghost, 409, "not_available");
+        assertThat(body(get("/v1/inventory", token)).get("coins").asLong()).isEqualTo(100);
+        assertThat(shop.withoutItem()).extracting(com.backend.persistence.ShopRepository.Offer::sku).containsExactly("ghost");
+    }
+
+    @Test
+    @Timeout(120)
+    @DisplayName("what a player bought, newest first, fifty a page with the next page's key: the shop's items and the season pass's premium, nobody else's (plan item 145 (c))")
+    void whatWasBought() throws Exception {
+        String token = buyer("ada", 1_000);
+        long ada = auth.playerIdOf(token);
+        giveGems(ada, 2_000);
+        assertThat(body(buy(token, "hat", KEY_1)).get("result").asText()).isEqualTo("bought");
+        assertThat(post("/v1/pass/premium", null, token).statusCode()).isEqualTo(200);
+        for (int i = 0; i < 50; i++) {
+            assertThat(buy(token, "gem_boost", "boost-key-%011d".formatted(i)).statusCode()).isEqualTo(200);
+        }
+        String bob = buyer("bob", 1_000);
+        assertThat(body(buy(bob, "hat", KEY_2)).get("result").asText()).isEqualTo("bought");
+
+        HttpResponse<String> first = get("/v1/purchases", token);
+        assertThat(first.statusCode()).as(first.body()).isEqualTo(200);
+        JsonNode page = body(first).get("purchases");
+        assertThat(page).hasSize(50);
+        assertThat(List.of(page.get(0).get("kind").asText(), page.get(0).get("itemId").asText(),
+                page.get(0).get("price").asLong(), page.get(0).get("currency").asText()))
+                .containsExactly("item", "boost_xp", 20L, "gems");
+        assertThat(page.get(0).get("at").asText()).isNotEmpty();
+        long next = body(first).get("next").asLong();
+        assertThat(next).isEqualTo(page.get(49).get("id").asLong());
+
+        JsonNode rest = body(get("/v1/purchases?before=" + next, token));
+        assertThat(rest.get("purchases")).hasSize(2);
+        JsonNode pass = rest.get("purchases").get(0);
+        assertThat(List.of(pass.get("kind").asText(), pass.get("season").asInt(), pass.get("price").asLong(),
+                pass.get("currency").asText())).containsExactly("pass", 1, 500L, "gems");
+        assertThat(pass.has("itemId")).isFalse();
+        JsonNode hat = rest.get("purchases").get(1);
+        assertThat(List.of(hat.get("itemId").asText(), hat.get("price").asLong(), hat.get("currency").asText()))
+                .containsExactly("barrel_steel", 100L, "coins");
+        assertThat(rest.get("next").isNull()).isTrue();
+        assertThat(body(get("/v1/purchases", bob)).get("purchases")).hasSize(1);
+
+        expectError(get("/v1/purchases?before=x", token), 400, "invalid_query");
+        expectError(get("/v1/purchases?before=0", token), 400, "invalid_query");
+        expectError(get("/v1/purchases", null), 401, "no_token");
+        expectError(get("/v1/purchases", "not-a-token"), 401, "invalid_session");
+        HttpResponse<String> put = send(HttpRequest.newBuilder(URI.create(base + "/v1/purchases"))
+                .PUT(HttpRequest.BodyPublishers.ofString("{}")).build());
+        assertThat(List.of(put.statusCode(), put.headers().firstValue("Allow").orElse(""))).containsExactly(405, "GET, POST");
     }
 
     @Test

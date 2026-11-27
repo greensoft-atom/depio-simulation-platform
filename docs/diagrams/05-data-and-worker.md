@@ -12,7 +12,7 @@ migrations were squashed into, D-75), and from the code in `backend/persistence`
 
 ## The tables
 
-Thirty-six tables, in four drawings. Each table is drawn once, with its keys and the columns that
+Thirty-eight tables, in four drawings. Each table is drawn once, with its keys and the columns that
 say what it is; [06 §3](../detailed-design/06-persistence-mysql.md#3-schema) has every column.
 
 - A solid line is a foreign key.
@@ -78,7 +78,7 @@ erDiagram
         tinyint reason "0 to 11"
         varchar ref
         varchar idem_key UK "the retry's key"
-        datetime created_at
+        datetime created_at "indexed with player_id; purchases by player_id, reason, id"
     }
     inventory_item {
         bigint player_id PK "and FK to player"
@@ -124,6 +124,16 @@ erDiagram
         varchar goal_id PK
         int progress
     }
+    shop_offer {
+        int id PK "the order listed"
+        varchar sku UK "the admin API's (V4, D-119)"
+        varchar item_id "an item of items.json, no FK"
+        int price
+        tinyint currency "0 coins, 1 gems"
+        tinyint requires_level
+        datetime available_from
+        datetime available_to
+    }
     account ||--|| player : "plays as"
     erased_subject {
         varchar subject PK "an account deleted at the account service (V3, D-117)"
@@ -138,6 +148,7 @@ erDiagram
     player ||..o{ boost_activation : "used a key, no FK"
     player ||--o{ payment_order : "orders"
     player ||--o{ daily_goal : "progresses"
+    shop_offer ||..o{ ledger : "sold, by its item in ref, no FK"
 ```
 
 ### Match history and seasons

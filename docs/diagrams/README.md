@@ -25,7 +25,7 @@ in 07; the core's certificate check (D-108) and the three client trees (D-111 to
 | [02 — Arena and wire](02-arena-and-wire.md) | A room's lifecycle, the tick, a join and a resume, snapshot encoding, the collision broadphase, a made match, draining, and every message on the match connection |
 | [03 — Lobby and store](03-lobby-and-store.md) | The lobby connection and its auth, pushes across gateways, tickets, a room reserved for a made match, the store's failover, slow clients, and who writes and reads each family of keys |
 | [04 — Platform](04-platform.md) | Accounts and guests, the public arena's seat, the queue and its confirm step, parties, teams, tournaments and their scheduler, payments, the season pass, the shop, and the admin API |
-| [05 — Data and worker](05-data-and-worker.md) | All 37 tables with their keys, the result pipeline and one result's transaction, retention, a season's close, the ledger check, and the replica's heartbeat |
+| [05 — Data and worker](05-data-and-worker.md) | All 38 tables with their keys, the result pipeline and one result's transaction, retention, a season's close, the ledger check, and the replica's heartbeat |
 | [06 — Client](06-client.md) | The core's types, its two connections' lifecycles, join and resume, the own tank's prediction, the render clock, sign-in, the party rule, the Unity layer's wiring, and the three client trees and their ways in |
 | [07 — Deploy and operations](07-deploy-and-operations.md) | The launch's one machine, the three machines, nginx's routes, a release, a rolling deploy, the store's and MySQL's failovers, the backups and their timers, and a restore to a moment |
 

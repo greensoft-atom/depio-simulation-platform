@@ -2,8 +2,9 @@
 
 This page is the reference for the admin API: what an operator calls to look after the site. It is for operators,
 and for developers who drive a test stack. It covers reading the live arenas and rooms, the players' figures by day,
-the seasons, the alerts and the watch; and acting: a notice to everyone, a tournament made, a player kicked, banned
-or suspended, a payment refunded, a room closed, a season ended, and an alert silenced.
+the seasons, the alerts, the watch, the shop's offers and a player's purchases; and acting: a notice to everyone, a
+tournament made, a player kicked, banned or suspended, a payment refunded, a room closed, a season ended, an alert
+silenced, and the shop's offers made, changed and removed (D-119).
 
 The admin API is a second listener of `platform`. It listens on loopback only, and an operator reaches it over SSH.
 Every example below is a real request and its real answer, from the Postman collection's run of 2026-10-06 against a
@@ -36,8 +37,8 @@ Authorization: Bearer not-the-secret
 
 - **Bodies** are JSON, at most 4096 bytes. The server does not check the content type. A larger body is read as an
   empty one, so the call is refused with a 400 (usually `no_reason`).
-- **A change needs a reason.** Every `POST` carries `"reason"`, 1 to 200 characters, which is kept in the audit. A
-  `GET`, and the `DELETE` of a silence, need none.
+- **A change needs a reason.** Every `POST`, and a shop offer's `PUT` and `DELETE`, carries `"reason"`, 1 to 200
+  characters, which is kept in the audit. A `GET`, and the `DELETE` of a silence, need none.
 
 ```http
 POST /admin/players/3/kick
@@ -147,6 +148,29 @@ The 100 newest seasons, each with when it was placed, paid and reset (`null` unt
 
 ```json
 200 {"seasons":[{"id":1,"startsAt":"2026-10-05T22:29:40.672Z","endsAt":"2026-11-01T00:00:00Z","placedAt":null,"paidAt":null,"resetAt":null}]}
+```
+
+### `GET /admin/shop/offers`: what the shop sells
+
+Every offer, on sale or not, in the order they were added (D-119). `onSale` says whether the shop lists it now: in its
+dates, and selling an item of the release's `items.json`; `itemKnown` whether that table has its item. From a run by
+hand on 2026-11-27, the release's twelve, the first two shown:
+
+```json
+200 {"offers":[
+  {"sku":"treads_light","itemId":"treads_light","price":1200,"currency":"coins","requiresLevel":1,"availableFrom":null,"availableTo":null,"onSale":true,"itemKnown":true},
+  {"sku":"barrel_steel","itemId":"barrel_steel","price":1500,"currency":"coins","requiresLevel":1,"availableFrom":null,"availableTo":null,"onSale":true,"itemKnown":true},
+  ...]}
+```
+
+### `GET /admin/players/{id}/purchases`: what a player bought
+
+The player's purchases, newest first, 50 a page, as the player's own `GET /v1/purchases` gives them
+([01](01-http-api.md#get-v1purchases-what-the-player-bought)), for a player who asks where their gems went. `before`
+pages as there; one that is not an id is 400 `invalid_query`. Audited, its target the player's id. The same run's guest:
+
+```json
+200 {"purchases":[{"id":300,"kind":"item","itemId":"treads_light","price":1200,"currency":"coins","at":"2026-11-27T09:47:44.188Z"},{"id":299,"kind":"item","itemId":"boost_xp_hour","price":20,"currency":"gems","at":"2026-11-27T09:47:44.047Z"},{"id":298,"kind":"item","itemId":"skin_gold","price":400,"currency":"gems","at":"2026-11-27T09:47:43.753Z"}],"next":null}
 ```
 
 ### `GET /admin/alerts`: what the watches are raising
@@ -321,6 +345,48 @@ POST /admin/players/1/refund-debt
 
 Refund errors: 404 `no_such_order`, and 409 `not_paid` (the order is pending, declined or expired, or it was
 refunded already).
+
+### `PUT /admin/shop/offers/{sku}`, `DELETE /admin/shop/offers/{sku}`: the shop's offers
+
+**Body** for a `PUT`: the offer, `{"itemId", "price", "currency", "requiresLevel", "availableFrom", "availableTo"}`,
+and `"reason"`; for a `DELETE`, `{"reason"}`. **Answer**: 201 for an offer made, 200 for one replaced or removed.
+
+An offer is checked by every rule before it is written (D-119): `itemId` an item of the release's `items.json`,
+`price` 1 to 1 000 000 000, `currency` `coins` (the default) or `gems`, `requiresLevel` 1 to 100 (1 by default),
+`availableFrom` before `availableTo`, both optional instants, and no field but these and `reason`; a `sku` in the body
+must be the path's. A `PUT` replaces the offer whole: a field left out takes its default. Every platform lists and
+sells the change at once, and a player who bought from the old offer's listing is answered 409 `offer_changed`, not
+charged a price they did not see. The change and its audit row are written in one transaction. From a run by hand on
+2026-11-27: a December sale made, then made cheaper and from now, then removed.
+
+```http
+PUT /admin/shop/offers/skin_gold_december
+{"itemId": "skin_gold", "price": 300, "currency": "gems", "availableFrom": "2026-12-01T00:00:00Z", "availableTo": "2027-01-01T00:00:00Z", "reason": "december sale"}
+```
+```json
+201 {"offer":{"sku":"skin_gold_december","itemId":"skin_gold","price":300,"currency":"gems","requiresLevel":1,"availableFrom":"2026-12-01T00:00:00Z","availableTo":"2027-01-01T00:00:00Z","onSale":false,"itemKnown":true},"created":true}
+```
+```http
+PUT /admin/shop/offers/skin_gold_december
+{"itemId": "skin_gold", "price": 250, "currency": "gems", "availableTo": "2027-01-01T00:00:00Z", "reason": "cheaper, and from now"}
+```
+```json
+200 {"offer":{"sku":"skin_gold_december","itemId":"skin_gold","price":250,"currency":"gems","requiresLevel":1,"availableFrom":null,"availableTo":"2027-01-01T00:00:00Z","onSale":true,"itemKnown":true},"created":false}
+```
+```http
+DELETE /admin/shop/offers/skin_gold_december
+{"reason": "the sale is over"}
+```
+```json
+200 {"sku":"skin_gold_december","removed":true}
+```
+
+| Status | code | When |
+|---|---|---|
+| 400 | `invalid_offer` | the rule broken, for example `stock: limited stock is not built (04 §8); nothing would hold the limit`, or `itemId skin_silver is not an item of this release's items.json` |
+| 400 | `no_reason` | as every change |
+| 404 | `no_such_offer` | a `DELETE` of none: `no offer skin_gold_december` |
+| 405 | `method_not_allowed` | `PUT` and `DELETE` on `/admin/shop/offers/{sku}`, `GET` on `/admin/shop/offers` |
 
 ### `POST /admin/rooms/{arena}/{room}/close`
 

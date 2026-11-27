@@ -1955,7 +1955,8 @@ Every number here is a first cut of the balance the owner left to Claude (Q-48),
 - **Shop catalogue** in `shop.json`: `{ sku, itemId, price, stock, availableFrom/To, requiresLevel }`. Purchases are
   idempotent on the client's transaction id. Limited stock would use `DECR stock:{sku}` in j-redis before the
   transaction, and `INCR` back on failure: a hot counter belongs in the store, and its consequence in the database.
-  **Limited stock is not built** (below).
+  **Limited stock is not built** (below). Since plan item 145 the offers are rows of `shop_offer`, edited by the admin
+  API ([below](#one-of-each-the-catalogue-in-the-database-and-what-was-bought-designed-2026-11-27-plan-item-145)).
 - **Items** in `items.json`, referenced by key. The database stores what is owned; the content tables define what it
   does. The first sketch of the items:
 
@@ -1985,9 +1986,10 @@ The shop was built ahead of Phase 5, at the owner's request, when the rest of th
 effects) was not. Equipment, boosts, item levels, gem prices and skins have been built since (below); effects have
 not. This subsection decides what the bullets above left open.
 
-**The catalogue** is `shop.json` on `platform`'s classpath. So it ships in the release, and every instance sells the
-same things at the same prices. Changing it is a release. It is a list of offers. An example offer, with every
-optional field:
+**The catalogue** was `shop.json` on `platform`'s classpath until plan item 145. So it shipped in the release, and every
+instance sold the same things at the same prices; changing it was a release. Its offers are rows of `shop_offer` now,
+read fresh by every instance and edited by the admin API, under the same rules ([below](#one-of-each-the-catalogue-in-the-database-and-what-was-bought-designed-2026-11-27-plan-item-145)). An example offer, with
+every optional field:
 
 ```json
 { "sku": "barrel_steel", "itemId": "barrel_steel", "price": 1500,
@@ -1995,8 +1997,9 @@ optional field:
 ```
 
 (The release's own `barrel_steel` offer has no level and no dates: the catalogue is listed in the subsection on gems,
-below.) The catalogue is checked at start. A catalogue that breaks a rule stops `platform` from starting (exit 2),
-rather than selling something wrong:
+below.) The catalogue was checked at start, and one that broke a rule stopped `platform` from starting (exit 2),
+rather than selling something wrong; since plan item 145, an offer is checked when the admin API writes it, and one
+that breaks a rule is refused (400 `invalid_offer`):
 
 | Field | Rule |
 |---|---|
@@ -2019,7 +2022,8 @@ delegated (Q-48).
 | `GET /v1/content/classes` | the class table a client draws by, `{"version","classes"}`. Its version is its `ETag` and the arena's `Welcome.contentVersion`; 304 to an `If-None-Match` that names it. No session needed ([D-24](../architecture/03-decision-log.md#d-24--the-class-table-reaches-the-device-from-platform-versioned-by-its-content)) |
 | `GET /v1/content/phrases` | the phrase list, `{"version","phrases"}`, each with `id`, `key` and English `text`. Its version is its `ETag` and the arena's `Welcome.phraseListVersion`; 304 as above. No session needed. **Built 2026-09-29** ([01 §9](01-arena.md#phrases-designed-2026-09-29-plan-item-8)) |
 | `GET /v1/inventory` | coins, gems and the items held → 200, 401 |
-| `POST /v1/purchases` `{"sku","key"}` | 200 `bought` or `already_bought`, with the item, the coin balance (and, since plan item 68, the gems), and how many of the item the player now holds; 400 `invalid_body` or `invalid_key`, 401, 403 `level_required`, 404 `unknown_sku`, 409 `not_available` or `insufficient_funds`; since plan item 145, 409 `already_owned` for equipment or a skin held already (D-53, below) |
+| `GET /v1/purchases?before={id}` | since plan item 145: what the player bought, newest first, 50 a page ([below](#one-of-each-the-catalogue-in-the-database-and-what-was-bought-designed-2026-11-27-plan-item-145)) → 200, 400 `invalid_query`, 401 |
+| `POST /v1/purchases` `{"sku","key"}`, and since plan item 145 `"itemId","price","currency"` as listed | 200 `bought` or `already_bought`, with the item, the coin balance (and, since plan item 68, the gems), and how many of the item the player now holds; 400 `invalid_body` or `invalid_key`, 401, 403 `level_required`, 404 `unknown_sku`, 409 `not_available` or `insufficient_funds`; since plan item 145, 409 `already_owned` for equipment or a skin held already (D-53), and 409 `offer_changed` for an offer edited since it was listed (D-119, below) |
 
 **The key** is the client's transaction id. The client makes one per tap of Buy, and sends it again, unchanged, with
 every retry of that tap.
@@ -2043,7 +2047,7 @@ What the bullets above sketched, cut to what equipment needs. Boosts and effects
 **Built 2026-09-30**, all of it, and drilled from the release: a player earned coins in a stay, bought a barrel, wore
 it, and fired bullets 25 % faster in the next stay.
 
-**Items** are `items.json` on `platform`'s classpath, beside `shop.json`, and are checked at start in the same way: a
+**Items** are `items.json` on `platform`'s classpath, and are checked at start in the same way as `shop.json` was: a
 table that breaks a rule stops `platform` (exit 2).
 
 | Field | Rule |
@@ -2124,7 +2128,7 @@ What the shop sells, for how much, and where gems come from: a first cut of the 
 (Q-48). The scale it is set against: a match pays 10 coins, 50 for a win, plus one per ten points of score. That is
 about 100 for a five-minute stay, and some 1 200 for an hour of play. An item's levels cost 7 500.
 
-**(a) The catalogue**, the release's `shop.json`: each piece of equipment, for coins.
+**(a) The catalogue**, the release's `shop.json` (V4's seed since plan item 145): each piece of equipment, for coins.
 
 | Offer | Coins | Level | Why |
 |---|---|---|---|
@@ -2137,7 +2141,7 @@ about 100 for a five-minute stay, and some 1 200 for an hour of play. An item's 
 An item costs an hour or two of play, and each slot is worth an evening. With levels, a whole loadout is a goal of
 weeks.
 
-**(b) Gem prices.** An offer may be priced in gems: `"currency": "gems"` in `shop.json` (coins by default).
+**(b) Gem prices.** An offer may be priced in gems: `"currency": "gems"` (coins by default).
 
 - A purchase in gems takes them through the ledger's one path, as coins are taken (currency 1, reason 1), with the
   player locked first.
@@ -2484,14 +2488,22 @@ seeds it with the release's twelve offers, and `shop.json` leaves the release.
 ledger's purchase rows (reason 1). Each has its `id`, `itemId`, `price`, `currency` and `at`; `next` is the `id` to pass
 as `before` for the page after, null on the last. `GET /admin/players/{id}/purchases?before={id}` is the same for
 support, and is audited. V4 adds an index on `ledger (player_id, reason, id)`, so a page is read from the index however
-many match rewards the player has; its cost to the rate of results applied is measured (`ApplyBenchmark`).
+many match rewards the player has. Its cost to the rate of results applied was measured with `ApplyBenchmark`, twice
+without the index and twice with it: two runs of one build differed more than the two builds did, so the loaded
+development VM shows none (plan item 145).
 
 **(d) The clients.** The core's `Purchase` takes the offer as it was listed and sends what it showed. The drill makes
 its two offers through the admin API, where it patched `shop.json`, and its skin scenario buys its skin twice, the
 second answered `already_owned`. `client-simple` and `client-simple-no-tls` list the shop and buy nothing, so neither
 changes.
 
-**Built in this order**: (a), (b), (c), (d), a commit each.
+**(e) The schema in one file again** (the owner, 2026-11-27,
+[D-120](../architecture/03-decision-log.md#d-120--the-migrations-squashed-again-v3-and-v4-into-the-baseline)). V3's and
+V4's tables go into `V1__schema.sql` and V4's offers into `V2__seed.sql`, as D-75 squashed V1 to V34. Proved the same
+as before: both sets applied to two empty databases, every table's `SHOW CREATE TABLE` and the seed rows compared. A
+database migrated before, `backend_dev` here, is made again; nothing has launched.
+
+**Built in this order**: (a); (b) and (c) together, since V4 holds both; (d); then (e). A commit each.
 
 ## 9. Notifications
 

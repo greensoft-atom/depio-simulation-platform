@@ -451,22 +451,27 @@ flowchart TD
 ## Buying, wearing and boosting
 
 The classes: `ShopService.buy`, `EquipmentService.wear` and `bonusOf`, and `BoostService.activate`,
-with `persistence/EconomyRepository`, `EquipmentRepository` and `BoostRepository`. Each key is made
+with `persistence/EconomyRepository`, `ShopRepository`, `EquipmentRepository` and `BoostRepository`. The offers are
+rows of `shop_offer`, edited by the admin API and read at each purchase (D-119). Each key is made
 by the client, once for each tap, and sent again with every retry of that tap. So a retry gets the
 same answer as the first attempt.
 
 ```mermaid
 flowchart TD
     subgraph buy ["POST /v1/purchases"]
-        B1["sku and key"] --> B2{"key 16 to 48 of a-z, 0-9 and hyphen"}
+        B0["sku, key, and the offer's itemId, price and currency as listed"] -->|one missing| B00["400 invalid_body"]
+        B0 --> B2{"key 16 to 48 of a-z, 0-9 and hyphen"}
         B2 -->|no| B3["400 invalid_key"]
         B2 -->|yes| B4{"key used before"}
         B4 -->|yes| B5["200 already_bought, what it bought"]
-        B4 -->|no| B6{"offer known and on sale"}
+        B4 -->|no| B6{"offer read from shop_offer: known, in its dates, its item in the release"}
         B6 -->|no| B7["404 unknown_sku or 409 not_available"]
-        B6 -->|yes| B8{"account level high enough"}
+        B6 -->|yes| B6a{"item, price and currency as listed"}
+        B6a -->|no| B6b["409 offer_changed, list the shop again"]
+        B6a -->|yes| B8{"account level high enough"}
         B8 -->|no| B9["403 level_required"]
-        B8 -->|yes| B10{"one transaction, the player locked, coins or gems by the ledger"}
+        B8 -->|yes| B10{"one transaction, the player locked, the key again; equipment or a skin held once"}
+        B10 -->|held| B10a["409 already_owned"]
         B10 -->|short| B11["409 insufficient_funds"]
         B10 -->|done| B12["200 bought, the balance and how many held"]
     end
