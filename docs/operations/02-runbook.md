@@ -183,9 +183,11 @@ safe.
 and the account service's beside it (its database's own, which the account service follows: O-103), and prints the
 epoch with the executed GTID set. Keep that line for the incident's record.
 
-**If a run ends with an error after it has stopped replication**, before its last line, it may have left the epoch
-where it was. Compare `SELECT epoch FROM backend.ha_epoch` on both servers. When they are equal, raise it on the new
-primary: `UPDATE backend.ha_epoch SET epoch = epoch + 1 WHERE id = 1`.
+**If a run ends with an error after it has stopped replication**, before its last line, it may have left an epoch
+where it was: the backend's, or the account service's, which it raises after (O-103). Compare
+`SELECT epoch FROM backend.ha_epoch` and `SELECT epoch FROM account.ha_epoch` on both servers. Where one is equal on
+both, raise it on the new primary: `UPDATE backend.ha_epoch SET epoch = epoch + 1 WHERE id = 1`, or the same on
+`account.ha_epoch`.
 
 **Step 4 is automatic.** Every process was given both hosts, and opens each new connection to the writable server
 with the highest epoch. Its broken connections are replaced as they are next used. Requests in flight at that moment

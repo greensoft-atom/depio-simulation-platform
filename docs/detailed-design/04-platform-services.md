@@ -97,6 +97,10 @@ from the backend; it keeps guests, sessions, bans, display names, renaming and a
   - The routes above.
   - A guest's own username cannot be logged into. Login refuses a name the rules forbid before any lookup, and a
     guest's password hash is empty.
+
+  That was the build of 2026-09-30. Since D-117 the upgrade, the username and the password hash are gone from the
+  backend (V3): `AccountRepository.link` and `AuthService.link` make a guest an account's player, and the account
+  service holds the username and its hash.
 - **Login**: the password is verified against `account` (since D-117, the access token is checked and its subject's
   player found or made). Then a session is made in j-redis, in one transaction:
   `MULTI · HSET sess:{token} playerId … createdAt … · EXPIRE · SADD sess:of:{playerId} {token} · EXPIRE · EXEC`. The
@@ -124,7 +128,8 @@ code and its tests pin each one down.
   end.
 - Argon2 is memory-hard on purpose, so at most 8 hashes run at once. Otherwise a burst of logins would claim 19 MiB
   each and end in an `OutOfMemoryError` rather than a queue.
-- That gives about **90 password logins a second per `platform` process**, using 8 cores while it runs. It is enough,
+- That gives about **90 password logins a second per process**, using 8 cores while it runs: a `platform` process's
+  when it was measured, an account service's since D-117, the same code (10 §3.3). It is enough,
   because the common path is resuming a session, which is one `HGET`. It is not enough for 50 000 players logging in
   within one minute. Measure again on production hardware before assuming otherwise
   ([Q-3](../requirements/01-scope-and-nfrs.md)).

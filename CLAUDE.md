@@ -277,6 +277,7 @@ backend/scripts/check-promote.sh                    # both promotions' refusals 
 backend/scripts/check-bind.sh 3314 8080             # a port this user cannot bind, with the policy that refuses it (D-88); the dev scripts run it first
 backend/scripts/check-selinux-el9.sh                # its SELinux branch and the three grants, in a Rocky 9 guest under QEMU, SELinux enforcing (D-90; forty minutes without KVM, ten after)
 backend/scripts/check-release-guest-el9.sh          # the release on RHEL 9's kernel in that guest, SELinux enforcing: backend-mysql.service, then check-release-el9.sh's checks (D-110)
+                                                    # emulated, not wholly reliable: a failure read first against check-release-el9.sh, then rerun (T-72)
 (cd backend && scripts/check-ports-el9.sh)
 # A second machine as the first one's standby (D-96), with arenas of its own (D-97), operations/10 as written on two UBI 9
 # machines joined by a private link, a probe of the site throughout, matches by the C# client (Unity's Mono, D-116) on B's

@@ -65,11 +65,11 @@ are drawn in [docs/diagrams/01-system.md](docs/diagrams/01-system.md).
 
 ## Status
 
-As of 2026-11-27, [plan](docs/plan.md) items 1 to 143 are done: the account service (D-117), then the open defects. Item 7 stays
+As of 2026-11-27, [plan](docs/plan.md) items 1 to 144 are done: the account service (D-117), the open defects, and the documents read again. Item 7 stays
 open by design: what is left of it waits on Q-3's hardware.
 
-- **Tests.** j-redis 2.2.2 passes its 229 tests (2026-11-25). The backend's sources declare 1 155 tests and the
-  account service's 74 (2026-11-26, a parameterized test counted once); every one passed in the whole build of plan
+- **Tests.** j-redis 2.2.2 passes its 229 tests (2026-11-25). The backend's sources declare 1 156 tests and the
+  account service's 75 (2026-11-27, a parameterized test counted once, as `ReadmeTestListsTest` counts them); every one passed in the whole build of plan
   item 142 (d). Each module's README holds its own count. The client core's 211 tests pass for .NET Framework 4.5 on
   Unity 2019's Mono, with `float32` and without (`client/core-tests.sh`, plan item 143 (b), D-118). Nothing here runs .NET 8 since D-116.
 - **Live.** The live drill has 46 scenarios, the account service's `account` among them, all in clear since D-116: Unity's Mono, which runs the client here,
@@ -131,7 +131,7 @@ are neither used nor changed, and everything written goes in `work/`
 
 ```bash
 ./build-offline.sh            # j-redis, the backend with every test, the release; SKIP_TESTS=1 without tests
-./run-local.sh start          # the MySQL, j-redis, the backend from the release, nginx on 80, 443, 9001 (as root)
+./run-local.sh start          # the MySQL, j-redis, the account service, the backend from the release, nginx on 80, 443, 9001 (as root)
 ./dev-backend.sh test         # two bots through nginx; each script has a test; then ./run-local.sh stop
 # not root: export NGINX_HTTP_PORT=8088 NGINX_HTTPS_PORT=8443 NGINX_MATCH_PORT=9443 first (docs/development/03 §5.0)
 # or plain, nginx without TLS: export PLAIN=1 first, then http://<address>/v1/, ws://<address>/lobby, matches <address>:9001 (D-101)

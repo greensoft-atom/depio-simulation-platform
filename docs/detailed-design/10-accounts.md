@@ -214,7 +214,7 @@ its reason logged, never told:
 | Route | Before | Now |
 |---|---|---|
 | `POST /v1/sessions` | `{"username", "password"}` or `{"guestKey"}` | `{"accessToken"}` or `{"guestKey"}`; the answer gains `newPlayer` |
-| `POST /v1/accounts` | registers | gone: 404 |
+| `POST /v1/accounts` | registers | gone: 405, `Allow: DELETE` (a guest's deletion is the route's one method) |
 | `POST /v1/accounts/upgrade` | a guest's username and password | gone: 404 |
 | `POST /v1/accounts/link` | | `{"accessToken"}`, a guest's session: 200 `{"playerId"}`; 409 `not_a_guest`, `account_in_use` |
 | `DELETE /v1/accounts` | `{"password"}`, or none for a guest | a guest's alone; a linked player 409 `delete_at_account_service` |

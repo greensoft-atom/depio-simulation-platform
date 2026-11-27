@@ -15,7 +15,7 @@ The one exception is j-redis 2.2.2, the store: it is built from [`../j-redis-ser
 and installed into the local repository first. [`../build-offline.sh`](../build-offline.sh) builds all of it, the
 release included, from the repository alone ([09](../docs/detailed-design/09-release-and-packaging.md)).
 
-**Status (2026-11-27).** Plan items 1 to 143 are done, except item 7, which stays open by design: what is left of it
+**Status (2026-11-27).** Plan items 1 to 144 are done, except item 7, which stays open by design: what is left of it
 waits on Q-3's hardware ([plan](../docs/plan.md)). Phases 1 to 5 of the [plan](../docs/plan.md#3-phases) are built
 and drilled on the development machine:
 
@@ -37,7 +37,7 @@ and drilled on the development machine:
 What waits is measurement on the production machines (Q-1, Q-3): the load test to 10 000 (Phase 4), and Phase 6's
 soak at target load and its capacity with a machine lost. Nothing has run on the production hardware yet.
 
-**Tests.** The modules' sources declare 1 155 tests (counted on 2026-11-26; a parameterized test counts once, so
+**Tests.** The modules' sources declare 1 156 tests (counted on 2026-11-27, as `ReadmeTestListsTest` counts them; a parameterized test counts once, so
 Maven's report is higher). Each module's README lists its test classes with their counts, and the build checks those
 lists against the sources (`ReadmeTestListsTest`, DOC-29). The client (the engine-free C# core, its headless driver
 and the Unity scripts) is in [client/](../client/README.md), with its own tests.

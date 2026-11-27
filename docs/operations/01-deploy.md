@@ -334,7 +334,7 @@ Its numbers answer to numbers in the code, and the files say which:
 |---|---|
 | lobby `proxy_read_timeout 150s` | the gateway closes a silent socket at 120 s; the gateway should decide, not nginx |
 | platform upstream `keepalive 32`, `keepalive_timeout 20s` | the platform drops idle connections at 30 s and keeps at most 1 000. The other way round, it closed connections nginx was about to reuse, and nginx does not retry a POST: a 502. Measured on the JDK server, 63 of 16 806 requests failed at its default idle limit of 200 and none at 5 000 |
-| `limit_req` 2/s, burst 30 on the four that make or open a player's session (`/v1/sessions`, `/v1/accounts`, `/v1/guests`, `/v1/accounts/link`, each matched exactly, as platform matches them: S-18) | a cheap outer guard in front of Java; the precise per-address limit on guests is the platform's ([04 §1](../detailed-design/04-platform-services.md#1-auth-and-sessions)), the limits on passwords the account service's (D-117) |
+| `limit_req` 2/s, burst 30 on the four that open a player's session, make a guest, link one or delete one (`/v1/sessions`, `/v1/guests`, `/v1/accounts/link`, and `/v1/accounts`, a guest's deletion since D-117), each matched exactly, as platform matches them (S-18); and on `/account/v1/`, the account service's sign-ups and logins | a cheap outer guard in front of Java; the precise per-address limit on guests is the platform's ([04 §1](../detailed-design/04-platform-services.md#1-auth-and-sessions)), the limits on passwords the account service's (D-117) |
 | `= /v1/account-events` answered 404 | the account service's events reach a platform on the private network; the internet has no business posting them (D-117) |
 | `client_max_body_size 4k` | the platform reads at most 4 KiB |
 | `X-Forwarded-For $proxy_add_x_forwarded_for` | the platform believes the last entry, from a peer on this machine or one in `BACKEND_TRUSTED_PROXIES`, the front's nginx (D-82) |
@@ -385,16 +385,20 @@ The order follows from the availability tiers in
 [architecture/02 §2](../architecture/02-availability.md#2-degradation-is-graded-not-binary):
 
 1. `worker`: players do not notice; the result stream in j-redis holds its place.
-2. `platform`, one instance at a time: requests in flight fail, and the app retries them.
-3. `gateway`, one at a time: clients reconnect to another endpoint.
-4. `arena`, one at a time, **drained**: it stops accepting joins, lets matches with an end finish, then stops. This
+2. the account service (`backend-account`), one instance at a time, before the platforms: sign-ups and logins in
+   flight fail, and the app retries them, through nginx to another machine's; the platforms keep the key set they
+   last read, so the tokens it issued are taken while it restarts (D-117).
+3. `platform`, one instance at a time: requests in flight fail, and the app retries them.
+4. `gateway`, one at a time: clients reconnect to another endpoint.
+5. `arena`, one at a time, **drained**: it stops accepting joins, lets matches with an end finish, then stops. This
    is the slow step, and the reason `TimeoutStopSec` is generous: twelve minutes, for eleven of drain
    ([01 §8.6](../detailed-design/01-arena.md#86-draining-an-arena-designed-2026-09-29-plan-item-7)). Meanwhile the
    other arenas, on the same machine and on the others, take the new players and matches.
-5. The stateful roles (MySQL, j-redis) only in a maintenance window, since promotion is manual
+6. The stateful roles (MySQL, j-redis) only in a maintenance window, since promotion is manual
    ([D-8](../architecture/03-decision-log.md#d-8--failover-is-scripted-not-automatic)).
 
-**Flyway migrates the schema at every `worker` and `platform` start** (§9). So the first worker restarted applies a
+**Flyway migrates the schema at every `worker` and `platform` start** (§9), and the account service its own database's
+at its own start. So the first worker restarted applies a
 release's migrations while the platforms of the release before still run on them. That is why migrations are
 forward-only, expand then contract
 ([06 §8](../detailed-design/06-persistence-mysql.md#8-migrations)). A rollback is the link put back and the same
@@ -514,6 +518,7 @@ The env examples use these ports:
 |---|---|
 | 9101 | the platform |
 | 9103 | the gateway |
+| 9104 | the account service (`ACCOUNT_METRICS_ADDR`, D-117) |
 | 9102, 9112 | the first and the second worker (on C) |
 | 9110, 9111, 9113 | a machine's first, second and third arena |
 

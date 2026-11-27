@@ -203,7 +203,9 @@ to that process. Two settings are needed because there are two separate Java pro
 | `TMPDIR` | `work/tmp`, for MySQL and any other program that reads it | — |
 | `MYSQL_PORT` | 3314, the development MySQL's port | you set another first |
 | `JDBC_URL` | the development MySQL's `backend_test` on `MYSQL_PORT`, for the tests | you set another first. A `JDBC_URL` that an earlier sourcing set, for another port, is replaced, not kept (O-85) |
+| `ACCOUNT_JDBC_URL` | the development MySQL's `account_test` on `MYSQL_PORT`, for the account service's tests (D-117) | you set another first; replaced, as `JDBC_URL` is, when an earlier sourcing set it for another port |
 | `STORE_PORT`, `PLATFORM_PORT`, `GATEWAY_PORT`, `ARENA_PORT` | 6380, 8080, 8081, 9021: a run by hand's j-redis, platform, gateway and arena, on 127.0.0.1 (D-92) | you set others first |
+| `ACCOUNT_PORT` | 8083: a run by hand's account service, on 127.0.0.1 (D-117) | you set another first |
 | `ARENA_TLS_NAME` | `a1.arena.internal`, the arena's name behind nginx | you set another first |
 | `NGINX_HTTP_PORT`, `NGINX_HTTPS_PORT`, `NGINX_MATCH_PORT` | 80, 443, 9001: nginx's ports in front of a run by hand | you set others first |
 | `PLAIN` | 0: nginx and the arena with TLS. 1 runs them without TLS, for development alone (D-101) | you set 1 first |
@@ -299,7 +301,7 @@ the development MySQL is not running
 **Other scripts that start and stop it:**
 - `./dev-backend.sh build`, and so `./build-offline.sh`, starts it for the tests and stops it at the end. It does
   not when the MySQL was already running, when `SKIP_TESTS=1` is given, or when `JDBC_URL` names another server.
-- `./run-local.sh start` starts it first, then j-redis, the backend and nginx. `./run-local.sh stop` leaves it
+- `./run-local.sh start` starts it first, then j-redis, the account service, the backend and nginx. `./run-local.sh stop` leaves it
   running: stop it with `./dev-mysql.sh stop`.
 - It does not start with the machine. After a reboot, run `./dev-mysql.sh start`.
 
@@ -424,7 +426,8 @@ $ curl -s http://127.0.0.1:9120/admin/arenas -H "Authorization: Bearer $(cat wor
 ```
 
 `/health` is the platform's own, on 127.0.0.1:8080. Through nginx, ask `/v1/health` instead: nginx passes `/v1/`,
-`/lobby` and `/match/<name>` alone, and answers any other path with a 404 (D-107, D-115). Every route, with its
+`/account/v1/` (to the account service, D-117), `/lobby` and `/match/<name>` alone, and answers any other path with a
+404 (D-107, D-115). Every route, with its
 body and errors, is in [docs/api/01](../api/01-http-api.md) and [docs/api/03](../api/03-admin-api.md).
 
 **HTTP, with Postman.** Import `docs/api/backend.postman_collection.json` and set four of its variables:

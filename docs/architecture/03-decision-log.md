@@ -3968,7 +3968,8 @@ either runtime, and no longer rest on how Unity's editor and player set Mono up.
 was the other way, which the team would have had to confirm in the editor and in a player; this one needs neither.
 
 **Cost.** The step reads less plainly, each operation in a cast, which a comment there explains. The tests take about
-half a minute longer. IL2CPP's C++ on ARM is still not seen here: a C++ compiler that fused a multiply and an add
-into one would round once where Java rounds twice; IL2CPP writes each IL operation as its own statement, which a
-contraction within one expression does not reach, but that is read from how it works, not seen.
+fifteen seconds longer, run twice (28 s alone, 43 s both ways, on the development VM). IL2CPP's C++ on ARM is still
+not seen here: a C++ compiler that fused a multiply and an add into one would round once where Java rounds twice;
+IL2CPP writes each IL operation as its own statement, which a contraction within one expression does not reach, but
+that is read from how it works, not seen.
 

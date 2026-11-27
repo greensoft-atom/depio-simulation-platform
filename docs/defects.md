@@ -1525,7 +1525,7 @@ start` as a user after a start by root, the way D-98 leaves open: `work/nginx` h
 and the user's start ended at `mkdir: cannot create directory '…/work/nginx/conf.new': Permission denied` (or, when
 `work/nginx` itself was the user's, at `rm: cannot remove '…/conf/…'`), the cause plain but not its way out. The way
 out written here was wrong too: with `conf`, `logs` and `temp` removed the start still failed, since root's first start
-makes `work/nginx` itself root's. **Fixed:** `start` looks, before it writes or checks anything, for what in
+makes `work/nginx` itself root's. **Fixed:** `start` looks, before it writes anything or checks the ports, for what in
 `work/nginx` this user cannot write, and refuses, naming whose files they are and up to three of them, with both ways
 on: start it as before by `sudo`, or take `work/nginx` over by `sudo chown -R <user>: work/nginx`, which keeps the
 root CA, so the clients given its `ca.pem` go on trusting it. Test first as `devtest` in its namespace (working-here
@@ -1759,6 +1759,15 @@ series in 01 (`account_requests_total`, `account_hasher_line`, `account_events_p
 `account_events_delivered_total`, `account_event_failures_total`), its row in 04 and the platform's token check,
 measured (about 2 ms of a core, an upper figure on this VM); 1c / 2G a machine in the topology and its three cores
 in the budget, with the reason; its failure; its `ACCOUNT_TRUSTED_PROXIES`.
+
+**DOC-61, found 2026-11-27, FIXED the same day** (plan item 144, the pages items 142 and 143 changed read again,
+by Claude and by a second reader holding them to the code). Fifteen statements left behind by D-117 or written wrong
+in items 142 and 143: a deleted route's answer (405, not 404); nginx's routes without `/account/v1/` in four pages;
+the platform's 15 s read timeout still explained by Argon2, in its nginx file and two pages; no account service in
+the rolling order, the metrics ports or the runbook's epoch recovery; 04 §1's upgrade and 08's `guest` drill read as
+current; `run-local.sh`'s order, 03's `test` table and 06's `dev-env.sh` table without the account service; the test
+counts (196 for 211; 1 155 and 74 for 1 156 and 75, a grep that missed annotations written with their packages); O-92's
+"before it checks anything"; D-118's half a minute, 15 s measured. **Fixed:** each as the code is (plan item 144).
 
 ## 7. Documentation
 

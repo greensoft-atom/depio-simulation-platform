@@ -184,7 +184,7 @@ the development MySQL is not running
 **Who else starts and stops it.**
 - `./dev-backend.sh build`, and so `./build-offline.sh`, starts it for the tests and stops it at the end. It does
   not when the MySQL was already running, when `SKIP_TESTS=1` is given, or when `JDBC_URL` names another server.
-- `./run-local.sh start` starts it first, before j-redis, the backend and nginx. `./run-local.sh stop` leaves it
+- `./run-local.sh start` starts it first, before j-redis, the account service, the backend and nginx. `./run-local.sh stop` leaves it
   running: stop it with `./dev-mysql.sh stop`.
 - It does not start with the machine. After a reboot, run `./dev-mysql.sh start`.
 
@@ -298,7 +298,8 @@ each check (`--` for a check it cannot make), and exits with 1 on a failure:
 | `dev-mysql.sh` | the `backend` user logs in over TCP to both databases; `backend_dev`'s schema version |
 | `dev-jredis.sh` | `PING`, then a key of its own set, read and deleted |
 | `dev-backend.sh` | the four processes running; nginx running, the same way as the command (TLS or plain); the account service answering; and two bots through nginx: signed in at the account service (its `/account`), a session, the lobby, a ticket, five seconds played, and left |
-| `dev-nginx.sh` | `nginx -t`; the root certificate is RSA; 80 in clear with the platform behind it; 443's certificate for the address, with the platform behind it; 9001's certificate for the arena's name; and 80's `/match/<the arena's name>`, which the arena answers with 101 (D-115). Plain: `nginx -t` and 80 alone |
+| `dev-account.sh` | the account service answering: its health, its key set, and an unknown name's login refused (D-117) |
+| `dev-nginx.sh` | `nginx -t`; the root certificate is RSA; 80 in clear with the platform behind it, and the account service behind its `/account/v1/`, its key set refused (404); 443's certificate for the address, with the platform behind it; 9001's certificate for the arena's name; and 80's `/match/<the arena's name>`, which the arena answers with 101 (D-115). Plain: `nginx -t`, and 80 with the platform and the account service behind it |
 
 **Each script refuses to start without what it needs, and names the script that gives it**: the backend's `start`
 with no MySQL or no j-redis; its `test` and `bots` with no nginx; j-redis's `start` with no build. No script starts
@@ -409,7 +410,7 @@ still needs root, as above.
 
 ```bash
 export PLAIN=1 PUBLIC_ADDRESS=192.168.1.20      # the address clients dial
-./run-local.sh start                            # MySQL, j-redis, the backend, then nginx plain on 80 and 9001 (as root)
+./run-local.sh start                            # MySQL, j-redis, the account service, the backend, then nginx plain on 80 and 9001 (as root)
 sudo PLAIN=1 PUBLIC_ADDRESS=192.168.1.20 ./dev-nginx.sh start    # or nginx by sudo, the rest yours: sudo drops PLAIN
 ./dev-backend.sh test                           # two bots through nginx: http://, ws://, a plain match
 ```

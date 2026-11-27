@@ -553,7 +553,8 @@ The tests use NUnit, which Unity's test runner also runs, so the core's tests ca
      presence shows online and offline; a block ends a friendship and silently drops the next request; the inbox is
      read.
    - **Guests** (2026-09-30): a guest is made, comes in again by its key, is paid for a stay, is upgraded, and comes in
-     by name as the same player with the same coins; its key is then refused.
+     by name as the same player with the same coins; its key is then refused. Since D-117 the scenario signs up at the
+     account service and links the guest through `AccountKeeper`, the same player with what it earned.
    - **The operator's figures** (2026-09-30, `stats`): a new guest's stay counts as one more player active today and
      one more new player, with day 1 empty until tomorrow has ended; and two new guests who made friends that day are
      counted under `friend`, by feature.

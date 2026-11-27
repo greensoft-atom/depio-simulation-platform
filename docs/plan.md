@@ -2,7 +2,7 @@
 
 What is built, what is next, and in what order. Updated 2026-11-25.
 
-**Where it stands (2026-11-27).** Plan items 1 to 143 are done, but for item 7, which stays open by design: what is
+**Where it stands (2026-11-27).** Plan items 1 to 144 are done, but for item 7, which stays open by design: what is
 left of it waits on Q-3's hardware.
 
 - **The site.** It launches on one machine, every role on it, for up to about 5 000 players (D-93); three machines stay
@@ -10,7 +10,7 @@ left of it waits on Q-3's hardware.
   D-97). It has one public address with three ports (D-82, D-115): nginx ends TLS on 443 (the API and the lobby) and
   on 9001 (matches), and serves all three in clear on 80, a match there by `/match/<the arena's name>`.
 - **The components**, each built and tested: `j-redis-service` 2.2.2 (229 tests); the backend's eleven modules (their
-  sources declare 1 155 tests); the account service, `account-service/`, beside them (74; D-117); the client's
+  sources declare 1 156 tests); the account service, `account-service/`, beside them (75; D-117); the client's
   engine-free core with its headless driver (211 tests, on .NET Framework 4.5, run on
   Unity 2019's Mono with `float32` and without; D-116, D-118). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
   `UnityEngine`; there is no Unity editor here, so it has not been opened in one (Q-54). Beside the full client,
@@ -4895,7 +4895,7 @@ left saying "register and log in". In parts, each committed, in this order:
 - **(d) T-72**: the guest's check run again, its HTTPS refusal now saying what it was; if it does not come back, it
   stays open as it is, what is known written down.
 
-**(a) done 2026-11-27: O-92.** `dev-nginx.sh start` looks, before it writes or checks anything, for what in
+**(a) done 2026-11-27: O-92.** `dev-nginx.sh start` looks, before it writes anything or checks the ports, for what in
 `work/nginx` this user cannot write, and refuses, naming whose files they are and up to three, with both ways on:
 `sudo` as before, or `sudo chown -R <user>: work/nginx`, the root CA kept. Test first as `devtest` in its namespace on
 moved ports, its clone brought to `main` (its own leftover copies of item 110's scripts, each an older version of one
@@ -4944,6 +4944,37 @@ single-threaded TCG: hours a run, against a fault in about half of them. Not pro
 scripts' README says how to read the emulated guest, a pass as it is, a failure first against the containers' check
 on the real CPU and then the guest again; `check-release-el9.sh` prints a failed sign-up's answer and the account
 service's fatal error, as its HTTPS refusal now does. Item 143 is done: the register has no open defect.
+
+#### 144. ~~The documents read again after items 142 and 143 (the owner, 2026-11-27).~~ — **done 2026-11-27**
+
+The owner: on by Claude's judgement, without many or large new works: clean, clear, fix and complete what is open,
+and the related documents checked once more. Nothing is open in the register, and every open question is the
+owner's or held. So this item is a read of every page items 142 and 143 changed, against the code and against each
+other (ports, routes, units, metrics, commands, counts, the reading of the emulated guest), and the fixes it finds;
+no new behaviour.
+
+**Done 2026-11-27.** Read twice: by Claude, and by a second reader given the code's facts to hold the pages to, each
+of its findings checked against the code before it was fixed. **DOC-61**: fifteen statements the account service
+had left behind:
+- **Answers and routes**: 10's table had `POST /v1/accounts` gone with a 404, where the platform answers 405,
+  `Allow: DELETE`. Four pages had nginx passing nothing but `/v1/`, `/lobby` and `/match/`, without
+  `/account/v1/`: 06, 11's route table, the glossary's front, and 01's limited routes, where `/v1/accounts` was
+  still one "that opens a session".
+- **The platform's reason for its 15 s read timeout**, in its nginx file, deploy's README and 11: still a login's
+  wait for Argon2. It is the app's 10 s now; the platform answers in seconds.
+- **Operations**: 01 §5's rolling order had no step for the account service, nor its own migration, and 01's
+  metrics ports had no 9104. The runbook's recovery after a failed promotion compared the backend's epoch alone.
+- **Descriptions**: 04 §1's build record of the guest upgrade, and its 90 logins a second per platform, read as
+  current. 08's `guest` drill was still "upgraded". `run-local.sh`'s order lacked the account service in four
+  places, 03's table of what each `test` checks lacked `dev-account.sh` and nginx's `/account/v1/`, and 06's table
+  of `dev-env.sh` lacked `ACCOUNT_PORT` and `ACCOUNT_JDBC_URL`.
+- **Counts**: the client's 196, and the sources' 1 155 and 74, counted by a grep that missed two tests written with
+  their packages; 1 156 and 75, as `ReadmeTestListsTest` counts.
+- **Two of item 143's own**: O-92's "before it writes or checks anything", where it checks the address, the release
+  and nginx first; and D-118's "half a minute longer", 15 s measured.
+
+The emulated guest's reading is in working-here's machine table and in `CLAUDE.md`'s command beside it.
+`DocsLinksTest` and `ReadmeTestListsTest` pass.
 
 ---
 

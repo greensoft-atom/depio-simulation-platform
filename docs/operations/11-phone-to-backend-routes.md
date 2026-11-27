@@ -59,9 +59,11 @@ How to read the diagram:
 | Route | The app dials | It checks the certificate for | nginx | Then |
 |---|---|---|---|---|
 | ① the API | `https://203.0.113.10/v1/…` | the address | `backend.conf`: `/v1/` to the platform, anything else 404 | the platform |
+| ① the account service | `https://203.0.113.10/account/v1/…` | the address | `location /account/v1/`: to the account service's `/v1/` (D-117) | the account service, any machine's |
 | ② the lobby | `wss://203.0.113.10/lobby` | the address | `location = /lobby`: the WebSocket's upgrade passed on | the gateway with the fewest connections, which sends the lobby's requests to the platform |
 | ③ a match | TCP to `203.0.113.10:9001`, TLS giving the grant's `tlsName` | `tlsName`, `a1.arena.internal` | `backend-stream.conf`: the arena that name maps to, after the PROXY line; no name or an unknown one, closed | the arena, with a ticket that works once |
 | ① in clear | `http://203.0.113.10/v1/…` | nothing: no TLS | the same server, on 80 | the platform |
+| ① in clear | `http://203.0.113.10/account/v1/…` | nothing | the same `/account/v1/` | the account service |
 | ② in clear | `ws://203.0.113.10/lobby` | nothing | the same `/lobby` | the gateway |
 | ③ in clear | TCP to `203.0.113.10:80`, `GET /match/<the grant's tlsName>`, then the match once 101 is read | nothing | `location ~ ^/match/`: the arena that name maps to, by the same list as 9001's, the request passed on; an unknown name, 404 | the arena, which reads the request, answers 101, and takes the ticket as on 9001 |
 
@@ -231,7 +233,7 @@ Included in every `/v1` location:
 | `proxy_pass` | `http://backend_platform` | The upstream of §4.4 |
 | `proxy_http_version`, `proxy_set_header Connection` | `1.1`, `""` | Keeps the connection to the platform open for the next request |
 | `proxy_set_header X-Forwarded-For`, `Host` | as the server's | Set again for the reason in §4.2 |
-| `proxy_read_timeout` | `15s` | A login waits for Argon2 and may queue behind 160 others; the app allows 10 s |
+| `proxy_read_timeout` | `15s` | Above the 10 s the app allows, so a slow answer is the app's to give up on, not cut by nginx. The platform answers in seconds (its pool waits 3 s at most); a login's wait for Argon2, behind up to 160 others, is the account service's since D-117, under its own location's 15 s |
 
 ### 4.4 `backend-upstreams.conf`, the platforms, the account services and the gateways
 
