@@ -1260,6 +1260,58 @@ class PersistenceTest {
     }
 
     @Test
+    @DisplayName("an item held once is not bought again, its own retry still applied; one held no more, and a boost, are bought again (D-53)")
+    void oneOfEach() throws Exception {
+        long ada = createPlayer("one-ada", 1_000);
+        int coins = EconomyRepository.CURRENCY_COINS;
+        assertThat(economy.purchase(ada, "skin_jade", 100, "one-1", coins, true)).isEqualTo(Outcome.APPLIED);
+        assertThat(economy.purchase(ada, "skin_jade", 100, "one-1", coins, true)).as("the key before the rule")
+                .isEqualTo(Outcome.ALREADY_APPLIED);
+        assertThat(economy.purchase(ada, "skin_jade", 100, "one-2", coins, true)).isEqualTo(Outcome.ALREADY_OWNED);
+        assertThat(economy.purchase(ada, "boost_xp", 100, "one-3", coins, false)).isEqualTo(Outcome.APPLIED);
+        assertThat(economy.purchase(ada, "boost_xp", 100, "one-4", coins, false)).isEqualTo(Outcome.APPLIED);
+        assertThat(economy.coins(ada)).as("charged three times, not four").isEqualTo(700);
+        assertThat(economy.inventory(ada)).containsExactly(
+                new EconomyRepository.Holding("boost_xp", 2, 1), new EconomyRepository.Holding("skin_jade", 1, 1));
+        assertThat(scalar("SELECT COUNT(*) FROM ledger WHERE player_id = ?", ada)).isEqualTo(3);
+
+        try (Connection c = db.dataSource().getConnection();
+             PreparedStatement ps = c.prepareStatement("UPDATE inventory_item SET qty = 0 WHERE player_id = ? AND item_id = 'skin_jade'")) {
+            ps.setLong(1, ada);
+            ps.executeUpdate();
+        }
+        assertThat(economy.purchase(ada, "skin_jade", 100, "one-5", coins, true)).as("its row left, none held")
+                .isEqualTo(Outcome.APPLIED);
+    }
+
+    @Test
+    @DisplayName("eight taps of Buy at once, each with a key of its own, buy an item held once one time (D-53)")
+    void oneOfEachAtOnce() throws Exception {
+        long ada = createPlayer("one-at-once", 1_000);
+        int threads = 8;
+        CountDownLatch go = new CountDownLatch(1);
+        java.util.List<java.util.concurrent.Future<Outcome>> all = new java.util.ArrayList<>();
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(threads)) {
+            for (int i = 0; i < threads; i++) {
+                String key = "tap-" + i;
+                all.add(pool.submit(() -> {
+                    go.await();
+                    return economy.purchase(ada, "skin_gold", 100, key, EconomyRepository.CURRENCY_COINS, true);
+                }));
+            }
+            go.countDown();
+            java.util.List<Outcome> outcomes = new java.util.ArrayList<>();
+            for (var f : all) {
+                outcomes.add(f.get(60, TimeUnit.SECONDS));
+            }
+            assertThat(outcomes).filteredOn(o -> o == Outcome.APPLIED).hasSize(1);
+            assertThat(outcomes).filteredOn(o -> o == Outcome.ALREADY_OWNED).hasSize(threads - 1);
+        }
+        assertThat(economy.coins(ada)).isEqualTo(900);
+        assertThat(scalar("SELECT qty FROM inventory_item WHERE player_id = ? AND item_id = 'skin_gold'", ada)).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("a purchase key says what it bought; the wallet and the inventory say what is held")
     void purchasesCanBeReadBack() throws Exception {
         long ada = createPlayer("ada", 500);

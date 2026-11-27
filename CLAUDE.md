@@ -209,6 +209,9 @@ for the backend, its docs and its client.
   owner's RHEL 9 way, nginx by `sudo` beside the user's rest, in a Rocky 9 container with a home of 0700 (O-91, D-98). SELinux is
   seen in a Rocky 9 guest alone (`check-selinux-el9.sh`, D-90): a confined login refuses every port above 1023 while
   `selinuxuser_tcp_server` is off, and the grant is the login's, the boolean, a module or the mapping, never the binary's.
+- **The editor's Java extension builds a saved source into `target/` at once** (working-here §4): a suite that is
+  running sees an edit made under it. Edit nothing in a module while its suite runs, or run it on a copy outside the
+  workspace.
 - **A race the owner's machine shows and this VM's cores hide is not waited for**: a test that fails in the
   owner's build and never here is read for its window in the code, and a test written that puts the request
   in that window by construction (T-63; working-here §4). Pinning to one CPU reproduced nothing.

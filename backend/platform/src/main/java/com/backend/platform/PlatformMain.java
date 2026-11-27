@@ -102,7 +102,7 @@ public final class PlatformMain {
         Catalogue catalogue = Catalogue.fromClasspath();
         catalogue.checkItems(items);                   // an offer for no item stops the start (04 §8)
         ShopService shop = new ShopService(auth, accounts, new EconomyRepository(db.dataSource()),
-                catalogue, java.time.Clock.systemUTC());
+                catalogue, items, java.time.Clock.systemUTC());
         log.info("shop: {} offers on sale now", shop.onSale().size());
         // Gems for money (D-68): the packs read before binding, as the catalogue; the provider named, or none.
         com.backend.persistence.PaymentRepository orders = new com.backend.persistence.PaymentRepository(db.dataSource());

@@ -3973,3 +3973,25 @@ not seen here: a C++ compiler that fused a multiply and an add into one would ro
 IL2CPP writes each IL operation as its own statement, which a contraction within one expression does not reach, but
 that is read from how it works, not seen.
 
+
+### D-119 — The shop's offers in the database, edited by the admin API, and a purchase names what it agreed to
+
+**Decided 2026-11-27** (plan item 145 (b), the owner). **Supersedes** the catalogue in `shop.json` on the platform's
+classpath ([04 §8, "The shop, as built"](../detailed-design/04-platform-services.md#the-shop-as-built-2026-09-26)),
+where changing an offer was a release.
+
+**Decision.** The offers are rows of `shop_offer` in the backend's MySQL, seeded by V4 with the release's twelve. The
+admin API lists, writes and removes them (`/admin/shop/offers`), each call with a reason and audited in the change's own
+transaction. Every platform reads them at each listing and each purchase, with no cache. A purchase carries the
+offer's `itemId`, `price` and `currency` as the client showed them, and one that no longer matches the offer is 409
+`offer_changed`. An offer whose item is not in the release's `items.json` is not on sale, and the start logs it.
+
+**Why.** The owner wants offers and prices changed without a release. Read fresh, an edit reaches every platform once it
+commits: a cache would need its own expiry, and a dozen rows read by key cost less than the session a purchase checks.
+Once prices can move while a player looks at them, the server must know what the player agreed to, or it charges a
+price nobody showed; the content itself is compared, not a version number, so nothing extra is kept and nothing can
+repeat. A bad offer does not stop the start, since the admin API that would fix it runs in the same process.
+
+**Cost.** Each `GET /v1/shop` reads the database where it read memory. A platform on the old release still sells from
+its `shop.json` during an upgrade, so edits wait until every platform runs the new one. The purchase's body grows by
+three required fields, and the core's `Purchase` takes the offer listed rather than its sku.

@@ -248,6 +248,12 @@ Each trap below happened at least once. Each says what went wrong and what to do
   Use the bracket trick: `pkill -f "[A]renaMain"`. And match a class's **full name**: `WorkerMain` alone also
   matches VS Code's own worker processes (`...WorkerMain --node-ipc`), which a stop of the stack once killed
   (2026-10-06). Write `pkill -f "[c]om.backend.worker.WorkerMain"`.
+- **The editor builds what is saved into Maven's `target/`.** VS Code's Java extension (`redhat.java`) compiles a
+  saved source into its module's `target/classes` within a second, and copies or removes its resources there too. A
+  `mvn test` that had compiled before the edit then loaded the new class: `NoSuchMethodError` on a constructor
+  changed mid-run, and `shop.json` gone from the classpath, none of them the code's (plan item 145, 2026-11-27). Edit
+  nothing in a module while its suite runs, or run the suite on a copy outside the workspace (`git archive HEAD
+  backend docs`, the staged diff applied), with `dev-env.sh` sourced from the checkout.
 - **A mutation check leaves the mutant compiled.** The source put back is older than the mutant's class in
   `target/`, so Maven's incremental build keeps the mutant's class. Build `clean` after a mutation run, before any
   test, release or drill (2026-10-06).

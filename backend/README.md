@@ -37,7 +37,7 @@ and drilled on the development machine:
 What waits is measurement on the production machines (Q-1, Q-3): the load test to 10 000 (Phase 4), and Phase 6's
 soak at target load and its capacity with a machine lost. Nothing has run on the production hardware yet.
 
-**Tests.** The modules' sources declare 1 156 tests (counted on 2026-11-27, as `ReadmeTestListsTest` counts them; a parameterized test counts once, so
+**Tests.** The modules' sources declare 1 159 tests (counted on 2026-11-27, as `ReadmeTestListsTest` counts them; a parameterized test counts once, so
 Maven's report is higher). Each module's README lists its test classes with their counts, and the build checks those
 lists against the sources (`ReadmeTestListsTest`, DOC-29). The client (the engine-free C# core, its headless driver
 and the Unity scripts) is in [client/](../client/README.md), with its own tests.

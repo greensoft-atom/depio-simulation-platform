@@ -99,11 +99,11 @@ class PlatformHttpServerTest {
     private static final SettableClock clock = new SettableClock();
 
     private static final String CATALOGUE = """
-            [ {"sku":"hat","itemId":"cosmetic_hat","price":100},
-              {"sku":"crown","itemId":"cosmetic_crown","price":300,"requiresLevel":5},
-              {"sku":"festival_hat","itemId":"cosmetic_hat","price":60,
+            [ {"sku":"hat","itemId":"barrel_steel","price":100},
+              {"sku":"crown","itemId":"core_hot","price":300,"requiresLevel":5},
+              {"sku":"festival_hat","itemId":"barrel_steel","price":60,
                "availableFrom":"2026-10-01T00:00:00Z","availableTo":"2026-11-01T00:00:00Z"},
-              {"sku":"cape","itemId":"cosmetic_cape","price":10,"availableFrom":"2027-01-01T00:00:00Z"},
+              {"sku":"cape","itemId":"barrel_big","price":10,"availableFrom":"2027-01-01T00:00:00Z"},
               {"sku":"gem_boost","itemId":"boost_xp","price":20,"currency":"gems"} ]
             """;
 
@@ -150,7 +150,8 @@ class PlatformHttpServerTest {
         leaderboards = new LeaderboardStore(jredis);
         economy = new EconomyRepository(db.dataSource());
         shop = new ShopService(auth, accounts, economy, Catalogue.read(
-                new java.io.ByteArrayInputStream(CATALOGUE.getBytes(StandardCharsets.UTF_8))), clock);
+                new java.io.ByteArrayInputStream(CATALOGUE.getBytes(StandardCharsets.UTF_8))), Items.read(
+                new java.io.ByteArrayInputStream(ITEMS.getBytes(StandardCharsets.UTF_8))), clock);
         boosts = new BoostService(auth, new BoostRepository(db.dataSource()), Items.read(
                 new java.io.ByteArrayInputStream(ITEMS.getBytes(StandardCharsets.UTF_8))), clock);
         teams = new TeamService(auth, new TeamRepository(db.dataSource(), 30), new com.backend.handoff.LobbyPush(jredis), clock,
@@ -1837,7 +1838,7 @@ class PlatformHttpServerTest {
 
         JsonNode first = body(buy(token, "hat", KEY_1));
         assertThat(first.get("result").asText()).isEqualTo("bought");
-        assertThat(first.get("itemId").asText()).isEqualTo("cosmetic_hat");
+        assertThat(first.get("itemId").asText()).isEqualTo("barrel_steel");
         assertThat(first.get("coins").asLong()).isEqualTo(400);
         assertThat(first.get("held").asInt()).isEqualTo(1);
 
@@ -1846,13 +1847,37 @@ class PlatformHttpServerTest {
         assertThat(body(again).get("result").asText()).isEqualTo("already_bought");
         assertThat(body(again).get("coins").asLong()).as("charged once").isEqualTo(400);
 
-        assertThat(body(buy(token, "hat", KEY_2)).get("held").asInt()).as("a new tap, a new key").isEqualTo(2);
         JsonNode inventory = body(get("/v1/inventory", token));
-        assertThat(inventory.get("coins").asLong()).isEqualTo(300);
+        assertThat(inventory.get("coins").asLong()).isEqualTo(400);
         assertThat(inventory.get("gems").asLong()).isZero();
         assertThat(inventory.get("items")).hasSize(1);
-        assertThat(inventory.get("items").get(0).get("itemId").asText()).isEqualTo("cosmetic_hat");
-        assertThat(inventory.get("items").get(0).get("qty").asInt()).isEqualTo(2);
+        assertThat(inventory.get("items").get(0).get("itemId").asText()).isEqualTo("barrel_steel");
+        assertThat(inventory.get("items").get(0).get("qty").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("equipment held is not bought again, by another offer of it either; a boost is, as often as asked (D-53)")
+    void oneOfEach() throws Exception {
+        com.backend.common.Metrics metrics = new com.backend.common.Metrics();
+        server.registerMetrics(metrics);
+        String token = buyer("ada", 500);
+        try (var c = db.dataSource().getConnection();
+             var ps = c.prepareStatement("UPDATE player SET gems = 40 WHERE id = ?")) {
+            ps.setLong(1, auth.playerIdOf(token));
+            ps.executeUpdate();
+        }
+        assertThat(body(buy(token, "hat", KEY_1)).get("result").asText()).isEqualTo("bought");
+        expectError(buy(token, "hat", KEY_2), 409, "already_owned");
+        // The festival's offer, on sale on the tests' day, sells the same barrel.
+        expectError(buy(token, "festival_hat", "3f2c9a1e-7b4d-4c61-9e0a-000000000003"), 409, "already_owned");
+        assertThat(body(buy(token, "hat", KEY_1)).get("result").asText()).as("its own retry").isEqualTo("already_bought");
+
+        assertThat(body(buy(token, "gem_boost", "3f2c9a1e-7b4d-4c61-9e0a-000000000004")).get("held").asInt()).isEqualTo(1);
+        assertThat(body(buy(token, "gem_boost", "3f2c9a1e-7b4d-4c61-9e0a-000000000005")).get("held").asInt()).isEqualTo(2);
+        JsonNode inventory = body(get("/v1/inventory", token));
+        assertThat(List.of(inventory.get("coins").asLong(), inventory.get("gems").asLong())).containsExactly(400L, 0L);
+        assertThat(metrics.render()).contains("backend_platform_purchases_total{outcome=\"already_owned\"} 2");
     }
 
     @Test
@@ -1868,7 +1893,7 @@ class PlatformHttpServerTest {
         assertThat(retry.statusCode()).isEqualTo(200);
         assertThat(body(retry).get("result").asText()).isEqualTo("already_bought");
         // And the key, not the retry's sku, says what was bought.
-        assertThat(body(buy(token, "crown", KEY_1)).get("itemId").asText()).isEqualTo("cosmetic_hat");
+        assertThat(body(buy(token, "crown", KEY_1)).get("itemId").asText()).isEqualTo("barrel_steel");
 
         HttpResponse<String> late = buy(token, "festival_hat", KEY_2);
         assertThat(late.statusCode()).isEqualTo(409);

@@ -126,7 +126,9 @@ public final class EconomyRepository {
         APPLIED,
         /** The idempotency key was already used: the first attempt succeeded. */
         ALREADY_APPLIED,
-        INSUFFICIENT_FUNDS
+        INSUFFICIENT_FUNDS,
+        /** A purchase of an item held once that the player holds already (D-53): nothing moved. */
+        ALREADY_OWNED
     }
 
     private final Tx tx;
@@ -150,6 +152,17 @@ public final class EconomyRepository {
     /** Buys one item for {@code price} in {@code currency}, coins or gems, by the same one path (04 §8). */
     public Outcome purchase(long playerId, String itemId, long price, String idemKey, int currency)
             throws SQLException {
+        return purchase(playerId, itemId, price, idemKey, currency, false);
+    }
+
+    /**
+     * As above, and with {@code oneEach} for an item held once, equipment or a skin (04 §8, D-53): one the player holds
+     * already is {@link Outcome#ALREADY_OWNED}, and nothing moves. The player's row is locked and the key looked up
+     * first, so a retry of the purchase that bought it is still ALREADY_APPLIED, and two keys at once are judged one
+     * after the other: the held count is read after the lock, the first plain read, so it sees the other's commit.
+     */
+    public Outcome purchase(long playerId, String itemId, long price, String idemKey, int currency, boolean oneEach)
+            throws SQLException {
         if (price < 0) {
             throw new IllegalArgumentException("negative price: " + price);
         }
@@ -159,6 +172,15 @@ public final class EconomyRepository {
         }
         String key = purchaseKey(playerId, idemKey);
         return tx.execute(c -> {
+            if (oneEach) {
+                lockAndRead(c, playerId, currency);
+                if (keyUsed(c, key)) {
+                    return Outcome.ALREADY_APPLIED;
+                }
+                if (held(c, playerId, itemId)) {
+                    return Outcome.ALREADY_OWNED;
+                }
+            }
             Outcome moved = move(c, playerId, currency, -price, REASON_PURCHASE, itemId, key);
             if (moved == Outcome.APPLIED) {
                 grantItem(c, playerId, itemId, 1);
@@ -460,6 +482,17 @@ public final class EconomyRepository {
             ps.setString(5, ref);
             ps.setString(6, idemKey);
             ps.executeUpdate();
+        }
+    }
+
+    private static boolean held(Connection c, long playerId, String itemId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT 1 FROM inventory_item WHERE player_id = ? AND item_id = ? AND qty > 0")) {
+            ps.setLong(1, playerId);
+            ps.setString(2, itemId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         }
     }
 

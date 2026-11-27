@@ -10,7 +10,7 @@ left of it waits on Q-3's hardware.
   D-97). It has one public address with three ports (D-82, D-115): nginx ends TLS on 443 (the API and the lobby) and
   on 9001 (matches), and serves all three in clear on 80, a match there by `/match/<the arena's name>`.
 - **The components**, each built and tested: `j-redis-service` 2.2.2 (229 tests); the backend's eleven modules (their
-  sources declare 1 156 tests); the account service, `account-service/`, beside them (75; D-117); the client's
+  sources declare 1 159 tests); the account service, `account-service/`, beside them (75; D-117); the client's
   engine-free core with its headless driver (211 tests, on .NET Framework 4.5, run on
   Unity 2019's Mono with `float32` and without; D-116, D-118). The Unity package is scripts over the core, compiled by Unity 2019.4's own compiler against its
   `UnityEngine`; there is no Unity editor here, so it has not been opened in one (Q-54). Beside the full client,
@@ -4975,6 +4975,25 @@ had left behind:
 
 The emulated guest's reading is in working-here's machine table and in `CLAUDE.md`'s command beside it.
 `DocsLinksTest` and `ReadmeTestListsTest` pass.
+
+#### 145. The shop: one of each, the catalogue in the database, what was bought (the owner, 2026-11-27)
+
+The owner found the shop thin: no table of its own, few routes, few repository functions. Read against the code, it
+did what 04 §8 says, with its offers in `shop.json` and its purchases in the ledger, but a second copy of equipment or
+a skin could be bought for nothing (D-53), and nothing showed a player or support what was bought. The owner then
+asked for the catalogue in the database, edited by admin routes. Designed in
+[04 §8](detailed-design/04-platform-services.md#one-of-each-the-catalogue-in-the-database-and-what-was-bought-designed-2026-11-27-plan-item-145)
+and [D-119](architecture/03-decision-log.md#d-119--the-shops-offers-in-the-database-edited-by-the-admin-api-and-a-purchase-names-what-it-agreed-to):
+
+- **(a)** Equipment and skins one each: 409 `already_owned` (D-53).
+- **(b)** The offers in `shop_offer`, read fresh by every platform; `GET`, `PUT` and `DELETE /admin/shop/offers`; a
+  purchase names the `itemId`, `price` and `currency` it agreed to, 409 `offer_changed` otherwise.
+- **(c)** `GET /v1/purchases` and `GET /admin/players/{id}/purchases`, from the ledger, on an index of their own.
+- **(d)** The core's `Purchase` sends what the shop showed; the drill makes its offers by the admin API.
+
+**(a) done 2026-11-27.** An item held once, any but a boost, is 409 `already_owned`, judged in the purchase's
+transaction after the player's lock and the key (D-53). Three tests first, each failing on a second copy charged; six
+mutants caught. The persistence and platform suites pass.
 
 ---
 

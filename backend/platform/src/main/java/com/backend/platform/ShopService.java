@@ -36,7 +36,7 @@ public final class ShopService {
 
     public enum Result {
         BOUGHT, ALREADY_BOUGHT, NO_SESSION, INVALID_KEY, UNKNOWN_SKU, NOT_AVAILABLE,
-        LEVEL_REQUIRED, INSUFFICIENT_FUNDS
+        LEVEL_REQUIRED, INSUFFICIENT_FUNDS, ALREADY_OWNED
     }
 
     /**
@@ -56,14 +56,16 @@ public final class ShopService {
     private final AccountRepository accounts;
     private final EconomyRepository economy;
     private final Catalogue catalogue;
+    private final Items items;
     private final Clock clock;
 
     public ShopService(AuthService auth, AccountRepository accounts, EconomyRepository economy,
-                       Catalogue catalogue, Clock clock) {
+                       Catalogue catalogue, Items items, Clock clock) {
         this.auth = auth;
         this.accounts = accounts;
         this.economy = economy;
         this.catalogue = catalogue;
+        this.items = items;
         this.clock = clock;
     }
 
@@ -105,14 +107,22 @@ public final class ShopService {
             return new Receipt(Result.LEVEL_REQUIRED, null, 0, 0, offer.requiresLevel(), 0);
         }
         Outcome outcome = economy.purchase(playerId, offer.itemId(), offer.price(), key,
-                offer.currency() == Catalogue.GEMS ? EconomyRepository.CURRENCY_GEMS : EconomyRepository.CURRENCY_COINS);
+                offer.currency() == Catalogue.GEMS ? EconomyRepository.CURRENCY_GEMS : EconomyRepository.CURRENCY_COINS,
+                heldOnce(offer.itemId()));
         return switch (outcome) {
             case APPLIED -> receipt(Result.BOUGHT, playerId, offer.itemId());
             // The same key, in flight at the same time as this one, got there first.
             case ALREADY_APPLIED -> receipt(Result.ALREADY_BOUGHT, playerId,
                     economy.findPurchase(playerId, key).itemId());
             case INSUFFICIENT_FUNDS -> Receipt.of(Result.INSUFFICIENT_FUNDS);
+            case ALREADY_OWNED -> Receipt.of(Result.ALREADY_OWNED);
         };
+    }
+
+    /** Equipment and skins are held once; a boost, used up, as many as bought (04 §8, D-53). */
+    private boolean heldOnce(String itemId) {
+        Items.Item item = items.find(itemId);
+        return item == null || item.boost() == null;
     }
 
     /** A raise's answer (04 §8): {@code result} null when the session is not valid. */

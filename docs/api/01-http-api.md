@@ -536,6 +536,7 @@ A coin offer, from a player who had coins (given in the test database, as no rou
 | 404 | `unknown_sku` | `no such offer` |
 | 409 | `not_available` | not on sale now |
 | 409 | `insufficient_funds` | `not enough of the offer's currency, coins or gems` |
+| 409 | `already_owned` | the player holds the item already: equipment and skins are held once, boosts as many as bought (D-53) |
 
 ### `POST /v1/inventory/{itemId}/level`: raise an item a level
 

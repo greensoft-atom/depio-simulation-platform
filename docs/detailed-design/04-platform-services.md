@@ -2019,7 +2019,7 @@ delegated (Q-48).
 | `GET /v1/content/classes` | the class table a client draws by, `{"version","classes"}`. Its version is its `ETag` and the arena's `Welcome.contentVersion`; 304 to an `If-None-Match` that names it. No session needed ([D-24](../architecture/03-decision-log.md#d-24--the-class-table-reaches-the-device-from-platform-versioned-by-its-content)) |
 | `GET /v1/content/phrases` | the phrase list, `{"version","phrases"}`, each with `id`, `key` and English `text`. Its version is its `ETag` and the arena's `Welcome.phraseListVersion`; 304 as above. No session needed. **Built 2026-09-29** ([01 §9](01-arena.md#phrases-designed-2026-09-29-plan-item-8)) |
 | `GET /v1/inventory` | coins, gems and the items held → 200, 401 |
-| `POST /v1/purchases` `{"sku","key"}` | 200 `bought` or `already_bought`, with the item, the coin balance (and, since plan item 68, the gems), and how many of the item the player now holds; 400 `invalid_body` or `invalid_key`, 401, 403 `level_required`, 404 `unknown_sku`, 409 `not_available` or `insufficient_funds` |
+| `POST /v1/purchases` `{"sku","key"}` | 200 `bought` or `already_bought`, with the item, the coin balance (and, since plan item 68, the gems), and how many of the item the player now holds; 400 `invalid_body` or `invalid_key`, 401, 403 `level_required`, 404 `unknown_sku`, 409 `not_available` or `insufficient_funds`; since plan item 145, 409 `already_owned` for equipment or a skin held already (D-53, below) |
 
 **The key** is the client's transaction id. The client makes one per tap of Buy, and sends it again, unchanged, with
 every retry of that tap.
@@ -2434,6 +2434,64 @@ or anything inside the match (D-38).
 |---|---|
 | `GET /v1/boosts` | the boosts running: `{"boosts":[{"kind":"xp","itemId","percent","endsAt"}]}` → 200, 401 |
 | `POST /v1/boosts` `{"itemId","key"}` | activates one → 200 `activated` or `already_activated`, with the boosts running; 400 `invalid_body` or `invalid_key`, 401, 404 `unknown_item` (no such item, or not a boost), 409 `not_owned`, 409 `other_running` (a different boost of that kind is running) |
+
+### One of each, the catalogue in the database, and what was bought (designed 2026-11-27, plan item 145)
+
+The owner, 2026-11-27: the shop looked thin, with no table, few routes and few repository functions, and its
+catalogue is to move into the database, edited by admin routes. Read against the code, the shop as built did what
+this section says, but it had one defect (D-53) and kept no history a player or support could read.
+
+**(a) One of each (D-53).** Equipment and skins are held once. A purchase of one the player already holds is 409
+`already_owned`, and moves nothing; until now it was charged again and the count raised to 2, which does nothing,
+since a level is the item's, not a copy's. Boosts are used up, so a player buys as many as they like.
+
+- Checked in the purchase's transaction, after the player's row is locked and the key is looked up. So two taps with
+  two keys at the same time buy one, and a retry of the purchase that bought the item is still `already_bought`: the
+  key comes first, as for every rule.
+- An item held from anywhere counts: a skin from the season pass is not sold again.
+- Copies bought twice before the fix stay as they are: nothing has launched.
+
+**(b) The catalogue in the database
+([D-119](../architecture/03-decision-log.md#d-119--the-shops-offers-in-the-database-edited-by-the-admin-api-and-a-purchase-names-what-it-agreed-to)).**
+`shop_offer` (V4) holds the offers, with the fields and rules `shop.json` had and the order they were added in. V4
+seeds it with the release's twelve offers, and `shop.json` leaves the release.
+
+- **Read at each listing and each purchase, by every platform**, with no cache: an edit is on sale everywhere once it
+  commits. It is a dozen rows, read by key. `GET /v1/shop` needs no session, and reads the database as
+  `GET /v1/seasons` does.
+- **The rules** are those of the table above, checked when the admin writes, not at start: a `stock` is refused, as
+  before, and so is an item that `items.json` does not have.
+- **An offer whose item has gone** (a release that dropped it from `items.json`) is not on sale, and the start logs
+  it. Refusing to start would also shut out the admin API that removes it.
+- **The admin API**, each call with a `reason` and audited in the change's own transaction (D-30):
+
+| | |
+|---|---|
+| `GET /admin/shop/offers` | every offer, on sale or not, each with `onSale` and `itemKnown` |
+| `PUT /admin/shop/offers/{sku}` `{"itemId","price","currency","requiresLevel","availableFrom","availableTo","reason"}` | the offer made (201) or replaced whole (200); a field left out takes its default. 400 `invalid_offer` with the rule broken, 400 `no_reason` |
+| `DELETE /admin/shop/offers/{sku}` `{"reason"}` | the offer removed → 200; 404 `no_such_offer`. A purchase made from it stays in the ledger, by its item |
+
+- **A purchase names what the player agreed to**: the offer's `itemId`, `price` and `currency` as the shop showed
+  them, beside its `sku` and `key`. When the offer now differs in any of them, the answer is 409 `offer_changed` and
+  nothing moves: the client lists the shop again. All three are required, since nothing has launched that sends a
+  purchase without them. The key is still looked up first, so a retry of a purchase made is answered as it was.
+- **During an upgrade**, a platform still on the old release sells from its own `shop.json`, the same twelve offers:
+  edit the catalogue once every platform runs the new one.
+- **Limited stock** stays unbuilt and refused. With the offers in MySQL, it could now be held in the purchase's own
+  transaction rather than by a counter in the store; that is for a later item, if the owner wants it.
+
+**(c) What was bought.** `GET /v1/purchases?before={id}`: the player's purchases, newest first, 50 a page, from the
+ledger's purchase rows (reason 1). Each has its `id`, `itemId`, `price`, `currency` and `at`; `next` is the `id` to pass
+as `before` for the page after, null on the last. `GET /admin/players/{id}/purchases?before={id}` is the same for
+support, and is audited. V4 adds an index on `ledger (player_id, reason, id)`, so a page is read from the index however
+many match rewards the player has; its cost to the rate of results applied is measured (`ApplyBenchmark`).
+
+**(d) The clients.** The core's `Purchase` takes the offer as it was listed and sends what it showed. The drill makes
+its two offers through the admin API, where it patched `shop.json`, and its skin scenario buys its skin twice, the
+second answered `already_owned`. `client-simple` and `client-simple-no-tls` list the shop and buy nothing, so neither
+changes.
+
+**Built in this order**: (a), (b), (c), (d), a commit each.
 
 ## 9. Notifications
 

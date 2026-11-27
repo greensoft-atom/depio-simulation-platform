@@ -49,7 +49,7 @@ All classes are in the package `com.backend.persistence`.
 | | `LeaderboardSource` | What the store's score boards are made of, read back from MySQL for a rebuild: the all-time bests from `player_stat`, and a day's or a week's bests from `matches` |
 | | `StatsRepository` | The statistics for operators: activity by day and who came back, the same by feature, the funnel, the guests; the purge of `player_day` |
 | | `TableSizes` | InnoDB's row estimates for `ledger`, `match_player`, `matches`, `player_day`, `inbox` and `player` |
-| Economy | `EconomyRepository` | `move` (the one path), purchases in coins or gems, raising an item's level, credits, the wallet and the inventory, and the ledger's reconciliation |
+| Economy | `EconomyRepository` | `move` (the one path), purchases in coins or gems, an item held once refused a second time (D-53), raising an item's level, credits, the wallet and the inventory, and the ledger's reconciliation |
 | | `BoostRepository` | Activates a boost once per key; lists the boosts running; gives each player's boost percents at the moment a match ended; purges old boosts and keys |
 | | `EquipmentRepository` | What a player wears, one item a slot. An item can be worn only while the player holds it. `takeOff` empties a slot |
 | | `PaymentRepository` | Orders for gems: placed, then confirmed as paid or declined, refunded, or expired; a player's refund debt |

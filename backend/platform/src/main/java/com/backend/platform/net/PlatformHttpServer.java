@@ -880,6 +880,8 @@ public final class PlatformHttpServer implements AutoCloseable {
                     "reach level " + receipt.requiredLevel());
             case INSUFFICIENT_FUNDS -> error(exchange, 409, "insufficient_funds",
                     "not enough of the offer's currency, coins or gems");
+            case ALREADY_OWNED -> error(exchange, 409, "already_owned",
+                    "held already: equipment and skins are held once (D-53)");
         }
     }
 
